@@ -1,0 +1,23 @@
+[Unit]
+Description=Cisco ISE Prometheus Exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ise-exporter
+Group=ise-exporter
+EnvironmentFile=/etc/ise-exporter/ise-exporter.env
+ExecStart=/opt/ise-exporter/.venv/bin/ise-exporter
+Restart=on-failure
+RestartSec=10
+# hardening (pxGrid key is read-only to this unit)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/etc/ise-exporter
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

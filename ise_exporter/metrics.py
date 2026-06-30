@@ -1,0 +1,79 @@
+"""Central metric registry — the single import surface for every collector and
+the stream projector. This is what eliminates the cross-file `noqa: F821`
+globals: collectors do `from ise_exporter.metrics import ise_active_sessions`
+instead of referencing a name defined in some other module."""
+from prometheus_client import Gauge, Counter, Info, Enum, Histogram
+
+# --- availability / deployment ---
+ise_up = Gauge("ise_up", "ISE API availability (1=up, 0=down)")
+ise_info = Info("ise", "ISE deployment info")
+ise_deployment_status = Enum(
+    "ise_deployment_status", "Status of nodes in deployment",
+    labelnames=["node", "roles", "services"],
+    states=["Connected", "Disconnected", "Registering", "Syncing", "Unknown"])
+ise_node_count = Gauge("ise_node_count", "Number of nodes by role", ["role"])
+ise_pan_ha_enabled = Gauge("ise_pan_ha_enabled", "PAN HA enabled (1=yes, 0=no)")
+
+# --- sessions (poll) ---
+ise_active_sessions = Gauge("ise_active_sessions_total", "Total active RADIUS sessions")
+ise_radius_sessions_by_nad = Gauge("ise_radius_sessions_by_nad", "Sessions per NAD", ["nas_hostname", "location"])
+ise_radius_sessions_by_ops_owner = Gauge("ise_radius_sessions_by_ops_owner", "Sessions per ops owner", ["ops_owner"])
+ise_radius_sessions_by_psn = Gauge("ise_radius_sessions_by_psn", "Sessions per PSN", ["psn"])
+
+# --- authz (poll fan-out OR stream projection) ---
+ise_session_status_endpoints = Gauge("ise_session_status_endpoints", "Unique endpoints per NAD by status", ["nad_hostname", "location", "ops_owner", "status"])
+ise_session_failure_reasons = Gauge("ise_session_failure_reasons", "Unique endpoints by failure reason", ["reason_code", "nad_hostname", "location", "ops_owner"])
+ise_session_auth_methods = Gauge("ise_session_auth_methods", "Unique endpoints by auth method", ["method", "nad_hostname", "location", "ops_owner"])
+ise_authz_unique_endpoints_by_profile = Gauge("ise_authz_unique_endpoints_by_profile", "Unique endpoints per authz profile", ["authz_profile", "nad_hostname", "location", "ops_owner"])
+ise_session_authz_rule_endpoints = Gauge("ise_session_authz_rule_endpoints", "Unique endpoints per matched authz rule", ["authz_rule", "nad_hostname", "location", "ops_owner"])
+ise_session_policy_set_endpoints = Gauge("ise_session_policy_set_endpoints", "Unique endpoints per policy set", ["policy_set", "nad_hostname", "location", "ops_owner"])
+ise_session_detail_cache_size = Gauge("ise_session_detail_cache_size", "Cached Session/MACAddress entries")
+ise_session_warmup_progress = Gauge("ise_session_warmup_progress", "Authz cache warmup fraction (0-1)")
+ise_session_detail_fetches_total = Counter("ise_session_detail_fetches_total", "Session/MACAddress fetches", ["result"])
+
+# --- network devices ---
+ise_network_devices_total = Gauge("ise_network_devices_total", "Total network devices")
+ise_network_devices_by_location = Gauge("ise_network_devices_by_location", "Devices per location", ["location"])
+ise_network_devices_by_ops_owner = Gauge("ise_network_devices_by_ops_owner", "Devices per ops owner", ["ops_owner"])
+ise_network_devices_by_type = Gauge("ise_network_devices_by_type", "Devices by type", ["device_type"])
+
+# --- endpoints (count + model breakdown) ---
+ise_endpoints_total = Gauge("ise_endpoints_total", "Total endpoints")
+ise_endpoints_by_hardware_model = Gauge("ise_endpoints_by_hardware_model", "Endpoints per MFC hardware model", ["model"])
+ise_endpoints_by_manufacturer = Gauge("ise_endpoints_by_manufacturer", "Endpoints per manufacturer", ["manufacturer"])
+ise_endpoints_by_endpoint_type = Gauge("ise_endpoints_by_endpoint_type", "Endpoints per MFC endpoint type", ["endpoint_type"])
+ise_endpoints_by_os = Gauge("ise_endpoints_by_os", "Endpoints per MFC OS", ["os"])
+ise_endpoints_by_policy = Gauge("ise_endpoints_by_policy", "Endpoints per profiling policy name", ["policy"])
+ise_endpoints_pxgrid_total = Gauge("ise_endpoints_pxgrid_total", "Endpoints returned by pxGrid getEndpoints")
+ise_endpoint_mfc_coverage = Gauge("ise_endpoint_mfc_coverage", "Fraction with non-empty MFC attribute", ["attribute"])
+
+# --- certs / license / backup / patch (slow tier) ---
+ise_certificate_expiry_days = Gauge("ise_certificate_expiry_days", "Days until cert expires", ["hostname", "cert_name", "cert_type", "usage"])
+ise_certificates_expiring_soon = Gauge("ise_certificates_expiring_soon", "Certs expiring within threshold", ["threshold_days"])
+ise_certificate_expired = Gauge("ise_certificate_expired", "Expired certificates")
+ise_license_consumption = Gauge("ise_license_consumption", "License consumption", ["tier"])
+ise_license_compliance = Gauge("ise_license_compliance", "License compliance", ["tier"])
+ise_license_enabled = Gauge("ise_license_enabled", "License tier enabled", ["tier"])
+ise_backup_last_success_timestamp = Gauge("ise_backup_last_success_timestamp", "Last successful backup ts")
+ise_backup_age_hours = Gauge("ise_backup_age_hours", "Hours since last backup")
+ise_backup_configured = Gauge("ise_backup_configured", "Backup configured")
+ise_version_info = Info("ise_version", "ISE version information")
+ise_patch_level = Gauge("ise_patch_level", "Highest installed patch number")
+ise_patch_installed = Gauge("ise_patch_installed", "Patch installed", ["patch_number"])
+
+# --- exporter self-observability ---
+ise_scrape_duration_seconds = Histogram("ise_scrape_duration_seconds", "Scrape time", buckets=[1, 5, 10, 30, 60, 120, 300])
+ise_scrape_errors_total = Counter("ise_scrape_errors_total", "Scrape errors", ["collector", "error_type"])
+ise_api_requests_total = Counter("ise_api_requests_total", "API requests", ["api", "status"])
+ise_api_errors_total = Counter("ise_api_errors_total", "API errors", ["api", "error_type", "http_code"])
+ise_collector_duration_seconds = Gauge("ise_collector_duration_seconds", "Per-collector duration", ["collector"])
+ise_last_successful_scrape = Gauge("ise_last_successful_scrape_timestamp", "Last success ts", ["collector"])
+ise_consecutive_failures = Gauge("ise_consecutive_failures", "Consecutive failures", ["collector"])
+ise_collector_enabled = Gauge("ise_collector_enabled", "Collector enabled", ["collector"])
+
+# --- pxGrid stream health ---
+ise_pxgrid_connected = Gauge("ise_pxgrid_connected", "pxGrid pubsub state (1=live)")
+ise_pxgrid_last_event_timestamp = Gauge("ise_pxgrid_last_event_timestamp", "Last topic event ts")
+ise_pxgrid_resync_total = Counter("ise_pxgrid_resync_total", "Full re-baselines", ["reason"])
+ise_pxgrid_state_size = Gauge("ise_pxgrid_state_size", "Streamed state entries", ["topic"])
+ise_pxgrid_events_total = Counter("ise_pxgrid_events_total", "Topic events processed", ["topic", "phase"])

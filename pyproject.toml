@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ise-exporter"
+version = "2.0.0"
+description = "Prometheus exporter for Cisco ISE (REST poll + pxGrid stream)"
+requires-python = ">=3.10"
+dependencies = [
+    "prometheus-client>=0.20",
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "websocket-client>=1.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[project.scripts]
+ise-exporter = "ise_exporter.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ise_exporter"]
+
+[tool.ruff]
+line-length = 100

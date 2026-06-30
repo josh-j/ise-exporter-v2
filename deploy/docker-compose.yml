@@ -1,0 +1,29 @@
+services:
+  ise-exporter:
+    build:
+      context: ..                 # repo root (so the build sees pyproject.toml + ise_exporter/)
+      dockerfile: deploy/Dockerfile
+    image: ise-exporter:2.0.0
+    container_name: ise-exporter
+    env_file: ../.env
+    # if you change EXPORTER_PORT in .env, update both sides of this mapping too
+    ports:
+      - "9618:9618"
+    # pxGrid client cert/key/CA — only needed when COLLECT_PXGRID_* is enabled.
+    # Drop the files in deploy/certs/ and point PXGRID_CLIENT_CERT/KEY/CA_BUNDLE
+    # in .env at the in-container paths (e.g. /certs/client.cer).
+    volumes:
+      - ./certs:/certs:ro
+    restart: unless-stopped
+    # the exporter writes nothing to disk; lock the container down
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.getenv('EXPORTER_PORT','9618')+'/metrics', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
