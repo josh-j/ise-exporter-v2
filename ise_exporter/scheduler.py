@@ -22,6 +22,17 @@ class PollScheduler:
         self.last_run = {}
         self.mappings = {"ops_owner": {}, "hostname": {}, "location": {}}
 
+        # log the poll-vs-stream split ONCE, at the point that actually decides it —
+        # both flags are immutable for the process lifetime, so this can't go stale.
+        streaming = cfg.collect_pxgrid_stream and pxgrid is not None
+        if cfg.collect_pxgrid_stream and pxgrid is None:
+            logger.warning("scheduler: COLLECT_PXGRID_STREAM=true but no usable pxGrid client — "
+                           "falling back to polling for sessions/pxgrid_endpoints "
+                           "(see the 'pxGrid disabled' warning above for why)")
+        else:
+            logger.info("scheduler: pxgrid streaming=%s — sessions/pxgrid_endpoints collectors "
+                       "are %s", streaming, "deferred to the pxGrid stream" if streaming else "polling")
+
     def _due(self, name, now, fast, medium, slow):
         if name not in self.last_run:
             return True

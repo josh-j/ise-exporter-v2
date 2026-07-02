@@ -1,6 +1,7 @@
 """Scheduler gating: when streaming is requested but pxGrid creds are missing
 (pxgrid=None), the scheduler must fall back to POLLING sessions/models rather than
 skip them — otherwise those metrics are silently never collected."""
+import logging
 import types
 
 import ise_exporter.scheduler as S
@@ -35,3 +36,21 @@ def test_streaming_skips_poll_when_pxgrid_present(monkeypatch):
     PollScheduler(_cfg(), client=None, pxgrid=object()).run_cycle()
     assert "sessions" not in ran   # streamer owns sessions
     assert "authz" in ran          # authz still runs (reduced) in stream mode
+
+
+def test_logs_poll_fallback_reason_when_stream_requested_but_pxgrid_missing(caplog):
+    with caplog.at_level(logging.WARNING):
+        PollScheduler(_cfg(collect_pxgrid_stream=True), client=None, pxgrid=None)
+    assert any("falling back to polling" in r.message for r in caplog.records)
+
+
+def test_logs_streaming_mode_once_at_init(caplog):
+    with caplog.at_level(logging.INFO):
+        PollScheduler(_cfg(collect_pxgrid_stream=True), client=None, pxgrid=object())
+    assert any("pxgrid streaming=True" in r.message for r in caplog.records)
+
+
+def test_logs_polling_mode_once_at_init(caplog):
+    with caplog.at_level(logging.INFO):
+        PollScheduler(_cfg(collect_pxgrid_stream=False), client=None, pxgrid=None)
+    assert any("pxgrid streaming=False" in r.message for r in caplog.records)

@@ -40,6 +40,33 @@ _GONE_STATES = {"DISCONNECTED", "TERMINATED", "STOPPED", "DISCONNECT"}
 _HEARTBEAT_SECS = 10
 _HEARTBEAT_MS = _HEARTBEAT_SECS * 1000
 
+# cadence for the periodic "still healthy" heartbeat log — deliberately coarser than
+# watchdog_timeout so a healthy stream doesn't spam journalctl every 30s.
+_STATUS_LOG_INTERVAL = 300
+
+
+def _classify_stream_error(e):
+    """Best-effort plain-language reason for journalctl — a raw exception repr from a
+    chained websocket/ssl/requests failure ('Connection aborted', bare OSError, etc.)
+    rarely explains itself to whoever is reading the log at 2am."""
+    msg = str(e)
+    low = msg.lower()
+    if "pending" in low or "disabled" in low:
+        return f"pxGrid account not approved/enabled in ISE — {msg}"
+    if isinstance(e, ssl.SSLError) or "ssl" in type(e).__name__.lower() or "certificate" in low:
+        return f"TLS/certificate error — check PXGRID_CA_BUNDLE and client cert validity: {msg}"
+    if isinstance(e, PermissionError) or "permission denied" in low:
+        return f"permission denied opening a cert/key file, or blocked by a local firewall/egress policy: {msg}"
+    if "no wsurl" in low or "pubsub service not available" in low or "no registered node" in low:
+        return f"pxGrid pubsub service not published on any ISE node — {msg}"
+    if "name or service not known" in low or "nodename nor servname" in low or "getaddrinfo" in low:
+        return f"DNS resolution failed for PXGRID_HOST — {msg}"
+    if "connection refused" in low:
+        return f"connection refused — is pxGrid listening on this host:port? {msg}"
+    if "timed out" in low:
+        return f"connection/handshake timed out — network path or firewall issue: {msg}"
+    return f"{type(e).__name__}: {msg}"
+
 
 def _session_key(s):
     return (s.get("auditSessionId") or s.get("audit_session_id")
@@ -411,15 +438,27 @@ class PxGridStreamer:
 
     def _maintenance_loop(self, stop):
         last_resync = time.time()
+        last_status_log = 0.0
         while not stop.is_set() and not self.shutdown.is_set():
             stop.wait(min(self.cfg.watchdog_timeout, 30))
             now = time.time()
+            # positive confirmation on a slow, fixed cadence — otherwise "working" is
+            # only ever inferred from the absence of errors, which is indistinguishable
+            # from "nobody's looked at the logs in a while."
+            if self.connected and (now - last_status_log) >= _STATUS_LOG_INTERVAL:
+                with self.lock:
+                    n_sessions, n_endpoints = len(self.sessions), len(self.endpoints)
+                age = int(now - self.last_recv) if self.last_recv else -1
+                logger.info("pxGrid stream healthy: sessions=%d endpoints=%d last_frame=%ds_ago",
+                            n_sessions, n_endpoints, age)
+                last_status_log = now
             # liveness is "any frame received", not "a topic event" — with STOMP
             # heart-beats a quiet-but-healthy link keeps last_recv fresh, so idle
             # periods no longer force a reconnect (only a genuinely silent link does).
             if self.connected and self.last_recv and (now - self.last_recv) > self.cfg.watchdog_timeout:
-                logger.warning("pxGrid watchdog: no frames for %ds, forcing reconnect",
-                               int(now - self.last_recv))
+                logger.warning("pxGrid watchdog: no frames for %ds (timeout=%ds) — forcing reconnect; "
+                               "session/endpoint metrics will go stale until it reconnects",
+                               int(now - self.last_recv), self.cfg.watchdog_timeout)
                 stop.set()
                 break
             if (now - last_resync) >= self.cfg.resync_interval:
@@ -429,6 +468,7 @@ class PxGridStreamer:
     # ---- supervisor ------------------------------------------------------
     def run(self):
         backoff = 1
+        down_since = None   # None while connected; set to the time a failure/disconnect began
         logger.info("pxGrid streamer starting: host=%s node_name=%s",
                     self.ctl.host, self.ctl.node_name)
         while not self.shutdown.is_set():
@@ -440,6 +480,11 @@ class PxGridStreamer:
                 self.connected = True
                 self.last_event = self.last_recv = time.time()
                 metrics.ise_pxgrid_connected.set(1)
+                if down_since is None:
+                    logger.info("pxGrid STREAM UP: host=%s node_name=%s", self.ctl.host, self.ctl.node_name)
+                else:
+                    logger.info("pxGrid STREAM UP: recovered after %ds down", int(time.time() - down_since))
+                    down_since = None
                 backoff = 1
 
                 projector = threading.Thread(target=self._projector_loop, args=(stop,),
@@ -451,8 +496,13 @@ class PxGridStreamer:
                 self._recv_loop()    # blocks until disconnect / watchdog / shutdown
                 projector.join(timeout=5)
                 maintenance.join(timeout=5)
+                if down_since is None and not self.shutdown.is_set():
+                    down_since = time.time()
+                    logger.warning("pxGrid STREAM DOWN: connection closed, reconnecting")
             except Exception as e:
-                logger.warning("pxGrid stream error: %s", e)
+                if down_since is None:
+                    down_since = time.time()
+                logger.warning("pxGrid STREAM DOWN: %s", _classify_stream_error(e))
             finally:
                 self.connected = False
                 metrics.ise_pxgrid_connected.set(0)
@@ -461,7 +511,8 @@ class PxGridStreamer:
 
             if self.shutdown.is_set():
                 break
-            logger.info("pxGrid reconnecting in %ds", backoff)
+            logger.info("pxGrid reconnecting in %ds (down for %ds so far)",
+                        backoff, int(time.time() - down_since) if down_since else 0)
             self.shutdown.wait(backoff)
             backoff = min(backoff * 2, self.cfg.reconnect_max_backoff)
         logger.info("pxGrid streamer stopped")

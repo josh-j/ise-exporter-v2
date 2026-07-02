@@ -2,10 +2,13 @@
 win over a stale ACTIVE snapshot after the buffer is drained. The disconnect is
 fired from inside the fake getSessions (while syncing=True) so it lands in the
 buffer; after _bootstrap drains, the disconnected session must be gone."""
+import ssl
 import threading
 import types
 
-from ise_exporter.streaming import PxGridStreamer
+import pytest
+
+from ise_exporter.streaming import PxGridStreamer, _classify_stream_error
 
 
 def _cfg():
@@ -214,3 +217,22 @@ def test_recv_loop_resyncs_on_sequence_gap_without_applying_gap_payload():
 
     assert ctl.snapshots == 1
     assert set(streamer.sessions) == {"SNAP"}
+
+
+@pytest.mark.parametrize("error,expected_fragment", [
+    (RuntimeError("pxGrid account is PENDING approval in ISE; retry after approval"),
+     "not approved/enabled in ISE"),
+    (RuntimeError("pxGrid account is DISABLED in ISE; enable it before retrying"),
+     "not approved/enabled in ISE"),
+    (ssl.SSLError("certificate verify failed"), "TLS/certificate error"),
+    (PermissionError(13, "Permission denied"), "permission denied"),
+    (RuntimeError("pxGrid pubsub returned no wsUrl"), "pubsub service not published"),
+    (RuntimeError("pxGrid ServiceLookup(com.cisco.ise.pubsub): no registered node"),
+     "pubsub service not published"),
+    (OSError("[Errno -2] Name or service not known"), "DNS resolution failed"),
+    (ConnectionRefusedError("Connection refused"), "connection refused"),
+    (TimeoutError("connection timed out"), "timed out"),
+    (ValueError("something unrelated"), "ValueError: something unrelated"),
+])
+def test_classify_stream_error(error, expected_fragment):
+    assert expected_fragment in _classify_stream_error(error)
