@@ -8,8 +8,6 @@ from collections import defaultdict
 
 from .. import metrics
 from ..util import clear_metric, first_nonempty
-from ..clients.pxgrid import ENDPOINT_SERVICE
-
 logger = logging.getLogger(__name__)
 
 # pxGrid emits camelCase; Context Visibility / ERS show PascalCase. Read both.
@@ -23,14 +21,12 @@ _OUI_KEYS = ("oui", "OUI")
 
 def collect(pxgrid, cfg):
     try:
-        data = pxgrid.rest_query(ENDPOINT_SERVICE, "getEndpoints", {},
-                                 timeout=cfg.pxgrid_query_timeout)
+        endpoints = pxgrid.get_endpoints(timeout=cfg.pxgrid_query_timeout)
     except Exception as e:
         logger.warning("pxGrid getEndpoints failed: %s", e)
         return
-    if not data:
+    if not endpoints:
         return
-    endpoints = data.get("endpoints", data if isinstance(data, list) else [])
     emit_endpoint_metrics(endpoints)
 
 

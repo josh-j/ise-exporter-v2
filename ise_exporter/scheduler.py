@@ -47,29 +47,39 @@ class PollScheduler:
         streaming = cfg.collect_pxgrid_stream and self.pxgrid is not None
 
         if self._due("deployment", now, fast, medium, slow):
-            deployment.collect(self.client, cfg, self.mappings); self.last_run["deployment"] = now
+            deployment.collect(self.client, cfg, self.mappings)
+            self.last_run["deployment"] = now
         if self._due("devices", now, fast, medium, slow):
-            devices.collect(self.client, cfg, self.mappings); self.last_run["devices"] = now
+            devices.collect(self.client, cfg, self.mappings)
+            self.last_run["devices"] = now
         if not streaming and self._due("sessions", now, fast, medium, slow):
-            sessions.collect(self.client, cfg, self.mappings); self.last_run["sessions"] = now
+            sessions.collect(self.client, cfg, self.mappings)
+            self.last_run["sessions"] = now
         if self._due("endpoints", now, fast, medium, slow):
-            endpoints.collect(self.client, cfg, self.mappings); self.last_run["endpoints"] = now
+            endpoints.collect(self.client, cfg, self.mappings)
+            self.last_run["endpoints"] = now
         # authz runs in BOTH modes: in stream mode it emits only the failure-reason /
         # matched-rule / policy-set signals the session topic can't carry (it self-limits)
         if cfg.collect_authz and self._due("authz", now, fast, medium, slow):
-            authz.collect(self.client, cfg, self.mappings); self.last_run["authz"] = now
+            authz.collect(self.client, cfg, self.mappings)
+            self.last_run["authz"] = now
         if cfg.collect_certificates and self._due("certificates", now, fast, medium, slow):
-            certificates.collect(self.client, cfg, self.mappings); self.last_run["certificates"] = now
+            certificates.collect(self.client, cfg, self.mappings)
+            self.last_run["certificates"] = now
         if cfg.collect_licensing and self._due("licensing", now, fast, medium, slow):
-            licensing.collect(self.client, cfg, self.mappings); self.last_run["licensing"] = now
+            licensing.collect(self.client, cfg, self.mappings)
+            self.last_run["licensing"] = now
         if cfg.collect_backup_status and self._due("backup", now, fast, medium, slow):
-            backup.collect(self.client, cfg, self.mappings); self.last_run["backup"] = now
+            backup.collect(self.client, cfg, self.mappings)
+            self.last_run["backup"] = now
         if cfg.collect_patches and self._due("patches", now, fast, medium, slow):
-            patches.collect(self.client, cfg, self.mappings); self.last_run["patches"] = now
+            patches.collect(self.client, cfg, self.mappings)
+            self.last_run["patches"] = now
         # bulk model collector only when NOT streaming (stream projects models itself)
         if cfg.collect_pxgrid_endpoints and not streaming and self.pxgrid \
                 and self._due("pxgrid_endpoints", now, fast, medium, slow):
-            models.collect(self.pxgrid, cfg); self.last_run["pxgrid_endpoints"] = now
+            models.collect(self.pxgrid, cfg)
+            self.last_run["pxgrid_endpoints"] = now
 
     def loop(self, shutdown):
         nxt = time.time()

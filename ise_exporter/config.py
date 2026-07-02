@@ -12,6 +12,7 @@ def _s(v, d=""): return os.getenv(v, d)
 
 @dataclass(frozen=True)
 class Config:
+    log_level: str = "INFO"
     ise_host: str = ""
     ise_mnt_host: str = ""
     ise_user: str = "ers.readonly"
@@ -55,6 +56,7 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
+            log_level=_s("LOG_LEVEL", "INFO").upper(),
             ise_host=_s("ISE_HOST"), ise_mnt_host=_s("ISE_MNT_HOST"),
             ise_user=_s("ISE_USER", "ers.readonly"), ise_pass=_s("ISE_PASS"),
             ers_port=_i("ERS_PORT", 9060), exporter_port=_i("EXPORTER_PORT", 9618),

@@ -19,19 +19,26 @@ transport. The state machine (bootstrap/drain/project) is transport-agnostic —
 use the proven in-house WSS client, swap those three methods and keep the rest."""
 import json
 import logging
+import ssl
 import threading
 import time
 from collections import defaultdict
 
 from . import metrics
 from .util import clear_metric, normalize_mac, first_nonempty
-from .clients.pxgrid import SESSION_SERVICE, ENDPOINT_SERVICE
+from .clients.pxgrid import SESSION_SERVICE
 from .collectors.devices import nad_labels
 from .collectors import models
 
 logger = logging.getLogger(__name__)
 
 _GONE_STATES = {"DISCONNECTED", "TERMINATED", "STOPPED", "DISCONNECT"}
+
+# STOMP heart-beat cadence. We both request and offer this interval in CONNECT and
+# send a client heartbeat on the same timer — a failed heartbeat send is our liveness
+# probe, so an idle-but-alive connection stays up instead of reconnecting every cycle.
+_HEARTBEAT_SECS = 10
+_HEARTBEAT_MS = _HEARTBEAT_SECS * 1000
 
 
 def _session_key(s):
@@ -60,7 +67,9 @@ class PxGridStreamer:
         self.buffer = []             # events captured during bootstrap
         self.syncing = False
         self.connected = False
-        self.last_event = 0.0
+        self.last_event = 0.0     # last topic EVENT (session/endpoint change)
+        self.last_recv = 0.0      # last FRAME of any kind, incl. server heartbeats
+        self.last_sequence = {}   # topic -> last pxGrid sequence number seen
         self.ws = None
         self._stop = threading.Event()   # per-connection stop signal
 
@@ -137,7 +146,11 @@ class PxGridStreamer:
         return self._snapshot(SESSION_SERVICE, "getSessions", "sessions")
 
     def _snapshot_endpoints(self):
-        return self._snapshot(ENDPOINT_SERVICE, "getEndpoints", "endpoints")
+        try:
+            return self.ctl.get_endpoints(timeout=self.cfg.pxgrid_query_timeout)
+        except Exception as e:
+            logger.warning("getEndpoints snapshot failed: %s", e)
+            return []
 
     # ---- projection: state -> gauges -------------------------------------
     def project(self):
@@ -204,19 +217,42 @@ class PxGridStreamer:
     # ---- transport (minimal STOMP/WSS — swappable) -----------------------
     def _connect_ws(self):
         import websocket  # lazy: only needed when streaming is enabled
-        peer, ws_url, secret = self.ctl.resolve_pubsub()
-        if not ws_url:
+        peer, ws_urls, secret = self.ctl.resolve_pubsub()
+        if not ws_urls:
             raise RuntimeError("pxGrid pubsub returned no wsUrl")
+        if isinstance(ws_urls, str):
+            ws_urls = [ws_urls]
+        logger.info("pxGrid pubsub: peer=%s ws_urls=%s", peer, ws_urls)
         header = [f"Authorization: Basic {self._basic(secret)}"]
-        self.ws = websocket.create_connection(
-            ws_url, header=header,
-            sslopt={"certfile": self.cfg.pxgrid_client_cert,
-                    "keyfile": self.cfg.pxgrid_client_key,
-                    "ca_certs": self.cfg.pxgrid_ca_bundle or None},
-            timeout=self.cfg.watchdog_timeout)
-        self._send(f"CONNECT\naccept-version:1.2\nhost:{self.ctl.host}\n\n\x00")
-        for topic in self._topics():
+        sslopt = {"certfile": self.cfg.pxgrid_client_cert,
+                  "keyfile": self.cfg.pxgrid_client_key,
+                  "cert_reqs": ssl.CERT_REQUIRED if self.cfg.pxgrid_ca_bundle else ssl.CERT_NONE}
+        if self.cfg.pxgrid_ca_bundle:
+            sslopt["ca_certs"] = self.cfg.pxgrid_ca_bundle
+        else:
+            sslopt["check_hostname"] = False
+        last_error = None
+        for ws_url in ws_urls:
+            try:
+                self.ws = websocket.create_connection(
+                    ws_url, header=header,
+                    sslopt=sslopt,
+                    timeout=self.cfg.watchdog_timeout)
+                break
+            except Exception as e:
+                last_error = e
+                logger.warning("pxGrid pubsub connect failed for %s: %s", ws_url, e)
+        if not self.ws:
+            raise RuntimeError(f"pxGrid pubsub connect failed for all wsUrl values: {last_error}")
+        self._send(f"CONNECT\naccept-version:1.2\n"
+                   f"heart-beat:{_HEARTBEAT_MS},{_HEARTBEAT_MS}\n"
+                   f"host:{self.ctl.host}\n\n\x00")
+        self._await_connected()
+        topics = self._topics()
+        for topic in topics:
             self._send(f"SUBSCRIBE\nid:{topic}\ndestination:{topic}\n\n\x00")
+        logger.info("pxGrid WSS connected, subscribed to %d topic(s): %s",
+                    len(topics), topics or "(none — check topic resolution)")
 
     def _basic(self, secret):
         import base64
@@ -237,7 +273,30 @@ class PxGridStreamer:
 
     def _send(self, frame):
         if self.ws:
-            self.ws.send(frame)
+            payload = frame.encode("utf-8") if isinstance(frame, str) else frame
+            if hasattr(self.ws, "send_binary"):
+                self.ws.send_binary(payload)
+            else:
+                self.ws.send(payload, opcode=0x2)
+
+    def _await_connected(self):
+        """Wait for the STOMP CONNECTED frame before subscribing."""
+        deadline = time.time() + self.cfg.watchdog_timeout
+        while time.time() < deadline and not self.shutdown.is_set():
+            raw = self.ws.recv()
+            self.last_recv = time.time()
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8", "replace")
+            command = raw.split("\n", 1)[0].strip()
+            if command == "CONNECTED":
+                return
+            if command == "ERROR":
+                body = self._stomp_body(raw) or raw
+                raise RuntimeError(f"pxGrid STOMP CONNECT failed: {body[:300]}")
+            if not command:
+                continue
+            logger.debug("pxGrid ignoring pre-CONNECTED STOMP frame: %s", command)
+        raise RuntimeError("pxGrid STOMP CONNECT timed out")
 
     def _close_ws(self):
         if self.ws:
@@ -248,22 +307,53 @@ class PxGridStreamer:
             self.ws = None
 
     def _recv_loop(self):
+        import websocket  # for the timeout exception type
+        # short recv timeout so the loop wakes to send heartbeats / check stop flags
+        # regardless of event traffic — decoupled from watchdog_timeout on purpose.
+        self.ws.settimeout(_HEARTBEAT_SECS)
+        last_hb = time.time()
         while not self._stop.is_set() and not self.shutdown.is_set():
             try:
                 raw = self.ws.recv()
+            except websocket.WebSocketTimeoutException:
+                raw = None            # idle tick — NOT a dead connection
             except Exception as e:
-                logger.info("recv loop ended: %s", e)
+                logger.info("pxGrid recv loop ended: %s", e)
                 break
+
+            now = time.time()
+            # client heartbeat doubles as a liveness probe: if the socket is dead the
+            # send raises and we reconnect; if it's just idle the send succeeds.
+            if now - last_hb >= _HEARTBEAT_SECS:
+                try:
+                    self._send("\n")
+                except Exception as e:
+                    logger.info("pxGrid heartbeat send failed, reconnecting: %s", e)
+                    break
+                last_hb = now
+
             if not raw:
                 continue
+            self.last_recv = now      # any frame (incl. a server heartbeat) proves liveness
             body = self._stomp_body(raw)
             if not body:
-                continue
+                continue              # server heartbeat / non-body frame
             try:
                 payload = json.loads(body)
             except ValueError:
                 continue
-            self.on_event(self._normalize(payload))
+            topic = self._payload_topic(payload)
+            if self._sequence_gap(topic, payload):
+                logger.warning("pxGrid %s sequence gap/reset detected; refreshing snapshot", topic)
+                self._bootstrap(f"{topic}-sequence-gap")
+                continue
+            # one malformed/empty frame must not tear down the stream: iterate the
+            # whole batch and guard each apply so a bad event is dropped, not fatal.
+            for event in self._normalize_events(payload):
+                try:
+                    self.on_event(event)
+                except Exception as e:
+                    logger.warning("pxGrid event apply failed (dropped): %s", e)
         self._stop.set()
 
     @staticmethod
@@ -276,17 +366,39 @@ class PxGridStreamer:
         return frame.split("\n\n", 1)[1].rstrip("\x00").strip()
 
     @staticmethod
-    def _normalize(payload):
-        """Map a topic payload to our internal event shape."""
+    def _payload_topic(payload):
+        if "endpoints" in payload or "endpoint" in payload:
+            return "endpoint"
+        return "session"
+
+    def _sequence_gap(self, topic, payload):
+        if "sequence" not in payload:
+            return False
+        try:
+            seq = int(payload["sequence"])
+        except (TypeError, ValueError):
+            logger.warning("pxGrid %s payload has invalid sequence: %r", topic, payload["sequence"])
+            return False
+
+        prev = self.last_sequence.get(topic)
+        self.last_sequence[topic] = seq
+        if seq == 0:
+            return True
+        return prev is not None and seq != prev + 1
+
+    @staticmethod
+    def _normalize_events(payload):
+        """Map a topic payload to a LIST of internal event shapes. Handles batched
+        arrays (all elements, not just [0]) and empty arrays (returns [])."""
         if "sessions" in payload:
-            return {"topic": "session", "session": payload["sessions"][0]}
+            return [{"topic": "session", "session": s} for s in payload["sessions"]]
         if "session" in payload:
-            return {"topic": "session", "session": payload["session"]}
+            return [{"topic": "session", "session": payload["session"]}]
         if "endpoints" in payload:
-            return {"topic": "endpoint", "endpoint": payload["endpoints"][0]}
+            return [{"topic": "endpoint", "endpoint": e} for e in payload["endpoints"]]
         if "endpoint" in payload:
-            return {"topic": "endpoint", "endpoint": payload["endpoint"]}
-        return {"topic": "session", "session": payload}
+            return [{"topic": "endpoint", "endpoint": payload["endpoint"]}]
+        return [{"topic": "session", "session": payload}]
 
     # ---- worker threads --------------------------------------------------
     def _projector_loop(self, stop):
@@ -302,9 +414,12 @@ class PxGridStreamer:
         while not stop.is_set() and not self.shutdown.is_set():
             stop.wait(min(self.cfg.watchdog_timeout, 30))
             now = time.time()
-            if self.connected and self.last_event and (now - self.last_event) > self.cfg.watchdog_timeout:
-                logger.warning("pxGrid watchdog: no events for %ds, forcing reconnect",
-                               int(now - self.last_event))
+            # liveness is "any frame received", not "a topic event" — with STOMP
+            # heart-beats a quiet-but-healthy link keeps last_recv fresh, so idle
+            # periods no longer force a reconnect (only a genuinely silent link does).
+            if self.connected and self.last_recv and (now - self.last_recv) > self.cfg.watchdog_timeout:
+                logger.warning("pxGrid watchdog: no frames for %ds, forcing reconnect",
+                               int(now - self.last_recv))
                 stop.set()
                 break
             if (now - last_resync) >= self.cfg.resync_interval:
@@ -314,13 +429,16 @@ class PxGridStreamer:
     # ---- supervisor ------------------------------------------------------
     def run(self):
         backoff = 1
+        logger.info("pxGrid streamer starting: host=%s node_name=%s",
+                    self.ctl.host, self.ctl.node_name)
         while not self.shutdown.is_set():
             stop = self._stop = threading.Event()
             try:
+                logger.info("pxGrid connecting to %s ...", self.ctl.host)
                 self._connect_ws()
                 self._bootstrap("connect")
                 self.connected = True
-                self.last_event = time.time()
+                self.last_event = self.last_recv = time.time()
                 metrics.ise_pxgrid_connected.set(1)
                 backoff = 1
 
@@ -343,6 +461,7 @@ class PxGridStreamer:
 
             if self.shutdown.is_set():
                 break
+            logger.info("pxGrid reconnecting in %ds", backoff)
             self.shutdown.wait(backoff)
             backoff = min(backoff * 2, self.cfg.reconnect_max_backoff)
         logger.info("pxGrid streamer stopped")

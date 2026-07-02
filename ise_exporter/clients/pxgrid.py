@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 SESSION_SERVICE = "com.cisco.ise.session"
 ENDPOINT_SERVICE = "com.cisco.ise.endpoint"
 PUBSUB_SERVICE = "com.cisco.ise.pubsub"
+ENDPOINT_BULK_START = "1970-01-01T00:00:00.000Z"
+ENDPOINT_PAGE_SIZE = 1000
 
 
 def _rest_base(props):
@@ -34,58 +36,190 @@ class PxGridControl:
                                      "Accept": "application/json"})
         # cache of resolved (peer_node, rest_base, secret) keyed by service name
         self._svc = {}
+        self._activated = False
+        logger.info("pxGrid control: host=%s port=%s node_name=%s cert=%s key=%s",
+                    self.host, cfg.pxgrid_port, self.node_name,
+                    cfg.pxgrid_client_cert, cfg.pxgrid_client_key)
+        if cfg.pxgrid_ca_bundle:
+            logger.info("pxGrid TLS verify ON (ca=%s)", cfg.pxgrid_ca_bundle)
+        else:
+            # the control channel carries the per-service access secrets — unverified
+            # TLS exposes them to MITM. Set PXGRID_CA_BUNDLE in production.
+            logger.warning("pxGrid TLS verify OFF — no PXGRID_CA_BUNDLE set; "
+                           "server certificate is NOT validated (set it in production)")
 
     def _control_post(self, op, body):
         url = f"{self.control_base}/{op}"
-        r = self.session.post(url, json=body or {}, timeout=30)
-        r.raise_for_status()
+        logger.debug("pxGrid control POST %s body=%s", url, body or {})
+        try:
+            r = self.session.post(url, json=body or {}, timeout=30)
+            r.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            code = e.response.status_code if e.response is not None else 0
+            body_txt = e.response.text[:300] if e.response is not None else ""
+            logger.warning("pxGrid %s -> HTTP %s: %s", op, code, body_txt)
+            raise
+        except requests.exceptions.RequestException as e:
+            # connection refused / TLS handshake / timeout — the common "nothing in ISE" causes
+            logger.warning("pxGrid %s -> transport error: %s", op, e)
+            raise
         return r.json()
+
+    def account_activate(self):
+        """Activate this pxGrid account before service access.
+
+        Certificate-authenticated consumers send Basic auth as "nodeName:" and may
+        need an ISE admin approval before the controller returns ENABLED.
+        """
+        if self._activated:
+            return {"accountState": "ENABLED"}
+        data = self._control_post("AccountActivate", {"description": "ise-exporter"})
+        state = (data.get("accountState") or "").upper()
+        version = data.get("version", "unknown")
+        logger.info("pxGrid AccountActivate: state=%s version=%s", state or "UNKNOWN", version)
+        if state == "ENABLED":
+            self._activated = True
+            return data
+        if state == "PENDING":
+            raise RuntimeError("pxGrid account is PENDING approval in ISE; retry after approval")
+        if state == "DISABLED":
+            raise RuntimeError("pxGrid account is DISABLED in ISE; enable it before retrying")
+        raise RuntimeError(f"pxGrid AccountActivate returned unexpected state: {state or data!r}")
+
+    def _ensure_active(self):
+        if not self._activated:
+            self.account_activate()
+
+    def service_lookup_all(self, service_name):
+        """Return all registered service node properties for a service."""
+        self._ensure_active()
+        data = self._control_post("ServiceLookup", {"name": service_name})
+        services = data.get("services", [])
+        if not services:
+            logger.warning("pxGrid ServiceLookup(%s): no registered node "
+                           "(account not approved, or service unavailable)", service_name)
+            return []
+        logger.info("pxGrid ServiceLookup(%s): nodes=%s", service_name,
+                    ", ".join(s.get("nodeName", "?") for s in services))
+        return services
 
     def service_lookup(self, service_name):
         """Return the first registered service node's properties dict, or None."""
-        data = self._control_post("ServiceLookup", {"name": service_name})
-        services = data.get("services", [])
-        return services[0] if services else None
+        services = self.service_lookup_all(service_name)
+        if not services:
+            return None
+        logger.info("pxGrid ServiceLookup(%s): node=%s", service_name,
+                    services[0].get("nodeName"))
+        return services[0]
 
     def access_secret(self, peer_node_name):
+        self._ensure_active()
         data = self._control_post("AccessSecret", {"peerNodeName": peer_node_name})
-        return data.get("secret", "")
+        secret = data.get("secret", "")
+        logger.debug("pxGrid AccessSecret(%s): %s", peer_node_name,
+                     "obtained" if secret else "EMPTY")
+        return secret
 
-    def _resolve(self, service_name):
-        """Resolve and cache (peer_node, rest_base, secret) for a query service."""
-        if service_name in self._svc:
-            return self._svc[service_name]
-        svc = self.service_lookup(service_name)
-        if not svc:
+    def _resolved_services(self, service_name, *, use_cache=True, skip_peers=()):
+        """Resolve all REST provider candidates for a query service."""
+        skip_peers = set(skip_peers)
+        if use_cache and service_name in self._svc and self._svc[service_name][0] not in skip_peers:
+            return [self._svc[service_name]]
+
+        services = self.service_lookup_all(service_name)
+        if not services:
             raise RuntimeError(f"pxGrid ServiceLookup returned no node for {service_name}")
-        peer = svc["nodeName"]
-        rest_base = _rest_base(svc.get("properties", {}))
-        if not rest_base:
-            raise RuntimeError(f"pxGrid service {service_name} has no restBaseUrl")
-        secret = self.access_secret(peer)
-        self._svc[service_name] = (peer, rest_base, secret)
-        return self._svc[service_name]
+        resolved = []
+        for svc in services:
+            peer = svc.get("nodeName")
+            if not peer or peer in skip_peers:
+                continue
+            rest_base = _rest_base(svc.get("properties", {}))
+            if not rest_base:
+                logger.warning("pxGrid service %s node %s has no restBaseUrl", service_name, peer)
+                continue
+            secret = self.access_secret(peer)
+            resolved.append((peer, rest_base, secret))
+            logger.info("pxGrid resolved %s: peer=%s rest_base=%s",
+                        service_name, peer, rest_base)
+        if not resolved:
+            raise RuntimeError(f"pxGrid service {service_name} has no usable REST node")
+        self._svc[service_name] = resolved[0]
+        return resolved
 
     def rest_query(self, service_name, endpoint, body=None, timeout=120):
         """POST {restBaseUrl}/{endpoint} with the per-service access secret as the
         Basic-auth password. Re-resolves once on 401/403/404 (secret rotation)."""
+        failed_peers = set()
+        last_error = None
         for attempt in (1, 2):
-            peer, rest_base, secret = self._resolve(service_name)
-            url = f"{rest_base.rstrip('/')}/{endpoint.lstrip('/')}"
-            try:
-                r = self.session.post(url, json=body or {},
-                                      auth=HTTPBasicAuth(self.node_name, secret),
-                                      timeout=timeout)
-                r.raise_for_status()
-                return r.json()
-            except requests.exceptions.HTTPError as e:
-                code = e.response.status_code if e.response is not None else 0
-                if code in (401, 403, 404) and attempt == 1:
-                    logger.info("pxGrid %s -> %s, re-resolving service", endpoint, code)
+            candidates = self._resolved_services(
+                service_name, use_cache=(attempt == 1 and not failed_peers),
+                skip_peers=failed_peers)
+            retry_secret = False
+            for peer, rest_base, secret in candidates:
+                url = f"{rest_base.rstrip('/')}/{endpoint.lstrip('/')}"
+                logger.debug("pxGrid query %s (attempt %d)", url, attempt)
+                try:
+                    r = self.session.post(url, json=body or {},
+                                          auth=HTTPBasicAuth(self.node_name, secret),
+                                          timeout=timeout)
+                    r.raise_for_status()
+                    self._svc[service_name] = (peer, rest_base, secret)
+                    logger.debug("pxGrid query %s -> HTTP %s", url, r.status_code)
+                    return r.json()
+                except requests.exceptions.HTTPError as e:
+                    last_error = e
+                    code = e.response.status_code if e.response is not None else 0
+                    if code in (401, 403, 404) and attempt == 1:
+                        logger.info("pxGrid %s -> %s, re-resolving service", endpoint, code)
+                        self._svc.pop(service_name, None)
+                        retry_secret = True
+                        break
+                    if code >= 500:
+                        failed_peers.add(peer)
+                        self._svc.pop(service_name, None)
+                        logger.info("pxGrid %s peer %s -> HTTP %s, trying next provider",
+                                    endpoint, peer, code)
+                        continue
+                    raise
+                except requests.exceptions.RequestException as e:
+                    last_error = e
+                    failed_peers.add(peer)
                     self._svc.pop(service_name, None)
                     continue
-                raise
+            if retry_secret:
+                continue
+            if failed_peers and attempt == 1:
+                continue
+            if last_error:
+                raise last_error
+        if last_error:
+            raise last_error
         return None
+
+    def get_endpoints(self, *, start_timestamp=ENDPOINT_BULK_START,
+                      page_size=ENDPOINT_PAGE_SIZE, max_pages=None, timeout=120):
+        """Fetch all pxGrid endpoints using the documented mandatory timestamp
+        filter and startIndex/count paging.
+        """
+        endpoints = []
+        start_index = 0
+        pages = 0
+        while True:
+            body = {
+                "startCreateTimestamp": start_timestamp,
+                "startIndex": start_index,
+                "count": page_size,
+                "order": "ASC",
+            }
+            data = self.rest_query(ENDPOINT_SERVICE, "getEndpoints", body, timeout=timeout)
+            page = data.get("endpoints", data if isinstance(data, list) else []) if data else []
+            endpoints.extend(page)
+            pages += 1
+            if len(page) < page_size or (max_pages is not None and pages >= max_pages):
+                return endpoints
+            start_index += len(page)
 
     def resolve_pubsub(self):
         """Return (peer_node, ws_url, secret) for the pubsub (WSS) service."""
@@ -104,7 +238,7 @@ class PxGridControl:
         if not svc:
             raise RuntimeError("pxGrid session service not available")
         props = svc.get("properties", {})
-        return _rest_base(props), props.get("sessionTopic")
+        return _rest_base(props), props.get("sessionTopicAll") or props.get("sessionTopic")
 
     def endpoint_topic(self):
         """Return (rest_base, topic) for the endpoint service."""

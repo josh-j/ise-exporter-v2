@@ -37,7 +37,14 @@ and `ise_exporter/config.py` for the authoritative list. Common knobs:
 | `PXGRID_HOST` / `PXGRID_NODE_NAME` | — | pxGrid controller + registered consumer name |
 | `PXGRID_CLIENT_CERT` / `PXGRID_CLIENT_KEY` / `PXGRID_CA_BUNDLE` | — | pxGrid mTLS material (key must be an unencrypted PEM) |
 
-pxGrid (model collector or streaming) needs the four `PXGRID_*` cert/host vars.
+pxGrid (model collector or streaming) needs `PXGRID_HOST`, `PXGRID_NODE_NAME`,
+`PXGRID_CLIENT_CERT`, and `PXGRID_CLIENT_KEY`. `PXGRID_CA_BUNDLE` is strongly
+recommended so the exporter validates the ISE server certificate.
+On first use, the exporter calls pxGrid `AccountActivate`; if ISE returns
+`PENDING` or `DISABLED`, approve/enable the `PXGRID_NODE_NAME` account in ISE and
+restart or wait for the next retry. Endpoint model collection uses pxGrid
+`getEndpoints` with a timestamp filter and paging, so it can download more than
+one page of endpoints.
 If `COLLECT_PXGRID_STREAM=true` but the pxGrid creds are incomplete, the exporter
 falls back to polling sessions/endpoints rather than dropping them.
 
@@ -47,6 +54,8 @@ falls back to polling sessions/endpoints rather than dropping them.
 
     pip install -e .
     cp .env.example .env         # edit
+    ise-exporter --pxgrid-check   # optional: validate pxGrid account/services/probes
+    ise-exporter --pxgrid-check-stream  # optional: also validate WSS/STOMP streaming
     ise-exporter
     # metrics at http://localhost:9618/metrics
 
