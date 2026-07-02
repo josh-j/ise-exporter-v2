@@ -5,6 +5,7 @@ model collector (collectors/models.py -> getEndpoints) and the streamer
 
 Pure transport — imports nothing from metrics."""
 import logging
+import os
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -20,6 +21,17 @@ ENDPOINT_PAGE_SIZE = 1000
 def _rest_base(props):
     """Endpoint/ANC docs spell it restBaseUrl; session docs restBaseURL — read both."""
     return props.get("restBaseUrl") or props.get("restBaseURL")
+
+
+def _check_path(path, label):
+    """Surface a bad cert/key/CA path at startup instead of as a wrapped
+    'Connection aborted' / 'invalid path' error the first time it's used."""
+    if not path:
+        return
+    if not os.path.isfile(path):
+        logger.error("pxGrid %s not found: %s — pxGrid calls will fail until this exists", label, path)
+    elif not os.access(path, os.R_OK):
+        logger.error("pxGrid %s not readable (permission denied) by this process: %s", label, path)
 
 
 class PxGridControl:
@@ -40,6 +52,9 @@ class PxGridControl:
         logger.info("pxGrid control: host=%s port=%s node_name=%s cert=%s key=%s",
                     self.host, cfg.pxgrid_port, self.node_name,
                     cfg.pxgrid_client_cert, cfg.pxgrid_client_key)
+        _check_path(cfg.pxgrid_client_cert, "client cert")
+        _check_path(cfg.pxgrid_client_key, "client key")
+        _check_path(cfg.pxgrid_ca_bundle, "CA bundle")
         if cfg.pxgrid_ca_bundle:
             logger.info("pxGrid TLS verify ON (ca=%s)", cfg.pxgrid_ca_bundle)
         else:

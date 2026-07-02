@@ -1,13 +1,46 @@
 """Single source of truth for runtime config. Replaces the ~40 scattered
 module-level os.getenv() constants with one immutable object loaded once."""
 from __future__ import annotations
+import logging
 import os
 from dataclasses import dataclass
 
+logger = logging.getLogger(__name__)
 
-def _b(v, d): return os.getenv(v, str(d)).lower() == "true"
-def _i(v, d): return int(os.getenv(v, str(d)))
-def _s(v, d=""): return os.getenv(v, d)
+
+def _s(v, d=""):
+    # strip() guards against a trailing \r (CRLF env files) or stray whitespace —
+    # both parse "successfully" into a wrong value with no error anywhere.
+    raw = os.getenv(v)
+    return raw.strip() if raw is not None else d
+
+
+def _i(v, d):
+    raw = _s(v, None)
+    if not raw:
+        return d
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("%s=%r is not a valid integer — defaulting to %s", v, raw, d)
+        return d
+
+
+def _b(v, d):
+    raw = _s(v, None)
+    if raw is None:
+        return d
+    low = raw.lower()
+    if low == "true":
+        return True
+    if low == "false":
+        return False
+    # this is exactly the class of bug that cost real debugging time: COLLECT_PXGRID_STREAM=1
+    # or ="true" (literal quotes some EnvironmentFile parsers don't strip) reads as
+    # neither true nor false and previously just became False with zero indication why.
+    logger.warning('%s=%r is not "true" or "false" — defaulting to %s '
+                   "(stray quotes, or a value like 1/yes instead of true?)", v, raw, d)
+    return d
 
 
 @dataclass(frozen=True)
@@ -52,6 +85,19 @@ class Config:
     def pxgrid_ready(self) -> bool:
         return bool(self.pxgrid_host and self.pxgrid_node_name
                     and self.pxgrid_client_cert and self.pxgrid_client_key)
+
+    def summary(self) -> str:
+        """Secret-redacted one-liner of the toggles/paths that most commonly cause
+        silent misconfiguration. Log this once at startup — ise_pass is excluded."""
+        return (f"collect_pxgrid_stream={self.collect_pxgrid_stream} "
+                f"collect_pxgrid_endpoints={self.collect_pxgrid_endpoints} "
+                f"pxgrid_ready={self.pxgrid_ready} pxgrid_host={self.pxgrid_host!r} "
+                f"pxgrid_node_name={self.pxgrid_node_name!r} "
+                f"pxgrid_client_cert={self.pxgrid_client_cert!r} "
+                f"pxgrid_client_key={self.pxgrid_client_key!r} "
+                f"pxgrid_ca_bundle={self.pxgrid_ca_bundle!r} "
+                f"ise_host={self.ise_host!r} ise_mnt_host={self.ise_mnt_host!r} "
+                f"ise_user={self.ise_user!r}")
 
     @classmethod
     def from_env(cls) -> "Config":

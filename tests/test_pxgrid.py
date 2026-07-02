@@ -1,3 +1,4 @@
+import logging
 import types
 
 import pytest
@@ -210,3 +211,45 @@ def test_session_topic_prefers_session_topic_all_when_available():
         "https://ise:8910/pxgrid/ise/session",
         "/topic/com.cisco.ise.session.all",
     )
+
+
+def test_init_logs_error_for_missing_cert_paths(tmp_path, caplog):
+    missing_cert = str(tmp_path / "does-not-exist-client.cer")
+    cfg = types.SimpleNamespace(
+        pxgrid_host="px.example", pxgrid_port=8910, pxgrid_node_name="ise-exporter",
+        pxgrid_client_cert=missing_cert, pxgrid_client_key="/key.pem",
+        pxgrid_ca_bundle="/ca.pem",
+    )
+    with caplog.at_level(logging.ERROR):
+        PxGridControl(cfg)
+    assert any(missing_cert in r.message for r in caplog.records)
+    assert any("not found" in r.message for r in caplog.records)
+
+
+def test_init_logs_error_for_unreadable_cert(tmp_path, caplog):
+    unreadable = tmp_path / "client.cer"
+    unreadable.write_text("cert")
+    unreadable.chmod(0o000)
+    try:
+        cfg = types.SimpleNamespace(
+            pxgrid_host="px.example", pxgrid_port=8910, pxgrid_node_name="ise-exporter",
+            pxgrid_client_cert=str(unreadable), pxgrid_client_key="/key.pem",
+            pxgrid_ca_bundle="/ca.pem",
+        )
+        with caplog.at_level(logging.ERROR):
+            PxGridControl(cfg)
+        assert any("not readable" in r.message for r in caplog.records)
+    finally:
+        unreadable.chmod(0o644)
+
+
+def test_init_is_quiet_when_cert_paths_are_valid(tmp_path, caplog):
+    cert = tmp_path / "client.cer"
+    cert.write_text("cert")
+    cfg = types.SimpleNamespace(
+        pxgrid_host="px.example", pxgrid_port=8910, pxgrid_node_name="ise-exporter",
+        pxgrid_client_cert=str(cert), pxgrid_client_key=str(cert), pxgrid_ca_bundle="",
+    )
+    with caplog.at_level(logging.ERROR):
+        PxGridControl(cfg)
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records)

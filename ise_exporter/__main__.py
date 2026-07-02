@@ -83,6 +83,7 @@ def main(argv=None):
     load_dotenv()
     cfg = Config.from_env()
     logging.getLogger().setLevel(cfg.log_level)
+    logger.info("config: %s", cfg.summary())
 
     if args.pxgrid_check or args.pxgrid_check_stream:
         return pxgrid_check(cfg, check_stream=args.pxgrid_check_stream or cfg.collect_pxgrid_stream)

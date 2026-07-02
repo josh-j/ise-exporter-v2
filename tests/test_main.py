@@ -16,7 +16,9 @@ def _cfg(**overrides):
         collect_pxgrid_stream=False,
     )
     base.update(overrides)
-    return types.SimpleNamespace(**base)
+    ns = types.SimpleNamespace(**base)
+    ns.summary = lambda: "test-config"
+    return ns
 
 
 def _fake_pxgrid_control(calls):
