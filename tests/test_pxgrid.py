@@ -4,7 +4,8 @@ import types
 import pytest
 import requests
 
-from ise_exporter.clients.pxgrid import ENDPOINT_BULK_START, ENDPOINT_SERVICE, PxGridControl
+from ise_exporter.clients.pxgrid import (ENDPOINT_BULK_START, ENDPOINT_SERVICE,
+                                         PROFILER_SERVICE, PxGridControl)
 
 
 class _Resp:
@@ -157,8 +158,10 @@ def test_get_endpoints_uses_required_timestamp_and_pages():
         "00:00:00:00:00:03",
     ]
     assert bodies == [
-        {"startCreateTimestamp": ENDPOINT_BULK_START, "startIndex": 0, "count": 2, "order": "ASC"},
-        {"startCreateTimestamp": ENDPOINT_BULK_START, "startIndex": 2, "count": 2, "order": "ASC"},
+        {"startCreateTimestamp": ENDPOINT_BULK_START, "startUpdateTimestamp": ENDPOINT_BULK_START,
+         "startIndex": 0, "count": 2, "order": "ASC"},
+        {"startCreateTimestamp": ENDPOINT_BULK_START, "startUpdateTimestamp": ENDPOINT_BULK_START,
+         "startIndex": 2, "count": 2, "order": "ASC"},
     ]
 
 
@@ -187,6 +190,54 @@ def test_get_endpoints_can_limit_pages_for_probe():
         {"macAddress": "00:00:00:00:00:01"}
     ]
     assert len(bodies) == 1
+
+
+def test_get_profiler_profiles_queries_profiler_service():
+    def handler(op, body, auth):
+        if op == "AccountActivate":
+            return {"accountState": "ENABLED"}
+        if op == "ServiceLookup":
+            assert body == {"name": PROFILER_SERVICE}
+            return {"services": [{
+                "nodeName": "ise-node",
+                "properties": {"restBaseUrl": "https://ise:8910/pxgrid/ise/config/profiler"},
+            }]}
+        if op == "AccessSecret":
+            return {"secret": "secret"}
+        if op == "getProfiles":
+            assert body == {}
+            return {"profiles": [{"id": "1", "name": "Apple-iPhone",
+                                  "fullName": "Apple-Device:Apple-iPhone"}]}
+        raise AssertionError(op)
+
+    control = PxGridControl(_cfg())
+    control.session = _Session(handler)
+
+    profiles = control.get_profiler_profiles()
+
+    assert profiles == [{"id": "1", "name": "Apple-iPhone",
+                         "fullName": "Apple-Device:Apple-iPhone"}]
+
+
+def test_get_profiler_profiles_returns_empty_list_when_no_profiles_key():
+    def handler(op, body, auth):
+        if op == "AccountActivate":
+            return {"accountState": "ENABLED"}
+        if op == "ServiceLookup":
+            return {"services": [{
+                "nodeName": "ise-node",
+                "properties": {"restBaseUrl": "https://ise:8910/pxgrid/ise/config/profiler"},
+            }]}
+        if op == "AccessSecret":
+            return {"secret": "secret"}
+        if op == "getProfiles":
+            return {}
+        raise AssertionError(op)
+
+    control = PxGridControl(_cfg())
+    control.session = _Session(handler)
+
+    assert control.get_profiler_profiles() == []
 
 
 def test_session_topic_prefers_session_topic_all_when_available():

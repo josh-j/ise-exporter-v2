@@ -76,6 +76,7 @@ class Config:
     pxgrid_ca_bundle: str = ""
     pxgrid_min_count: int = 1
     pxgrid_query_timeout: int = 120
+    profiler_hierarchy_ttl: int = 3600
     project_interval: int = 30
     resync_interval: int = 3600
     watchdog_timeout: int = 90
@@ -127,6 +128,7 @@ class Config:
             pxgrid_ca_bundle=_s("PXGRID_CA_BUNDLE"),
             pxgrid_min_count=_i("PXGRID_MIN_COUNT", 1),
             pxgrid_query_timeout=_i("PXGRID_QUERY_TIMEOUT", 120),
+            profiler_hierarchy_ttl=_i("PXGRID_PROFILER_HIERARCHY_TTL", 3600),
             project_interval=_i("PXGRID_PROJECT_INTERVAL", 30),
             resync_interval=_i("PXGRID_RESYNC_INTERVAL", 3600),
             watchdog_timeout=_i("PXGRID_WATCHDOG_TIMEOUT", 90),

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 SESSION_SERVICE = "com.cisco.ise.session"
 ENDPOINT_SERVICE = "com.cisco.ise.endpoint"
 PUBSUB_SERVICE = "com.cisco.ise.pubsub"
+PROFILER_SERVICE = "com.cisco.ise.config.profiler"
 ENDPOINT_BULK_START = "1970-01-01T00:00:00.000Z"
 ENDPOINT_PAGE_SIZE = 1000
 
@@ -216,7 +217,12 @@ class PxGridControl:
     def get_endpoints(self, *, start_timestamp=ENDPOINT_BULK_START,
                       page_size=ENDPOINT_PAGE_SIZE, max_pages=None, timeout=120):
         """Fetch all pxGrid endpoints using the documented mandatory timestamp
-        filter and startIndex/count paging.
+        filter and startIndex/count paging. Sends BOTH startCreateTimestamp and
+        startUpdateTimestamp (Cisco's own request example does the same) rather
+        than create-time alone — older/bulk-imported endpoints in a large
+        deployment can have a blank createTimestamp, which silently excludes
+        them from a create-time-only filter despite being real, visible
+        endpoints in ISE's own Context Visibility.
         """
         endpoints = []
         start_index = 0
@@ -224,6 +230,7 @@ class PxGridControl:
         while True:
             body = {
                 "startCreateTimestamp": start_timestamp,
+                "startUpdateTimestamp": start_timestamp,
                 "startIndex": start_index,
                 "count": page_size,
                 "order": "ASC",
@@ -235,6 +242,15 @@ class PxGridControl:
             if len(page) < page_size or (max_pages is not None and pages >= max_pages):
                 return endpoints
             start_index += len(page)
+
+    def get_profiler_profiles(self, timeout=120):
+        """Catalog of profiling policies (id/name/hierarchy) via the profiler
+        config service — metadata about the POLICY TREE, not endpoint counts.
+        fullName is a colon-joined ancestry path (e.g. 'Apple-Device:Apple-iPhone');
+        collectors/models.py cross-references this by name against getEndpoints'
+        endPointPolicy to attach category/parent to per-profile endpoint counts."""
+        data = self.rest_query(PROFILER_SERVICE, "getProfiles", {}, timeout=timeout)
+        return (data or {}).get("profiles", [])
 
     def resolve_pubsub(self):
         """Return (peer_node, ws_url, secret) for the pubsub (WSS) service."""

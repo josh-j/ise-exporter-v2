@@ -36,6 +36,7 @@ and `ise_exporter/config.py` for the authoritative list. Common knobs:
 | `COLLECT_PXGRID_STREAM` | `false` | replace sessions+endpoints polling with pxGrid topics |
 | `PXGRID_HOST` / `PXGRID_NODE_NAME` | — | pxGrid controller + registered consumer name |
 | `PXGRID_CLIENT_CERT` / `PXGRID_CLIENT_KEY` / `PXGRID_CA_BUNDLE` | — | pxGrid mTLS material (key must be an unencrypted PEM) |
+| `PXGRID_PROFILER_HIERARCHY_TTL` | `3600` | how often to re-fetch the profiler category/parent catalog (seconds) |
 
 pxGrid (model collector or streaming) needs `PXGRID_HOST`, `PXGRID_NODE_NAME`,
 `PXGRID_CLIENT_CERT`, and `PXGRID_CLIENT_KEY`. `PXGRID_CA_BUNDLE` is strongly
@@ -47,6 +48,16 @@ restart or wait for the next retry. Endpoint model collection uses pxGrid
 one page of endpoints.
 If `COLLECT_PXGRID_STREAM=true` but the pxGrid creds are incomplete, the exporter
 falls back to polling sessions/endpoints rather than dropping them.
+
+Endpoint model collection also joins ISE's profiler *policy catalog* (category/
+parent hierarchy from Policy > Profiling, via the `com.cisco.ise.config.profiler`
+pxGrid service's `getProfiles`) onto the per-profile endpoint counts, emitting
+`ise_endpoints_by_profile_all{category,parent,profile}` — see
+`dashboards/ise-endpoint-profiles.json`. The catalog is cached and re-fetched at
+most every `PXGRID_PROFILER_HIERARCHY_TTL` seconds (default `3600`) since it
+rarely changes; a failed fetch (e.g. a pxGrid Group not scoped to that service)
+just falls back to `category="unknown"` rather than breaking the per-profile
+counts themselves.
 
 ## pxGrid setup (ISE side)
 
@@ -97,10 +108,14 @@ Services > Certificates* (exact menu path varies slightly by ISE 3.x patch):
 Client Management > Clients*, find the row matching `PXGRID_NODE_NAME`
 (status **Pending**), select it, click **Approve**. If your ISE version
 exposes pxGrid Group-based authorization, consider scoping this client to
-read-only session/endpoint/pubsub services rather than the default
-unrestricted access — the exporter's code only ever reads, but an approved
-pxGrid credential is capable of whatever services your deployment publishes
-(ANC, TrustSec, etc.) unless explicitly scoped down.
+read-only session/endpoint/pubsub/profiler-config services rather than the
+default unrestricted access — the exporter's code only ever reads, but an
+approved pxGrid credential is capable of whatever services your deployment
+publishes (ANC, TrustSec, etc.) unless explicitly scoped down. The profiler
+category/parent hierarchy (`ise_endpoints_by_profile_all`, see "Endpoint
+model collection" above) needs `com.cisco.ise.config.profiler` specifically —
+if that service is excluded from the group, its data just falls back to
+`category="unknown"` rather than failing the whole client.
 
 **5. Network reachability.** pxGrid 2.0 uses TCP/8910 for both the REST
 control plane and the WSS pubsub subscription (streaming mode). In a

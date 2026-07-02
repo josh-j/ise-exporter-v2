@@ -2,8 +2,18 @@
 MFC attributes (hardware model / manufacturer / endpoint type / OS / policy). No
 per-endpoint fan-out. Manufacturer falls back model->oui->unknown so OUI lifts
 coverage where MFC manufacturer is blank; unclassified buckets to 'unknown' so
-gaps stay visible. Also emits MFC coverage fractions per attribute."""
+gaps stay visible. Also emits MFC coverage fractions per attribute.
+
+Also joins the ISE-wide profiler POLICY CATALOG (pxGrid getProfiles — the
+category/parent hierarchy shown in Policy > Profiling, not endpoint counts)
+onto the by-policy counts above, so ise_endpoints_by_profile_all carries
+category/parent labels alongside the flat policy name. The catalog changes
+rarely, so it's cached at module scope and refreshed at most every
+profiler_hierarchy_ttl seconds regardless of how often emit_endpoint_metrics
+runs (every 30s in stream mode) — a failed refresh doesn't retry every call
+either, it just leaves 'unknown' category/parent until the next TTL window."""
 import logging
+import time
 from collections import defaultdict
 
 from .. import metrics
@@ -18,6 +28,11 @@ _OS_KEYS = ("mfcInfoOperatingSystem", "MFCInfoOperatingSystem")
 _POLICY_KEYS = ("endPointPolicy", "EndPointPolicy", "MFCInfoEndpointPolicy")
 _OUI_KEYS = ("oui", "OUI")
 
+# leaf policy name -> (category, parent); empty until the first successful fetch
+_hierarchy = {}
+_hierarchy_fetched_at = 0.0   # last SUCCESSFUL refresh — drives the age gauge
+_hierarchy_checked_at = 0.0   # last attempt (success or failure) — TTL-gates retries
+
 
 def collect(pxgrid, cfg):
     try:
@@ -27,12 +42,56 @@ def collect(pxgrid, cfg):
         return
     if not endpoints:
         return
-    emit_endpoint_metrics(endpoints)
+    emit_endpoint_metrics(endpoints, pxgrid=pxgrid, hierarchy_ttl=cfg.profiler_hierarchy_ttl)
 
 
-def emit_endpoint_metrics(endpoints):
+def _parse_profile_hierarchy(profiles):
+    """getProfiles returns the policy catalog as a flat list with a colon-joined
+    ancestry path, e.g. name='Apple-iPhone', fullName='Apple-Device:Apple-iDevice:
+    Apple-iPhone'. category is the hierarchy root; parent the immediate ancestor;
+    both are absent (empty) for a top-level policy that has no parent."""
+    table = {}
+    for p in profiles:
+        name = first_nonempty(p, "name", "Name")
+        full = first_nonempty(p, "fullName", "fqname", "FullName", "FQName") or name
+        if not name:
+            continue
+        parts = [seg for seg in full.split(":") if seg]
+        category = parts[0] if parts else name
+        parent = parts[-2] if len(parts) > 1 else ""
+        table[name] = (category, parent)
+    return table
+
+
+def _refresh_hierarchy(pxgrid, ttl):
+    global _hierarchy, _hierarchy_fetched_at, _hierarchy_checked_at
+    if (time.time() - _hierarchy_checked_at) < ttl:
+        return
+    _hierarchy_checked_at = time.time()
+    try:
+        profiles = pxgrid.get_profiler_profiles()
+    except Exception as e:
+        logger.warning("pxGrid getProfiles (profiler hierarchy) failed: %s", e)
+        return
+    if not profiles:
+        return
+    _hierarchy = _parse_profile_hierarchy(profiles)
+    _hierarchy_fetched_at = time.time()
+    metrics.ise_profiler_policies_total.set(len(_hierarchy))
+    logger.info("profiler hierarchy refreshed: %d policies", len(_hierarchy))
+
+
+def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
     """Aggregate a list of pxGrid endpoint attribute maps onto the model gauges.
-    Shared by the poll collector (collect) and the stream projector."""
+    Shared by the poll collector (collect) and the stream projector. Pass
+    pxgrid to also join the profiler category/parent hierarchy (TTL-gated —
+    safe to call every projection tick); omit it to skip that join entirely
+    (e.g. tests that don't care about the hierarchy)."""
+    if pxgrid is not None:
+        _refresh_hierarchy(pxgrid, hierarchy_ttl)
+    if _hierarchy_fetched_at:
+        metrics.ise_profiler_hierarchy_age_seconds.set(time.time() - _hierarchy_fetched_at)
+
     by_model = defaultdict(int)
     by_mfg = defaultdict(int)
     by_type = defaultdict(int)
@@ -69,7 +128,8 @@ def emit_endpoint_metrics(endpoints):
 
     for metric in (metrics.ise_endpoints_by_hardware_model, metrics.ise_endpoints_by_manufacturer,
                    metrics.ise_endpoints_by_endpoint_type, metrics.ise_endpoints_by_os,
-                   metrics.ise_endpoints_by_policy, metrics.ise_endpoint_mfc_coverage):
+                   metrics.ise_endpoints_by_policy, metrics.ise_endpoint_mfc_coverage,
+                   metrics.ise_endpoints_by_profile_all):
         clear_metric(metric)
 
     for model, n in by_model.items():
@@ -82,6 +142,9 @@ def emit_endpoint_metrics(endpoints):
         metrics.ise_endpoints_by_os.labels(os=os_).set(n)
     for policy, n in by_policy.items():
         metrics.ise_endpoints_by_policy.labels(policy=policy).set(n)
+        category, parent = _hierarchy.get(policy, ("unknown", ""))
+        metrics.ise_endpoints_by_profile_all.labels(
+            category=category, parent=parent, profile=policy).set(n)
 
     metrics.ise_endpoints_pxgrid_total.set(total)
     for attr, hit in coverage.items():

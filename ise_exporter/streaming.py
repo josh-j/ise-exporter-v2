@@ -7,8 +7,11 @@ its authz context, and metric cost is bounded by state size, not event rate.
 Lifecycle (connect -> subscribe+buffer -> snapshot -> drain[newer wins] -> live):
 events arriving during the snapshot window are buffered and replayed AFTER the
 snapshot lands, so a DISCONNECT that races a stale ACTIVE snapshot correctly wins.
-Four threads: supervisor (connect/bootstrap/reconnect-with-backoff), receive loop,
-projector, maintenance (watchdog + hourly forced resync).
+Four persistent threads: supervisor (connect/bootstrap/reconnect-with-backoff),
+receive loop, projector, maintenance (watchdog + hourly forced resync). A fifth,
+transient heartbeat-keeper thread runs only for the duration of each bootstrap
+(see _bootstrap/_heartbeat_keeper) so a slow snapshot doesn't starve the STOMP
+heart-beat we promised in CONNECT.
 
 Feeds: sessions + authz(passed) + endpoint models. Does NOT feed failed-auth /
 policy-set / matched-rule — those have no home on the session topic, so the poll
@@ -91,6 +94,7 @@ class PxGridStreamer:
         self.sessions = {}           # key -> session attr dict
         self.endpoints = {}          # key -> endpoint attr dict
         self.lock = threading.RLock()
+        self.ws_lock = threading.Lock()  # serializes writes to self.ws across threads
         self.buffer = []             # events captured during bootstrap
         self.syncing = False
         self.connected = False
@@ -139,14 +143,37 @@ class PxGridStreamer:
             self.endpoints[key] = e
 
     # ---- bootstrap: snapshot then drain (newer wins) ---------------------
+    def _heartbeat_keeper(self, stop):
+        """getSessions/getEndpoints are plain REST calls (their own HTTPS
+        connection, not the WSS pubsub socket) but they block whichever thread
+        calls _bootstrap — including _recv_loop's, for gap/scheduled resyncs —
+        for as long as they take. A large deployment (tens of thousands of
+        sessions) can make that longer than the heart-beat interval we promised
+        in the STOMP CONNECT frame, so keep sending from a side thread for the
+        duration; otherwise ISE's broker sees a silent client mid-bootstrap and
+        kills the connection right as the (perfectly good) snapshot lands."""
+        while not stop.wait(_HEARTBEAT_SECS):
+            try:
+                self._send("\n")
+            except Exception:
+                return
+
     def _bootstrap(self, reason):
         with self.lock:
             self.syncing = True
             self.buffer.clear()      # events can only arrive after the in-bootstrap subscribe
 
-        # snapshots run WITHOUT the lock held, so racing events land in the buffer
-        snap_sessions = self._snapshot_sessions()
-        snap_endpoints = self._snapshot_endpoints()
+        # snapshots run WITHOUT the lock held, so racing events land in the buffer.
+        # Keep the STOMP heart-beat alive for their (possibly long) duration.
+        hb_stop = threading.Event()
+        hb_thread = threading.Thread(target=self._heartbeat_keeper, args=(hb_stop,), daemon=True)
+        hb_thread.start()
+        try:
+            snap_sessions = self._snapshot_sessions()
+            snap_endpoints = self._snapshot_endpoints()
+        finally:
+            hb_stop.set()
+            hb_thread.join(timeout=2)
 
         with self.lock:
             self.sessions = {_session_key(s): s for s in snap_sessions
@@ -160,6 +187,11 @@ class PxGridStreamer:
         metrics.ise_pxgrid_resync_total.labels(reason=reason).inc()
         logger.info("pxGrid bootstrap(%s): %d sessions, %d endpoints",
                     reason, len(self.sessions), len(self.endpoints))
+        if snap_sessions and not snap_endpoints:
+            logger.warning("pxGrid bootstrap: got %d sessions but 0 endpoints — check the pxGrid "
+                           "Group scope includes com.cisco.ise.endpoint, and that ISE's endpoint "
+                           "database actually has entries (Context Visibility > Endpoints)",
+                           len(snap_sessions))
 
     def _snapshot(self, service, method, key):
         try:
@@ -237,8 +269,10 @@ class PxGridStreamer:
             metrics.ise_authz_unique_endpoints_by_profile.labels(
                 authz_profile=prof, nad_hostname=host, location=loc, ops_owner=owner).set(len(macs))
 
-        # always emit (it clears first) so model series don't go stale when state empties
-        models.emit_endpoint_metrics(endpoints)
+        # always emit (it clears first) so model series don't go stale when state empties.
+        # pxgrid is passed so the profiler category/parent hierarchy stays joined in
+        # stream mode too — the refresh itself is TTL-gated, safe to call every tick.
+        models.emit_endpoint_metrics(endpoints, pxgrid=self.ctl, hierarchy_ttl=self.cfg.profiler_hierarchy_ttl)
         metrics.ise_pxgrid_last_event_timestamp.set(self.last_event)
 
     # ---- transport (minimal STOMP/WSS — swappable) -----------------------
@@ -299,12 +333,16 @@ class PxGridStreamer:
         return topics
 
     def _send(self, frame):
-        if self.ws:
-            payload = frame.encode("utf-8") if isinstance(frame, str) else frame
-            if hasattr(self.ws, "send_binary"):
-                self.ws.send_binary(payload)
-            else:
-                self.ws.send(payload, opcode=0x2)
+        # locked: _bootstrap's heartbeat keeper (a side thread) and _recv_loop's own
+        # heartbeat can both be sending around a scheduled/gap-triggered resync —
+        # the underlying socket write isn't safe to call concurrently from two threads.
+        with self.ws_lock:
+            if self.ws:
+                payload = frame.encode("utf-8") if isinstance(frame, str) else frame
+                if hasattr(self.ws, "send_binary"):
+                    self.ws.send_binary(payload)
+                else:
+                    self.ws.send(payload, opcode=0x2)
 
     def _await_connected(self):
         """Wait for the STOMP CONNECTED frame before subscribing."""

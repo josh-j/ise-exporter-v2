@@ -2,19 +2,22 @@
 win over a stale ACTIVE snapshot after the buffer is drained. The disconnect is
 fired from inside the fake getSessions (while syncing=True) so it lands in the
 buffer; after _bootstrap drains, the disconnected session must be gone."""
+import logging
 import ssl
 import threading
+import time
 import types
 
 import pytest
 
+import ise_exporter.streaming as streaming
 from ise_exporter.streaming import PxGridStreamer, _classify_stream_error
 
 
 def _cfg():
     return types.SimpleNamespace(
         pxgrid_query_timeout=5, project_interval=30, resync_interval=3600,
-        watchdog_timeout=90, reconnect_max_backoff=60,
+        watchdog_timeout=90, reconnect_max_backoff=60, profiler_hierarchy_ttl=3600,
         pxgrid_client_cert="", pxgrid_client_key="", pxgrid_ca_bundle="",
     )
 
@@ -58,6 +61,65 @@ def test_drain_over_snapshot():
     assert "A2" not in streamer.sessions
     assert not streamer.syncing
     assert streamer.buffer == []
+
+
+def test_bootstrap_sends_heartbeats_during_slow_snapshot(monkeypatch):
+    """A large deployment's getSessions/getEndpoints can outlast the STOMP
+    heart-beat interval negotiated in CONNECT — if nothing keeps the socket
+    active during that blocking window, ISE's broker sees a silent client and
+    kills the connection right as the (perfectly good) snapshot lands."""
+    monkeypatch.setattr(streaming, "_HEARTBEAT_SECS", 0.02)
+
+    class SlowControl(FakeControl):
+        def rest_query(self, service, endpoint, body=None, timeout=120):
+            if endpoint == "getSessions":
+                time.sleep(0.08)
+                return {"sessions": []}
+            return {}
+
+        def get_endpoints(self, **kwargs):
+            return []
+
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        def send_binary(self, payload):
+            self.sent.append(payload)
+
+    ctl = SlowControl()
+    streamer = PxGridStreamer(ctl, {"hostname": {}, "location": {}, "ops_owner": {}},
+                              threading.Event())
+    ctl.streamer = streamer
+    streamer.ws = FakeWs()
+
+    streamer._bootstrap("test")
+
+    assert b"\n" in streamer.ws.sent
+
+
+def test_bootstrap_warns_when_sessions_present_but_endpoints_empty(caplog):
+    class Control:
+        def __init__(self):
+            self.cfg = _cfg()
+            self.host = "px"
+            self.node_name = "exporter"
+
+        def rest_query(self, service, endpoint, body=None, timeout=120):
+            if endpoint == "getSessions":
+                return {"sessions": [{"auditSessionId": "A1", "state": "STARTED"}]}
+            return {}
+
+        def get_endpoints(self, **kwargs):
+            return []
+
+    streamer = PxGridStreamer(Control(), {"hostname": {}, "location": {}, "ops_owner": {}},
+                              threading.Event())
+
+    with caplog.at_level(logging.WARNING):
+        streamer._bootstrap("test")
+
+    assert any("0 endpoints" in r.message for r in caplog.records)
 
 
 def _streamer():

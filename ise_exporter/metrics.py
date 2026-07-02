@@ -47,6 +47,11 @@ ise_endpoints_by_policy = Gauge("ise_endpoints_by_policy", "Endpoints per profil
 ise_endpoints_pxgrid_total = Gauge("ise_endpoints_pxgrid_total", "Endpoints returned by pxGrid getEndpoints")
 ise_endpoint_mfc_coverage = Gauge("ise_endpoint_mfc_coverage", "Fraction with non-empty MFC attribute", ["attribute"])
 
+# --- endpoint profiler hierarchy (policy catalog joined onto by-policy counts) ---
+ise_endpoints_by_profile_all = Gauge("ise_endpoints_by_profile_all", "Endpoints per profiling policy with category/parent hierarchy", ["category", "parent", "profile"])
+ise_profiler_policies_total = Gauge("ise_profiler_policies_total", "Profiling policies defined in ISE's profiler catalog (pxGrid getProfiles)")
+ise_profiler_hierarchy_age_seconds = Gauge("ise_profiler_hierarchy_age_seconds", "Seconds since the profiler policy hierarchy was last refreshed from pxGrid")
+
 # --- certs / license / backup / patch (slow tier) ---
 ise_certificate_expiry_days = Gauge("ise_certificate_expiry_days", "Days until cert expires", ["hostname", "cert_name", "cert_type", "usage"])
 ise_certificates_expiring_soon = Gauge("ise_certificates_expiring_soon", "Certs expiring within threshold", ["threshold_days"])
