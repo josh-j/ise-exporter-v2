@@ -1,0 +1,171 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" },
+    { "type": "panel", "id": "row", "name": "Row", "version": "" }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": false,
+  "schemaVersion": 39,
+  "tags": ["ise", "cisco", "endpoints", "devices"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "ISE Exporter / Endpoints & Devices",
+  "uid": "ise-endpoints-devices",
+  "version": 1,
+  "weekStart": "",
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "Endpoint Inventory", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
+    },
+    {
+      "id": 2, "type": "stat", "title": "Endpoints Total",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_total", "refId": "A" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" }
+    },
+    {
+      "id": 3, "type": "stat", "title": "pxGrid Endpoints (getEndpoints)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_pxgrid_total", "refId": "A" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Network Devices Total",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_total", "refId": "A" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 5, "type": "stat", "title": "Profiling Coverage (model)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_mfc_coverage{attribute=\"model\"}", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.85 }] } },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 6, "type": "bargauge", "title": "Top Manufacturers",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_manufacturer)", "legendFormat": "{{manufacturer}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 7, "type": "bargauge", "title": "Top Hardware Models",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_hardware_model)", "legendFormat": "{{model}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 8, "type": "bargauge", "title": "Endpoint Types",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_by_endpoint_type", "legendFormat": "{{endpoint_type}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 9, "type": "bargauge", "title": "Operating Systems (top 15)",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_os)", "legendFormat": "{{os}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 10, "type": "bargauge", "title": "Profiling Policy (top 15)",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_policy)", "legendFormat": "{{policy}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 11, "type": "bargauge", "title": "MFC Attribute Coverage",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_mfc_coverage", "legendFormat": "{{attribute}}", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.85 }] } },
+        "overrides": []
+      },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 12, "type": "row", "title": "Network Device Inventory", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }, "panels": []
+    },
+    {
+      "id": 13, "type": "bargauge", "title": "Devices by Location",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_location", "legendFormat": "{{location}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 14, "type": "bargauge", "title": "Devices by Ops Owner",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_ops_owner", "legendFormat": "{{ops_owner}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 15, "type": "bargauge", "title": "Devices by Type",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_type", "legendFormat": "{{device_type}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    }
+  ]
+}

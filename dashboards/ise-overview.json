@@ -1,0 +1,364 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" },
+    { "type": "panel", "id": "table", "name": "Table", "version": "" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "row", "name": "Row", "version": "" }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": false,
+  "schemaVersion": 39,
+  "tags": ["ise", "cisco", "overview"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "ISE Exporter / Overview",
+  "uid": "ise-overview",
+  "version": 1,
+  "weekStart": "",
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "Deployment Health", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
+    },
+    {
+      "id": 2, "type": "stat", "title": "ISE Up",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_up", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 3, "type": "stat", "title": "PAN HA Enabled",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_pan_ha_enabled", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "NO" }, "1": { "text": "YES" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Certificates Expired",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_certificate_expired", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 5, "type": "stat", "title": "Certs Expiring Soon",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_certificates_expiring_soon)", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 6, "type": "stat", "title": "Backup Age",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_backup_age_hours", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 24 }, { "color": "red", "value": 72 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 7, "type": "stat", "title": "Patch Level",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_patch_level", "refId": "A" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 8, "type": "bargauge", "title": "Nodes by Role",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_node_count", "legendFormat": "{{role}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 9, "type": "table", "title": "Deployment Status",
+      "gridPos": { "h": 8, "w": 10, "x": 6, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_deployment_status == 1", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true } } }
+      ]
+    },
+    {
+      "id": 10, "type": "table", "title": "ISE Info",
+      "gridPos": { "h": 8, "w": 4, "x": 16, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_info", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true } } }
+      ]
+    },
+    {
+      "id": 11, "type": "table", "title": "ISE Version",
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_version_info", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true } } }
+      ]
+    },
+    {
+      "id": 12, "type": "row", "title": "Scrape & Collector Health", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 }, "panels": []
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "Scrape Error Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_scrape_errors_total[5m])) by (collector, error_type)", "legendFormat": "{{collector}} / {{error_type}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 14, "type": "timeseries", "title": "API Error Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_api_errors_total[5m])) by (api, error_type, http_code)", "legendFormat": "{{api}} {{error_type}} {{http_code}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 15, "type": "timeseries", "title": "Scrape Duration (p95)",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_scrape_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 16, "type": "table", "title": "Collector Enabled",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_collector_enabled", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
+          "mappings": [{ "type": "value", "options": { "0": { "text": "disabled", "color": "red" }, "1": { "text": "enabled", "color": "green" } } }] },
+        "overrides": []
+      },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
+      ]
+    },
+    {
+      "id": 17, "type": "table", "title": "Consecutive Failures",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_consecutive_failures > 0", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "yellow", "value": null }, { "color": "red", "value": 5 }] } }, "overrides": [] },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
+      ]
+    },
+    {
+      "id": 18, "type": "row", "title": "Certificates, License & Backup", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 }, "panels": []
+    },
+    {
+      "id": 19, "type": "table", "title": "Certificate Expiry (days, soonest first)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sort(ise_certificate_expiry_days)", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 30 }, { "color": "green", "value": 90 }] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Days Left" }] }
+        ]
+      },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
+      ]
+    },
+    {
+      "id": 20, "type": "bargauge", "title": "License Consumption",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_license_consumption", "legendFormat": "{{tier}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 21, "type": "table", "title": "License Compliance",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_license_compliance", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
+          "mappings": [{ "type": "value", "options": { "0": { "text": "out of compliance", "color": "red" }, "1": { "text": "compliant", "color": "green" } } }] },
+        "overrides": []
+      },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
+      ]
+    },
+    {
+      "id": 22, "type": "row", "title": "Additional Signals", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 }, "panels": []
+    },
+    {
+      "id": 23, "type": "table", "title": "License Tiers Enabled",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_license_enabled", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
+          "mappings": [{ "type": "value", "options": { "0": { "text": "disabled", "color": "red" }, "1": { "text": "enabled", "color": "green" } } }] },
+        "overrides": []
+      },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
+      ]
+    },
+    {
+      "id": 24, "type": "table", "title": "Patch Installed",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_patch_installed == 1", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "Value": true } } }
+      ]
+    },
+    {
+      "id": 25, "type": "stat", "title": "Backup Configured",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_backup_configured", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "NO", "color": "red" }, "1": { "text": "YES", "color": "green" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 26, "type": "stat", "title": "Time Since Last Backup Success",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "time() - ise_backup_last_success_timestamp", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 86400 }, { "color": "red", "value": 604800 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 27, "type": "timeseries", "title": "API Request Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_api_requests_total[5m])) by (api, status)", "legendFormat": "{{api}} / {{status}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 28, "type": "bargauge", "title": "Collector Duration (last run)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_collector_duration_seconds", "legendFormat": "{{collector}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 29, "type": "table", "title": "Last Successful Scrape (seconds ago)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 56 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "time() - ise_last_successful_scrape_timestamp", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } }, "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 300 }, { "color": "red", "value": 3600 }] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Seconds Ago" }] }
+        ]
+      },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
+      ]
+    }
+  ]
+}
