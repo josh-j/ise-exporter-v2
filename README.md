@@ -14,7 +14,7 @@ Requires Python ≥ 3.10. Exposes Prometheus metrics on `:9618/metrics` by defau
 - `ise_exporter/scheduler.py` — poll engine (interval tiers, failure gating)
 - `ise_exporter/streaming.py` — pxGrid stream engine (subscribe→snapshot→drain→live)
 - `dashboards/` — Grafana JSON
-- `deploy/` — Dockerfile, docker-compose, systemd unit
+- `deploy/` — Dockerfile, docker-compose, systemd unit, `install.sh` (idempotent install/upgrade)
 
 ## Configure
 All configuration is environment variables. Start from the template:
@@ -47,6 +47,70 @@ restart or wait for the next retry. Endpoint model collection uses pxGrid
 one page of endpoints.
 If `COLLECT_PXGRID_STREAM=true` but the pxGrid creds are incomplete, the exporter
 falls back to polling sessions/endpoints rather than dropping them.
+
+## pxGrid setup (ISE side)
+
+Only needed if you want `COLLECT_PXGRID_ENDPOINTS` (default on) or
+`COLLECT_PXGRID_STREAM`. Skip this if you're running poll-only against ERS/MnT.
+
+**1. Enable the pxGrid persona.** *Administration > System > Deployment*, edit a
+node, check **pxGrid**, save. Cisco recommends a primary + secondary pxGrid
+node pair for HA in production, same as PAN HA. The session/endpoint topics
+also require the serving PSNs to have **Session Services** enabled (standard
+for any PSN already doing 802.1X/MAB).
+
+**2. pxGrid Settings.** *Administration/Work Centers > pxGrid Services > Settings*:
+- **Automatically approve new certificate-based accounts** — leave off unless
+  you want new clients auto-enabled with no admin approval step. This repo's
+  earlier troubleshooting assumed manual approval (`AccountActivate` returns
+  `PENDING` until an admin approves it — see step 4).
+- **Allow password based account creation** — leave off; this exporter is
+  certificate-authenticated only.
+
+**3. Generate the client certificate.** *Administration/Work Centers > pxGrid
+Services > Certificates* (exact menu path varies slightly by ISE 3.x patch):
+- "I want to": **Generate a single certificate (without a certificate signing
+  request)**
+- **Common Name (CN)**: match `PXGRID_NODE_NAME` exactly (e.g. `ise-exporter`)
+  — this is also the pxGrid node identity, not just the cert subject.
+- **Certificate Download Format**: PEM, key in PKCS8 PEM (include cert chain).
+- Set a certificate password, click **Create** — ISE emails/downloads a zip
+  with the client cert, the (password-protected) private key, and the CA
+  chain that signed both.
+- **Strip the key passphrase** — the exporter requires an unencrypted PEM key
+  (`requests`/`ssl` don't prompt for one):
+
+      openssl rsa -in client-protected.key -out client.key
+
+  If your org's PKI policy requires an external CA instead of ISE's internal
+  one: generate a CSR, get it signed externally, then import the resulting
+  cert *and* its CA chain into *Administration > System > Certificates >
+  Trusted Certificates* so ISE trusts it for mTLS.
+- Rename/place the three files to match your env vars, e.g.
+  `PXGRID_CLIENT_CERT=/etc/ise-exporter/certs/client.cer`,
+  `PXGRID_CLIENT_KEY=/etc/ise-exporter/certs/client.key`,
+  `PXGRID_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer` — see the systemd
+  section below for permissions.
+
+**4. Approve the client.** The exporter self-registers on first
+`AccountActivate` call. In *Administration/Work Centers > pxGrid Services >
+Client Management > Clients*, find the row matching `PXGRID_NODE_NAME`
+(status **Pending**), select it, click **Approve**. If your ISE version
+exposes pxGrid Group-based authorization, consider scoping this client to
+read-only session/endpoint/pubsub services rather than the default
+unrestricted access — the exporter's code only ever reads, but an approved
+pxGrid credential is capable of whatever services your deployment publishes
+(ANC, TrustSec, etc.) unless explicitly scoped down.
+
+**5. Network reachability.** pxGrid 2.0 uses TCP/8910 for both the REST
+control plane and the WSS pubsub subscription (streaming mode). In a
+multi-PSN deployment, `ServiceLookup` can hand back a *different* node than
+`PXGRID_HOST` for the pubsub service — make sure firewall rules cover every
+node that could serve `com.cisco.ise.pubsub`, not just the one in your config.
+
+**6. Verify from the exporter side** before enabling streaming in production:
+
+    ise-exporter --pxgrid-check-stream
 
 ## Run
 
@@ -86,6 +150,22 @@ since the exporter writes nothing to disk. Change `EXPORTER_PORT` in `.env`?
 Update the `ports:` mapping in `docker-compose.yml` to match.
 
 ### systemd
+
+**Automated (recommended):** `deploy/install.sh` does everything below —
+user, directories, venv, package (upgrade-in-place if already installed),
+config skeleton (seeded once, never overwritten), permissions, and the
+systemd unit. Safe to re-run for upgrades: pull the latest checkout and
+run it again.
+
+    git pull   # or clone fresh
+    sudo ./deploy/install.sh
+    # fresh install: edit /etc/ise-exporter/ise-exporter.env, drop pxGrid
+    # certs in /etc/ise-exporter/certs/, then: sudo systemctl restart ise-exporter
+    # upgrade: that's it — it restarts the service with the new version
+
+Or run it against a checkout elsewhere: `sudo ./deploy/install.sh /path/to/checkout`.
+
+**Manual**, for reference or if you need to customize a step:
 
     sudo useradd --system --no-create-home ise-exporter
     sudo install -d -o root -g ise-exporter -m 750 /opt/ise-exporter /etc/ise-exporter
