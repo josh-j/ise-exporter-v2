@@ -346,7 +346,11 @@ class PxGridStreamer:
         if not topics.get("endpoint"):
             logger.warning("pxGrid endpoint topic not available; endpoint models will come from "
                            "bulk getEndpoints snapshots only")
-        for topic in topics.values():
+        # log each destination exactly as sent — a rejected/typoed topic is otherwise
+        # invisible (STOMP SUBSCRIBE isn't acked; ISE just drops the connection). id and
+        # destination are always the same value, straight from ServiceLookup.
+        for name, topic in topics.items():
+            logger.info("pxGrid SUBSCRIBE %s topic -> %s", name, topic)
             self._send(f"SUBSCRIBE\nid:{topic}\ndestination:{topic}\n\n\x00")
         logger.info("pxGrid WSS connected, subscribed to %d topic(s): %s",
                     len(topics), list(topics.values()))

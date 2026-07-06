@@ -303,12 +303,18 @@ class PxGridControl:
         return peer, ws_url, secret
 
     def session_topic(self):
-        """Return (rest_base, topic) for the session directory."""
+        """Return (rest_base, topic) for the session directory. Defaults to the base
+        `sessionTopic` (universally available + authorized for any session-service
+        client); prefers `sessionTopicAll` only when PXGRID_SESSION_TOPIC_ALL=true,
+        since .all is 3.3p2/3.4+ and needs the client's group authorized for it."""
         svc = self.service_lookup(SESSION_SERVICE)
         if not svc:
             raise RuntimeError("pxGrid session service not available")
         props = svc.get("properties", {})
-        return _rest_base(props), props.get("sessionTopicAll") or props.get("sessionTopic")
+        base, all_topic = props.get("sessionTopic"), props.get("sessionTopicAll")
+        if getattr(self.cfg, "pxgrid_session_topic_all", False):
+            return _rest_base(props), all_topic or base
+        return _rest_base(props), base or all_topic
 
     def endpoint_topic(self):
         """Return (rest_base, topic) for the endpoint service."""

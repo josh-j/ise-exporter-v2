@@ -121,6 +121,30 @@ model collection" above) needs `com.cisco.ise.config.profiler` specifically —
 if that service is excluded from the group, its data just falls back to
 `category="unknown"` rather than failing the whole client.
 
+If you *do* scope the client to a custom group (say `exporter`), the
+least-privilege pxGrid **policy** it needs — REST `gets` on the query services
+plus pubsub `subscribe` on the topics streaming mode consumes — is:
+
+| Service | Operation | For |
+|---------|-----------|-----|
+| `com.cisco.ise.session` | `gets` | session snapshot (getSessions) + poll |
+| `com.cisco.ise.endpoint` | `gets` | endpoint snapshot (getEndpoints) |
+| `com.cisco.ise.config.profiler` | `gets` | profiler policy catalog (getProfiles) |
+| `com.cisco.ise.pubsub` | `subscribe /topic/com.cisco.ise.session` | live session events |
+| `com.cisco.ise.pubsub` | `subscribe /topic/com.cisco.ise.endpoint` | live endpoint events |
+
+A subscribe that the group isn't authorized for makes ISE **drop the WebSocket**
+right after CONNECT — which reads as a flapping/failing stream, not a clear
+"permission denied". The exporter logs `pxGrid SUBSCRIBE <name> topic -> <dest>`
+for each subscription so you can see exactly which destination ISE rejected.
+
+The exporter subscribes to the **base** `sessionTopic`
+(`/topic/com.cisco.ise.session`) by default — it's on every ISE and authorized
+for any session-service client. `sessionTopicAll` (`…​.session.all`) only exists
+on ISE 3.3 patch 2 / 3.4+ and needs the group authorized for that specific
+topic; set `PXGRID_SESSION_TOPIC_ALL=true` (and add the matching subscribe
+policy) only if you actually want it.
+
 **5. Network reachability.** pxGrid 2.0 uses TCP/8910 for both the REST
 control plane and the WSS pubsub subscription (streaming mode). In a
 multi-PSN deployment, `ServiceLookup` can hand back a *different* node than

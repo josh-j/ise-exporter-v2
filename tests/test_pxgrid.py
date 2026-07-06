@@ -322,24 +322,36 @@ def test_get_profiler_profiles_returns_empty_list_when_no_profiles_key():
     assert control.get_profiler_profiles() == []
 
 
-def test_session_topic_prefers_session_topic_all_when_available():
-    def handler(op, body, auth):
-        if op == "AccountActivate":
-            return {"accountState": "ENABLED"}
-        if op == "ServiceLookup":
-            return {"services": [{
-                "nodeName": "ise-node",
-                "properties": {
-                    "restBaseUrl": "https://ise:8910/pxgrid/ise/session",
-                    "sessionTopic": "/topic/com.cisco.ise.session",
-                    "sessionTopicAll": "/topic/com.cisco.ise.session.all",
-                },
-            }]}
-        raise AssertionError(op)
+def _both_session_topics_handler(op, body, auth):
+    if op == "AccountActivate":
+        return {"accountState": "ENABLED"}
+    if op == "ServiceLookup":
+        return {"services": [{
+            "nodeName": "ise-node",
+            "properties": {
+                "restBaseUrl": "https://ise:8910/pxgrid/ise/session",
+                "sessionTopic": "/topic/com.cisco.ise.session",
+                "sessionTopicAll": "/topic/com.cisco.ise.session.all",
+            },
+        }]}
+    raise AssertionError(op)
 
+
+def test_session_topic_defaults_to_base_topic():
+    # base topic is the compatible default even when sessionTopicAll is offered
     control = PxGridControl(_cfg())
-    control.session = _Session(handler)
+    control.session = _Session(_both_session_topics_handler)
+    assert control.session_topic() == (
+        "https://ise:8910/pxgrid/ise/session",
+        "/topic/com.cisco.ise.session",
+    )
 
+
+def test_session_topic_uses_all_when_configured():
+    cfg = _cfg()
+    cfg.pxgrid_session_topic_all = True
+    control = PxGridControl(cfg)
+    control.session = _Session(_both_session_topics_handler)
     assert control.session_topic() == (
         "https://ise:8910/pxgrid/ise/session",
         "/topic/com.cisco.ise.session.all",

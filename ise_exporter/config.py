@@ -76,6 +76,11 @@ class Config:
     pxgrid_ca_bundle: str = ""
     pxgrid_min_count: int = 1
     pxgrid_query_timeout: int = 120
+    # Prefer the base session topic (/topic/com.cisco.ise.session) by default — it's
+    # available on every ISE and authorized for any client granted the session service.
+    # sessionTopicAll (/…​.session.all) only exists on 3.3p2/3.4+ and needs the client's
+    # pxGrid group to be authorized for it; opt in with PXGRID_SESSION_TOPIC_ALL=true.
+    pxgrid_session_topic_all: bool = False
     profiler_hierarchy_ttl: int = 3600
     project_interval: int = 30
     resync_interval: int = 3600
@@ -128,6 +133,7 @@ class Config:
             pxgrid_ca_bundle=_s("PXGRID_CA_BUNDLE"),
             pxgrid_min_count=_i("PXGRID_MIN_COUNT", 1),
             pxgrid_query_timeout=_i("PXGRID_QUERY_TIMEOUT", 120),
+            pxgrid_session_topic_all=_b("PXGRID_SESSION_TOPIC_ALL", False),
             profiler_hierarchy_ttl=_i("PXGRID_PROFILER_HIERARCHY_TTL", 3600),
             project_interval=_i("PXGRID_PROJECT_INTERVAL", 30),
             resync_interval=_i("PXGRID_RESYNC_INTERVAL", 3600),
