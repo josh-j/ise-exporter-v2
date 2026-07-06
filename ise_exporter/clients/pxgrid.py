@@ -257,11 +257,14 @@ class PxGridControl:
         logger.warning(
             "pxGrid getEndpoints returned 0 endpoints for every timestamp filter. The "
             "endpoint service resolved but ISE published NO endpoints to pxGrid — an "
-            "ISE-side context-publishing issue, not a query error (sessions can still "
-            "stream fine). Verify: (1) the pxGrid client's approved group grants the "
-            "EndpointService (com.cisco.ise.endpoint); (2) ISE is publishing endpoint "
-            "context to pxGrid (Profiler / pxGrid settings) and endpoints are profiled. "
-            "All endpoint model/profile/coverage metrics stay empty until this is fixed.")
+            "ISE-side context-publishing issue, not a query error (sessions still stream "
+            "fine). Enable it in ISE at Administration > System > Profiling: turn on both "
+            "'Profiler Forwarder Persistence Queue' AND 'Custom Attribute for Profiling "
+            "Enforcement' — both are required before ISE publishes endpoints to pxGrid "
+            "(this drives BOTH getEndpoints and the /topic/com.cisco.ise.endpoint topic). "
+            "Also confirm the pxGrid client's group grants EndpointService "
+            "(com.cisco.ise.endpoint). Endpoint model/profile/coverage metrics stay empty "
+            "until this is fixed.")
         return []
 
     def _get_endpoints_paged(self, timestamp_filter, page_size, max_pages, timeout):

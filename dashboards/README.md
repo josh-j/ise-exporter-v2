@@ -91,15 +91,24 @@ IP is one of its registered `NetworkDeviceIPList` addresses.
 ## Endpoint dashboards show "No data"
 
 Both `ise-endpoint-profiles.json` and the endpoint (model/OS/manufacturer) panels
-on `ise-endpoints-devices.json` are driven by pxGrid `getEndpoints`. If they're
-empty while the **network-device** panels (ERS-sourced) still populate, the
-endpoint feed is returning **0 endpoints**. Check the "Endpoints Profiled
-(pxGrid)" stat — if it's 0, so is everything downstream. Fix on the ISE side:
-the pxGrid client's approved Group must include the **EndpointService**
-(`com.cisco.ise.endpoint`) and ISE must actually have endpoints in Context
-Visibility. Run `ise-exporter --pxgrid-check` — it prints `getEndpoints … endpoints=N`;
-`N=0` confirms it. (The profiler dashboard's `Category` variable now pins
-`allValue: .*`, so once endpoints flow the "All" selection can't get stuck empty.)
+on `ise-endpoints-devices.json` are driven by pxGrid `getEndpoints` + the endpoint
+topic. If they're empty while the **network-device** panels (ERS-sourced) and the
+profiler *catalog* still populate, the endpoint feed is returning **0 endpoints**.
+Check the "Endpoints Profiled (pxGrid)" stat — if it's 0, so is everything
+downstream. Run `ise-exporter --pxgrid-check` — it prints `getEndpoints … endpoints=N`;
+`N=0` confirms it.
+
+The usual cause is **ISE not publishing endpoints to pxGrid**, which gates *both*
+`getEndpoints` and the `/topic/com.cisco.ise.endpoint` subscription (so you'll see
+sessions/profiler working but endpoints not). Enable it at **Administration > System
+> Profiling**: turn on **Profiler Forwarder Persistence Queue** *and* **Custom
+Attribute for Profiling Enforcement** (both required; names vary slightly by patch).
+Also confirm the pxGrid client's group grants the **EndpointService**
+(`com.cisco.ise.endpoint`) and the pubsub `subscribe /topic/com.cisco.ise.endpoint`
+policy. The endpoint topic is change-driven (events only fire when a non-timestamp
+endpoint attribute changes), so the bulk baseline still comes from `getEndpoints`.
+(The profiler dashboard's `Category` variable pins `allValue: .*`, so once endpoints
+flow the "All" selection can't get stuck empty.)
 
 ## Endpoint profile hierarchy
 

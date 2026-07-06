@@ -348,8 +348,12 @@ class PxGridStreamer:
         if not session_topic:
             raise RuntimeError("pxGrid session topic not available; stream mode cannot run")
         if not topics.get("endpoint"):
-            logger.warning("pxGrid endpoint topic not available; endpoint models will come from "
-                           "bulk getEndpoints snapshots only")
+            logger.warning("pxGrid endpoint topic not advertised by ISE — live endpoint events "
+                           "won't stream (endpoint models fall back to bulk getEndpoints "
+                           "snapshots, which are likely empty too). ISE only publishes this "
+                           "topic when Administration > System > Profiling has BOTH 'Profiler "
+                           "Forwarder Persistence Queue' and 'Custom Attribute for Profiling "
+                           "Enforcement' enabled.")
         # log each destination exactly as sent — a rejected/typoed topic is otherwise
         # invisible (STOMP SUBSCRIBE isn't acked; ISE just drops the connection). id and
         # destination are always the same value, straight from ServiceLookup.
