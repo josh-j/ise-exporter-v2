@@ -47,15 +47,34 @@ echo "==> ensuring directories"
 install -d -o root -g "$SERVICE_USER" -m 750 "$INSTALL_DIR" "$CONFIG_DIR" "$CERTS_DIR"
 
 # --- venv + package (install or upgrade in place) ---------------------
-if [[ ! -d "$INSTALL_DIR/.venv" ]]; then
-    echo "==> creating venv at $INSTALL_DIR/.venv"
-    python3 -m venv "$INSTALL_DIR/.venv"
+VENV="$INSTALL_DIR/.venv"
+# Recreate a venv that's missing OR broken — one left from a different python3, a
+# partial earlier run, or whose interpreter no longer executes. A healthy venv is
+# reused for an in-place upgrade.
+if [[ -d "$VENV" ]] && ! "$VENV/bin/python" -c 'import sys' &>/dev/null; then
+    echo "==> existing venv at $VENV is broken/incompatible — recreating"
+    rm -rf "$VENV"
+fi
+if [[ ! -d "$VENV" ]]; then
+    echo "==> creating venv at $VENV"
+    python3 -m venv "$VENV"
+else
+    echo "==> reusing existing venv at $VENV"
 fi
 echo "==> installing/upgrading ise-exporter from $SOURCE_DIR"
-"$INSTALL_DIR/.venv/bin/pip" install -q --upgrade pip
-"$INSTALL_DIR/.venv/bin/pip" install -q --upgrade "$SOURCE_DIR"
-chown -R root:root "$INSTALL_DIR/.venv"
-INSTALLED_VERSION="$("$INSTALL_DIR/.venv/bin/python" -c \
+"$VENV/bin/pip" install -q --upgrade pip
+"$VENV/bin/pip" install -q --upgrade "$SOURCE_DIR"
+# Own the venv root:ise-exporter (NOT root:root): the service runs as
+# User/Group=ise-exporter and must READ+EXECUTE the interpreter, but not be able to
+# modify its own code (owner stays root, group gets no write). chmod g+rX forces
+# group traverse/read + execute regardless of the admin's umask — a restrictive
+# umask (027/077) otherwise leaves the venv group-inaccessible, and with root:root
+# ownership that locks the service user out and the unit fails at ExecStart. Applied
+# every run, so it also repairs a venv left mis-owned by an earlier version of this
+# script.
+chown -R root:"$SERVICE_USER" "$VENV"
+chmod -R g+rX "$VENV"
+INSTALLED_VERSION="$("$VENV/bin/python" -c \
     "import importlib.metadata as m; print(m.version('ise-exporter'))")"
 echo "==> installed ise-exporter $INSTALLED_VERSION"
 
