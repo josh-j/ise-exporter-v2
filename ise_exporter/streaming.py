@@ -48,11 +48,13 @@ _MDM_DIMS = (
     ("pin_locked", "mdmPinLocked"),
 )
 
-# STOMP heart-beat cadence. We both request and offer this interval in CONNECT and
-# send a client heartbeat on the same timer — a failed heartbeat send is our liveness
-# probe, so an idle-but-alive connection stays up instead of reconnecting every cycle.
+# Keepalive cadence. pxGrid pubsub keeps the link alive with WebSocket ping/pong
+# (Cisco documents a "60 seconds ping timeout"), NOT STOMP heart-beats: ISE's STOMP
+# decoder parses a bare-newline heart-beat as a frame with an empty command and closes
+# the socket with `Unknown command:` (code 1011). So we negotiate heart-beat:0,0 in
+# CONNECT and send a WS ping on this timer instead — a failed ping is our liveness probe
+# (an idle-but-alive link just gets ponged), and ISE's pong refreshes last_recv.
 _HEARTBEAT_SECS = 10
-_HEARTBEAT_MS = _HEARTBEAT_SECS * 1000
 
 # cadence for the periodic "still healthy" heartbeat log — deliberately coarser than
 # watchdog_timeout so a healthy stream doesn't spam journalctl every 30s.
@@ -159,13 +161,13 @@ class PxGridStreamer:
         connection, not the WSS pubsub socket) but they block whichever thread
         calls _bootstrap — including _recv_loop's, for gap/scheduled resyncs —
         for as long as they take. A large deployment (tens of thousands of
-        sessions) can make that longer than the heart-beat interval we promised
-        in the STOMP CONNECT frame, so keep sending from a side thread for the
-        duration; otherwise ISE's broker sees a silent client mid-bootstrap and
-        kills the connection right as the (perfectly good) snapshot lands."""
+        sessions) can make that longer than ISE's pubsub ping timeout, so keep the
+        WS ping going from a side thread for the duration; otherwise ISE sees a
+        silent client mid-bootstrap and closes the socket right as the (perfectly
+        good) snapshot lands."""
         while not stop.wait(_HEARTBEAT_SECS):
             try:
-                self._send("\n")
+                self._ping()
             except Exception:
                 return
 
@@ -335,8 +337,10 @@ class PxGridStreamer:
                 logger.warning("pxGrid pubsub connect failed for %s: %s", ws_url, e)
         if not self.ws:
             raise RuntimeError(f"pxGrid pubsub connect failed for all wsUrl values: {last_error}")
+        # heart-beat:0,0 — no STOMP heart-beats; keepalive is WebSocket ping/pong (ISE
+        # rejects a bare-newline STOMP heart-beat with "Unknown command:" and closes).
         self._send(f"CONNECT\naccept-version:1.2\n"
-                   f"heart-beat:{_HEARTBEAT_MS},{_HEARTBEAT_MS}\n"
+                   f"heart-beat:0,0\n"
                    f"host:{self.ctl.host}\n\n\x00")
         self._await_connected()
         topics = self._topics()
@@ -384,6 +388,13 @@ class PxGridStreamer:
                 else:
                     self.ws.send(payload, opcode=0x2)
 
+    def _ping(self):
+        """Send a WebSocket PING (transport keepalive + liveness probe). Serialized
+        with _send via ws_lock — the socket write isn't safe from two threads."""
+        with self.ws_lock:
+            if self.ws:
+                self.ws.ping()
+
     def _await_connected(self):
         """Wait for the STOMP CONNECTED frame before subscribing."""
         deadline = time.time() + self.cfg.watchdog_timeout
@@ -412,37 +423,47 @@ class PxGridStreamer:
             self.ws = None
 
     def _recv_loop(self):
-        import websocket  # for the timeout exception type
-        # short recv timeout so the loop wakes to send heartbeats / check stop flags
+        import websocket  # for the timeout exception type + ABNF control opcodes
+        # short recv timeout so the loop wakes to send pings / check stop flags
         # regardless of event traffic — decoupled from watchdog_timeout on purpose.
         self.ws.settimeout(_HEARTBEAT_SECS)
         last_hb = time.time()
         while not self._stop.is_set() and not self.shutdown.is_set():
+            opcode, raw = None, None
             try:
-                raw = self.ws.recv()
+                # control_frame=True surfaces PING/PONG so ISE's pong to our ping (and
+                # any server ping) refreshes last_recv — an idle link otherwise reads
+                # as dead. websocket-client still auto-pongs incoming pings for us.
+                opcode, raw = self.ws.recv_data(control_frame=True)
             except websocket.WebSocketTimeoutException:
-                raw = None            # idle tick — NOT a dead connection
+                pass                  # idle tick — NOT a dead connection
             except Exception as e:
                 logger.info("pxGrid recv loop ended: %s", e)
                 break
 
             now = time.time()
-            # client heartbeat doubles as a liveness probe: if the socket is dead the
-            # send raises and we reconnect; if it's just idle the send succeeds.
+            # the WS ping doubles as a liveness probe: a dead socket makes the send
+            # raise and we reconnect; an idle-but-alive one just gets ponged.
             if now - last_hb >= _HEARTBEAT_SECS:
                 try:
-                    self._send("\n")
+                    self._ping()
                 except Exception as e:
-                    logger.info("pxGrid heartbeat send failed, reconnecting: %s", e)
+                    logger.info("pxGrid ping send failed, reconnecting: %s", e)
                     break
                 last_hb = now
 
+            if opcode == websocket.ABNF.OPCODE_CLOSE:
+                logger.info("pxGrid recv loop: server sent CLOSE frame")
+                break
+            if opcode in (websocket.ABNF.OPCODE_PING, websocket.ABNF.OPCODE_PONG):
+                self.last_recv = now  # transport keepalive proves the link is live
+                continue
             if not raw:
                 continue
-            self.last_recv = now      # any frame (incl. a server heartbeat) proves liveness
+            self.last_recv = now      # any data frame proves liveness
             body = self._stomp_body(raw)
             if not body:
-                continue              # server heartbeat / non-body frame
+                continue              # non-body frame
             try:
                 payload = json.loads(body)
             except ValueError:

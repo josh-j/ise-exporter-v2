@@ -83,9 +83,13 @@ def test_bootstrap_sends_heartbeats_during_slow_snapshot(monkeypatch):
     class FakeWs:
         def __init__(self):
             self.sent = []
+            self.pings = 0
 
         def send_binary(self, payload):
             self.sent.append(payload)
+
+        def ping(self, payload=b""):
+            self.pings += 1
 
     ctl = SlowControl()
     streamer = PxGridStreamer(ctl, {"hostname": {}, "location": {}, "ops_owner": {}},
@@ -95,7 +99,8 @@ def test_bootstrap_sends_heartbeats_during_slow_snapshot(monkeypatch):
 
     streamer._bootstrap("test")
 
-    assert b"\n" in streamer.ws.sent
+    # keepalive during a slow snapshot is a WebSocket ping, not a STOMP newline
+    assert streamer.ws.pings >= 1
 
 
 def test_bootstrap_warns_when_sessions_present_but_endpoints_empty(caplog):
@@ -262,6 +267,8 @@ def test_connect_ws_tries_next_pubsub_url_and_subscribes_binary(monkeypatch):
     assert sslopts[1]["check_hostname"] is False
     assert all(isinstance(frame, bytes) for frame in s.ws.sent)
     assert s.ws.sent[0].startswith(b"CONNECT\n")
+    # keepalive is WS ping/pong, so no STOMP heart-beat is negotiated
+    assert b"heart-beat:0,0" in s.ws.sent[0]
     assert b"destination:/topic/com.cisco.ise.session" in s.ws.sent[1]
     assert b"destination:/topic/com.cisco.ise.endpoint" in s.ws.sent[2]
 
@@ -310,6 +317,37 @@ def test_sequence_gap_or_reset_requests_resync():
     assert s._sequence_gap("endpoint", {"sequence": 1}) is False
 
 
+def test_recv_loop_sends_ws_ping_and_pong_refreshes_liveness(monkeypatch):
+    import websocket
+    monkeypatch.setattr(streaming, "_HEARTBEAT_SECS", 0.0)   # ping every iteration
+
+    class FakeWs:
+        def __init__(self):
+            self.pings = 0
+            self.calls = 0
+
+        def settimeout(self, timeout):
+            pass
+
+        def recv_data(self, control_frame=False):
+            self.calls += 1
+            if self.calls == 1:
+                return (websocket.ABNF.OPCODE_PONG, b"")   # ISE's pong to our ping
+            raise RuntimeError("done")
+
+        def ping(self, payload=b""):
+            self.pings += 1
+
+    s = _streamer()
+    s.ws = FakeWs()
+    s.last_recv = 0.0
+
+    s._recv_loop()
+
+    assert s.ws.pings >= 1        # kept alive with a WS ping, not a STOMP "\n"
+    assert s.last_recv > 0.0      # a PONG counts as liveness (keeps the watchdog happy)
+
+
 def test_payload_topic_detects_endpoint_payloads():
     assert PxGridStreamer._payload_topic({"endpoint": {}}) == "endpoint"
     assert PxGridStreamer._payload_topic({"endpoints": []}) == "endpoint"
@@ -344,12 +382,15 @@ def test_recv_loop_resyncs_on_sequence_gap_without_applying_gap_payload():
         def settimeout(self, timeout):
             self.timeout = timeout
 
-        def recv(self):
+        def recv_data(self, control_frame=False):
             if self.frames:
-                return self.frames.pop(0)
+                return (0x2, self.frames.pop(0))   # OPCODE_BINARY data frame
             raise RuntimeError("done")
 
         def send_binary(self, payload):
+            pass
+
+        def ping(self, payload=b""):
             pass
 
     ctl = Control()
