@@ -260,6 +260,7 @@ def test_connect_ws_tries_next_pubsub_url_and_subscribes_binary(monkeypatch):
     s = PxGridStreamer(ctl, {"hostname": {}, "location": {}, "ops_owner": {}},
                        threading.Event())
     ctl.streamer = s
+    s.subscribe_endpoint_topic = True   # opt into the live endpoint topic for this test
     s._connect_ws()
 
     assert attempts == ["wss://bad", "wss://good"]
@@ -271,6 +272,43 @@ def test_connect_ws_tries_next_pubsub_url_and_subscribes_binary(monkeypatch):
     assert b"heart-beat:0,0" in s.ws.sent[0]
     assert b"destination:/topic/com.cisco.ise.session" in s.ws.sent[1]
     assert b"destination:/topic/com.cisco.ise.endpoint" in s.ws.sent[2]
+
+
+def test_connect_ws_defaults_to_session_topic_only(monkeypatch):
+    import websocket
+
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        def recv(self):
+            return b"CONNECTED\nversion:1.2\n\n\x00"
+
+        def send_binary(self, payload):
+            self.sent.append(payload)
+
+    class Control(FakeControl):
+        def resolve_pubsub(self):
+            return "ise-node", ["wss://good"], "secret"
+
+        def session_topic(self):
+            return "https://ise/session", "/topic/com.cisco.ise.session"
+
+        def endpoint_topic(self):
+            raise AssertionError("endpoint_topic must not be resolved when subscription is off")
+
+    monkeypatch.setattr(websocket, "create_connection", lambda *a, **k: FakeWs())
+
+    ctl = Control()
+    s = PxGridStreamer(ctl, {"hostname": {}, "location": {}, "ops_owner": {}},
+                       threading.Event())
+    ctl.streamer = s
+    assert s.subscribe_endpoint_topic is False   # default: endpoints via getEndpoints REST
+    s._connect_ws()
+
+    subscribes = [f for f in s.ws.sent if f.startswith(b"SUBSCRIBE")]
+    assert len(subscribes) == 1
+    assert b"destination:/topic/com.cisco.ise.session" in subscribes[0]
 
 
 def test_connect_ws_fails_without_session_topic(monkeypatch):

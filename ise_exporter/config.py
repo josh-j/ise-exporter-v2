@@ -81,6 +81,14 @@ class Config:
     # sessionTopicAll (/…​.session.all) only exists on 3.3p2/3.4+ and needs the client's
     # pxGrid group to be authorized for it; opt in with PXGRID_SESSION_TOPIC_ALL=true.
     pxgrid_session_topic_all: bool = False
+    # Endpoint attributes (models/profiles/posture) come from the getEndpoints REST poll,
+    # NOT the pxGrid endpoint topic, by default. The topic needs extra ISE publishing +
+    # pubsub-subscribe policy and its SUBSCRIBE can drop the whole stream; the REST poll
+    # is a simple cacheable snapshot. Opt into the live topic with
+    # PXGRID_SUBSCRIBE_ENDPOINT_TOPIC=true. Endpoint state refreshes on this interval
+    # (and at every reconnect/resync).
+    pxgrid_subscribe_endpoint_topic: bool = False
+    pxgrid_endpoint_refresh_interval: int = 900
     profiler_hierarchy_ttl: int = 3600
     project_interval: int = 30
     resync_interval: int = 3600
@@ -134,6 +142,8 @@ class Config:
             pxgrid_min_count=_i("PXGRID_MIN_COUNT", 1),
             pxgrid_query_timeout=_i("PXGRID_QUERY_TIMEOUT", 120),
             pxgrid_session_topic_all=_b("PXGRID_SESSION_TOPIC_ALL", False),
+            pxgrid_subscribe_endpoint_topic=_b("PXGRID_SUBSCRIBE_ENDPOINT_TOPIC", False),
+            pxgrid_endpoint_refresh_interval=_i("PXGRID_ENDPOINT_REFRESH_INTERVAL", 900),
             profiler_hierarchy_ttl=_i("PXGRID_PROFILER_HIERARCHY_TTL", 3600),
             project_interval=_i("PXGRID_PROJECT_INTERVAL", 30),
             resync_interval=_i("PXGRID_RESYNC_INTERVAL", 3600),

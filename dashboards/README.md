@@ -72,16 +72,18 @@ IP is one of its registered `NetworkDeviceIPList` addresses.
   is `NotApplicable` even though posture ran — in that case the **per-policy**
   results below are the real signal.
 - **Per-policy pass/fail** (`ise_posture_policy_result{policy, result, ops_owner}`) —
-  the "Posture Policy Results" section. Parsed from each session's `PostureReport`
-  in MnT session detail (the authz per-MAC fan-out), so it carries in **both** poll
-  and stream mode (subject to the authz cache warmup). `policy` is the ISE posture
-  policy name (encodes the check: `…-FIREWALL`, `…-AM`, `…-DE-BITLOCKER`,
-  `…-PM-PATCH`, …); `result` is the policy-level roll-up (`Passed`/`Failed`/…).
-  Requirement/condition detail is intentionally dropped (too high-cardinality).
-- **Posture agent version** (`ise_posture_agent_version{version, ops_owner}`) —
-  from the session's `PostureAgentVersion` (MnT detail), the reliable source. The
-  version panel falls back to `ise_endpoints_by_secureclient_version{version}`
-  (from `getEndpoints` attributes) if the session source is empty.
+  the "Posture Policy Results" section. Parsed from each endpoint's `PostureReport`
+  attribute, collected via the **getEndpoints REST poll** (not the endpoint topic,
+  not MnT). `policy` is the ISE posture policy name (encodes the check: `…-FIREWALL`,
+  `…-AM`, `…-DE-BITLOCKER`, `…-PM-PATCH`, …); `result` is the policy-level roll-up
+  (`Passed`/`Failed`/…); requirement/condition detail is dropped (too
+  high-cardinality). `ops_owner` is joined from the endpoint's live session (stream
+  mode) and is `unknown` when no session matches. Needs ISE endpoint publishing on
+  (see the "No data" section below); refreshes every `PXGRID_ENDPOINT_REFRESH_INTERVAL`.
+- **Posture agent version** (`ise_endpoints_by_secureclient_version{version}`) —
+  from the endpoint's `PostureAgentVersion` / `SecureClientVersion` attribute via
+  getEndpoints (prefix like "Posture Agent for " stripped). Same source/gating as
+  the per-policy results.
 - **MDM device trust** (`ise_session_mdm_status{dimension, value, ops_owner}`) —
   `dimension` ∈ registered/compliant/disk_encrypted/jailbroken/pin_locked,
   `value` ∈ true/false/unknown. **Stream mode only** (the pxGrid session object

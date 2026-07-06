@@ -17,7 +17,8 @@ import time
 from collections import defaultdict
 
 from .. import metrics
-from ..util import clear_metric, first_nonempty
+from ..util import (clear_metric, first_nonempty, normalize_mac,
+                    parse_posture_report, normalize_agent_version)
 logger = logging.getLogger(__name__)
 
 # pxGrid emits camelCase; Context Visibility / ERS show PascalCase. Read both.
@@ -35,6 +36,27 @@ _SECURECLIENT_VERSION_KEYS = ("secureClientVersion", "SecureClientVersion",
                               "anyConnectVersion", "AnyConnectVersion",
                               "postureAgentVersion", "PostureAgentVersion",
                               "AnyConnectAgentVersion")
+# Per-policy posture pass/fail lives in the endpoint's PostureReport attribute
+# (Context Visibility), collected here via getEndpoints — NOT the endpoint topic and
+# NOT MnT session detail.
+_POSTURE_REPORT_KEYS = ("PostureReport", "postureReport")
+_MAC_KEYS = ("macAddress", "MACAddress", "mac")
+
+
+def _ep_attr(ep, *keys):
+    """Read an endpoint attribute by any of `keys`, checking the top level first and
+    then the nested attribute maps ISE sometimes wraps custom attributes in — so this
+    works whether getEndpoints returns attributes flat or under customAttributes/etc."""
+    v = first_nonempty(ep, *keys)
+    if v:
+        return v
+    for container in ("customAttributes", "attributes", "otherAttributes"):
+        sub = ep.get(container)
+        if isinstance(sub, dict):
+            v = first_nonempty(sub, *keys)
+            if v:
+                return v
+    return ""
 
 # leaf policy name -> (category, parent); empty until the first successful fetch
 _hierarchy = {}
@@ -89,16 +111,19 @@ def _refresh_hierarchy(pxgrid, ttl):
     logger.info("profiler hierarchy refreshed: %d policies", len(_hierarchy))
 
 
-def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
-    """Aggregate a list of pxGrid endpoint attribute maps onto the model gauges.
-    Shared by the poll collector (collect) and the stream projector. Pass
-    pxgrid to also join the profiler category/parent hierarchy (TTL-gated —
-    safe to call every projection tick); omit it to skip that join entirely
-    (e.g. tests that don't care about the hierarchy)."""
+def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=None):
+    """Aggregate a list of pxGrid endpoint attribute maps onto the model + posture
+    gauges. Shared by the poll collector (collect) and the stream projector. Pass
+    pxgrid to also join the profiler category/parent hierarchy (TTL-gated — safe to
+    call every projection tick); omit it to skip that join entirely (e.g. tests that
+    don't care about the hierarchy). mac_owner is an optional {MAC: ops_owner} map
+    (the stream projector builds it from live sessions) used to label posture by ops
+    owner; endpoints with no matching session fall back to ops_owner='unknown'."""
     if pxgrid is not None:
         _refresh_hierarchy(pxgrid, hierarchy_ttl)
     if _hierarchy_fetched_at:
         metrics.ise_profiler_hierarchy_age_seconds.set(time.time() - _hierarchy_fetched_at)
+    mac_owner = mac_owner or {}
 
     by_model = defaultdict(int)
     by_mfg = defaultdict(int)
@@ -106,6 +131,7 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
     by_os = defaultdict(int)
     by_policy = defaultdict(int)
     by_scversion = defaultdict(int)
+    posture_policies = defaultdict(set)   # (policy, result, ops_owner) -> {mac}
     coverage = {"model": 0, "manufacturer": 0, "endpoint_type": 0, "os": 0}
     total = 0
 
@@ -117,9 +143,17 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
         etype = first_nonempty(ep, *_TYPE_KEYS)
         os_ = first_nonempty(ep, *_OS_KEYS)
         policy = first_nonempty(ep, *_POLICY_KEYS)
-        scversion = first_nonempty(ep, *_SECURECLIENT_VERSION_KEYS)
+        scversion = normalize_agent_version(_ep_attr(ep, *_SECURECLIENT_VERSION_KEYS))
         if scversion:
             by_scversion[scversion] += 1
+
+        # per-policy posture pass/fail from the endpoint's PostureReport attribute
+        mac = normalize_mac(first_nonempty(ep, *_MAC_KEYS))
+        report = _ep_attr(ep, *_POSTURE_REPORT_KEYS)
+        if report and mac:
+            owner = mac_owner.get(mac, "unknown")
+            for pol, res in parse_posture_report(report):
+                posture_policies[(pol, res, owner)].add(mac)
 
         if model:
             coverage["model"] += 1
@@ -142,7 +176,8 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
                    metrics.ise_endpoints_by_endpoint_type, metrics.ise_endpoints_by_os,
                    metrics.ise_endpoints_by_policy, metrics.ise_endpoint_mfc_coverage,
                    metrics.ise_endpoints_by_profile_all,
-                   metrics.ise_endpoints_by_secureclient_version):
+                   metrics.ise_endpoints_by_secureclient_version,
+                   metrics.ise_posture_policy_result):
         clear_metric(metric)
 
     for model, n in by_model.items():
@@ -161,6 +196,9 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
 
     for ver, n in by_scversion.items():
         metrics.ise_endpoints_by_secureclient_version.labels(version=ver).set(n)
+    for (pol, res, owner), macs in posture_policies.items():
+        metrics.ise_posture_policy_result.labels(
+            policy=pol, result=res, ops_owner=owner).set(len(macs))
 
     metrics.ise_endpoints_pxgrid_total.set(total)
     for attr, hit in coverage.items():

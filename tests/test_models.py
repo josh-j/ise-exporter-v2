@@ -111,6 +111,41 @@ def test_refresh_hierarchy_failure_does_not_crash_and_leaves_unknown():
     assert _rows(metrics.ise_endpoints_by_profile_all) == {("unknown", "", "A"): 1.0}
 
 
+_EP_POSTURE_REPORT = (
+    "C2CP-WIN-FIREWALL\\;Passed\\;(C2CR-WIN-FIREWALL:Optional:Passed:"
+    "Passed_Conditions[A]:Failed_Conditions[]:Skipped_Conditions[]), "
+    "C2CP-WIN-AM\\;Failed\\;(C2CR-WIN-AM:Mandatory:Failed:Passed_Conditions[]:"
+    "Failed_Conditions[am]:Skipped_Conditions[])"
+)
+
+
+def test_emit_endpoint_metrics_parses_posture_report_from_endpoint_attrs():
+    endpoints = [{"macAddress": "AA:BB:CC:00:00:01",
+                  "PostureAgentVersion": "Posture Agent for Windows 5.1.17.3394",
+                  "PostureReport": _EP_POSTURE_REPORT}]
+    models.emit_endpoint_metrics(endpoints, mac_owner={"AA:BB:CC:00:00:01": "TeamA"})
+
+    pol = {(s.labels["policy"], s.labels["result"], s.labels["ops_owner"]): s.value
+           for s in metrics.ise_posture_policy_result.collect()[0].samples}
+    assert pol[("C2CP-WIN-FIREWALL", "Passed", "TeamA")] == 1.0
+    assert pol[("C2CP-WIN-AM", "Failed", "TeamA")] == 1.0
+
+    ver = {s.labels["version"]: s.value
+           for s in metrics.ise_endpoints_by_secureclient_version.collect()[0].samples}
+    assert ver["Windows 5.1.17.3394"] == 1.0   # prefix stripped by normalize_agent_version
+
+
+def test_emit_endpoint_metrics_posture_owner_unknown_without_session_map():
+    # nested customAttributes shape + no mac_owner map -> ops_owner falls back to unknown
+    endpoints = [{"mac": "AA:BB:CC:00:00:02",
+                  "customAttributes": {"PostureReport": _EP_POSTURE_REPORT}}]
+    models.emit_endpoint_metrics(endpoints)
+    pol = {(s.labels["policy"], s.labels["ops_owner"]): s.value
+           for s in metrics.ise_posture_policy_result.collect()[0].samples}
+    assert pol[("C2CP-WIN-FIREWALL", "unknown")] == 1.0
+    assert pol[("C2CP-WIN-AM", "unknown")] == 1.0
+
+
 def test_secureclient_version_only_counts_endpoints_that_expose_one():
     endpoints = [
         {"macAddress": "00:00:00:00:00:01", "secureClientVersion": "5.1.2.42"},

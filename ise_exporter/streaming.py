@@ -103,6 +103,10 @@ class PxGridStreamer:
         self.cfg = control.cfg
         self.nad = mappings          # shared dict, kept fresh by collectors/devices.py
         self.shutdown = shutdown
+        # endpoint attributes come from the getEndpoints REST poll unless the live topic
+        # is explicitly enabled (getattr-defaulted so minimal test cfgs still work).
+        self.subscribe_endpoint_topic = getattr(self.cfg, "pxgrid_subscribe_endpoint_topic", False)
+        self.endpoint_refresh_interval = getattr(self.cfg, "pxgrid_endpoint_refresh_interval", 900)
 
         self.sessions = {}           # key -> session attr dict
         self.endpoints = {}          # key -> endpoint attr dict
@@ -224,6 +228,17 @@ class PxGridStreamer:
             logger.warning("getEndpoints snapshot failed: %s", e)
             return []
 
+    def _refresh_endpoints(self):
+        """Refresh just the endpoint snapshot via getEndpoints — endpoint attributes
+        (models/profiles/posture) come from this REST poll, not the endpoint topic.
+        Keeps last-known state on an empty/failed read rather than wiping to zero."""
+        snap = self._snapshot_endpoints()
+        if not snap:
+            return
+        with self.lock:
+            self.endpoints = {_endpoint_key(e): e for e in snap if _endpoint_key(e)}
+        logger.info("pxGrid endpoint refresh: %d endpoints", len(self.endpoints))
+
     # ---- projection: state -> gauges -------------------------------------
     def project(self):
         with self.lock:
@@ -241,6 +256,7 @@ class PxGridStreamer:
         profile_ep = defaultdict(set)
         posture_ep = defaultdict(set)   # (status, loc, owner) -> {mac}
         mdm_ep = defaultdict(set)       # (dimension, value, owner) -> {mac}
+        mac_owner = {}                  # MAC -> ops_owner, to label endpoint posture
 
         # NB: no by-PSN breakdown here. The pxGrid session directory object carries no
         # owning-PSN field (nasIpAddress etc. yes, psnNodeName/server no), so it cannot
@@ -257,6 +273,8 @@ class PxGridStreamer:
 
             by_nad[(host, loc)] += 1
             by_owner[owner] += 1
+            if mac:
+                mac_owner[mac] = owner
 
             status_ep[(host, loc, owner, "passed")].add(mac)
             method = first_nonempty(s, "authenticationMethod", "authProtocol")
@@ -304,7 +322,11 @@ class PxGridStreamer:
         # always emit (it clears first) so model series don't go stale when state empties.
         # pxgrid is passed so the profiler category/parent hierarchy stays joined in
         # stream mode too — the refresh itself is TTL-gated, safe to call every tick.
-        models.emit_endpoint_metrics(endpoints, pxgrid=self.ctl, hierarchy_ttl=self.cfg.profiler_hierarchy_ttl)
+        # mac_owner labels endpoint-sourced posture (PostureReport) by the ops owner of
+        # the endpoint's live session.
+        models.emit_endpoint_metrics(endpoints, pxgrid=self.ctl,
+                                     hierarchy_ttl=self.cfg.profiler_hierarchy_ttl,
+                                     mac_owner=mac_owner)
         metrics.ise_pxgrid_last_event_timestamp.set(self.last_event)
 
     # ---- transport (minimal STOMP/WSS — swappable) -----------------------
@@ -347,10 +369,14 @@ class PxGridStreamer:
         session_topic = topics.get("session")
         if not session_topic:
             raise RuntimeError("pxGrid session topic not available; stream mode cannot run")
-        if not topics.get("endpoint"):
-            logger.warning("pxGrid endpoint topic not advertised by ISE — live endpoint events "
-                           "won't stream (endpoint models fall back to bulk getEndpoints "
-                           "snapshots, which are likely empty too). ISE only publishes this "
+        if not self.subscribe_endpoint_topic:
+            logger.info("pxGrid endpoint topic subscription disabled "
+                        "(PXGRID_SUBSCRIBE_ENDPOINT_TOPIC=false) — endpoint attributes "
+                        "(models/profiles/posture) come from the getEndpoints REST poll, "
+                        "refreshed every %ds", self.endpoint_refresh_interval)
+        elif not topics.get("endpoint"):
+            logger.warning("pxGrid endpoint topic requested but not advertised by ISE — "
+                           "falling back to getEndpoints snapshots. ISE only publishes this "
                            "topic when Administration > System > Profiling has BOTH 'Profiler "
                            "Forwarder Persistence Queue' and 'Custom Attribute for Profiling "
                            "Enforcement' enabled.")
@@ -370,8 +396,12 @@ class PxGridStreamer:
 
     def _topics(self):
         topics = {}
-        for name, resolve in (("session", self.ctl.session_topic),
-                              ("endpoint", self.ctl.endpoint_topic)):
+        resolvers = [("session", self.ctl.session_topic)]
+        # endpoint attributes come from the getEndpoints REST poll by default; only
+        # resolve/subscribe the live endpoint topic when explicitly opted in.
+        if self.subscribe_endpoint_topic:
+            resolvers.append(("endpoint", self.ctl.endpoint_topic))
+        for name, resolve in resolvers:
             try:
                 _, topic = resolve()
                 if topic:
@@ -545,6 +575,7 @@ class PxGridStreamer:
 
     def _maintenance_loop(self, stop):
         last_resync = time.time()
+        last_ep_refresh = time.time()
         last_status_log = 0.0
         while not stop.is_set() and not self.shutdown.is_set():
             stop.wait(min(self.cfg.watchdog_timeout, 30))
@@ -571,6 +602,13 @@ class PxGridStreamer:
             if (now - last_resync) >= self.cfg.resync_interval:
                 self._bootstrap("scheduled")
                 last_resync = now
+                last_ep_refresh = now   # bootstrap already re-snapshotted endpoints
+            # refresh endpoint attributes (models/posture) from getEndpoints between full
+            # resyncs — this is the source when the endpoint topic isn't subscribed.
+            elif (self.connected and not self.subscribe_endpoint_topic
+                    and (now - last_ep_refresh) >= self.endpoint_refresh_interval):
+                self._refresh_endpoints()
+                last_ep_refresh = now
 
     # ---- supervisor ------------------------------------------------------
     def run(self):
