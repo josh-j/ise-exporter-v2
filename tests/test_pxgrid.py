@@ -192,6 +192,33 @@ def test_get_endpoints_can_limit_pages_for_probe():
     assert len(bodies) == 1
 
 
+def test_get_endpoints_accepts_nested_endpoint_response_shape():
+    def handler(op, body, auth):
+        if op == "AccountActivate":
+            return {"accountState": "ENABLED"}
+        if op == "ServiceLookup":
+            return {"services": [{
+                "nodeName": "ise-node",
+                "properties": {"restBaseUrl": "https://ise:8910/pxgrid/ise/endpoint"},
+            }]}
+        if op == "AccessSecret":
+            return {"secret": "secret"}
+        if op == "getEndpoints":
+            return {"endpoints": {"endpoint": [
+                {"macAddress": "00:00:00:00:00:01"},
+                {"macAddress": "00:00:00:00:00:02"},
+            ]}}
+        raise AssertionError(op)
+
+    control = PxGridControl(_cfg())
+    control.session = _Session(handler)
+
+    assert [endpoint["macAddress"] for endpoint in control.get_endpoints()] == [
+        "00:00:00:00:00:01",
+        "00:00:00:00:00:02",
+    ]
+
+
 def test_get_profiler_profiles_queries_profiler_service():
     def handler(op, body, auth):
         if op == "AccountActivate":
@@ -261,6 +288,52 @@ def test_session_topic_prefers_session_topic_all_when_available():
     assert control.session_topic() == (
         "https://ise:8910/pxgrid/ise/session",
         "/topic/com.cisco.ise.session.all",
+    )
+
+
+def test_session_topic_falls_back_to_session_topic_for_ise_33_shape():
+    def handler(op, body, auth):
+        if op == "AccountActivate":
+            return {"accountState": "ENABLED"}
+        if op == "ServiceLookup":
+            return {"services": [{
+                "nodeName": "ise-node",
+                "properties": {
+                    "restBaseUrl": "https://ise:8910/pxgrid/ise/session",
+                    "sessionTopic": "/topic/com.cisco.ise.session",
+                },
+            }]}
+        raise AssertionError(op)
+
+    control = PxGridControl(_cfg())
+    control.session = _Session(handler)
+
+    assert control.session_topic() == (
+        "https://ise:8910/pxgrid/ise/session",
+        "/topic/com.cisco.ise.session",
+    )
+
+
+def test_endpoint_topic_accepts_generic_topic_property_for_ise_33_shape():
+    def handler(op, body, auth):
+        if op == "AccountActivate":
+            return {"accountState": "ENABLED"}
+        if op == "ServiceLookup":
+            return {"services": [{
+                "nodeName": "ise-node",
+                "properties": {
+                    "restBaseUrl": "https://ise:8910/pxgrid/ise/endpoint",
+                    "topic": "/topic/com.cisco.ise.endpoint",
+                },
+            }]}
+        raise AssertionError(op)
+
+    control = PxGridControl(_cfg())
+    control.session = _Session(handler)
+
+    assert control.endpoint_topic() == (
+        "https://ise:8910/pxgrid/ise/endpoint",
+        "/topic/com.cisco.ise.endpoint",
     )
 
 

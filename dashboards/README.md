@@ -6,7 +6,7 @@ Five dashboards, each scoped to one part of the exporter's metric surface
 | File | Covers | Notes |
 |------|--------|-------|
 | `ise-overview.json` | Deployment health, node status, scrape/API error rates, collector health, certs, licensing, backup, patch level | Start here — the one to put on a wallboard/alert off of |
-| `ise-sessions-auth.json` | Active sessions by NAD/PSN/ops-owner, session status, failure reasons, auth methods, authz profiles/rules/policy sets | Populated by poll mode (MnT) or pxGrid streaming, whichever is active — see below |
+| `ise-sessions-auth.json` | Active sessions by NAD/site/ops-owner, session status, failure reasons, auth methods, authz profiles/rules/policy sets | Populated by poll mode (MnT) or pxGrid streaming, whichever is active — see below. "Sessions by PSN" is poll-mode only |
 | `ise-endpoints-devices.json` | Endpoint profiling (model/manufacturer/OS/policy breakdown, MFC coverage) and network device inventory | Model/manufacturer/OS panels require `COLLECT_PXGRID_ENDPOINTS=true` (default) |
 | `ise-endpoint-profiles.json` | Endpoints broken down by ISE's profiler policy hierarchy — category/parent/profile, filterable table, catalog size, cache freshness | Requires `COLLECT_PXGRID_ENDPOINTS=true` (default) — see below |
 | `ise-pxgrid-health.json` | pxGrid stream connection state, event throughput, resync counts, streamed state size | Only populated when `COLLECT_PXGRID_STREAM=true`; all panels correctly show "No data" in poll mode |
@@ -42,6 +42,18 @@ the pxGrid session topic directly in streaming mode (no warmup lag). Either
 way the same panels populate; only the freshness/latency differs. Failure
 reasons, matched authz rule, and policy set always come from the MnT fan-out
 in both modes — pxGrid's session topic doesn't carry those fields.
+
+**Per-site vs. per-PSN.** For a geographic breakdown use **"Sessions by Site
+(Location)"** (`sum by (location) (ise_radius_sessions_by_nad)`, derived from
+each session's NAD → Network Device Group Location). It works in both modes.
+The separate **"Sessions by PSN"** panel is **poll-mode only**: the pxGrid
+session directory object carries no owning-PSN field (only `nasIpAddress` and
+friends), so in streaming mode there is no way to attribute a session to a PSN
+and the panel correctly shows "No data" rather than collapsing every session
+under a single placeholder node. If "Sessions by Site" shows mostly `Unknown`,
+the session's `nasIpAddress` isn't matching a device IP in the ERS inventory —
+check `COLLECT_DEVICE_DETAILS=true` (default) and that the NAD's RADIUS source
+IP is one of its registered `NetworkDeviceIPList` addresses.
 
 ## Endpoint profile hierarchy
 

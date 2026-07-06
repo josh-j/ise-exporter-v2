@@ -19,6 +19,19 @@ ENDPOINT_BULK_START = "1970-01-01T00:00:00.000Z"
 ENDPOINT_PAGE_SIZE = 1000
 
 
+def _as_list(value, singular_key=None):
+    """Normalize Cisco's small response-shape differences into a list."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict) and singular_key:
+        nested = value.get(singular_key) or value.get(singular_key.capitalize())
+        if nested is not None:
+            return _as_list(nested)
+    return [value]
+
+
 def _rest_base(props):
     """Endpoint/ANC docs spell it restBaseUrl; session docs restBaseURL — read both."""
     return props.get("restBaseUrl") or props.get("restBaseURL")
@@ -236,7 +249,10 @@ class PxGridControl:
                 "order": "ASC",
             }
             data = self.rest_query(ENDPOINT_SERVICE, "getEndpoints", body, timeout=timeout)
-            page = data.get("endpoints", data if isinstance(data, list) else []) if data else []
+            if isinstance(data, dict):
+                page = _as_list(data.get("endpoints") or data.get("endpoint"), "endpoint")
+            else:
+                page = _as_list(data)
             endpoints.extend(page)
             pages += 1
             if len(page) < page_size or (max_pages is not None and pages >= max_pages):

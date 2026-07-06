@@ -137,6 +137,16 @@ def test_normalize_events_batch_keeps_all():
     assert [e["session"]["auditSessionId"] for e in events] == ["S1", "S2"]
 
 
+def test_normalize_events_accepts_nested_endpoint_batch_shape():
+    events = PxGridStreamer._normalize_events(
+        {"endpoints": {"endpoint": [{"macAddress": "00:00:00:00:00:01"},
+                                    {"macAddress": "00:00:00:00:00:02"}]}})
+    assert [e["endpoint"]["macAddress"] for e in events] == [
+        "00:00:00:00:00:01",
+        "00:00:00:00:00:02",
+    ]
+
+
 def test_normalize_events_empty_array_is_safe():
     # empty array used to IndexError on [0]; now yields no events
     assert PxGridStreamer._normalize_events({"sessions": []}) == []
@@ -215,6 +225,39 @@ def test_connect_ws_tries_next_pubsub_url_and_subscribes_binary(monkeypatch):
     assert s.ws.sent[0].startswith(b"CONNECT\n")
     assert b"destination:/topic/com.cisco.ise.session" in s.ws.sent[1]
     assert b"destination:/topic/com.cisco.ise.endpoint" in s.ws.sent[2]
+
+
+def test_connect_ws_fails_without_session_topic(monkeypatch):
+    import websocket
+
+    class FakeWs:
+        def __init__(self):
+            self.sent = []
+
+        def recv(self):
+            return b"CONNECTED\nversion:1.2\n\n\x00"
+
+        def send_binary(self, payload):
+            self.sent.append(payload)
+
+    class Control(FakeControl):
+        def resolve_pubsub(self):
+            return "ise-node", ["wss://good"], "secret"
+
+        def session_topic(self):
+            raise RuntimeError("no session topic")
+
+        def endpoint_topic(self):
+            return "https://ise/endpoint", "/topic/com.cisco.ise.endpoint"
+
+    monkeypatch.setattr(websocket, "create_connection", lambda *a, **k: FakeWs())
+
+    ctl = Control()
+    s = PxGridStreamer(ctl, {"hostname": {}, "location": {}, "ops_owner": {}},
+                       threading.Event())
+
+    with pytest.raises(RuntimeError, match="session topic"):
+        s._connect_ws()
 
 
 def test_sequence_gap_or_reset_requests_resync():

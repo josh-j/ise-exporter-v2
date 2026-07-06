@@ -40,21 +40,29 @@ def pxgrid_check(cfg, *, check_stream=False):
 
     ctl = PxGridControl(cfg)
     try:
-        ctl.account_activate()
-        session_base, session_topic = ctl.session_topic()
-        endpoint_base, endpoint_topic = ctl.endpoint_topic()
-        pubsub_peer, ws_urls, _ = ctl.resolve_pubsub()
-        logger.info("pxGrid check: account active")
-        logger.info("pxGrid check: session rest=%s topic=%s", session_base, session_topic)
-        logger.info("pxGrid check: endpoint rest=%s topic=%s", endpoint_base, endpoint_topic)
-        logger.info("pxGrid check: pubsub peer=%s wsUrl=%s secret=ok", pubsub_peer, ws_urls)
+        needs_stream = check_stream or cfg.collect_pxgrid_stream
+        needs_endpoints = cfg.collect_pxgrid_endpoints or needs_stream
 
-        sessions = ctl.rest_query(SESSION_SERVICE, "getSessions", {},
-                                  timeout=cfg.pxgrid_query_timeout)
-        session_count = len(sessions.get("sessions", [])) if isinstance(sessions, dict) else 0
-        endpoints = ctl.get_endpoints(page_size=1, max_pages=1, timeout=cfg.pxgrid_query_timeout)
-        logger.info("pxGrid check: getSessions ok sessions=%d", session_count)
-        logger.info("pxGrid check: getEndpoints one-page probe ok endpoints=%d", len(endpoints))
+        ctl.account_activate()
+        logger.info("pxGrid check: account active")
+
+        if needs_stream:
+            session_base, session_topic = ctl.session_topic()
+            pubsub_peer, ws_urls, _ = ctl.resolve_pubsub()
+            logger.info("pxGrid check: session rest=%s topic=%s", session_base, session_topic)
+            logger.info("pxGrid check: pubsub peer=%s wsUrl=%s secret=ok", pubsub_peer, ws_urls)
+
+            sessions = ctl.rest_query(SESSION_SERVICE, "getSessions", {},
+                                      timeout=cfg.pxgrid_query_timeout)
+            session_count = len(sessions.get("sessions", [])) if isinstance(sessions, dict) else 0
+            logger.info("pxGrid check: getSessions ok sessions=%d", session_count)
+
+        if needs_endpoints:
+            endpoints = ctl.get_endpoints(page_size=1, max_pages=1,
+                                          timeout=cfg.pxgrid_query_timeout)
+            profiles = ctl.get_profiler_profiles(timeout=cfg.pxgrid_query_timeout)
+            logger.info("pxGrid check: getEndpoints one-page probe ok endpoints=%d", len(endpoints))
+            logger.info("pxGrid check: getProfiles ok profiles=%d", len(profiles))
 
         if check_stream:
             shutdown = threading.Event()

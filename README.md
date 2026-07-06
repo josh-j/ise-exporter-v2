@@ -63,6 +63,9 @@ counts themselves.
 
 Only needed if you want `COLLECT_PXGRID_ENDPOINTS` (default on) or
 `COLLECT_PXGRID_STREAM`. Skip this if you're running poll-only against ERS/MnT.
+The flow below is for on-prem pxGrid 2.0 and is compatible with Cisco ISE 3.3
+and 3.4; the exporter does not require pxGrid Cloud or the 3.4-only filtering
+feature.
 
 **1. Enable the pxGrid persona.** *Administration > System > Deployment*, edit a
 node, check **pxGrid**, save. Cisco recommends a primary + secondary pxGrid
@@ -79,7 +82,8 @@ for any PSN already doing 802.1X/MAB).
   certificate-authenticated only.
 
 **3. Generate the client certificate.** *Administration/Work Centers > pxGrid
-Services > Certificates* (exact menu path varies slightly by ISE 3.x patch):
+Services > Client Management > Certificates* (exact menu path varies slightly
+by ISE 3.x patch):
 - "I want to": **Generate a single certificate (without a certificate signing
   request)**
 - **Common Name (CN)**: match `PXGRID_NODE_NAME` exactly (e.g. `ise-exporter`)

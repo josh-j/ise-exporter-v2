@@ -13,6 +13,7 @@ def _cfg(**overrides):
         pxgrid_client_key="/key.pem",
         pxgrid_ca_bundle="/ca.pem",
         pxgrid_query_timeout=5,
+        collect_pxgrid_endpoints=True,
         collect_pxgrid_stream=False,
     )
     base.update(overrides)
@@ -49,18 +50,33 @@ def _fake_pxgrid_control(calls):
             calls.append(("get_endpoints", kwargs))
             return [{"macAddress": "00:00:00:00:00:01"}]
 
+        def get_profiler_profiles(self, **kwargs):
+            calls.append(("get_profiler_profiles", kwargs))
+            return [{"name": "Profile"}]
+
     return FakePxGridControl
 
 
-def test_pxgrid_check_exercises_control_topics_and_rest_probes(monkeypatch):
+def test_pxgrid_check_endpoint_mode_exercises_endpoint_and_profiler_probes(monkeypatch):
     calls = []
 
     monkeypatch.setattr(app, "PxGridControl", _fake_pxgrid_control(calls))
 
     assert app.pxgrid_check(_cfg()) == 0
     assert calls[0] == ("account_activate",)
+    assert ("session_topic",) not in calls
+    assert ("resolve_pubsub",) not in calls
+    assert any(call[0] == "get_endpoints" and call[1]["max_pages"] == 1 for call in calls)
+    assert any(call[0] == "get_profiler_profiles" for call in calls)
+
+
+def test_pxgrid_check_stream_mode_exercises_session_pubsub_and_endpoint_probes(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(app, "PxGridControl", _fake_pxgrid_control(calls))
+
+    assert app.pxgrid_check(_cfg(collect_pxgrid_stream=True)) == 0
     assert ("session_topic",) in calls
-    assert ("endpoint_topic",) in calls
     assert ("resolve_pubsub",) in calls
     assert any(call[:3] == ("rest_query", app.SESSION_SERVICE, "getSessions") for call in calls)
     assert any(call[0] == "get_endpoints" and call[1]["max_pages"] == 1 for call in calls)

@@ -29,7 +29,7 @@ from collections import defaultdict
 
 from . import metrics
 from .util import clear_metric, normalize_mac, first_nonempty
-from .clients.pxgrid import SESSION_SERVICE
+from .clients.pxgrid import SESSION_SERVICE, _as_list
 from .collectors.devices import nad_labels
 from .collectors import models
 
@@ -223,21 +223,25 @@ class PxGridStreamer:
 
         by_nad = defaultdict(int)
         by_owner = defaultdict(int)
-        by_psn = defaultdict(int)
         status_ep = defaultdict(set)
         method_ep = defaultdict(set)
         profile_ep = defaultdict(set)
 
+        # NB: no by-PSN breakdown here. The pxGrid session directory object carries no
+        # owning-PSN field (nasIpAddress etc. yes, psnNodeName/server no), so it cannot
+        # be derived from the stream — poll mode gets it only from MnT's ActiveList
+        # `server`. We deliberately do NOT invent a placeholder PSN: a fake single
+        # series collapses every session under one bogus node. `ise_radius_sessions_by_psn`
+        # is cleared each cycle (below) so it reads honestly as "no data" in stream mode;
+        # site-level grouping comes from the `location` label on ise_radius_sessions_by_nad.
         for s in sessions:
             nad_name = first_nonempty(s, "nasName", "networkDeviceName", "network_device_name")
             nas_ip = first_nonempty(s, "nasIpAddress", "nas_ip_address")
             host, loc, owner = nad_labels(self.nad, nas_ip, name_hint=nad_name or None)
-            psn = first_nonempty(s, "pxGridNode", "server", "psnNodeName") or "stream"
             mac = normalize_mac(first_nonempty(s, "macAddress", "callingStationId", "calling_station_id"))
 
             by_nad[(host, loc)] += 1
             by_owner[owner] += 1
-            by_psn[psn] += 1
 
             status_ep[(host, loc, owner, "passed")].add(mac)
             method = first_nonempty(s, "authenticationMethod", "authProtocol")
@@ -257,8 +261,7 @@ class PxGridStreamer:
             metrics.ise_radius_sessions_by_nad.labels(nas_hostname=host, location=loc).set(n)
         for owner, n in by_owner.items():
             metrics.ise_radius_sessions_by_ops_owner.labels(ops_owner=owner).set(n)
-        for psn, n in by_psn.items():
-            metrics.ise_radius_sessions_by_psn.labels(psn=psn).set(n)
+        # ise_radius_sessions_by_psn intentionally left empty in stream mode (see above)
         for (host, loc, owner, status), macs in status_ep.items():
             metrics.ise_session_status_endpoints.labels(
                 nad_hostname=host, location=loc, ops_owner=owner, status=status).set(len(macs))
@@ -310,10 +313,16 @@ class PxGridStreamer:
                    f"host:{self.ctl.host}\n\n\x00")
         self._await_connected()
         topics = self._topics()
-        for topic in topics:
+        session_topic = topics.get("session")
+        if not session_topic:
+            raise RuntimeError("pxGrid session topic not available; stream mode cannot run")
+        if not topics.get("endpoint"):
+            logger.warning("pxGrid endpoint topic not available; endpoint models will come from "
+                           "bulk getEndpoints snapshots only")
+        for topic in topics.values():
             self._send(f"SUBSCRIBE\nid:{topic}\ndestination:{topic}\n\n\x00")
         logger.info("pxGrid WSS connected, subscribed to %d topic(s): %s",
-                    len(topics), topics or "(none — check topic resolution)")
+                    len(topics), list(topics.values()))
 
     def _basic(self, secret):
         import base64
@@ -321,13 +330,13 @@ class PxGridStreamer:
         return base64.b64encode(raw).decode()
 
     def _topics(self):
-        topics = []
+        topics = {}
         for name, resolve in (("session", self.ctl.session_topic),
                               ("endpoint", self.ctl.endpoint_topic)):
             try:
                 _, topic = resolve()
                 if topic:
-                    topics.append(topic)
+                    topics[name] = topic
             except Exception as e:
                 logger.warning("%s topic resolve failed: %s", name, e)
         return topics
@@ -456,13 +465,17 @@ class PxGridStreamer:
         """Map a topic payload to a LIST of internal event shapes. Handles batched
         arrays (all elements, not just [0]) and empty arrays (returns [])."""
         if "sessions" in payload:
-            return [{"topic": "session", "session": s} for s in payload["sessions"]]
+            return [{"topic": "session", "session": s}
+                    for s in _as_list(payload["sessions"], "session")]
         if "session" in payload:
-            return [{"topic": "session", "session": payload["session"]}]
+            return [{"topic": "session", "session": s}
+                    for s in _as_list(payload["session"], "session")]
         if "endpoints" in payload:
-            return [{"topic": "endpoint", "endpoint": e} for e in payload["endpoints"]]
+            return [{"topic": "endpoint", "endpoint": e}
+                    for e in _as_list(payload["endpoints"], "endpoint")]
         if "endpoint" in payload:
-            return [{"topic": "endpoint", "endpoint": payload["endpoint"]}]
+            return [{"topic": "endpoint", "endpoint": e}
+                    for e in _as_list(payload["endpoint"], "endpoint")]
         return [{"topic": "session", "session": payload}]
 
     # ---- worker threads --------------------------------------------------
