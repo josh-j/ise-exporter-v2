@@ -31,6 +31,21 @@ ise_session_detail_cache_size = Gauge("ise_session_detail_cache_size", "Cached S
 ise_session_warmup_progress = Gauge("ise_session_warmup_progress", "Authz cache warmup fraction (0-1)")
 ise_session_detail_fetches_total = Counter("ise_session_detail_fetches_total", "Session/MACAddress fetches", ["result"])
 
+# --- posture / device trust (Secure Client) ---
+# Unique endpoints (distinct MAC) per posture status, per site/ops-owner. Populated
+# by the pxGrid projector (session `postureStatus`) in stream mode and by the authz
+# poll fan-out (session detail) otherwise — same poll-vs-stream ownership split as
+# ise_session_status_endpoints.
+ise_session_posture_status = Gauge("ise_session_posture_status", "Unique endpoints by posture compliance status", ["status", "location", "ops_owner"])
+# MDM device-trust dimensions (registered/compliant/disk_encrypted/jailbroken/pin_locked),
+# value true|false|unknown, per site. Stream-sourced only — the pxGrid session object
+# carries the mdm* fields; empty in poll mode (MnT ActiveList doesn't).
+ise_session_mdm_status = Gauge("ise_session_mdm_status", "Unique MDM-managed endpoints by dimension/value", ["dimension", "value", "location"])
+# Secure Client / posture agent version from getEndpoints attributes. Best-effort:
+# only emitted for endpoints that expose a version attribute — empty if ISE doesn't
+# publish one over pxGrid getEndpoints (see dashboards/README.md).
+ise_endpoints_by_secureclient_version = Gauge("ise_endpoints_by_secureclient_version", "Endpoints per Secure Client / posture agent version", ["version"])
+
 # --- network devices ---
 ise_network_devices_total = Gauge("ise_network_devices_total", "Total network devices")
 ise_network_devices_by_location = Gauge("ise_network_devices_by_location", "Devices per location", ["location"])

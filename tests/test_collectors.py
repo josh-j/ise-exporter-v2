@@ -31,6 +31,66 @@ def _label_set(metric, label):
     return {s.labels[label]: s.value for s in metric.collect()[0].samples}
 
 
+def test_sessions_stream_mode_emits_psn_only():
+    """In stream mode the sessions collector fills ise_radius_sessions_by_psn (the one
+    gauge the pxGrid topic can't) and leaves the projector-owned gauges alone."""
+    from ise_exporter import metrics
+    from ise_exporter.util import clear_metric
+
+    cfg = types.SimpleNamespace(collect_pxgrid_stream=True)
+    mappings = {"hostname": {"10.0.0.1": "sw1"}, "location": {"10.0.0.1": "SiteA"},
+                "ops_owner": {"10.0.0.1": "TeamA"}}
+
+    class Client:
+        def get_mnt_xml(self, path, api_name="x"):
+            return {"total": 2, "sessions": [
+                {"nas_ip_address": "10.0.0.1", "server": "psn-a"},
+                {"nas_ip_address": "10.0.0.1", "server": "psn-b"},
+            ]}
+
+    # projector-owned gauges pre-set by the "streamer" — stream-mode sessions must not wipe them
+    clear_metric(metrics.ise_radius_sessions_by_nad)
+    metrics.ise_radius_sessions_by_nad.labels(nas_hostname="sw1", location="SiteA").set(99)
+    metrics.ise_active_sessions.set(99)
+
+    sessions.collect(Client(), cfg, mappings)
+
+    assert _label_set(metrics.ise_radius_sessions_by_psn, "psn") == {"psn-a": 1.0, "psn-b": 1.0}
+    assert metrics.ise_radius_sessions_by_nad.labels(
+        nas_hostname="sw1", location="SiteA")._value.get() == 99
+    assert metrics.ise_active_sessions._value.get() == 99
+
+
+def test_poll_authz_emits_posture_status():
+    """In poll mode authz derives posture compliance from session detail
+    (posture_status / other_attr_string) onto ise_session_posture_status."""
+    from ise_exporter import metrics
+    from ise_exporter.collectors import authz
+    from ise_exporter.util import clear_metric
+
+    cfg = types.SimpleNamespace(collect_pxgrid_stream=False, session_detail_cache_ttl=100,
+                                max_detail_fetches_per_cycle=10, max_workers=2)
+    mappings = {"hostname": {"10.0.0.1": "sw1"}, "location": {"10.0.0.1": "SiteA"},
+                "ops_owner": {"10.0.0.1": "TeamA"}}
+    detail = {"passed": "true", "failed": "false", "nas_ip_address": "10.0.0.1",
+              "authentication_method": "dot1x", "posture_status": "NonCompliant",
+              "other_attr_string": ""}
+
+    class Client:
+        def get_mnt_xml(self, path, api_name="x"):
+            if path == "/Session/ActiveList":
+                return {"total": 1, "sessions": [{"calling_station_id": "aa:bb:cc:00:00:22",
+                                                  "nas_ip_address": "10.0.0.1"}]}
+            return {"total": 1, "sessions": [dict(detail)]}
+
+    clear_metric(metrics.ise_session_posture_status)
+    authz.collect(Client(), cfg, mappings)
+
+    posture = {(s.labels["status"], s.labels["location"]): s.value
+               for s in metrics.ise_session_posture_status.collect()[0].samples}
+    assert posture[("NonCompliant", "SiteA")] == 1.0
+
+
 def test_streaming_authz_emits_only_topic_uncoverable_signals():
     """In stream mode authz must feed failure-reason / matched-rule / policy-set but
     NOT touch the projector-owned status / methods / profiles gauges."""

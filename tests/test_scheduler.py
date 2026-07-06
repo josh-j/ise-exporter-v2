@@ -27,15 +27,17 @@ def test_streaming_falls_back_to_poll_without_pxgrid(monkeypatch):
     assert "sessions" in ran   # poll path active because the streamer can't run
 
 
-def test_streaming_skips_poll_when_pxgrid_present(monkeypatch):
+def test_streaming_still_runs_sessions_and_authz_reduced(monkeypatch):
     ran = []
     for name in ("deployment", "devices", "sessions", "endpoints", "authz"):
         monkeypatch.setattr(getattr(S, name), "collect",
                             (lambda n: (lambda *a, **k: ran.append(n)))(name))
 
     PollScheduler(_cfg(), client=None, pxgrid=object()).run_cycle()
-    assert "sessions" not in ran   # streamer owns sessions
-    assert "authz" in ran          # authz still runs (reduced) in stream mode
+    # in stream mode sessions runs PSN-only (projector owns the rest) and authz runs
+    # reduced — both self-limit internally rather than being skipped by the scheduler
+    assert "sessions" in ran
+    assert "authz" in ran
 
 
 def test_logs_poll_fallback_reason_when_stream_requested_but_pxgrid_missing(caplog):
@@ -47,10 +49,10 @@ def test_logs_poll_fallback_reason_when_stream_requested_but_pxgrid_missing(capl
 def test_logs_streaming_mode_once_at_init(caplog):
     with caplog.at_level(logging.INFO):
         PollScheduler(_cfg(collect_pxgrid_stream=True), client=None, pxgrid=object())
-    assert any("pxgrid streaming=True" in r.message for r in caplog.records)
+    assert any("pxgrid streaming=ON" in r.message for r in caplog.records)
 
 
 def test_logs_polling_mode_once_at_init(caplog):
     with caplog.at_level(logging.INFO):
         PollScheduler(_cfg(collect_pxgrid_stream=False), client=None, pxgrid=None)
-    assert any("pxgrid streaming=False" in r.message for r in caplog.records)
+    assert any("pxgrid streaming=OFF" in r.message for r in caplog.records)

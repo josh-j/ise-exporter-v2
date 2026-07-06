@@ -28,7 +28,8 @@ import time
 from collections import defaultdict
 
 from . import metrics
-from .util import clear_metric, normalize_mac, first_nonempty
+from .util import (clear_metric, normalize_mac, first_nonempty,
+                   normalize_posture, normalize_bool_label)
 from .clients.pxgrid import SESSION_SERVICE, _as_list
 from .collectors.devices import nad_labels
 from .collectors import models
@@ -36,6 +37,16 @@ from .collectors import models
 logger = logging.getLogger(__name__)
 
 _GONE_STATES = {"DISCONNECTED", "TERMINATED", "STOPPED", "DISCONNECT"}
+
+# MDM device-trust dimensions carried on the pxGrid session object. label -> the
+# source attribute; each is coerced to true|false|unknown for ise_session_mdm_status.
+_MDM_DIMS = (
+    ("registered", "mdmRegistered"),
+    ("compliant", "mdmCompliant"),
+    ("disk_encrypted", "mdmDiskEncrypted"),
+    ("jailbroken", "mdmJailBroken"),
+    ("pin_locked", "mdmPinLocked"),
+)
 
 # STOMP heart-beat cadence. We both request and offer this interval in CONNECT and
 # send a client heartbeat on the same timer — a failed heartbeat send is our liveness
@@ -226,14 +237,16 @@ class PxGridStreamer:
         status_ep = defaultdict(set)
         method_ep = defaultdict(set)
         profile_ep = defaultdict(set)
+        posture_ep = defaultdict(set)   # (status, loc, owner) -> {mac}
+        mdm_ep = defaultdict(set)       # (dimension, value, loc) -> {mac}
 
         # NB: no by-PSN breakdown here. The pxGrid session directory object carries no
         # owning-PSN field (nasIpAddress etc. yes, psnNodeName/server no), so it cannot
-        # be derived from the stream — poll mode gets it only from MnT's ActiveList
-        # `server`. We deliberately do NOT invent a placeholder PSN: a fake single
-        # series collapses every session under one bogus node. `ise_radius_sessions_by_psn`
-        # is cleared each cycle (below) so it reads honestly as "no data" in stream mode;
-        # site-level grouping comes from the `location` label on ise_radius_sessions_by_nad.
+        # be derived from the stream. ise_radius_sessions_by_psn is owned exclusively by
+        # the sessions poll collector (MnT ActiveList `server`), which now runs alongside
+        # the stream in a PSN-only mode — so the projector must NOT clear or set it here,
+        # or the two would fight. Site-level grouping comes from the `location` label on
+        # ise_radius_sessions_by_nad (and ise_session_posture_status below).
         for s in sessions:
             nad_name = first_nonempty(s, "nasName", "networkDeviceName", "network_device_name")
             nas_ip = first_nonempty(s, "nasIpAddress", "nas_ip_address")
@@ -253,15 +266,24 @@ class PxGridStreamer:
             for prof in profiles:
                 profile_ep[(prof, host, loc, owner)].add(mac)
 
+            posture_ep[(normalize_posture(first_nonempty(s, "postureStatus", "posture_status")),
+                        loc, owner)].add(mac)
+            # only project MDM for MDM-managed sessions — otherwise every non-enrolled
+            # endpoint floods the metric as dimension=*/value=unknown.
+            if first_nonempty(s, "mdmRegistered", "mdmCompliant", "mdmDeviceManager", "mdmManufacturer"):
+                for dim, attr in _MDM_DIMS:
+                    mdm_ep[(dim, normalize_bool_label(s.get(attr)), loc)].add(mac)
+
         for m in (metrics.ise_radius_sessions_by_nad, metrics.ise_radius_sessions_by_ops_owner,
-                  metrics.ise_radius_sessions_by_psn, metrics.ise_session_status_endpoints,
-                  metrics.ise_session_auth_methods, metrics.ise_authz_unique_endpoints_by_profile):
+                  metrics.ise_session_status_endpoints, metrics.ise_session_auth_methods,
+                  metrics.ise_authz_unique_endpoints_by_profile,
+                  metrics.ise_session_posture_status, metrics.ise_session_mdm_status):
             clear_metric(m)
         for (host, loc), n in by_nad.items():
             metrics.ise_radius_sessions_by_nad.labels(nas_hostname=host, location=loc).set(n)
         for owner, n in by_owner.items():
             metrics.ise_radius_sessions_by_ops_owner.labels(ops_owner=owner).set(n)
-        # ise_radius_sessions_by_psn intentionally left empty in stream mode (see above)
+        # ise_radius_sessions_by_psn is poll-owned even in stream mode (see above)
         for (host, loc, owner, status), macs in status_ep.items():
             metrics.ise_session_status_endpoints.labels(
                 nad_hostname=host, location=loc, ops_owner=owner, status=status).set(len(macs))
@@ -271,6 +293,11 @@ class PxGridStreamer:
         for (prof, host, loc, owner), macs in profile_ep.items():
             metrics.ise_authz_unique_endpoints_by_profile.labels(
                 authz_profile=prof, nad_hostname=host, location=loc, ops_owner=owner).set(len(macs))
+        for (status, loc, owner), macs in posture_ep.items():
+            metrics.ise_session_posture_status.labels(
+                status=status, location=loc, ops_owner=owner).set(len(macs))
+        for (dim, val, loc), macs in mdm_ep.items():
+            metrics.ise_session_mdm_status.labels(dimension=dim, value=val, location=loc).set(len(macs))
 
         # always emit (it clears first) so model series don't go stale when state empties.
         # pxgrid is passed so the profiler category/parent hierarchy stays joined in

@@ -153,6 +153,45 @@ def test_normalize_events_empty_array_is_safe():
     assert PxGridStreamer._normalize_events({"endpoints": []}) == []
 
 
+def test_project_emits_posture_and_mdm_and_leaves_psn_untouched():
+    from ise_exporter import metrics
+    from ise_exporter.util import clear_metric
+
+    ctl = FakeControl()
+    mappings = {"hostname": {"10.0.0.1": "sw1"}, "location": {"10.0.0.1": "SiteA"},
+                "ops_owner": {"10.0.0.1": "TeamA"}}
+    s = PxGridStreamer(ctl, mappings, threading.Event())
+    s.sessions = {
+        "A": {"auditSessionId": "A", "state": "STARTED", "nasIpAddress": "10.0.0.1",
+              "callingStationId": "00:00:00:00:00:01", "postureStatus": "Compliant"},
+        "B": {"auditSessionId": "B", "state": "STARTED", "nasIpAddress": "10.0.0.1",
+              "callingStationId": "00:00:00:00:00:02", "postureStatus": "NonCompliant",
+              "mdmRegistered": "true", "mdmCompliant": "false", "mdmJailBroken": "true"},
+        "C": {"auditSessionId": "C", "state": "STARTED", "nasIpAddress": "10.0.0.1",
+              "callingStationId": "00:00:00:00:00:03"},   # no posture -> NotApplicable
+    }
+    s.endpoints = {}
+    # PSN is poll-owned; the projector must not create series on it
+    clear_metric(metrics.ise_radius_sessions_by_psn)
+
+    s.project()
+
+    posture = {sm.labels["status"]: sm.value
+               for sm in metrics.ise_session_posture_status.collect()[0].samples}
+    assert posture == {"Compliant": 1.0, "NonCompliant": 1.0, "NotApplicable": 1.0}
+
+    # MDM projected only for the MDM-managed session (B)
+    mdm = {(sm.labels["dimension"], sm.labels["value"]): sm.value
+           for sm in metrics.ise_session_mdm_status.collect()[0].samples}
+    assert mdm[("registered", "true")] == 1.0
+    assert mdm[("compliant", "false")] == 1.0
+    assert mdm[("jailbroken", "true")] == 1.0
+    assert ("registered", "true") in mdm and len(mdm) == 5   # 5 dims, session B only
+
+    # projector left PSN empty (owned by the sessions poll collector)
+    assert metrics.ise_radius_sessions_by_psn.collect()[0].samples == []
+
+
 def test_batched_sessions_all_applied():
     s = _streamer()
     for ev in PxGridStreamer._normalize_events(

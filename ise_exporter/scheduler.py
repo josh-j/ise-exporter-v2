@@ -29,9 +29,11 @@ class PollScheduler:
             logger.warning("scheduler: COLLECT_PXGRID_STREAM=true but no usable pxGrid client — "
                            "falling back to polling for sessions/pxgrid_endpoints "
                            "(see the 'pxGrid disabled' warning above for why)")
+        elif streaming:
+            logger.info("scheduler: pxgrid streaming=ON — projector owns session/endpoint gauges; "
+                       "sessions collector runs PSN-only, pxgrid_endpoints deferred to the stream")
         else:
-            logger.info("scheduler: pxgrid streaming=%s — sessions/pxgrid_endpoints collectors "
-                       "are %s", streaming, "deferred to the pxGrid stream" if streaming else "polling")
+            logger.info("scheduler: pxgrid streaming=OFF — polling all session/endpoint collectors")
 
     def _due(self, name, now, fast, medium, slow):
         if name not in self.last_run:
@@ -63,7 +65,9 @@ class PollScheduler:
         if self._due("devices", now, fast, medium, slow):
             devices.collect(self.client, cfg, self.mappings)
             self.last_run["devices"] = now
-        if not streaming and self._due("sessions", now, fast, medium, slow):
+        # sessions runs in BOTH modes: in stream mode it self-limits to the per-PSN
+        # gauge (ise_radius_sessions_by_psn), which the pxGrid session topic can't feed.
+        if self._due("sessions", now, fast, medium, slow):
             sessions.collect(self.client, cfg, self.mappings)
             self.last_run["sessions"] = now
         if self._due("endpoints", now, fast, medium, slow):

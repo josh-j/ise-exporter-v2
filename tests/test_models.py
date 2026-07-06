@@ -111,6 +111,18 @@ def test_refresh_hierarchy_failure_does_not_crash_and_leaves_unknown():
     assert _rows(metrics.ise_endpoints_by_profile_all) == {("unknown", "", "A"): 1.0}
 
 
+def test_secureclient_version_only_counts_endpoints_that_expose_one():
+    endpoints = [
+        {"macAddress": "00:00:00:00:00:01", "secureClientVersion": "5.1.2.42"},
+        {"macAddress": "00:00:00:00:00:02", "AnyConnectVersion": "4.10.07061"},
+        {"macAddress": "00:00:00:00:00:03"},   # no agent version -> no series (not 'unknown')
+    ]
+    models.emit_endpoint_metrics(endpoints)
+    versions = {s.labels["version"]: s.value
+                for s in metrics.ise_endpoints_by_secureclient_version.collect()[0].samples}
+    assert versions == {"5.1.2.42": 1.0, "4.10.07061": 1.0}
+
+
 def test_hierarchy_age_gauge_set_after_successful_refresh():
     pxgrid = _PxGrid([{"id": "1", "name": "A", "fullName": "A"}])
     endpoints = [{"endPointPolicy": "A"}]

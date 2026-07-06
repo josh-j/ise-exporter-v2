@@ -50,6 +50,42 @@ def first_nonempty(attrs, *keys):
     return ""
 
 
+# Canonical posture labels — collapse the spelling variants ISE emits across the
+# pxGrid session topic (`postureStatus`) and MnT session detail (`posture_status`)
+# into one stable set so dashboards can group/alert reliably.
+_POSTURE_CANON = {
+    "compliant": "Compliant",
+    "noncompliant": "NonCompliant",
+    "pending": "Pending",
+    "notapplicable": "NotApplicable",
+    "na": "NotApplicable",
+    "unknown": "Unknown",
+    "error": "Error",
+}
+
+
+def normalize_posture(value):
+    """Map a raw posture status to a canonical label. Empty/missing -> 'NotApplicable'
+    (no posture assessment ran for the session — the common case for endpoints not
+    subject to a posture policy)."""
+    v = (value or "").strip()
+    if not v:
+        return "NotApplicable"
+    key = v.lower().replace("-", "").replace("_", "").replace(" ", "")
+    return _POSTURE_CANON.get(key, v)
+
+
+def normalize_bool_label(value):
+    """Coerce an ISE boolean-ish attribute (mdmCompliant, mdmRegistered, ...) to a
+    stable 'true' | 'false' | 'unknown' label."""
+    v = (value or "").strip().lower()
+    if v in ("true", "yes", "1", "compliant", "registered", "enabled"):
+        return "true"
+    if v in ("false", "no", "0", "noncompliant", "unregistered", "disabled"):
+        return "false"
+    return "unknown"
+
+
 def parse_ise_date(date_str):
     if not date_str:
         return None

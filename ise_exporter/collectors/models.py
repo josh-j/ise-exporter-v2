@@ -27,6 +27,14 @@ _TYPE_KEYS = ("mfcInfoEndpointType", "MFCInfoEndpointType", "mfcInfoDeviceType")
 _OS_KEYS = ("mfcInfoOperatingSystem", "MFCInfoOperatingSystem")
 _POLICY_KEYS = ("endPointPolicy", "EndPointPolicy", "MFCInfoEndpointPolicy")
 _OUI_KEYS = ("oui", "OUI")
+# Secure Client / posture agent version — attribute name varies (and may be absent
+# entirely) across ISE versions; read every plausible spelling. Best-effort: only
+# endpoints with a real value produce a series, so an all-blank deployment leaves
+# ise_endpoints_by_secureclient_version empty rather than one giant 'unknown' bucket.
+_SECURECLIENT_VERSION_KEYS = ("secureClientVersion", "SecureClientVersion",
+                              "anyConnectVersion", "AnyConnectVersion",
+                              "postureAgentVersion", "PostureAgentVersion",
+                              "AnyConnectAgentVersion")
 
 # leaf policy name -> (category, parent); empty until the first successful fetch
 _hierarchy = {}
@@ -97,6 +105,7 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
     by_type = defaultdict(int)
     by_os = defaultdict(int)
     by_policy = defaultdict(int)
+    by_scversion = defaultdict(int)
     coverage = {"model": 0, "manufacturer": 0, "endpoint_type": 0, "os": 0}
     total = 0
 
@@ -108,6 +117,9 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
         etype = first_nonempty(ep, *_TYPE_KEYS)
         os_ = first_nonempty(ep, *_OS_KEYS)
         policy = first_nonempty(ep, *_POLICY_KEYS)
+        scversion = first_nonempty(ep, *_SECURECLIENT_VERSION_KEYS)
+        if scversion:
+            by_scversion[scversion] += 1
 
         if model:
             coverage["model"] += 1
@@ -129,7 +141,8 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
     for metric in (metrics.ise_endpoints_by_hardware_model, metrics.ise_endpoints_by_manufacturer,
                    metrics.ise_endpoints_by_endpoint_type, metrics.ise_endpoints_by_os,
                    metrics.ise_endpoints_by_policy, metrics.ise_endpoint_mfc_coverage,
-                   metrics.ise_endpoints_by_profile_all):
+                   metrics.ise_endpoints_by_profile_all,
+                   metrics.ise_endpoints_by_secureclient_version):
         clear_metric(metric)
 
     for model, n in by_model.items():
@@ -145,6 +158,9 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600):
         category, parent = _hierarchy.get(policy, ("unknown", ""))
         metrics.ise_endpoints_by_profile_all.labels(
             category=category, parent=parent, profile=policy).set(n)
+
+    for ver, n in by_scversion.items():
+        metrics.ise_endpoints_by_secureclient_version.labels(version=ver).set(n)
 
     metrics.ise_endpoints_pxgrid_total.set(total)
     for attr, hit in coverage.items():

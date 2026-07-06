@@ -13,7 +13,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import metrics
-from ..util import clear_metric, normalize_mac, normalize_location, parse_other_attr_string
+from ..util import (clear_metric, normalize_mac, normalize_location,
+                    parse_other_attr_string, normalize_posture)
 from . import observe, CollectorFailed
 from .devices import nad_labels
 
@@ -31,7 +32,7 @@ _STREAM_OWNED = (
 )
 _UNIQUE_ENDPOINT_METRICS = (
     metrics.ise_session_status_endpoints, metrics.ise_session_auth_methods,
-    metrics.ise_authz_unique_endpoints_by_profile,
+    metrics.ise_authz_unique_endpoints_by_profile, metrics.ise_session_posture_status,
 ) + _STREAM_OWNED
 
 _cache = None
@@ -120,6 +121,7 @@ def collect(client, cfg, mappings):
         profiles = defaultdict(set)
         rules = defaultdict(set)
         policy_sets = defaultdict(set)
+        posture = defaultdict(set)   # (status, loc, owner) -> {mac}
 
         for mac, detail in details.items():
             # accounting (Stop) records carry no auth verdict — skip them
@@ -156,6 +158,13 @@ def collect(client, cfg, mappings):
             if other.get("ISEPolicySetName"):
                 policy_sets[(other["ISEPolicySetName"],) + key].add(mac)
 
+            # posture: top-level MnT tag first, then the other-attr string (field name
+            # varies by ISE version) — normalize_posture handles empty -> NotApplicable.
+            pstatus = normalize_posture(
+                detail.get("posture_status")
+                or other.get("PostureStatus") or other.get("PostureAssessmentStatus"))
+            posture[(pstatus, loc, owner)].add(mac)
+
         for m in owned:
             clear_metric(m)
 
@@ -174,6 +183,9 @@ def collect(client, cfg, mappings):
                     nad_hostname=nad, location=loc, ops_owner=owner, status="failed").set(len(macs))
             _emit_unique(metrics.ise_session_auth_methods, methods, "method")
             _emit_unique(metrics.ise_authz_unique_endpoints_by_profile, profiles, "authz_profile")
+            for (status, loc, owner), macs in posture.items():
+                metrics.ise_session_posture_status.labels(
+                    status=status, location=loc, ops_owner=owner).set(len(macs))
 
         metrics.ise_session_detail_cache_size.set(cache.size())
         cached_count = len(details)

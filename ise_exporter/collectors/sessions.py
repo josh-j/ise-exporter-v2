@@ -1,7 +1,12 @@
 """sessions collector (port of collect_session_metrics). MnT Session/ActiveList
 fanned out by NAD IP, ops-owner, and PSN. Every known NAD gets a series (zero
 included) so a NAD dropping to zero sessions is visible rather than vanishing.
-Skipped when streaming is on — the pxGrid session topic feeds these gauges then."""
+
+Runs in BOTH modes: in stream mode it self-limits to ise_radius_sessions_by_psn —
+the one session gauge the pxGrid topic can't feed (the session directory object
+carries no owning-PSN field, only the MnT ActiveList `server` does). The projector
+owns active_sessions / by_nad / by_ops_owner then, so this collector must not touch
+those, mirroring how authz.py self-limits."""
 import logging
 from collections import defaultdict
 
@@ -19,15 +24,28 @@ def collect(client, cfg, mappings):
             raise CollectorFailed("no ActiveList response")
         total = result.get("total", 0)
         sessions = result.get("sessions", [])
+        streaming = getattr(cfg, "collect_pxgrid_stream", False)
+
+        # PSN breakdown — owned by this collector in both modes.
+        psn_counts = defaultdict(int)
+        for s in sessions:
+            psn_counts[s.get("server", "unknown")] += 1
+        clear_metric(metrics.ise_radius_sessions_by_psn)
+        for psn, n in psn_counts.items():
+            metrics.ise_radius_sessions_by_psn.labels(psn=psn).set(n)
+
+        if streaming:
+            # projector owns the rest; emit PSN only so we don't fight it.
+            logger.info("Sessions (stream mode): %d active across %d PSNs (PSN-only)",
+                        total, len(psn_counts))
+            return
 
         metrics.ise_active_sessions.set(total)
         clear_metric(metrics.ise_radius_sessions_by_nad)
         clear_metric(metrics.ise_radius_sessions_by_ops_owner)
-        clear_metric(metrics.ise_radius_sessions_by_psn)
 
         nad_counts = defaultdict(int)
         ops_counts = defaultdict(int)
-        psn_counts = defaultdict(int)
         host_map = mappings["hostname"]
         loc_map = mappings["location"]
         ops_map = mappings["ops_owner"]
@@ -38,7 +56,6 @@ def collect(client, cfg, mappings):
             owner = ops_map.get(nas_ip, "unknown")
             if owner != "unknown":
                 ops_counts[owner] += 1
-            psn_counts[s.get("server", "unknown")] += 1
 
         # union of known NADs and NADs seen in sessions -> zero-fill known ones
         for ip in set(host_map) | set(nad_counts):
@@ -48,6 +65,4 @@ def collect(client, cfg, mappings):
                 nas_hostname=hostname, location=location).set(nad_counts.get(ip, 0))
         for owner, n in ops_counts.items():
             metrics.ise_radius_sessions_by_ops_owner.labels(ops_owner=owner).set(n)
-        for psn, n in psn_counts.items():
-            metrics.ise_radius_sessions_by_psn.labels(psn=psn).set(n)
         logger.info("Sessions: %d total across %d PSNs", total, len(psn_counts))
