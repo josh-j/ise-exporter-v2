@@ -91,6 +91,46 @@ def test_poll_authz_emits_posture_status():
     assert posture[("NonCompliant", "SiteA")] == 1.0
 
 
+def test_authz_parses_posture_report_and_agent_version():
+    """PostureReport (per-policy pass/fail) and PostureAgentVersion come from the MnT
+    session detail's other_attr_string — authz owns them in BOTH modes."""
+    from ise_exporter import metrics
+    from ise_exporter.collectors import authz
+    from ise_exporter.util import clear_metric
+
+    cfg = types.SimpleNamespace(collect_pxgrid_stream=True, session_detail_cache_ttl=100,
+                                max_detail_fetches_per_cycle=10, max_workers=2)
+    mappings = {"hostname": {"10.0.0.1": "sw1"}, "location": {"10.0.0.1": "SiteA"},
+                "ops_owner": {"10.0.0.1": "TeamA"}}
+    report = ("C2CP-WIN-FIREWALL\\;Passed\\;(C2CR-WIN-FIREWALL:Optional:Passed:"
+              "Passed_Conditions[A]:Failed_Conditions[]:Skipped_Conditions[]), "
+              "C2CP-WIN-AM\\;Failed\\;(C2CR-WIN-AM:Mandatory:Failed:Passed_Conditions[]:"
+              "Failed_Conditions[am]:Skipped_Conditions[])")
+    detail = {"passed": "true", "failed": "false", "nas_ip_address": "10.0.0.1",
+              "other_attr_string": ("PostureReport=" + report +
+                                    ":!:PostureAgentVersion=Posture Agent for Windows 5.1.17.3394")}
+
+    class Client:
+        def get_mnt_xml(self, path, api_name="x"):
+            if path == "/Session/ActiveList":
+                return {"total": 1, "sessions": [{"calling_station_id": "aa:bb:cc:00:00:33",
+                                                  "nas_ip_address": "10.0.0.1"}]}
+            return {"total": 1, "sessions": [dict(detail)]}
+
+    clear_metric(metrics.ise_posture_policy_result)
+    clear_metric(metrics.ise_posture_agent_version)
+    authz.collect(Client(), cfg, mappings)
+
+    pol = {(s.labels["policy"], s.labels["result"], s.labels["ops_owner"]): s.value
+           for s in metrics.ise_posture_policy_result.collect()[0].samples}
+    assert pol[("C2CP-WIN-FIREWALL", "Passed", "TeamA")] == 1.0
+    assert pol[("C2CP-WIN-AM", "Failed", "TeamA")] == 1.0
+
+    ver = {s.labels["version"]: s.value
+           for s in metrics.ise_posture_agent_version.collect()[0].samples}
+    assert ver["Windows 5.1.17.3394"] == 1.0
+
+
 def test_streaming_authz_emits_only_topic_uncoverable_signals():
     """In stream mode authz must feed failure-reason / matched-rule / policy-set but
     NOT touch the projector-owned status / methods / profiles gauges."""

@@ -144,10 +144,10 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }, "panels": []
     },
     {
-      "id": 13, "type": "bargauge", "title": "Devices by Location",
+      "id": 13, "type": "bargauge", "title": "Devices by Ops Owner",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_location", "legendFormat": "{{location}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_ops_owner", "legendFormat": "{{ops_owner}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },

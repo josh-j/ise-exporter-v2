@@ -14,7 +14,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .. import metrics
 from ..util import (clear_metric, normalize_mac, normalize_location,
-                    parse_other_attr_string, normalize_posture)
+                    parse_other_attr_string, normalize_posture,
+                    parse_posture_report, normalize_agent_version)
 from . import observe, CollectorFailed
 from .devices import nad_labels
 
@@ -29,6 +30,11 @@ _STREAM_OWNED = (
     metrics.ise_session_failure_reasons,
     metrics.ise_session_authz_rule_endpoints,
     metrics.ise_session_policy_set_endpoints,
+    # posture policy pass/fail + agent version live in the session's other_attr_string
+    # (MnT detail), which the pxGrid session topic can't carry — so authz owns them in
+    # BOTH modes, same as failure-reason / matched-rule / policy-set above.
+    metrics.ise_posture_policy_result,
+    metrics.ise_posture_agent_version,
 )
 _UNIQUE_ENDPOINT_METRICS = (
     metrics.ise_session_status_endpoints, metrics.ise_session_auth_methods,
@@ -121,7 +127,9 @@ def collect(client, cfg, mappings):
         profiles = defaultdict(set)
         rules = defaultdict(set)
         policy_sets = defaultdict(set)
-        posture = defaultdict(set)   # (status, loc, owner) -> {mac}
+        posture = defaultdict(set)          # (status, loc, owner) -> {mac}
+        posture_policies = defaultdict(set)  # (policy, result, owner) -> {mac}
+        agent_versions = defaultdict(set)    # (version, owner) -> {mac}
 
         for mac, detail in details.items():
             # accounting (Stop) records carry no auth verdict — skip them
@@ -165,6 +173,13 @@ def collect(client, cfg, mappings):
                 or other.get("PostureStatus") or other.get("PostureAssessmentStatus"))
             posture[(pstatus, loc, owner)].add(mac)
 
+            # per-posture-policy pass/fail from the PostureReport (which checks passed/failed)
+            for pol, res in parse_posture_report(other.get("PostureReport")):
+                posture_policies[(pol, res, owner)].add(mac)
+            agent_version = normalize_agent_version(other.get("PostureAgentVersion"))
+            if agent_version:
+                agent_versions[(agent_version, owner)].add(mac)
+
         for m in owned:
             clear_metric(m)
 
@@ -172,6 +187,11 @@ def collect(client, cfg, mappings):
         _emit_unique(metrics.ise_session_failure_reasons, reasons, "reason_code")
         _emit_unique(metrics.ise_session_authz_rule_endpoints, rules, "authz_rule")
         _emit_unique(metrics.ise_session_policy_set_endpoints, policy_sets, "policy_set")
+        for (pol, res, owner), macs in posture_policies.items():
+            metrics.ise_posture_policy_result.labels(
+                policy=pol, result=res, ops_owner=owner).set(len(macs))
+        for (version, owner), macs in agent_versions.items():
+            metrics.ise_posture_agent_version.labels(version=version, ops_owner=owner).set(len(macs))
 
         # streamer-owned in stream mode, so only emit from the poll fan-out
         if not streaming:

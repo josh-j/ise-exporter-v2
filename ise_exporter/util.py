@@ -2,6 +2,7 @@
 monolithic ise_exporter.py.)"""
 from datetime import datetime, timezone
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,37 @@ def normalize_bool_label(value):
     if v in ("false", "no", "0", "noncompliant", "unregistered", "disabled"):
         return "false"
     return "unknown"
+
+
+# Each top-level posture policy in a PostureReport looks like
+#   <PolicyName>\;<Result>\;(<requirement detail>), <PolicyName>\;<Result>\;(...)
+# where '\;' is ISE's escaped semicolon. The requirement detail inside the parens
+# reuses '\;' between requirements and ':' inside condition lists, so we anchor on
+# the exact "<name>\;<Result>\;(" shape to pick out ONLY the policy-level roll-up.
+_POSTURE_POLICY_RE = re.compile(
+    r'([A-Za-z0-9_.\-]+)\\?;'
+    r'(Passed|Failed|Pending|Skipped|Error|Unknown|NotApplicable|Compliant|NonCompliant)'
+    r'\\?;\(')
+
+
+def parse_posture_report(report):
+    """Parse an ISE MnT `PostureReport` (from a session's other_attr_string) into a
+    list of (policy_name, result) at the posture-POLICY level, e.g.
+    [('C2CP-WIN-FIREWALL', 'Passed'), ('C2CP-WIN-AM', 'Failed'), ...]. Requirement/
+    condition detail is intentionally dropped — too high-cardinality for a gauge; the
+    policy name already encodes which check it is (FIREWALL, AM, DE-BITLOCKER, ...)."""
+    if not report:
+        return []
+    return [(m.group(1), m.group(2)) for m in _POSTURE_POLICY_RE.finditer(report)]
+
+
+def normalize_agent_version(value):
+    """'Posture Agent for Windows 5.1.17.3394' -> 'Windows 5.1.17.3394'. Keeps the OS
+    qualifier + version, drops the boilerplate prefix so the series stays readable."""
+    v = (value or "").strip()
+    if not v:
+        return ""
+    return v.replace("Posture Agent for ", "").strip()
 
 
 def parse_ise_date(date_str):

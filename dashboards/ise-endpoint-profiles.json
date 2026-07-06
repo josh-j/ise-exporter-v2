@@ -43,6 +43,7 @@
         "current": { "text": "All", "value": ["$__all"] },
         "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
         "definition": "label_values(ise_endpoints_by_profile_all, category)",
+        "allValue": ".*",
         "hide": 0,
         "includeAll": true,
         "label": "Category",

@@ -238,7 +238,7 @@ class PxGridStreamer:
         method_ep = defaultdict(set)
         profile_ep = defaultdict(set)
         posture_ep = defaultdict(set)   # (status, loc, owner) -> {mac}
-        mdm_ep = defaultdict(set)       # (dimension, value, loc) -> {mac}
+        mdm_ep = defaultdict(set)       # (dimension, value, owner) -> {mac}
 
         # NB: no by-PSN breakdown here. The pxGrid session directory object carries no
         # owning-PSN field (nasIpAddress etc. yes, psnNodeName/server no), so it cannot
@@ -272,7 +272,7 @@ class PxGridStreamer:
             # endpoint floods the metric as dimension=*/value=unknown.
             if first_nonempty(s, "mdmRegistered", "mdmCompliant", "mdmDeviceManager", "mdmManufacturer"):
                 for dim, attr in _MDM_DIMS:
-                    mdm_ep[(dim, normalize_bool_label(s.get(attr)), loc)].add(mac)
+                    mdm_ep[(dim, normalize_bool_label(s.get(attr)), owner)].add(mac)
 
         for m in (metrics.ise_radius_sessions_by_nad, metrics.ise_radius_sessions_by_ops_owner,
                   metrics.ise_session_status_endpoints, metrics.ise_session_auth_methods,
@@ -296,8 +296,8 @@ class PxGridStreamer:
         for (status, loc, owner), macs in posture_ep.items():
             metrics.ise_session_posture_status.labels(
                 status=status, location=loc, ops_owner=owner).set(len(macs))
-        for (dim, val, loc), macs in mdm_ep.items():
-            metrics.ise_session_mdm_status.labels(dimension=dim, value=val, location=loc).set(len(macs))
+        for (dim, val, owner), macs in mdm_ep.items():
+            metrics.ise_session_mdm_status.labels(dimension=dim, value=val, ops_owner=owner).set(len(macs))
 
         # always emit (it clears first) so model series don't go stale when state empties.
         # pxgrid is passed so the profiler category/parent hierarchy stays joined in

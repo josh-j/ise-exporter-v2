@@ -180,13 +180,13 @@ def test_project_emits_posture_and_mdm_and_leaves_psn_untouched():
                for sm in metrics.ise_session_posture_status.collect()[0].samples}
     assert posture == {"Compliant": 1.0, "NonCompliant": 1.0, "NotApplicable": 1.0}
 
-    # MDM projected only for the MDM-managed session (B)
-    mdm = {(sm.labels["dimension"], sm.labels["value"]): sm.value
+    # MDM projected only for the MDM-managed session (B), keyed by ops_owner
+    mdm = {(sm.labels["dimension"], sm.labels["value"], sm.labels["ops_owner"]): sm.value
            for sm in metrics.ise_session_mdm_status.collect()[0].samples}
-    assert mdm[("registered", "true")] == 1.0
-    assert mdm[("compliant", "false")] == 1.0
-    assert mdm[("jailbroken", "true")] == 1.0
-    assert ("registered", "true") in mdm and len(mdm) == 5   # 5 dims, session B only
+    assert mdm[("registered", "true", "TeamA")] == 1.0
+    assert mdm[("compliant", "false", "TeamA")] == 1.0
+    assert mdm[("jailbroken", "true", "TeamA")] == 1.0
+    assert len(mdm) == 5   # 5 dims, session B only
 
     # projector left PSN empty (owned by the sessions poll collector)
     assert metrics.ise_radius_sessions_by_psn.collect()[0].samples == []

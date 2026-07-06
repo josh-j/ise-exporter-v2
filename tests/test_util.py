@@ -1,6 +1,7 @@
 from ise_exporter.util import (normalize_mac, normalize_location,
                                parse_other_attr_string, first_nonempty,
-                               normalize_posture, normalize_bool_label)
+                               normalize_posture, normalize_bool_label,
+                               parse_posture_report, normalize_agent_version)
 
 
 def test_normalize_mac():
@@ -41,3 +42,37 @@ def test_normalize_bool_label():
     assert normalize_bool_label("Unregistered") == "false"
     assert normalize_bool_label("") == "unknown"
     assert normalize_bool_label(None) == "unknown"
+
+
+# a trimmed multi-policy PostureReport in ISE's real format (escaped '\;' separators,
+# multiple requirements per policy, condition lists with ':' inside brackets)
+_POSTURE_REPORT = (
+    "C2CP-WIN-FIREWALL\\;Passed\\;(C2CR-WIN-FIREWALL:Optional:Passed:"
+    "Passed_Conditions[C2CC-A:C2CC-B]:Failed_Conditions[]:Skipped_Conditions[]), "
+    "C2CP-WIN-AM\\;Failed\\;(C2CR-WIN-AM:Mandatory:Failed:Passed_Conditions[]:"
+    "Failed_Conditions[am_x]:Skipped_Conditions[]\\;C2CR-WIN-AM-ATP:Optional:Passed:"
+    "Passed_Conditions[atp]:Failed_Conditions[]:Skipped_Conditions[]), "
+    "C2CP-WIN-DE-BITLOCKER\\;Passed\\;(C2CR-WIN-DE-BITLOCKER:Optional:Passed:"
+    "Passed_Conditions[hd_x]:Failed_Conditions[]:Skipped_Conditions[])"
+)
+
+
+def test_parse_posture_report_policy_level_rollup():
+    # one (policy, result) per POLICY — requirement/condition detail is dropped, and a
+    # multi-requirement policy (AM, with a nested '\;' requirement) still yields one row
+    assert parse_posture_report(_POSTURE_REPORT) == [
+        ("C2CP-WIN-FIREWALL", "Passed"),
+        ("C2CP-WIN-AM", "Failed"),
+        ("C2CP-WIN-DE-BITLOCKER", "Passed"),
+    ]
+
+
+def test_parse_posture_report_empty():
+    assert parse_posture_report("") == []
+    assert parse_posture_report(None) == []
+
+
+def test_normalize_agent_version_strips_prefix():
+    assert normalize_agent_version("Posture Agent for Windows 5.1.17.3394") == "Windows 5.1.17.3394"
+    assert normalize_agent_version("5.1.2.42") == "5.1.2.42"
+    assert normalize_agent_version("") == ""

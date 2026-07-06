@@ -38,13 +38,21 @@ ise_session_detail_fetches_total = Counter("ise_session_detail_fetches_total", "
 # ise_session_status_endpoints.
 ise_session_posture_status = Gauge("ise_session_posture_status", "Unique endpoints by posture compliance status", ["status", "location", "ops_owner"])
 # MDM device-trust dimensions (registered/compliant/disk_encrypted/jailbroken/pin_locked),
-# value true|false|unknown, per site. Stream-sourced only — the pxGrid session object
+# value true|false|unknown, per ops-owner. Stream-sourced only — the pxGrid session object
 # carries the mdm* fields; empty in poll mode (MnT ActiveList doesn't).
-ise_session_mdm_status = Gauge("ise_session_mdm_status", "Unique MDM-managed endpoints by dimension/value", ["dimension", "value", "location"])
+ise_session_mdm_status = Gauge("ise_session_mdm_status", "Unique MDM-managed endpoints by dimension/value", ["dimension", "value", "ops_owner"])
 # Secure Client / posture agent version from getEndpoints attributes. Best-effort:
 # only emitted for endpoints that expose a version attribute — empty if ISE doesn't
 # publish one over pxGrid getEndpoints (see dashboards/README.md).
 ise_endpoints_by_secureclient_version = Gauge("ise_endpoints_by_secureclient_version", "Endpoints per Secure Client / posture agent version", ["version"])
+# Per posture-POLICY pass/fail, parsed from the session's PostureReport in MnT session
+# detail (authz fan-out) — carried in BOTH poll and stream mode, since the pxGrid
+# session topic doesn't include the report. `result` is the policy-level roll-up
+# (Passed/Failed/...), `policy` the ISE posture policy name (encodes the check).
+ise_posture_policy_result = Gauge("ise_posture_policy_result", "Unique endpoints per posture policy by result", ["policy", "result", "ops_owner"])
+# Secure Client / posture agent version from the session's PostureAgentVersion attr
+# (MnT session detail) — the reliable source when getEndpoints doesn't expose it.
+ise_posture_agent_version = Gauge("ise_posture_agent_version", "Unique endpoints per posture agent version", ["version", "ops_owner"])
 
 # --- network devices ---
 ise_network_devices_total = Gauge("ise_network_devices_total", "Total network devices")

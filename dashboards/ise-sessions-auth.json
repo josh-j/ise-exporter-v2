@@ -107,22 +107,14 @@
       "id": 7, "type": "bargauge", "title": "Sessions by NAD (top 15)",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_radius_sessions_by_nad)", "legendFormat": "{{nas_hostname}} ({{location}})", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_radius_sessions_by_nad)", "legendFormat": "{{nas_hostname}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },
     {
-      "id": 8, "type": "bargauge", "title": "Sessions by Site (Location)",
-      "description": "Active sessions grouped by NAD Location (from the ISE Network Device Group hierarchy). Works in both poll and stream mode. In stream mode this replaces 'Sessions by PSN' (moved to the bottom), which pxGrid cannot populate — the session directory object carries no owning-PSN field.",
+      "id": 8, "type": "bargauge", "title": "Sessions by Ops Owner",
+      "description": "Active sessions grouped by ops owner (each session's NAD → Ops Owner NDG). Works in both poll and stream mode. In stream mode this is the replacement for 'Sessions by PSN' (moved to the bottom), which pxGrid cannot populate — the session directory object carries no owning-PSN field.",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (location) (ise_radius_sessions_by_nad)", "legendFormat": "{{location}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 9, "type": "bargauge", "title": "Sessions by Ops Owner",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_radius_sessions_by_ops_owner", "legendFormat": "{{ops_owner}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
@@ -130,7 +122,7 @@
     },
     {
       "id": 10, "type": "timeseries", "title": "Session Detail Fetch Rate",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_session_detail_fetches_total[5m])) by (result)", "legendFormat": "{{result}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
@@ -210,7 +202,7 @@
     },
     {
       "id": 18, "type": "bargauge", "title": "Sessions by PSN (poll mode only)",
-      "description": "Current active session count per Policy Service Node. Populated only in poll mode, from the MnT ActiveList `server` field. Empty when COLLECT_PXGRID_STREAM=true: the pxGrid session directory has no owning-PSN field, so the stream cannot attribute sessions to a PSN. Use 'Sessions by Site (Location)' for a per-site breakdown that works in both modes.",
+      "description": "Current active session count per Policy Service Node. Populated only in poll mode, from the MnT ActiveList `server` field. Empty when COLLECT_PXGRID_STREAM=true: the pxGrid session directory has no owning-PSN field, so the stream cannot attribute sessions to a PSN. Use 'Sessions by Ops Owner' for a breakdown that works in both modes.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_radius_sessions_by_psn", "legendFormat": "{{psn}}", "refId": "A" }],
