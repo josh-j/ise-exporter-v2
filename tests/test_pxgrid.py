@@ -165,6 +165,61 @@ def test_get_endpoints_uses_required_timestamp_and_pages():
     ]
 
 
+def test_get_endpoints_falls_back_to_single_filter_when_combined_returns_empty():
+    bodies = []
+
+    def handler(op, body, auth):
+        if op == "AccountActivate":
+            return {"accountState": "ENABLED"}
+        if op == "ServiceLookup":
+            return {"services": [{
+                "nodeName": "ise-node",
+                "properties": {"restBaseUrl": "https://ise:8910/pxgrid/ise/endpoint"},
+            }]}
+        if op == "AccessSecret":
+            return {"secret": "secret"}
+        if op == "getEndpoints":
+            bodies.append(body)
+            # combined create+update filter comes back empty; create-only returns data
+            if "startCreateTimestamp" in body and "startUpdateTimestamp" in body:
+                return {"endpoints": []}
+            if "startCreateTimestamp" in body:
+                return {"endpoints": [{"macAddress": "00:00:00:00:00:07"}]}
+            return {"endpoints": []}
+        raise AssertionError(op)
+
+    control = PxGridControl(_cfg())
+    control.session = _Session(handler)
+
+    assert [e["macAddress"] for e in control.get_endpoints(page_size=10)] == ["00:00:00:00:00:07"]
+    assert "startUpdateTimestamp" in bodies[0] and "startCreateTimestamp" in bodies[0]
+    assert bodies[1] == {"startCreateTimestamp": ENDPOINT_BULK_START,
+                         "startIndex": 0, "count": 10, "order": "ASC"}
+
+
+def test_get_endpoints_warns_loudly_when_all_filters_empty(caplog):
+    def handler(op, body, auth):
+        if op == "AccountActivate":
+            return {"accountState": "ENABLED"}
+        if op == "ServiceLookup":
+            return {"services": [{
+                "nodeName": "ise-node",
+                "properties": {"restBaseUrl": "https://ise:8910/pxgrid/ise/endpoint"},
+            }]}
+        if op == "AccessSecret":
+            return {"secret": "secret"}
+        if op == "getEndpoints":
+            return {"endpoints": []}
+        raise AssertionError(op)
+
+    control = PxGridControl(_cfg())
+    control.session = _Session(handler)
+
+    with caplog.at_level(logging.WARNING):
+        assert control.get_endpoints(page_size=10) == []
+    assert any("every timestamp filter" in r.message for r in caplog.records)
+
+
 def test_get_endpoints_can_limit_pages_for_probe():
     bodies = []
 

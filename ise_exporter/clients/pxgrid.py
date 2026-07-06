@@ -229,25 +229,48 @@ class PxGridControl:
 
     def get_endpoints(self, *, start_timestamp=ENDPOINT_BULK_START,
                       page_size=ENDPOINT_PAGE_SIZE, max_pages=None, timeout=120):
-        """Fetch all pxGrid endpoints using the documented mandatory timestamp
-        filter and startIndex/count paging. Sends BOTH startCreateTimestamp and
-        startUpdateTimestamp (Cisco's own request example does the same) rather
-        than create-time alone — older/bulk-imported endpoints in a large
-        deployment can have a blank createTimestamp, which silently excludes
-        them from a create-time-only filter despite being real, visible
-        endpoints in ISE's own Context Visibility.
+        """Fetch all pxGrid endpoints using the documented mandatory timestamp filter
+        and startIndex/count paging.
+
+        Cisco documents startCreateTimestamp OR startUpdateTimestamp as mandatory
+        (either one). We try BOTH together first (matches Cisco's bulk example), then
+        fall back to each single filter: some ISE builds AND the two and return nothing
+        when an endpoint has a blank create- or update-timestamp, so the combined query
+        can come back empty on a deployment whose endpoints are perfectly real. If ALL
+        filter variants return zero, that's an ISE-side context-publishing problem (the
+        service resolved but ISE published no endpoints), not a query error — surfaced
+        loudly so it isn't mistaken for "no endpoints exist".
         """
+        filters = (
+            {"startCreateTimestamp": start_timestamp, "startUpdateTimestamp": start_timestamp},
+            {"startCreateTimestamp": start_timestamp},
+            {"startUpdateTimestamp": start_timestamp},
+        )
+        for i, timestamp_filter in enumerate(filters):
+            endpoints = self._get_endpoints_paged(timestamp_filter, page_size, max_pages, timeout)
+            if endpoints:
+                if i:
+                    logger.info("pxGrid getEndpoints: %d endpoints via fallback filter %s "
+                                "(combined create+update filter returned none)",
+                                len(endpoints), list(timestamp_filter))
+                return endpoints
+        logger.warning(
+            "pxGrid getEndpoints returned 0 endpoints for every timestamp filter. The "
+            "endpoint service resolved but ISE published NO endpoints to pxGrid — an "
+            "ISE-side context-publishing issue, not a query error (sessions can still "
+            "stream fine). Verify: (1) the pxGrid client's approved group grants the "
+            "EndpointService (com.cisco.ise.endpoint); (2) ISE is publishing endpoint "
+            "context to pxGrid (Profiler / pxGrid settings) and endpoints are profiled. "
+            "All endpoint model/profile/coverage metrics stay empty until this is fixed.")
+        return []
+
+    def _get_endpoints_paged(self, timestamp_filter, page_size, max_pages, timeout):
         endpoints = []
         start_index = 0
         pages = 0
         while True:
-            body = {
-                "startCreateTimestamp": start_timestamp,
-                "startUpdateTimestamp": start_timestamp,
-                "startIndex": start_index,
-                "count": page_size,
-                "order": "ASC",
-            }
+            body = {**timestamp_filter, "startIndex": start_index,
+                    "count": page_size, "order": "ASC"}
             data = self.rest_query(ENDPOINT_SERVICE, "getEndpoints", body, timeout=timeout)
             if isinstance(data, dict):
                 page = _as_list(data.get("endpoints") or data.get("endpoint"), "endpoint")

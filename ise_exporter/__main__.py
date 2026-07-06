@@ -62,6 +62,16 @@ def pxgrid_check(cfg, *, check_stream=False):
                                           timeout=cfg.pxgrid_query_timeout)
             profiles = ctl.get_profiler_profiles(timeout=cfg.pxgrid_query_timeout)
             logger.info("pxGrid check: getEndpoints one-page probe ok endpoints=%d", len(endpoints))
+            if endpoints:
+                # dump the attribute keys of a sample endpoint so we can see exactly
+                # which attributes ISE publishes (MFC/profile fields, and whether
+                # posture attrs like PostureReport/PostureAgentVersion are present).
+                logger.info("pxGrid check: sample endpoint attribute keys: %s",
+                            sorted(endpoints[0].keys()))
+            else:
+                logger.warning("pxGrid check: getEndpoints returned 0 — endpoint model / "
+                               "profile / posture-attribute metrics will be empty until ISE "
+                               "publishes endpoint context to pxGrid (see the warning above)")
             logger.info("pxGrid check: getProfiles ok profiles=%d", len(profiles))
 
         if check_stream:
