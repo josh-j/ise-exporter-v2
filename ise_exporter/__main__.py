@@ -58,16 +58,36 @@ def pxgrid_check(cfg, *, check_stream=False):
             logger.info("pxGrid check: getSessions ok sessions=%d", session_count)
 
         if needs_endpoints:
-            endpoints = ctl.get_endpoints(page_size=1, max_pages=1,
+            # pull a small page (not just 1) so the posture-attribute check below is
+            # representative — posture attrs only exist on posture-assessed endpoints.
+            endpoints = ctl.get_endpoints(page_size=50, max_pages=1,
                                           timeout=cfg.pxgrid_query_timeout)
             profiles = ctl.get_profiler_profiles(timeout=cfg.pxgrid_query_timeout)
-            logger.info("pxGrid check: getEndpoints one-page probe ok endpoints=%d", len(endpoints))
+            logger.info("pxGrid check: getEndpoints probe ok endpoints=%d (first page)", len(endpoints))
             if endpoints:
-                # dump the attribute keys of a sample endpoint so we can see exactly
-                # which attributes ISE publishes (MFC/profile fields, and whether
-                # posture attrs like PostureReport/PostureAgentVersion are present).
-                logger.info("pxGrid check: sample endpoint attribute keys: %s",
-                            sorted(endpoints[0].keys()))
+                from .collectors.models import (_ep_attr, _POSTURE_REPORT_KEYS,
+                                                _SECURECLIENT_VERSION_KEYS)
+                ep = endpoints[0]
+                # dump the attribute keys — top level AND any nested attribute maps — so we
+                # can see exactly what getEndpoints returns and where posture attrs live.
+                logger.info("pxGrid check: sample endpoint top-level keys: %s", sorted(ep.keys()))
+                for container in ("customAttributes", "attributes", "otherAttributes"):
+                    sub = ep.get(container)
+                    if isinstance(sub, dict):
+                        logger.info("pxGrid check: sample endpoint %s keys: %s",
+                                    container, sorted(sub.keys()))
+                n_report = sum(1 for e in endpoints if _ep_attr(e, *_POSTURE_REPORT_KEYS))
+                n_version = sum(1 for e in endpoints if _ep_attr(e, *_SECURECLIENT_VERSION_KEYS))
+                logger.info("pxGrid check: posture attrs in sample — PostureReport on %d/%d, "
+                            "PostureAgentVersion on %d/%d endpoints",
+                            n_report, len(endpoints), n_version, len(endpoints))
+                if not n_report and not n_version:
+                    logger.warning("pxGrid check: NO posture attributes on any sampled endpoint. If "
+                                   "PostureReport/PostureAgentVersion are visible in ISE Context "
+                                   "Visibility but absent here, getEndpoints isn't returning them for "
+                                   "this deployment — the Secure Client posture panels can't populate. "
+                                   "Send the attribute-key lines above so the collector can be pointed "
+                                   "at the right attribute name.")
             else:
                 logger.warning("pxGrid check: getEndpoints returned 0 — endpoint model / "
                                "profile / posture-attribute metrics will be empty until ISE "

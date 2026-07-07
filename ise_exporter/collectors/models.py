@@ -132,6 +132,7 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
     by_policy = defaultdict(int)
     by_scversion = defaultdict(int)
     posture_policies = defaultdict(set)   # (policy, result, ops_owner) -> {mac}
+    ep_with_report = 0                     # endpoints carrying a parseable PostureReport
     coverage = {"model": 0, "manufacturer": 0, "endpoint_type": 0, "os": 0}
     total = 0
 
@@ -151,6 +152,7 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
         mac = normalize_mac(first_nonempty(ep, *_MAC_KEYS))
         report = _ep_attr(ep, *_POSTURE_REPORT_KEYS)
         if report and mac:
+            ep_with_report += 1
             owner = mac_owner.get(mac, "unknown")
             for pol, res in parse_posture_report(report):
                 posture_policies[(pol, res, owner)].add(mac)
@@ -203,5 +205,11 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
     metrics.ise_endpoints_pxgrid_total.set(total)
     for attr, hit in coverage.items():
         metrics.ise_endpoint_mfc_coverage.labels(attribute=attr).set(hit / total if total else 0.0)
-    logger.debug("models: %d endpoints, model coverage %.0f%%",
-                 total, 100 * coverage["model"] / total if total else 0)
+    logger.debug("models: %d endpoints, model coverage %.0f%%, %d with a posture report",
+                 total, 100 * coverage["model"] / total if total else 0, ep_with_report)
+    # a loud one-liner when endpoints exist but none carry posture — the usual reason the
+    # Secure Client posture panels are empty (getEndpoints isn't returning PostureReport).
+    if total and not ep_with_report:
+        logger.info("models: %d endpoints but 0 carry a PostureReport attribute — Secure Client "
+                    "posture panels will be empty. Run `ise-exporter --pxgrid-check` to see the "
+                    "endpoint attribute keys getEndpoints actually returns.", total)

@@ -1,0 +1,361 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "gauge", "name": "Gauge", "version": "" },
+    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" },
+    { "type": "panel", "id": "piechart", "name": "Pie chart", "version": "" },
+    { "type": "panel", "id": "table", "name": "Table", "version": "" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "row", "name": "Row", "version": "" }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": false,
+  "schemaVersion": 39,
+  "tags": ["ise", "cisco", "radius", "authc", "authz", "troubleshooting"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(ise_session_status_endpoints, ops_owner)",
+        "allValue": ".*",
+        "includeAll": true,
+        "label": "Ops Owner",
+        "multi": true,
+        "name": "ops_owner",
+        "options": [],
+        "query": { "query": "label_values(ise_session_status_endpoints, ops_owner)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(ise_session_status_endpoints{ops_owner=~\"$ops_owner\"}, location)",
+        "allValue": ".*",
+        "includeAll": true,
+        "label": "Location",
+        "multi": true,
+        "name": "location",
+        "options": [],
+        "query": { "query": "label_values(ise_session_status_endpoints{ops_owner=~\"$ops_owner\"}, location)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(ise_session_failure_reasons{ops_owner=~\"$ops_owner\", location=~\"$location\"}, reason_code)",
+        "allValue": ".*",
+        "includeAll": true,
+        "label": "Reason Code",
+        "multi": true,
+        "name": "reason_code",
+        "options": [],
+        "query": { "query": "label_values(ise_session_failure_reasons{ops_owner=~\"$ops_owner\", location=~\"$location\"}, reason_code)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "ISE Exporter / Auth (AuthC + AuthZ) Troubleshooting",
+  "uid": "ise-auth-troubleshoot",
+  "version": 1,
+  "weekStart": "",
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "Overview", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
+    },
+    {
+      "id": 2, "type": "stat", "title": "Active Sessions",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_active_sessions_total", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" }
+    },
+    {
+      "id": 3, "type": "stat", "title": "Auth Pass Rate",
+      "description": "passed / (passed + failed) unique endpoints. passed is real-time (stream projector); failed comes from the authz MnT fan-out, so before 'Authz Cache Warmup' hits 100% this reads optimistically high.",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "100 * sum(ise_session_status_endpoints{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}) / clamp_min(sum(ise_session_status_endpoints{status=~\"passed|failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}), 1)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 90 }, { "color": "yellow", "value": 97 }, { "color": "green", "value": 99 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "background", "graphMode": "area", "justifyMode": "auto" }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Failed Endpoints",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_status_endpoints{status=\"failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}) or vector(0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 100 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "background", "graphMode": "area", "justifyMode": "auto" }
+    },
+    {
+      "id": 5, "type": "stat", "title": "Distinct Failure Codes",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "count(group by (reason_code) (ise_session_failure_reasons{ops_owner=~\"$ops_owner\", location=~\"$location\"})) or vector(0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 6, "type": "stat", "title": "NADs With Failures",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "count(sum by (nad_hostname) (ise_session_failure_reasons{ops_owner=~\"$ops_owner\", location=~\"$location\", reason_code=~\"$reason_code\"}) > 0) or vector(0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "orange", "value": 50 }, { "color": "red", "value": 200 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
+    },
+    {
+      "id": 7, "type": "gauge", "title": "Authz Cache Warmup",
+      "description": "Fraction of active endpoints whose session detail (failure reason / authz rule / policy set / auth method) is cached. Until 100%, every failure/authz count below is a floor — real numbers can only be higher.",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_session_warmup_progress * 100", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 50 }, { "color": "yellow", "value": 90 }, { "color": "green", "value": 99 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "showThresholdLabels": false, "showThresholdMarkers": true }
+    },
+    {
+      "id": 10, "type": "row", "title": "Authentication", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "panels": []
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Passed vs Failed Endpoints Over Time",
+      "description": "Unique endpoints passing vs failing auth. Both series are counts on one axis (no dual-axis) — see 'Pass Rate' for the ratio.",
+      "gridPos": { "h": 8, "w": 10, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_status_endpoints{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"})", "legendFormat": "Passed", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_status_endpoints{status=\"failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"})", "legendFormat": "Failed", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "spanNulls": true, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Passed" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+          { "matcher": { "id": "byName", "options": "Failed" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Pass Rate Over Time",
+      "gridPos": { "h": 8, "w": 8, "x": 10, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "100 * sum(ise_session_status_endpoints{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}) / clamp_min(sum(ise_session_status_endpoints{status=~\"passed|failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}), 1)", "legendFormat": "Pass rate", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "spanNulls": true, "showPoints": "never", "thresholdsStyle": { "mode": "dashed" } },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 97 }] },
+          "color": { "mode": "fixed", "fixedColor": "blue" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 13, "type": "piechart", "title": "Auth Methods",
+      "description": "Method mix across endpoints in scope (dot1x vs MAB vs others). A MAB-heavy mix points failures toward unknown-MAC (11036); a dot1x-heavy mix toward supplicant/cert issues.",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (method) (ise_session_auth_methods{ops_owner=~\"$ops_owner\", location=~\"$location\"})", "legendFormat": "{{method}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }, "overrides": [] },
+      "options": { "pieType": "donut", "displayLabels": ["percent"], "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "values": ["value"] }, "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "tooltip": { "mode": "single", "sort": "desc" } }
+    },
+    {
+      "id": 20, "type": "row", "title": "Why It Fails — Failure Reasons", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }, "panels": []
+    },
+    {
+      "id": 21, "type": "bargauge", "title": "Top Failure Reasons",
+      "description": "Endpoints per RADIUS failure reason code, most-affected first. Codes are decoded inline; common ones: 11036 MAB unknown MAC, 11512 EAP-NAK, 12300/12500/12501/12511 client-cert path, 22040 wrong password, 15039 AuthZ denied.",
+      "gridPos": { "h": 10, "w": 10, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, sum by (reason_code) (ise_session_failure_reasons{ops_owner=~\"$ops_owner\", location=~\"$location\"}))", "legendFormat": "{{reason_code}}", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "continuous-reds" },
+          "mappings": [{ "type": "value", "options": {
+            "5400": { "text": "5400 — Auth failed (generic)" },
+            "5411": { "text": "5411 — Supplicant stopped responding" },
+            "5434": { "text": "5434 — Repeated failed auths" },
+            "5440": { "text": "5440 — EAP session abandoned" },
+            "11036": { "text": "11036 — MAB: unknown MAC" },
+            "11038": { "text": "11038 — RADIUS req invalid" },
+            "11504": { "text": "11504 — Bad Message-Authenticator" },
+            "11507": { "text": "11507 — Unknown EAP method" },
+            "11512": { "text": "11512 — EAP-NAK unsupported" },
+            "12300": { "text": "12300 — No client cert offered" },
+            "12321": { "text": "12321 — PEAP TLS handshake" },
+            "12500": { "text": "12500 — Client cert verify fail" },
+            "12501": { "text": "12501 — Client cert not trusted" },
+            "12511": { "text": "12511 — Client cert revoked" },
+            "12625": { "text": "12625 — EAP-TLS timeout" },
+            "15039": { "text": "15039 — AuthZ rule denied" },
+            "22037": { "text": "22037 — User not found" },
+            "22040": { "text": "22040 — Wrong password" },
+            "22056": { "text": "22056 — Subject DN not found" },
+            "24209": { "text": "24209 — MAB without 802.1X" },
+            "24211": { "text": "24211 — MAB succeeded" }
+          } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "valueMode": "text", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 22, "type": "timeseries", "title": "Failure Reasons Over Time (top 10)",
+      "description": "'Top' is recomputed each interval, so a code can slide in and out of the chart as it rises/falls on the leaderboard.",
+      "gridPos": { "h": 10, "w": 14, "x": 10, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum by (reason_code) (ise_session_failure_reasons{ops_owner=~\"$ops_owner\", location=~\"$location\"}))", "legendFormat": "{{reason_code}}", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": true, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"], "sortBy": "Last *", "sortDesc": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 30, "type": "row", "title": "Authorization Pipeline — Policy Set → Rule → Profile", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 }, "panels": []
+    },
+    {
+      "id": 31, "type": "bargauge", "title": "Matched Policy Sets",
+      "description": "Which policy set is handling auths in scope. A sudden shift, or endpoints landing on an unexpected set, is an authz-selection problem (wrong conditions on the policy set).",
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (policy_set) (ise_session_policy_set_endpoints{ops_owner=~\"$ops_owner\", location=~\"$location\"})", "legendFormat": "{{policy_set}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "continuous-blues" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 32, "type": "bargauge", "title": "Matched AuthZ Rules (top 15)",
+      "description": "Which authorization rule actually fired — the #1 authz troubleshooting question. Endpoints hitting a default/catch-all deny rule instead of their intended rule = condition mismatch (group, cert attr, posture).",
+      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, sum by (authz_rule) (ise_session_authz_rule_endpoints{ops_owner=~\"$ops_owner\", location=~\"$location\"}))", "legendFormat": "{{authz_rule}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "continuous-blues" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 33, "type": "bargauge", "title": "AuthZ Profiles Assigned (top 15)",
+      "description": "The access result — which authorization profile each endpoint got. Endpoints on DenyAccess / a limited or redirect profile instead of full access is where closed-mode enforcement or posture redirects show up.",
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, sum by (authz_profile) (ise_authz_unique_endpoints_by_profile{ops_owner=~\"$ops_owner\", location=~\"$location\"}))", "legendFormat": "{{authz_profile}}", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "continuous-blues" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": ".*([Dd]eny|[Bb]lackhole).*" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+        ]
+      },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 40, "type": "row", "title": "Where — Localize the Problem", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 }, "panels": []
+    },
+    {
+      "id": 41, "type": "table", "title": "Failure Codes × Ops Owner",
+      "description": "Hot cells localize a failure to a team. A row hot across many codes = that owner's fleet needs attention; a single code hot in one row = a targeted issue.",
+      "gridPos": { "h": 12, "w": 12, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (reason_code, ops_owner) (ise_session_failure_reasons{location=~\"$location\", reason_code=~\"$reason_code\"})", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background", "mode": "gradient" }, "filterable": true }, "color": { "mode": "continuous-reds" }, "noValue": "0" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ops_owner" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "auto" } }, { "id": "custom.width", "value": 180 }] }
+        ]
+      },
+      "options": { "cellHeight": "sm", "showHeader": true, "footer": { "show": false } },
+      "transformations": [
+        { "id": "groupingToMatrix", "options": { "columnField": "reason_code", "rowField": "ops_owner", "valueField": "Value", "emptyValue": "zero" } }
+      ]
+    },
+    {
+      "id": 42, "type": "table", "title": "Failure Codes × Location",
+      "description": "Same failures sliced by site. '11512 hot at one site' = site-specific supplicant config; '12500 hot everywhere' = a global cert/CA problem.",
+      "gridPos": { "h": 12, "w": 12, "x": 12, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (reason_code, location) (ise_session_failure_reasons{ops_owner=~\"$ops_owner\", reason_code=~\"$reason_code\"})", "format": "table", "instant": true, "refId": "A" }],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background", "mode": "gradient" }, "filterable": true }, "color": { "mode": "continuous-reds" }, "noValue": "0" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "location" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "auto" } }, { "id": "custom.width", "value": 220 }] }
+        ]
+      },
+      "options": { "cellHeight": "sm", "showHeader": true, "footer": { "show": false } },
+      "transformations": [
+        { "id": "groupingToMatrix", "options": { "columnField": "reason_code", "rowField": "location", "valueField": "Value", "emptyValue": "zero" } }
+      ]
+    },
+    {
+      "id": 50, "type": "row", "title": "Work Queue — Auth Status by NAD", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 48 }, "panels": []
+    },
+    {
+      "id": 51, "type": "table", "title": "Auth Status by NAD",
+      "description": "Every NAD in scope with its passed + failed endpoint counts (outer join, so a NAD with only failures still shows). Sort by Failed to find where to look first; the Passed column gives scale — 50 failed / 5000 passed is different from 50 failed / 2 passed.",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 49 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (nad_hostname, location, ops_owner) (ise_session_status_endpoints{status=\"failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"})", "format": "table", "instant": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (nad_hostname, location, ops_owner) (ise_session_status_endpoints{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"})", "format": "table", "instant": true, "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "filterable": true }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Failed" }, "properties": [
+            { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient" } },
+            { "id": "min", "value": 0 },
+            { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 20 }] } }
+          ] },
+          { "matcher": { "id": "byName", "options": "Passed" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-text" } }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "cellHeight": "sm", "showHeader": true, "footer": { "show": true, "countRows": true }, "sortBy": [{ "displayName": "Failed", "desc": true }] },
+      "transformations": [
+        { "id": "joinByField", "options": { "byField": "nad_hostname", "mode": "outer" } },
+        { "id": "organize", "options": {
+          "excludeByName": { "Time 1": true, "Time 2": true, "__name__ 1": true, "__name__ 2": true, "instance 1": true, "instance 2": true, "job 1": true, "job 2": true, "location 2": true, "ops_owner 2": true },
+          "indexByName": { "nad_hostname": 0, "location 1": 1, "ops_owner 1": 2, "Value #A": 3, "Value #B": 4 },
+          "renameByName": { "nad_hostname": "NAD", "location 1": "Location", "ops_owner 1": "Ops Owner", "Value #A": "Failed", "Value #B": "Passed" }
+        } }
+      ]
+    }
+  ]
+}
