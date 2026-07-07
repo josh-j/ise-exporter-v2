@@ -14,6 +14,23 @@ def clear_metric(metric):
         pass
 
 
+def clear_metric_where(metric, **labels):
+    """Remove only the child series whose labels match ALL of `labels` (e.g.
+    status='failed'), leaving the metric's other series untouched. Used where two
+    collectors share one metric but own disjoint label values — the stream projector
+    owns ise_session_status_endpoints{status='passed'} while authz owns
+    {status='failed'}, so each must clear only its own slice, not the whole metric."""
+    try:
+        names = metric._labelnames
+        with metric._lock:
+            doomed = [key for key in metric._metrics
+                      if all(dict(zip(names, key)).get(k) == v for k, v in labels.items())]
+            for key in doomed:
+                metric._metrics.pop(key, None)
+    except Exception:
+        pass
+
+
 def normalize_mac(mac):
     if not mac:
         return ""

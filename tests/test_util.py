@@ -1,7 +1,21 @@
+from ise_exporter import metrics
 from ise_exporter.util import (normalize_mac, normalize_location,
                                parse_other_attr_string, first_nonempty,
                                normalize_posture, normalize_bool_label,
-                               parse_posture_report, normalize_agent_version)
+                               parse_posture_report, normalize_agent_version,
+                               clear_metric_where)
+
+
+def test_clear_metric_where_removes_only_matching_label_slice():
+    m = metrics.ise_session_status_endpoints
+    m.clear()
+    m.labels(nad_hostname="sw1", location="L", ops_owner="T", status="passed").set(5)
+    m.labels(nad_hostname="sw1", location="L", ops_owner="T", status="failed").set(3)
+
+    clear_metric_where(m, status="failed")
+
+    remaining = {s.labels["status"]: s.value for s in m.collect()[0].samples}
+    assert remaining == {"passed": 5.0}   # failed slice gone, passed untouched
 
 
 def test_normalize_mac():

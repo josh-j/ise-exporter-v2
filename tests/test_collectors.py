@@ -91,9 +91,10 @@ def test_poll_authz_emits_posture_status():
     assert posture[("NonCompliant", "SiteA")] == 1.0
 
 
-def test_streaming_authz_emits_only_topic_uncoverable_signals():
-    """In stream mode authz must feed failure-reason / matched-rule / policy-set but
-    NOT touch the projector-owned status / methods / profiles gauges."""
+def test_streaming_authz_emits_failed_status_without_wiping_passed():
+    """In stream mode authz feeds failure-reason / matched-rule / policy-set AND the
+    status='failed' slice (its own, since failed auths aren't sessions) but must NOT
+    touch the projector-owned status='passed' / methods / profiles series."""
     from ise_exporter import metrics
     from ise_exporter.collectors import authz
 
@@ -114,7 +115,7 @@ def test_streaming_authz_emits_only_topic_uncoverable_signals():
                                                   "nas_ip_address": "10.0.0.1"}]}
             return {"total": 1, "sessions": [dict(detail)]}
 
-    # projector-owned gauge pre-set by the "streamer" — authz must not wipe it
+    # projector-owned passed series pre-set by the "streamer" — authz must not wipe it
     metrics.ise_session_status_endpoints.labels(
         nad_hostname="sw1", location="L", ops_owner="TeamA", status="passed").set(42)
 
@@ -122,6 +123,9 @@ def test_streaming_authz_emits_only_topic_uncoverable_signals():
 
     assert _label_set(metrics.ise_session_failure_reasons, "reason_code") == {"11512": 1.0}
     assert _label_set(metrics.ise_session_policy_set_endpoints, "policy_set") == {"Wired Closed Mode": 1.0}
-    # projector-owned series untouched
+    # authz now emits the failed slice in stream mode (the failure-rate panels need it)
+    assert metrics.ise_session_status_endpoints.labels(
+        nad_hostname="sw1", location="L", ops_owner="TeamA", status="failed")._value.get() == 1
+    # ...without wiping the projector-owned passed series
     assert metrics.ise_session_status_endpoints.labels(
         nad_hostname="sw1", location="L", ops_owner="TeamA", status="passed")._value.get() == 42

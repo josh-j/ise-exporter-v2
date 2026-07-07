@@ -13,8 +13,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import metrics
-from ..util import (clear_metric, normalize_mac, normalize_location,
-                    parse_other_attr_string, normalize_posture)
+from ..util import (clear_metric, clear_metric_where, normalize_mac,
+                    normalize_location, parse_other_attr_string, normalize_posture)
 from . import observe, CollectorFailed
 from .devices import nad_labels
 
@@ -173,14 +173,22 @@ def collect(client, cfg, mappings):
         _emit_unique(metrics.ise_session_authz_rule_endpoints, rules, "authz_rule")
         _emit_unique(metrics.ise_session_policy_set_endpoints, policy_sets, "policy_set")
 
-        # streamer-owned in stream mode, so only emit from the poll fan-out
+        # status="failed" is emitted in BOTH modes: failed auths aren't active sessions,
+        # so the stream projector (which owns status="passed") can't produce them —
+        # authz is the only source of the failed-endpoint count that failure-rate panels
+        # need. In stream mode clear ONLY the failed series so we don't wipe the
+        # projector's passed series (poll mode's full clear of `owned` already did it).
+        if streaming:
+            clear_metric_where(metrics.ise_session_status_endpoints, status="failed")
+        for (nad, loc, owner), macs in failed.items():
+            metrics.ise_session_status_endpoints.labels(
+                nad_hostname=nad, location=loc, ops_owner=owner, status="failed").set(len(macs))
+
+        # streamer-owned in stream mode, so only emit these from the poll fan-out
         if not streaming:
             for (nad, loc, owner), macs in passed.items():
                 metrics.ise_session_status_endpoints.labels(
                     nad_hostname=nad, location=loc, ops_owner=owner, status="passed").set(len(macs))
-            for (nad, loc, owner), macs in failed.items():
-                metrics.ise_session_status_endpoints.labels(
-                    nad_hostname=nad, location=loc, ops_owner=owner, status="failed").set(len(macs))
             _emit_unique(metrics.ise_session_auth_methods, methods, "method")
             _emit_unique(metrics.ise_authz_unique_endpoints_by_profile, profiles, "authz_profile")
             for (status, loc, owner), macs in posture.items():

@@ -28,7 +28,7 @@ import time
 from collections import defaultdict
 
 from . import metrics
-from .util import (clear_metric, normalize_mac, first_nonempty,
+from .util import (clear_metric, clear_metric_where, normalize_mac, first_nonempty,
                    normalize_posture, normalize_bool_label)
 from .clients.pxgrid import SESSION_SERVICE, _as_list
 from .collectors.devices import nad_labels
@@ -295,10 +295,12 @@ class PxGridStreamer:
                     mdm_ep[(dim, normalize_bool_label(s.get(attr)), owner)].add(mac)
 
         for m in (metrics.ise_radius_sessions_by_nad, metrics.ise_radius_sessions_by_ops_owner,
-                  metrics.ise_session_status_endpoints, metrics.ise_session_auth_methods,
-                  metrics.ise_authz_unique_endpoints_by_profile,
+                  metrics.ise_session_auth_methods, metrics.ise_authz_unique_endpoints_by_profile,
                   metrics.ise_session_posture_status, metrics.ise_session_mdm_status):
             clear_metric(m)
+        # only clear our own status="passed" slice — authz owns status="failed" on this
+        # same metric (failed auths aren't sessions), so a full clear would wipe it.
+        clear_metric_where(metrics.ise_session_status_endpoints, status="passed")
         for (host, loc), n in by_nad.items():
             metrics.ise_radius_sessions_by_nad.labels(nas_hostname=host, location=loc).set(n)
         for owner, n in by_owner.items():
