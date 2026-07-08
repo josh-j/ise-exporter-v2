@@ -41,6 +41,19 @@ def stream_active(cfg):
         return False
 
 
+def pxgrid_endpoints_present():
+    """True when pxGrid getEndpoints last delivered endpoints (ise_endpoints_pxgrid_total
+    > 0) — i.e. models.py owns the endpoint model / posture-policy / Secure Client version
+    gauges. Fallback sources defer to getEndpoints and only emit when this is False: the
+    ERS profile breakdown (ers_endpoints.py) and the MnT session other_attr_string posture
+    + Secure Client version (authz.py). Gating on this keeps the two sources from
+    double-counting the same gauges."""
+    try:
+        return metrics.ise_endpoints_pxgrid_total._value.get() > 0
+    except Exception:
+        return False
+
+
 @contextmanager
 def observe(name):
     start = time.time()

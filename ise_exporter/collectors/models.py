@@ -37,8 +37,10 @@ _SECURECLIENT_VERSION_KEYS = ("secureClientVersion", "SecureClientVersion",
                               "postureAgentVersion", "PostureAgentVersion",
                               "AnyConnectAgentVersion")
 # Per-policy posture pass/fail lives in the endpoint's PostureReport attribute
-# (Context Visibility), collected here via getEndpoints — NOT the endpoint topic and
-# NOT MnT session detail.
+# (Context Visibility), collected here via getEndpoints. When getEndpoints returns 0
+# (common on streaming deployments) the same PostureReport is in each session's
+# other_attr_string, and authz.py emits ise_posture_policy_result from there as a
+# fallback (gated on pxgrid_endpoints_present so the two never double-count).
 _POSTURE_REPORT_KEYS = ("PostureReport", "postureReport")
 _MAC_KEYS = ("macAddress", "MACAddress", "mac")
 

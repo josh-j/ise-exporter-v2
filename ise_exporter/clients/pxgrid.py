@@ -258,16 +258,21 @@ class PxGridControl:
                                 len(endpoints), list(timestamp_filter))
                 return endpoints
         logger.warning(
-            "pxGrid getEndpoints returned 0 endpoints for every timestamp filter. The "
-            "endpoint service resolved but ISE published NO endpoints to pxGrid — an "
-            "ISE-side context-publishing issue, not a query error (sessions still stream "
-            "fine). Enable it in ISE at Administration > System > Profiling: turn on both "
-            "'Profiler Forwarder Persistence Queue' AND 'Custom Attribute for Profiling "
-            "Enforcement' — both are required before ISE publishes endpoints to pxGrid "
-            "(this drives BOTH getEndpoints and the /topic/com.cisco.ise.endpoint topic). "
-            "Also confirm the pxGrid client's group grants EndpointService "
-            "(com.cisco.ise.endpoint). Endpoint model/profile/coverage metrics stay empty "
-            "until this is fixed.")
+            "pxGrid getEndpoints returned 0 endpoints for every timestamp filter (queried "
+            "from epoch, so this is NOT a filter-window issue). The endpoint service "
+            "resolved and the query is authorized — ISE simply has nothing in its pxGrid "
+            "endpoint directory to return. This is common and expected on many deployments: "
+            "the pxGrid endpoint feed only carries endpoints ISE has published live context "
+            "for (driven by active RADIUS sessions/network activity), and is often empty even "
+            "when the endpoint DB is not. Verified against ISE 3.3 that it stays empty on a "
+            "node with no active sessions even with Profiler Forwarder Persistence Queue + "
+            "Custom Attribute for Profiling Enforcement enabled and an endpoint statically "
+            "profiled — so it is not a simple settings toggle. Sessions still stream fine. "
+            "The endpoint profile/model breakdown falls back to the ERS endpoint collector "
+            "(COLLECT_ERS_ENDPOINT_FALLBACK); pxGrid-native endpoint attributes "
+            "(MFC model/OS, Secure Client posture) stay empty until ISE actually publishes "
+            "endpoint context — check the pxGrid client group grants EndpointService "
+            "(com.cisco.ise.endpoint) and that endpoints have live pxGrid-published context.")
         return []
 
     def _get_endpoints_paged(self, timestamp_filter, page_size, max_pages, timeout):

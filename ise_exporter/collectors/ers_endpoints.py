@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .. import metrics
 from ..util import clear_metric
-from . import observe, CollectorFailed
+from . import observe, CollectorFailed, pxgrid_endpoints_present
 
 logger = logging.getLogger(__name__)
 
@@ -34,17 +34,10 @@ _catalog_at = 0.0
 _CATALOG_TTL = 21600      # the profiler catalog changes only on ISE upgrade — refresh rarely
 
 
-def _pxgrid_endpoints_present():
-    try:
-        return metrics.ise_endpoints_pxgrid_total._value.get() > 0
-    except Exception:
-        return False
-
-
 def collect(client, cfg):
     # pxGrid getEndpoints is authoritative when it's delivering — only fall back when
     # it's empty, so the two never fight over ise_endpoints_by_policy / _by_profile_all.
-    if _pxgrid_endpoints_present():
+    if pxgrid_endpoints_present():
         return
     with observe("ers_endpoint_profiles"):
         total = client.get_ers_total("/config/endpoint", api_name="ers_endpoint_total")

@@ -14,11 +14,22 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .. import metrics
 from ..util import (clear_metric, clear_metric_where, normalize_mac,
-                    normalize_location, parse_other_attr_string, normalize_posture)
-from . import observe, CollectorFailed, stream_active
+                    normalize_location, parse_other_attr_string, normalize_posture,
+                    parse_posture_report, normalize_agent_version, first_nonempty)
+from . import observe, CollectorFailed, stream_active, pxgrid_endpoints_present
 from .devices import nad_labels
 
 logger = logging.getLogger(__name__)
+
+# Secure Client / posture-agent version as it appears in a session's other_attr_string
+# (spelling varies by ISE version). Mirror of models._SECURECLIENT_VERSION_KEYS for the
+# MnT-session source. PostureReport + these are pulled from other_attr_string and emitted
+# onto ise_posture_policy_result / ise_endpoints_by_secureclient_version ONLY when pxGrid
+# getEndpoints isn't delivering endpoints (models.py owns them otherwise) — see the
+# fallback block in collect().
+_SECURECLIENT_VERSION_KEYS = ("SecureClientVersion", "AnyConnectVersion",
+                              "PostureAgentVersion", "AnyConnectAgentVersion")
+_POSTURE_REPORT_KEYS = ("PostureReport", "postureReport")
 
 # Gauges this collector owns in POLL mode (all of them) vs STREAMING mode. In
 # streaming mode the pxGrid projector owns sessions / passed-status / auth-methods /
@@ -86,6 +97,11 @@ def collect(client, cfg, mappings):
         if not active_macs:
             for m in owned:
                 clear_metric(m)
+            # no sessions -> no other_attr_string posture either; clear the fallback gauges
+            # unless getEndpoints owns them.
+            if not pxgrid_endpoints_present():
+                clear_metric(metrics.ise_posture_policy_result)
+                clear_metric(metrics.ise_endpoints_by_secureclient_version)
             metrics.ise_session_detail_cache_size.set(cache.size())
             metrics.ise_session_warmup_progress.set(1.0)
             return
@@ -123,6 +139,8 @@ def collect(client, cfg, mappings):
         rules = defaultdict(set)
         policy_sets = defaultdict(set)
         posture = defaultdict(set)          # (status, loc, owner) -> {mac}
+        posture_policies = defaultdict(set)  # (policy, result, owner) -> {mac} (PostureReport)
+        scversion = defaultdict(set)         # secure-client version -> {mac}
 
         for mac, detail in details.items():
             # accounting (Stop) records carry no auth verdict — skip them
@@ -166,6 +184,16 @@ def collect(client, cfg, mappings):
                 or other.get("PostureStatus") or other.get("PostureAssessmentStatus"))
             posture[(pstatus, loc, owner)].add(mac)
 
+            # per-policy PostureReport + Secure Client version live in other_attr_string;
+            # accumulate now, emit below only as the getEndpoints fallback (see block).
+            report = first_nonempty(other, *_POSTURE_REPORT_KEYS)
+            if report:
+                for pol, res in parse_posture_report(report):
+                    posture_policies[(pol, res, owner)].add(mac)
+            scver = normalize_agent_version(first_nonempty(other, *_SECURECLIENT_VERSION_KEYS))
+            if scver:
+                scversion[scver].add(mac)
+
         for m in owned:
             clear_metric(m)
 
@@ -195,6 +223,21 @@ def collect(client, cfg, mappings):
             for (status, loc, owner), macs in posture.items():
                 metrics.ise_session_posture_status.labels(
                     status=status, location=loc, ops_owner=owner).set(len(macs))
+
+        # Per-policy posture + Secure Client version fallback. getEndpoints (models.py) owns
+        # ise_posture_policy_result / ise_endpoints_by_secureclient_version whenever it's
+        # delivering endpoints; when it isn't (the common streaming case where getEndpoints
+        # returns 0) the same attributes are in each session's other_attr_string, so emit
+        # them from the MnT fan-out here instead. Gated on getEndpoints being empty so the
+        # two sources never double-count, and runs in BOTH poll and stream mode.
+        if not pxgrid_endpoints_present():
+            clear_metric(metrics.ise_posture_policy_result)
+            clear_metric(metrics.ise_endpoints_by_secureclient_version)
+            for (pol, res, owner), macs in posture_policies.items():
+                metrics.ise_posture_policy_result.labels(
+                    policy=pol, result=res, ops_owner=owner).set(len(macs))
+            for ver, macs in scversion.items():
+                metrics.ise_endpoints_by_secureclient_version.labels(version=ver).set(len(macs))
 
         metrics.ise_session_detail_cache_size.set(cache.size())
         cached_count = len(details)
