@@ -36,6 +36,10 @@ class ISERestClient:
         s = requests.Session()
         s.auth = self.auth
         s.verify = False
+        # ISE presents a self-signed cert; verify=False is intentional. trust_env=False
+        # stops requests from silently overriding that with an ambient REQUESTS_CA_BUNDLE
+        # / CURL_CA_BUNDLE (e.g. under Nix), which otherwise forces verification and fails.
+        s.trust_env = False
         retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
         s.mount("https://", HTTPAdapter(max_retries=retry))
         # Accept-only — Content-Type on a GET is non-standard and has tripped DoD WAFs.

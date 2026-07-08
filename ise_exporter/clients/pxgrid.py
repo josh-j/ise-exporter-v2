@@ -57,6 +57,9 @@ class PxGridControl:
         self.session = requests.Session()
         self.session.cert = (cfg.pxgrid_client_cert, cfg.pxgrid_client_key)
         self.session.verify = cfg.pxgrid_ca_bundle or False
+        # don't let an ambient REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE override our verify
+        # choice (it silently forces verification when we intend verify=False).
+        self.session.trust_env = False
         self.session.auth = HTTPBasicAuth(cfg.pxgrid_node_name, "")
         self.session.headers.update({"Content-Type": "application/json",
                                      "Accept": "application/json"})

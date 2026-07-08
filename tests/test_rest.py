@@ -1,6 +1,20 @@
 """ISERestClient.get_ers must follow nextPage.href across all pages iteratively
 (no per-page recursion that would blow the stack on large result sets)."""
+import types
+
 from ise_exporter.clients.rest import ISERestClient
+
+
+def test_sessions_disable_trust_env_so_verify_false_sticks():
+    """ISE uses a self-signed cert; verify=False is intentional. trust_env must be
+    False so an ambient REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE (e.g. under Nix) can't
+    silently force verification and break every call."""
+    cfg = types.SimpleNamespace(ise_host="h", ise_mnt_host="m", ers_port=9060,
+                                ise_user="u", ise_pass="p")
+    c = ISERestClient(cfg)
+    for s in (c.session, c.mnt_session):
+        assert s.verify is False
+        assert s.trust_env is False
 
 
 class _Resp:

@@ -434,6 +434,13 @@ def test_init_logs_error_for_unreadable_cert(tmp_path, caplog):
         unreadable.chmod(0o644)
 
 
+def test_control_session_disables_trust_env(tmp_path):
+    control = PxGridControl(_cfg())
+    # verify may be a CA bundle path or False, but trust_env must be off so an ambient
+    # REQUESTS_CA_BUNDLE can't override the intended verify choice.
+    assert control.session.trust_env is False
+
+
 def test_init_is_quiet_when_cert_paths_are_valid(tmp_path, caplog):
     cert = tmp_path / "client.cer"
     cert.write_text("cert")
