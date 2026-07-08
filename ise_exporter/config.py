@@ -73,7 +73,7 @@ class Config:
     # endpoints per profile via ERS filter queries, capped at ers_endpoint_profile_max
     # profiles. Cannot recover MFC model/OS or posture (ERS lacks those attributes).
     collect_ers_endpoint_fallback: bool = True
-    ers_endpoint_profile_max: int = 800
+    ers_endpoint_profile_max: int = 1500   # covers ISE's ~900 built-in profiles + custom
     pxgrid_host: str = ""
     pxgrid_port: int = 8910
     pxgrid_node_name: str = ""
@@ -141,7 +141,7 @@ class Config:
             collect_pxgrid_endpoints=_b("COLLECT_PXGRID_ENDPOINTS", True),
             collect_pxgrid_stream=_b("COLLECT_PXGRID_STREAM", False),
             collect_ers_endpoint_fallback=_b("COLLECT_ERS_ENDPOINT_FALLBACK", True),
-            ers_endpoint_profile_max=_i("ERS_ENDPOINT_PROFILE_MAX", 800),
+            ers_endpoint_profile_max=_i("ERS_ENDPOINT_PROFILE_MAX", 1500),
             pxgrid_host=_s("PXGRID_HOST"), pxgrid_port=_i("PXGRID_PORT", 8910),
             pxgrid_node_name=_s("PXGRID_NODE_NAME"),
             pxgrid_client_cert=_s("PXGRID_CLIENT_CERT"),
