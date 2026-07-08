@@ -26,6 +26,21 @@ def failures(name):
     return _failures.get(name, 0)
 
 
+def stream_active(cfg):
+    """True only when pxGrid streaming is configured AND the stream is currently
+    connected (ise_pxgrid_connected == 1). Collectors and the scheduler self-limit on
+    THIS, not the raw config flag — so when the stream is down (pxGrid unreachable,
+    subscription rejected, creds missing, or not connected yet) they fall back to full
+    MnT polling instead of leaving session/authz metrics frozen at their last projected
+    values. The connected gauge is the single source of truth, set by the streamer."""
+    if not getattr(cfg, "collect_pxgrid_stream", False):
+        return False
+    try:
+        return metrics.ise_pxgrid_connected._value.get() >= 1
+    except Exception:
+        return False
+
+
 @contextmanager
 def observe(name):
     start = time.time()

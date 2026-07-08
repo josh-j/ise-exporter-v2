@@ -12,7 +12,7 @@ from collections import defaultdict
 
 from .. import metrics
 from ..util import clear_metric
-from . import observe, CollectorFailed
+from . import observe, CollectorFailed, stream_active
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,9 @@ def collect(client, cfg, mappings):
             raise CollectorFailed("no ActiveList response")
         total = result.get("total", 0)
         sessions = result.get("sessions", [])
-        streaming = getattr(cfg, "collect_pxgrid_stream", False)
+        # self-limit to PSN-only only while the stream is actually UP; if it's down we
+        # fall back to the full poll so session metrics don't go stale.
+        streaming = stream_active(cfg)
 
         # PSN breakdown — owned by this collector in both modes.
         psn_counts = defaultdict(int)

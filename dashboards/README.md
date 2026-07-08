@@ -41,7 +41,16 @@ providers:
 `collectors/authz.py`'s per-MAC fan-out in poll mode (subject to
 `SESSION_DETAIL_CACHE_TTL` warmup — watch the "Authz Cache Warmup" stat) or by
 the pxGrid session topic directly in streaming mode (no warmup lag). Either
-way the same panels populate; only the freshness/latency differs. Failure
+way the same panels populate; only the freshness/latency differs.
+
+**Automatic fallback.** "Streaming mode" is a live decision, not just a config
+flag: the session/authz collectors defer to the projector only while the stream
+is actually connected (`ise_pxgrid_connected == 1`). If the stream drops — pxGrid
+unreachable, subscription rejected, creds missing, or just not up yet — the
+collectors automatically run the **full MnT poll** so the auth/authz dashboards
+keep updating instead of freezing at their last streamed values. It flips back
+when the stream recovers; `journalctl` logs each transition
+(`scheduler: pxGrid stream DOWN — … full MnT/REST polling (fallback)`). Failure
 reasons, matched authz rule, and policy set always come from the MnT fan-out
 in both modes — pxGrid's session topic doesn't carry those fields.
 

@@ -52,6 +52,7 @@ def test_sessions_stream_mode_emits_psn_only():
     clear_metric(metrics.ise_radius_sessions_by_nad)
     metrics.ise_radius_sessions_by_nad.labels(nas_hostname="sw1", location="SiteA").set(99)
     metrics.ise_active_sessions.set(99)
+    metrics.ise_pxgrid_connected.set(1)   # stream is UP -> collector self-limits to PSN
 
     sessions.collect(Client(), cfg, mappings)
 
@@ -59,6 +60,34 @@ def test_sessions_stream_mode_emits_psn_only():
     assert metrics.ise_radius_sessions_by_nad.labels(
         nas_hostname="sw1", location="SiteA")._value.get() == 99
     assert metrics.ise_active_sessions._value.get() == 99
+
+
+def test_sessions_falls_back_to_full_poll_when_stream_down():
+    """Streaming configured but the stream is DOWN (ise_pxgrid_connected=0) -> the
+    sessions collector must emit the full poll (active/by_nad/by_ops_owner), not PSN-only."""
+    from ise_exporter import metrics
+    from ise_exporter.util import clear_metric
+
+    cfg = types.SimpleNamespace(collect_pxgrid_stream=True)
+    mappings = {"hostname": {"10.0.0.1": "sw1"}, "location": {"10.0.0.1": "SiteA"},
+                "ops_owner": {"10.0.0.1": "TeamA"}}
+
+    class Client:
+        def get_mnt_xml(self, path, api_name="x"):
+            return {"total": 2, "sessions": [
+                {"nas_ip_address": "10.0.0.1", "server": "psn-a"},
+                {"nas_ip_address": "10.0.0.1", "server": "psn-a"},
+            ]}
+
+    clear_metric(metrics.ise_radius_sessions_by_nad)
+    metrics.ise_active_sessions.set(0)
+    metrics.ise_pxgrid_connected.set(0)   # stream is DOWN -> full poll fallback
+
+    sessions.collect(Client(), cfg, mappings)
+
+    assert metrics.ise_active_sessions._value.get() == 2
+    assert metrics.ise_radius_sessions_by_nad.labels(
+        nas_hostname="sw1", location="SiteA")._value.get() == 2
 
 
 def test_poll_authz_emits_posture_status():
@@ -118,6 +147,7 @@ def test_streaming_authz_emits_failed_status_without_wiping_passed():
     # projector-owned passed series pre-set by the "streamer" — authz must not wipe it
     metrics.ise_session_status_endpoints.labels(
         nad_hostname="sw1", location="L", ops_owner="TeamA", status="passed").set(42)
+    metrics.ise_pxgrid_connected.set(1)   # stream is UP -> authz self-limits
 
     authz.collect(Client(), cfg, mappings)
 

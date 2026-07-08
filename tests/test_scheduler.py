@@ -5,6 +5,7 @@ import logging
 import types
 
 import ise_exporter.scheduler as S
+from ise_exporter import metrics
 from ise_exporter.scheduler import PollScheduler
 
 
@@ -27,17 +28,33 @@ def test_streaming_falls_back_to_poll_without_pxgrid(monkeypatch):
     assert "sessions" in ran   # poll path active because the streamer can't run
 
 
-def test_streaming_still_runs_sessions_and_authz_reduced(monkeypatch):
+def test_stream_up_defers_endpoints_but_still_runs_sessions_authz(monkeypatch):
+    metrics.ise_pxgrid_connected.set(1)   # stream UP
     ran = []
-    for name in ("deployment", "devices", "sessions", "endpoints", "authz"):
+    for name in ("deployment", "devices", "sessions", "endpoints", "authz", "models"):
         monkeypatch.setattr(getattr(S, name), "collect",
                             (lambda n: (lambda *a, **k: ran.append(n)))(name))
 
-    PollScheduler(_cfg(), client=None, pxgrid=object()).run_cycle()
-    # in stream mode sessions runs PSN-only (projector owns the rest) and authz runs
-    # reduced — both self-limit internally rather than being skipped by the scheduler
+    PollScheduler(_cfg(collect_pxgrid_endpoints=True), client=None, pxgrid=object()).run_cycle()
+    # sessions runs PSN-only + authz runs reduced (self-limit internally), but the
+    # pxgrid_endpoints (models) poll is deferred to the stream
     assert "sessions" in ran
     assert "authz" in ran
+    assert "models" not in ran
+
+
+def test_stream_down_falls_back_to_full_poll(monkeypatch):
+    metrics.ise_pxgrid_connected.set(0)   # configured for streaming, but stream is DOWN
+    ran = []
+    for name in ("deployment", "devices", "sessions", "endpoints", "authz", "models"):
+        monkeypatch.setattr(getattr(S, name), "collect",
+                            (lambda n: (lambda *a, **k: ran.append(n)))(name))
+
+    PollScheduler(_cfg(collect_pxgrid_endpoints=True), client=None, pxgrid=object()).run_cycle()
+    # stream down -> full fallback: sessions/authz poll AND endpoints are polled via getEndpoints
+    assert "sessions" in ran
+    assert "authz" in ran
+    assert "models" in ran
 
 
 def test_logs_poll_fallback_reason_when_stream_requested_but_pxgrid_missing(caplog):

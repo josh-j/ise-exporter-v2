@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from .. import metrics
 from ..util import (clear_metric, clear_metric_where, normalize_mac,
                     normalize_location, parse_other_attr_string, normalize_posture)
-from . import observe, CollectorFailed
+from . import observe, CollectorFailed, stream_active
 from .devices import nad_labels
 
 logger = logging.getLogger(__name__)
@@ -72,8 +72,9 @@ def collect(client, cfg, mappings):
         if result is None:
             raise CollectorFailed("no ActiveList response")
         cache = _detail_cache(cfg)
-        # in streaming mode the projector owns sessions/status/methods/profiles
-        streaming = cfg.collect_pxgrid_stream
+        # only defer to the projector while the stream is actually UP; when it's down we
+        # emit the full status/method/profile set from the poll fan-out (fallback).
+        streaming = stream_active(cfg)
         owned = _STREAM_OWNED if streaming else _UNIQUE_ENDPOINT_METRICS
 
         active_macs = set()

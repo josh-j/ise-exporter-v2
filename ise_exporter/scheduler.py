@@ -21,6 +21,7 @@ class PollScheduler:
         self.pxgrid = pxgrid
         self.last_run = {}
         self.mappings = {"ops_owner": {}, "hostname": {}, "location": {}}
+        self._streaming_state = None   # tracks stream up/down to log the fallback flip once
 
         # log the poll-vs-stream split ONCE, at the point that actually decides it —
         # both flags are immutable for the process lifetime, so this can't go stale.
@@ -55,9 +56,16 @@ class PollScheduler:
         fast = {"sessions", "endpoints"}
         medium = {"devices", "deployment", "authz"}
         slow = {"certificates", "licensing", "backup", "patches", "pxgrid_endpoints"}
-        # only treat as streaming if the streamer can actually run (creds present) —
-        # otherwise fall back to polling so sessions/models aren't silently dropped
-        streaming = cfg.collect_pxgrid_stream and self.pxgrid is not None
+        # "streaming" is now the LIVE state, not just config: true only while the pxGrid
+        # stream is actually connected. When it drops, this flips to false and the full
+        # session/authz/endpoint poll runs as a fallback until the stream recovers.
+        streaming = collectors.stream_active(cfg) and self.pxgrid is not None
+        if streaming != self._streaming_state:
+            if self._streaming_state is not None:
+                logger.info("scheduler: pxGrid stream %s — session/authz/endpoint collectors now %s",
+                            "UP" if streaming else "DOWN",
+                            "deferred to the stream" if streaming else "full MnT/REST polling (fallback)")
+            self._streaming_state = streaming
 
         if self._due("deployment", now, fast, medium, slow):
             deployment.collect(self.client, cfg, self.mappings)
