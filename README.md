@@ -155,6 +155,15 @@ node that could serve `com.cisco.ise.pubsub`, not just the one in your config.
 
     ise-exporter --pxgrid-check-stream
 
+On a **systemd-deployed host**, the CLI auto-loads `/etc/ise-exporter/ise-exporter.env`
+(overridable with `ISE_EXPORTER_ENV_FILE`), but run it as a user that can read that
+file *and* the client key — i.e. the service account (or root):
+
+    sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --pxgrid-check
+
+Running it as your own login from a random directory is what produces
+`missing PXGRID_HOST, PXGRID_NODE_NAME, …` — the config file wasn't in scope.
+
 ## Run
 
 ### From source

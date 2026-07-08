@@ -1,3 +1,4 @@
+import os
 import types
 
 import ise_exporter.__main__ as app
@@ -139,3 +140,17 @@ def test_pxgrid_check_stream_runs_when_streaming_is_configured(monkeypatch):
 
 def test_pxgrid_check_reports_missing_pxgrid_config():
     assert app.pxgrid_check(_cfg(pxgrid_host="")) == 1
+
+
+def test_load_env_reads_deployment_env_file(monkeypatch, tmp_path):
+    """A manual `ise-exporter --pxgrid-check` must pick up the systemd deployment env
+    file even when there's no ./.env — otherwise the pxGrid vars come up 'missing'."""
+    env_file = tmp_path / "ise-exporter.env"
+    env_file.write_text("PXGRID_HOST=deployed-host.example\n")
+    monkeypatch.setattr(app, "DEPLOY_ENV_FILE", str(env_file))
+    monkeypatch.delenv("PXGRID_HOST", raising=False)
+    try:
+        app._load_env()
+        assert os.environ.get("PXGRID_HOST") == "deployed-host.example"
+    finally:
+        os.environ.pop("PXGRID_HOST", None)

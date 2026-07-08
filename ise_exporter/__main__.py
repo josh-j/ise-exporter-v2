@@ -4,6 +4,7 @@
   * PxGridStreamer (daemon thread) — when COLLECT_PXGRID_STREAM=true, owns
     sessions/endpoints/models via topics; the scheduler then skips those.
 Both write to the same metrics registry."""
+import os
 import sys
 import signal
 import argparse
@@ -23,6 +24,12 @@ from .streaming import PxGridStreamer
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("ise_exporter")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# systemd installs config here (deploy/install.sh); load it too so a manual
+# `ise-exporter --pxgrid-check` from any cwd picks up the same env the service uses.
+# Override with ISE_EXPORTER_ENV_FILE. load_dotenv never overrides an already-set var,
+# so the running service's systemd EnvironmentFile still wins.
+DEPLOY_ENV_FILE = os.environ.get("ISE_EXPORTER_ENV_FILE", "/etc/ise-exporter/ise-exporter.env")
 
 
 def _missing_pxgrid(cfg):
@@ -110,6 +117,15 @@ def pxgrid_check(cfg, *, check_stream=False):
     return 0
 
 
+def _load_env():
+    """Load ./.env (dev convenience) then the systemd deployment env file if present,
+    so `ise-exporter --pxgrid-check` works from any directory on a deployed host."""
+    load_dotenv()
+    if os.path.isfile(DEPLOY_ENV_FILE):
+        load_dotenv(DEPLOY_ENV_FILE)
+        logger.info("loaded config from %s", DEPLOY_ENV_FILE)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--pxgrid-check", action="store_true",
@@ -118,7 +134,7 @@ def main(argv=None):
                         help="also validate pxGrid WSS/STOMP connect+subscribe")
     args = parser.parse_args(argv)
 
-    load_dotenv()
+    _load_env()
     cfg = Config.from_env()
     logging.getLogger().setLevel(cfg.log_level)
     logger.info("config: %s", cfg.summary())

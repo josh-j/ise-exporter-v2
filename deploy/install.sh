@@ -119,6 +119,8 @@ systemctl --no-pager --lines=0 status "$SERVICE_NAME" || true
 echo
 echo "==> done — installed version $INSTALLED_VERSION"
 echo "==> logs: journalctl -u $SERVICE_NAME -f"
+echo "==> pxGrid check (run as the service user so it can read the config + certs):"
+echo "    sudo -u $SERVICE_USER $INSTALL_DIR/.venv/bin/$SERVICE_NAME --pxgrid-check"
 if [[ "$FRESH_CONFIG" -eq 1 ]]; then
     echo "==> NOTE: this was a fresh install — edit $ENV_FILE (ISE_HOST/ISE_MNT_HOST/ISE_USER/ISE_PASS"
     echo "    and, if using pxGrid, PXGRID_* + certs under $CERTS_DIR), then:"
