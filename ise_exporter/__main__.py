@@ -45,26 +45,44 @@ def pxgrid_check(cfg, *, check_stream=False):
         logger.error("pxGrid check cannot run: missing %s", ", ".join(missing))
         return 1
 
-    ctl = PxGridControl(cfg)
     try:
-        needs_stream = check_stream or cfg.collect_pxgrid_stream
-        needs_endpoints = cfg.collect_pxgrid_endpoints or needs_stream
+        import importlib.metadata as _md
+        logger.info("pxGrid check: ise-exporter %s (host=%s node_name=%s)",
+                    _md.version("ise-exporter"), cfg.pxgrid_host, cfg.pxgrid_node_name)
+    except Exception:
+        pass
 
+    ctl = PxGridControl(cfg)
+    needs_stream = check_stream or cfg.collect_pxgrid_stream
+    needs_endpoints = cfg.collect_pxgrid_endpoints or needs_stream
+    ok = True
+
+    # Each probe is independent: a failure in one (e.g. the session/pubsub stage on a
+    # deployment with a scoped pxGrid group) is logged but must NOT hide the others —
+    # otherwise the endpoint/posture diagnostics never run.
+    try:
         ctl.account_activate()
         logger.info("pxGrid check: account active")
+    except Exception as e:
+        logger.error("pxGrid check: account activation FAILED: %s", e)
+        ok = False
 
-        if needs_stream:
+    if needs_stream:
+        try:
             session_base, session_topic = ctl.session_topic()
             pubsub_peer, ws_urls, _ = ctl.resolve_pubsub()
             logger.info("pxGrid check: session rest=%s topic=%s", session_base, session_topic)
             logger.info("pxGrid check: pubsub peer=%s wsUrl=%s secret=ok", pubsub_peer, ws_urls)
-
             sessions = ctl.rest_query(SESSION_SERVICE, "getSessions", {},
                                       timeout=cfg.pxgrid_query_timeout)
             session_count = len(sessions.get("sessions", [])) if isinstance(sessions, dict) else 0
             logger.info("pxGrid check: getSessions ok sessions=%d", session_count)
+        except Exception as e:
+            logger.error("pxGrid check: session/pubsub probe FAILED: %s", e)
+            ok = False
 
-        if needs_endpoints:
+    if needs_endpoints:
+        try:
             # pull a small page (not just 1) so the posture-attribute check below is
             # representative — posture attrs only exist on posture-assessed endpoints.
             endpoints = ctl.get_endpoints(page_size=50, max_pages=1,
@@ -100,8 +118,12 @@ def pxgrid_check(cfg, *, check_stream=False):
                                "profile / posture-attribute metrics will be empty until ISE "
                                "publishes endpoint context to pxGrid (see the warning above)")
             logger.info("pxGrid check: getProfiles ok profiles=%d", len(profiles))
+        except Exception as e:
+            logger.error("pxGrid check: endpoint/profiler probe FAILED: %s", e)
+            ok = False
 
-        if check_stream:
+    if check_stream:
+        try:
             shutdown = threading.Event()
             streamer = PxGridStreamer(ctl, {"hostname": {}, "location": {}, "ops_owner": {}},
                                       shutdown)
@@ -110,11 +132,15 @@ def pxgrid_check(cfg, *, check_stream=False):
             finally:
                 streamer._close_ws()
             logger.info("pxGrid check: WSS/STOMP connect+subscribe ok")
-    except Exception as e:
-        logger.error("pxGrid check failed: %s", e)
-        return 1
-    logger.info("pxGrid check passed")
-    return 0
+        except Exception as e:
+            logger.error("pxGrid check: WSS/STOMP connect FAILED: %s", e)
+            ok = False
+
+    if ok:
+        logger.info("pxGrid check passed")
+        return 0
+    logger.error("pxGrid check: one or more probes FAILED (see above)")
+    return 1
 
 
 def _load_env():

@@ -142,6 +142,27 @@ def test_pxgrid_check_reports_missing_pxgrid_config():
     assert app.pxgrid_check(_cfg(pxgrid_host="")) == 1
 
 
+def test_pxgrid_check_runs_endpoint_probe_even_when_stream_probe_fails(monkeypatch):
+    """A scoped/broken session-pubsub stage must not hide the endpoint + posture
+    diagnostics — each probe is independent."""
+    calls = []
+    Base = _fake_pxgrid_control(calls)
+
+    class Control(Base):
+        def resolve_pubsub(self):
+            calls.append(("resolve_pubsub",))
+            raise RuntimeError("pubsub subscribe not authorized")
+
+    monkeypatch.setattr(app, "PxGridControl", Control)
+
+    rc = app.pxgrid_check(_cfg(collect_pxgrid_stream=True))
+
+    assert rc == 1                                          # a probe failed
+    assert ("resolve_pubsub",) in calls                    # session/pubsub stage attempted + failed
+    assert any(c[0] == "get_endpoints" for c in calls)     # endpoint probe STILL ran
+    assert any(c[0] == "get_profiler_profiles" for c in calls)
+
+
 def test_load_env_reads_deployment_env_file(monkeypatch, tmp_path):
     """A manual `ise-exporter --pxgrid-check` must pick up the systemd deployment env
     file even when there's no ./.env — otherwise the pxGrid vars come up 'missing'."""
