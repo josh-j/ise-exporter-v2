@@ -123,6 +123,12 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
         _refresh_hierarchy(pxgrid, hierarchy_ttl)
     if _hierarchy_fetched_at:
         metrics.ise_profiler_hierarchy_age_seconds.set(time.time() - _hierarchy_fetched_at)
+    metrics.ise_endpoints_pxgrid_total.set(len(endpoints))
+    if not endpoints:
+        # pxGrid getEndpoints returned nothing — leave the model/profile gauges untouched
+        # so the ERS endpoint fallback (collectors/ers_endpoints.py) can own the profile
+        # breakdown. Clearing here would wipe it on every 30s projection tick.
+        return
     mac_owner = mac_owner or {}
 
     by_model = defaultdict(int)
@@ -202,7 +208,6 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
         metrics.ise_posture_policy_result.labels(
             policy=pol, result=res, ops_owner=owner).set(len(macs))
 
-    metrics.ise_endpoints_pxgrid_total.set(total)
     for attr, hit in coverage.items():
         metrics.ise_endpoint_mfc_coverage.labels(attribute=attr).set(hit / total if total else 0.0)
     logger.debug("models: %d endpoints, model coverage %.0f%%, %d with a posture report",

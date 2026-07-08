@@ -12,8 +12,8 @@ from ise_exporter.scheduler import PollScheduler
 def _cfg(**over):
     base = dict(collect_pxgrid_stream=True, collect_authz=True, collect_certificates=False,
                 collect_licensing=False, collect_backup_status=False, collect_patches=False,
-                collect_pxgrid_endpoints=False, fast_interval=60, medium_interval=300,
-                slow_interval=3600)
+                collect_pxgrid_endpoints=False, collect_ers_endpoint_fallback=False,
+                fast_interval=60, medium_interval=300, slow_interval=3600)
     base.update(over)
     return types.SimpleNamespace(**base)
 
@@ -55,6 +55,18 @@ def test_stream_down_falls_back_to_full_poll(monkeypatch):
     assert "sessions" in ran
     assert "authz" in ran
     assert "models" in ran
+
+
+def test_ers_endpoint_fallback_runs_when_enabled(monkeypatch):
+    ran = []
+    for name in ("deployment", "devices", "sessions", "endpoints", "authz", "models",
+                 "ers_endpoints"):
+        monkeypatch.setattr(getattr(S, name), "collect",
+                            (lambda n: (lambda *a, **k: ran.append(n)))(name))
+
+    PollScheduler(_cfg(collect_ers_endpoint_fallback=True), client=None,
+                  pxgrid=object()).run_cycle()
+    assert "ers_endpoints" in ran
 
 
 def test_logs_poll_fallback_reason_when_stream_requested_but_pxgrid_missing(caplog):

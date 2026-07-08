@@ -116,6 +116,17 @@ The usual cause is **ISE not publishing endpoints to pxGrid**, which gates *both
 sessions/profiler working but endpoints not). Enable it at **Administration > System
 > Profiling**: turn on **Profiler Forwarder Persistence Queue** *and* **Custom
 Attribute for Profiling Enforcement** (both required; names vary slightly by patch).
+Note the pxGrid endpoint directory is **change-driven** — it publishes endpoints as
+they re-authenticate/change after you enable this, so `getEndpoints` can read 0 for a
+while before it backfills.
+
+**ERS fallback.** While `getEndpoints` is empty, the exporter falls back to the ERS
+API (`COLLECT_ERS_ENDPOINT_FALLBACK=true`, default on) to count endpoints per
+profiling policy — enough to light up `ise-endpoint-profiles.json` and the "Profiling
+Policy" panel independent of pxGrid. It does **not** recover the hardware
+model/OS/manufacturer breakdown or Secure Client posture (ERS doesn't expose those
+attributes), so those stay empty until pxGrid endpoint publishing works. The fallback
+self-skips the moment `getEndpoints` starts returning endpoints.
 Also confirm the pxGrid client's group grants the **EndpointService**
 (`com.cisco.ise.endpoint`) and the pubsub `subscribe /topic/com.cisco.ise.endpoint`
 policy. The endpoint topic is change-driven (events only fire when a non-timestamp

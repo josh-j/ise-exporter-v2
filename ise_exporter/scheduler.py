@@ -8,7 +8,7 @@ import logging
 from . import metrics
 from . import collectors
 from .collectors import (sessions, authz, devices, endpoints, deployment,
-                         certificates, licensing, backup, patches, models)
+                         certificates, licensing, backup, patches, models, ers_endpoints)
 
 logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
@@ -55,7 +55,8 @@ class PollScheduler:
         cfg, now = self.cfg, time.time()
         fast = {"sessions", "endpoints"}
         medium = {"devices", "deployment", "authz"}
-        slow = {"certificates", "licensing", "backup", "patches", "pxgrid_endpoints"}
+        slow = {"certificates", "licensing", "backup", "patches", "pxgrid_endpoints",
+                "ers_endpoint_profiles"}
         # "streaming" is now the LIVE state, not just config: true only while the pxGrid
         # stream is actually connected. When it drops, this flips to false and the full
         # session/authz/endpoint poll runs as a fallback until the stream recovers.
@@ -103,6 +104,12 @@ class PollScheduler:
                 and self._due("pxgrid_endpoints", now, fast, medium, slow):
             models.collect(self.pxgrid, cfg)
             self.last_run["pxgrid_endpoints"] = now
+        # ERS fallback for the endpoint profile breakdown — self-skips unless pxGrid
+        # getEndpoints came back empty (ise_endpoints_pxgrid_total == 0).
+        if cfg.collect_ers_endpoint_fallback \
+                and self._due("ers_endpoint_profiles", now, fast, medium, slow):
+            ers_endpoints.collect(self.client, cfg)
+            self.last_run["ers_endpoint_profiles"] = now
 
     def loop(self, shutdown):
         nxt = time.time()
