@@ -30,6 +30,15 @@ ise_session_policy_set_endpoints = Gauge("ise_session_policy_set_endpoints", "Un
 ise_session_detail_cache_size = Gauge("ise_session_detail_cache_size", "Cached Session/MACAddress entries")
 ise_session_warmup_progress = Gauge("ise_session_warmup_progress", "Authz cache warmup fraction (0-1)")
 ise_session_detail_fetches_total = Counter("ise_session_detail_fetches_total", "Session/MACAddress fetches", ["result"])
+# RADIUS auth transaction latency (ISE's TotalAuthenLatency, ms -> seconds). ISE evaluates
+# authentication and authorization in one policy pass, so this single figure covers the whole
+# authC+authZ transaction — there is no separate authorization-latency field. Observed ONCE per
+# session detail fetch (not per scrape) so each authentication contributes exactly one sample.
+ise_radius_auth_latency_seconds = Histogram(
+    "ise_radius_auth_latency_seconds",
+    "RADIUS authentication+authorization transaction latency (ISE TotalAuthenLatency)",
+    ["nad_hostname", "location", "ops_owner", "status"],
+    buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
 
 # --- posture / device trust (Secure Client) ---
 # Unique endpoints (distinct MAC) per posture status, per site/ops-owner. Populated

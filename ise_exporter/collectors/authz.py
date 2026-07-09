@@ -124,12 +124,14 @@ def collect(client, cfg, mappings):
                     len(active_macs), len(uncached), len(to_fetch),
                     len(uncached) - len(to_fetch), dropped)
 
+        newly_fetched = set()   # observe latency once per fresh fetch, not per scrape cycle
         if to_fetch:
             with ThreadPoolExecutor(max_workers=cfg.max_workers) as pool:
                 for mac, detail in zip(to_fetch, pool.map(
                         lambda m: _fetch_detail(client, cache, m), to_fetch)):
                     if detail is not None:
                         details[mac] = detail
+                        newly_fetched.add(mac)
 
         passed = defaultdict(set)
         failed = defaultdict(set)
@@ -176,6 +178,19 @@ def collect(client, cfg, mappings):
                 rules[(other["AuthorizationPolicyMatchedRule"],) + key].add(mac)
             if other.get("ISEPolicySetName"):
                 policy_sets[(other["ISEPolicySetName"],) + key].add(mac)
+
+            # RADIUS auth transaction latency (TotalAuthenLatency, ms). Observe only on a fresh
+            # fetch so each authentication is sampled once — a Histogram is cumulative, so
+            # re-observing a cache hit every scrape would inflate _count/_sum. status mirrors
+            # ise_session_status_endpoints so latency panels can split passed vs failed.
+            lat_ms = other.get("TotalAuthenLatency", "")
+            if mac in newly_fetched and lat_ms.isdigit():
+                lat_status = ("passed" if detail.get("passed", "").lower() == "true"
+                              else "failed" if detail.get("failed", "").lower() == "true"
+                              else "unknown")
+                metrics.ise_radius_auth_latency_seconds.labels(
+                    nad_hostname=nad, location=loc, ops_owner=owner, status=lat_status
+                ).observe(int(lat_ms) / 1000.0)
 
             # posture: top-level MnT tag first, then the other-attr string (field name
             # varies by ISE version) — normalize_posture handles empty -> NotApplicable.
