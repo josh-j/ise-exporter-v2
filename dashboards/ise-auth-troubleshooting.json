@@ -356,6 +356,66 @@
           "renameByName": { "nad_hostname": "NAD", "location 1": "Location", "ops_owner 1": "Ops Owner", "Value #A": "Failed", "Value #B": "Passed" }
         } }
       ]
+    },
+    {
+      "id": 60, "type": "row", "title": "How Slow — Auth Latency", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 63 }, "panels": []
+    },
+    {
+      "id": 61, "type": "stat", "title": "p95 Auth Latency",
+      "description": "95th-percentile RADIUS auth transaction latency (ISE TotalAuthenLatency) over $__rate_interval within the ops-owner/location scope. Combined authC+authZ policy pass — ISE exposes no separate authorization-latency figure. Excludes supplicant EAP round-trips (ClientLatency), so this is server-side processing time.",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 64 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "orange", "value": 3 }, { "color": "red", "value": 5 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "background", "graphMode": "area", "justifyMode": "auto" }
+    },
+    {
+      "id": 62, "type": "timeseries", "title": "Auth Latency Percentiles (p50 / p95 / p99)",
+      "description": "Latency distribution over time for the selected scope. A rising p99 with a flat p50 = a growing slow tail (subset of auths hitting AD/PSN timeouts); the whole band rising = systemic slowdown.",
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 64 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "p95", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "p99", "refId": "C" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": true, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+          { "matcher": { "id": "byName", "options": "p95" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 63, "type": "timeseries", "title": "p95 Auth Latency by NAD (top 10)",
+      "description": "Per-NAD p95 within scope — pins a slow subset to specific switches/WLCs or a PSN reachable from them with high RTT.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 70 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le, nad_hostname)))", "legendFormat": "{{nad_hostname}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5, "spanNulls": true, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"], "sortBy": "Last *", "sortDesc": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 64, "type": "timeseries", "title": "Passed vs Failed Auth Latency (p95)",
+      "description": "p95 latency split by verdict. Slow FAILED auths are the tell for timeout-driven failures (AD unreachable, cert/OCSP timeout, PSN overload) — a fast-fail like wrong-password (22040) lands near p50, a timeout drags the failed line up toward the RADIUS retransmit window.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 70 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "Passed", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{status=\"failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "Failed", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": true, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Passed" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+          { "matcher": { "id": "byName", "options": "Failed" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     }
   ]
 }

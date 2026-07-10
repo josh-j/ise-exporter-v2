@@ -169,7 +169,7 @@
     },
     {
       "id": 21, "type": "table", "title": "Posture Policies — Passed vs Failed",
-      "description": "Per posture policy (the individual checks: firewall, anti-malware, disk encryption, patch, ...), how many endpoints passed vs failed. Parsed from each endpoint's PostureReport attribute collected via the getEndpoints REST poll (needs ISE endpoint publishing enabled; refreshes every PXGRID_ENDPOINT_REFRESH_INTERVAL).",
+      "description": "Per posture policy (the individual checks: firewall, anti-malware, disk encryption, patch, ...), how many endpoints passed vs failed. Parsed from the PostureReport attribute — from pxGrid getEndpoints when it's publishing, otherwise from the MnT session other_attr_string fallback when getEndpoints returns 0. Empty only when no active session carries a PostureReport (e.g. no posture policy assigned).",
       "gridPos": { "h": 12, "w": 12, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (policy, result) (ise_posture_policy_result)", "format": "table", "instant": true, "refId": "A" }],
@@ -250,7 +250,7 @@
     },
     {
       "id": 15, "type": "bargauge", "title": "Secure Client / Posture Agent Version (top 15)",
-      "description": "Endpoints by posture agent version, from the getEndpoints PostureAgentVersion / SecureClientVersion attribute. Empty if ISE doesn't expose a version attribute on the endpoint.",
+      "description": "Endpoints by posture-agent / Secure Client version. From the getEndpoints PostureAgentVersion / SecureClientVersion attribute when publishing, otherwise from the MnT session other_attr_string fallback (SecureClientVersion / AnyConnectVersion / PostureAgentVersion) when getEndpoints returns 0. Empty only if no session or endpoint exposes a version attribute.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_secureclient_version)", "legendFormat": "{{version}}", "refId": "A" }],

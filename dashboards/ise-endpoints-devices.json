@@ -53,6 +53,7 @@
     },
     {
       "id": 2, "type": "stat", "title": "Endpoints Total",
+      "description": "Total endpoints known to ISE. Sourced from pxGrid getEndpoints when publishing, else from an ERS count fallback — so this populates even when getEndpoints returns 0.",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_total", "refId": "A" }],
@@ -61,6 +62,7 @@
     },
     {
       "id": 3, "type": "stat", "title": "pxGrid Endpoints (getEndpoints)",
+      "description": "Endpoints returned by the pxGrid getEndpoints REST poll. 0 means ISE is not publishing endpoints — the MFC panels below (manufacturer / hardware model / OS / endpoint type / coverage) will be empty as a result; the profiling-policy breakdown falls back to ERS.",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_pxgrid_total", "refId": "A" }],
@@ -77,6 +79,7 @@
     },
     {
       "id": 5, "type": "stat", "title": "Profiling Coverage (model)",
+      "description": "Fraction of endpoints with a non-empty MFC hardware-model attribute. From pxGrid getEndpoints — empty (no data) when ISE isn't publishing endpoints; ERS cannot recover MFC attributes.",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_mfc_coverage{attribute=\"model\"}", "refId": "A" }],
@@ -89,6 +92,7 @@
     },
     {
       "id": 6, "type": "bargauge", "title": "Top Manufacturers",
+      "description": "MFC manufacturer attribute — from pxGrid getEndpoints. Empty when ISE isn't publishing endpoints (getEndpoints=0); not recoverable via the ERS fallback.",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_manufacturer)", "legendFormat": "{{manufacturer}}", "refId": "A" }],
@@ -97,6 +101,7 @@
     },
     {
       "id": 7, "type": "bargauge", "title": "Top Hardware Models",
+      "description": "MFC hardware-model attribute — from pxGrid getEndpoints. Empty when ISE isn't publishing endpoints (getEndpoints=0); not recoverable via the ERS fallback.",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_hardware_model)", "legendFormat": "{{model}}", "refId": "A" }],
@@ -105,6 +110,7 @@
     },
     {
       "id": 8, "type": "bargauge", "title": "Endpoint Types",
+      "description": "MFC endpoint-type attribute — from pxGrid getEndpoints. Empty when ISE isn't publishing endpoints (getEndpoints=0); not recoverable via the ERS fallback.",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_by_endpoint_type", "legendFormat": "{{endpoint_type}}", "refId": "A" }],
@@ -113,6 +119,7 @@
     },
     {
       "id": 9, "type": "bargauge", "title": "Operating Systems (top 15)",
+      "description": "MFC operating-system attribute — from pxGrid getEndpoints. Empty when ISE isn't publishing endpoints (getEndpoints=0); not recoverable via the ERS fallback.",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_os)", "legendFormat": "{{os}}", "refId": "A" }],
@@ -121,6 +128,7 @@
     },
     {
       "id": 10, "type": "bargauge", "title": "Profiling Policy (top 15)",
+      "description": "Endpoints per profiling-policy name. From pxGrid getEndpoints when publishing, else reconstructed via the ERS fallback — so this populates even when getEndpoints returns 0.",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_policy)", "legendFormat": "{{policy}}", "refId": "A" }],
@@ -129,6 +137,7 @@
     },
     {
       "id": 11, "type": "bargauge", "title": "MFC Attribute Coverage",
+      "description": "Per-attribute fraction of endpoints with a non-empty MFC value. From pxGrid getEndpoints — empty (no data) when ISE isn't publishing endpoints; ERS cannot recover MFC attributes.",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_mfc_coverage", "legendFormat": "{{attribute}}", "refId": "A" }],
@@ -145,15 +154,7 @@
     },
     {
       "id": 13, "type": "bargauge", "title": "Devices by Ops Owner",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 22 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_ops_owner", "legendFormat": "{{ops_owner}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 14, "type": "bargauge", "title": "Devices by Ops Owner",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 22 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_ops_owner", "legendFormat": "{{ops_owner}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
@@ -161,7 +162,7 @@
     },
     {
       "id": 15, "type": "bargauge", "title": "Devices by Type",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 22 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_type", "legendFormat": "{{device_type}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
