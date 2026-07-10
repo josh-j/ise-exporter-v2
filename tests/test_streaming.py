@@ -63,6 +63,106 @@ def test_drain_over_snapshot():
     assert streamer.buffer == []
 
 
+class _RaisingControl:
+    """Every snapshot query fails — simulates a transient pxGrid error mid-resync."""
+    def __init__(self):
+        self.cfg = _cfg()
+        self.host = "px"
+        self.node_name = "exporter"
+
+    def rest_query(self, service, endpoint, body=None, timeout=120):
+        raise RuntimeError("transient pxGrid error")
+
+    def get_endpoints(self, **kwargs):
+        raise RuntimeError("transient getEndpoints error")
+
+
+def test_bootstrap_preserves_state_when_snapshot_fails():
+    """A transient snapshot failure during a scheduled/gap resync must NOT wipe already
+    populated state — _snapshot* returns None on failure and _bootstrap keeps last-known
+    sessions/endpoints rather than dropping every gauge to zero until the next resync."""
+    mappings = {"hostname": {}, "location": {}, "ops_owner": {}}
+    streamer = PxGridStreamer(_RaisingControl(), mappings, threading.Event())
+    streamer.sessions = {"A1": {"auditSessionId": "A1", "state": "AUTHENTICATED"}}
+    streamer.endpoints = {"E1": {"macAddress": "AA:BB:CC:DD:EE:FF"}}
+
+    streamer._bootstrap("scheduled")
+
+    assert streamer.sessions == {"A1": {"auditSessionId": "A1", "state": "AUTHENTICATED"}}
+    assert "E1" in streamer.endpoints
+    assert not streamer.syncing
+
+
+class _EmptyControl:
+    """Snapshots succeed but return genuinely-empty results."""
+    def __init__(self):
+        self.cfg = _cfg()
+        self.host = "px"
+        self.node_name = "exporter"
+
+    def rest_query(self, service, endpoint, body=None, timeout=120):
+        return {"sessions": []}
+
+    def get_endpoints(self, **kwargs):
+        return []
+
+
+def test_bootstrap_clears_state_on_genuinely_empty_snapshot():
+    """The None-vs-[] distinction: a successful but empty snapshot ([] not None) is a real
+    'zero sessions' result and DOES replace state, so stale entries are cleared."""
+    mappings = {"hostname": {}, "location": {}, "ops_owner": {}}
+    streamer = PxGridStreamer(_EmptyControl(), mappings, threading.Event())
+    streamer.sessions = {"A1": {"auditSessionId": "A1", "state": "AUTHENTICATED"}}
+    streamer.endpoints = {"E1": {"macAddress": "AA:BB:CC:DD:EE:FF"}}
+
+    streamer._bootstrap("scheduled")
+
+    assert streamer.sessions == {}
+    assert streamer.endpoints == {}
+
+
+def test_bootstrap_serialized_across_threads():
+    """A gap-resync (recv thread) and a scheduled-resync (maintenance thread) must not run
+    concurrently — bootstrap_lock serializes them so neither clears the buffer / rebuilds
+    state the other is mid-snapshot on. Assert no two snapshots are ever in flight at once."""
+    entered = threading.Event()
+    release = threading.Event()
+    counter = {"cur": 0, "max": 0}
+    guard = threading.Lock()
+
+    class SlowControl:
+        def __init__(self):
+            self.cfg = _cfg()
+            self.host = "px"
+            self.node_name = "exporter"
+
+        def rest_query(self, service, endpoint, body=None, timeout=120):
+            with guard:
+                counter["cur"] += 1
+                counter["max"] = max(counter["max"], counter["cur"])
+            entered.set()
+            release.wait(timeout=2)
+            with guard:
+                counter["cur"] -= 1
+            return {"sessions": []}
+
+        def get_endpoints(self, **kwargs):
+            return []
+
+    streamer = PxGridStreamer(SlowControl(), {"hostname": {}, "location": {}, "ops_owner": {}},
+                              threading.Event())
+    t1 = threading.Thread(target=streamer._bootstrap, args=("scheduled",))
+    t2 = threading.Thread(target=streamer._bootstrap, args=("gap",))
+    t1.start()
+    entered.wait(timeout=2)     # t1 is inside the snapshot, holding bootstrap_lock
+    t2.start()
+    time.sleep(0.1)             # t2 would enter the snapshot now IF it weren't serialized
+    release.set()
+    t1.join(timeout=3)
+    t2.join(timeout=3)
+    assert counter["max"] == 1  # 2 would mean both snapshots ran concurrently
+
+
 def test_bootstrap_sends_heartbeats_during_slow_snapshot(monkeypatch):
     """A large deployment's getSessions/getEndpoints can outlast the STOMP
     heart-beat interval negotiated in CONNECT — if nothing keeps the socket

@@ -15,21 +15,17 @@ from concurrent.futures import ThreadPoolExecutor
 from .. import metrics
 from ..util import (clear_metric, clear_metric_where, normalize_mac,
                     normalize_location, parse_other_attr_string, normalize_posture,
-                    parse_posture_report, normalize_agent_version, first_nonempty)
+                    parse_posture_report, normalize_agent_version, first_nonempty,
+                    SECURECLIENT_VERSION_KEYS, POSTURE_REPORT_KEYS)
 from . import observe, CollectorFailed, stream_active, pxgrid_endpoints_present
 from .devices import nad_labels
 
 logger = logging.getLogger(__name__)
 
-# Secure Client / posture-agent version as it appears in a session's other_attr_string
-# (spelling varies by ISE version). Mirror of models._SECURECLIENT_VERSION_KEYS for the
-# MnT-session source. PostureReport + these are pulled from other_attr_string and emitted
-# onto ise_posture_policy_result / ise_endpoints_by_secureclient_version ONLY when pxGrid
-# getEndpoints isn't delivering endpoints (models.py owns them otherwise) — see the
-# fallback block in collect().
-_SECURECLIENT_VERSION_KEYS = ("SecureClientVersion", "AnyConnectVersion",
-                              "PostureAgentVersion", "AnyConnectAgentVersion")
-_POSTURE_REPORT_KEYS = ("PostureReport", "postureReport")
+# SECURECLIENT_VERSION_KEYS / POSTURE_REPORT_KEYS (shared with models.py, defined in util)
+# are pulled from a session's other_attr_string and emitted onto ise_posture_policy_result /
+# ise_endpoints_by_secureclient_version ONLY when pxGrid getEndpoints isn't delivering
+# endpoints (models.py owns them otherwise) — see the fallback block in collect().
 
 # Gauges this collector owns in POLL mode (all of them) vs STREAMING mode. In
 # streaming mode the pxGrid projector owns sessions / passed-status / auth-methods /
@@ -95,8 +91,14 @@ def collect(client, cfg, mappings):
                 active_macs.add(mac)
 
         if not active_macs:
+            cache.cleanup(active_macs)   # no active sessions -> drop all cached detail
             for m in owned:
                 clear_metric(m)
+            # status="failed" isn't in _STREAM_OWNED, so in stream mode the loop above didn't
+            # clear it — do it explicitly (mirrors the main path) or a stale failed-endpoint
+            # series lingers after ActiveList drops to empty. Poll mode's full clear covered it.
+            if streaming:
+                clear_metric_where(metrics.ise_session_status_endpoints, status="failed")
             # no sessions -> no other_attr_string posture either; clear the fallback gauges
             # unless getEndpoints owns them.
             if not pxgrid_endpoints_present():
@@ -201,11 +203,11 @@ def collect(client, cfg, mappings):
 
             # per-policy PostureReport + Secure Client version live in other_attr_string;
             # accumulate now, emit below only as the getEndpoints fallback (see block).
-            report = first_nonempty(other, *_POSTURE_REPORT_KEYS)
+            report = first_nonempty(other, *POSTURE_REPORT_KEYS)
             if report:
                 for pol, res in parse_posture_report(report):
                     posture_policies[(pol, res, owner)].add(mac)
-            scver = normalize_agent_version(first_nonempty(other, *_SECURECLIENT_VERSION_KEYS))
+            scver = normalize_agent_version(first_nonempty(other, *SECURECLIENT_VERSION_KEYS))
             if scver:
                 scversion[scver].add(mac)
 

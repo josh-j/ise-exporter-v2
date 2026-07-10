@@ -65,6 +65,10 @@ def collect(client, cfg, mappings):
             location = loc_map.get(ip, "Unknown")
             metrics.ise_radius_sessions_by_nad.labels(
                 nas_hostname=hostname, location=location).set(nad_counts.get(ip, 0))
-        for owner, n in ops_counts.items():
-            metrics.ise_radius_sessions_by_ops_owner.labels(ops_owner=owner).set(n)
+        # zero-fill every known ops owner too (like by_nad above), so an owner dropping to
+        # zero sessions reports 0 rather than vanishing from the series.
+        known_owners = {o for o in ops_map.values() if o != "unknown"}
+        for owner in known_owners | set(ops_counts):
+            metrics.ise_radius_sessions_by_ops_owner.labels(
+                ops_owner=owner).set(ops_counts.get(owner, 0))
         logger.info("Sessions: %d total across %d PSNs", total, len(psn_counts))

@@ -22,7 +22,10 @@ def collect(client, cfg, mappings):
         clear_metric(metrics.ise_patch_installed)
         max_patch = 0
         for patch in patches.get("patchVersion", []):
-            num = patch.get("patchNumber", 0)
+            try:                                  # ISE sends an int; tolerate null/str
+                num = int(patch.get("patchNumber", 0) or 0)
+            except (TypeError, ValueError):
+                num = 0
             metrics.ise_patch_installed.labels(patch_number=str(num)).set(1)
             max_patch = max(max_patch, num)
         metrics.ise_patch_level.set(max_patch)

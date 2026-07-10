@@ -104,6 +104,18 @@ def normalize_bool_label(value):
     return "unknown"
 
 
+# Attribute-name spellings for the Secure Client / posture-agent version and the
+# PostureReport, shared by the getEndpoints collector (models.py, endpoint attrs, mixed
+# case) and the MnT session other_attr_string fallback (authz.py, PascalCase). Kept in one
+# place so the two readers can't drift — first_nonempty()/_ep_attr() ignore absent keys, so
+# the superset is safe for both sources.
+SECURECLIENT_VERSION_KEYS = ("secureClientVersion", "SecureClientVersion",
+                             "anyConnectVersion", "AnyConnectVersion",
+                             "postureAgentVersion", "PostureAgentVersion",
+                             "AnyConnectAgentVersion")
+POSTURE_REPORT_KEYS = ("PostureReport", "postureReport")
+
+
 # Each top-level posture policy in a PostureReport looks like
 #   <PolicyName>\;<Result>\;(<requirement detail>), <PolicyName>\;<Result>\;(...)
 # where '\;' is ISE's escaped semicolon. The requirement detail inside the parens

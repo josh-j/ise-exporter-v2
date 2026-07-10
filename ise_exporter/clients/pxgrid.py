@@ -140,8 +140,10 @@ class PxGridControl:
         services = self.service_lookup_all(service_name)
         if not services:
             return None
-        logger.info("pxGrid ServiceLookup(%s): node=%s", service_name,
-                    services[0].get("nodeName"))
+        # service_lookup_all already logged the node list at INFO; keep the chosen-node
+        # detail at DEBUG so a single-node lookup doesn't log the same thing twice.
+        logger.debug("pxGrid ServiceLookup(%s): using node=%s", service_name,
+                     services[0].get("nodeName"))
         return services[0]
 
     def access_secret(self, peer_node_name):
@@ -302,13 +304,18 @@ class PxGridControl:
         data = self.rest_query(PROFILER_SERVICE, "getProfiles", {}, timeout=timeout)
         return (data or {}).get("profiles", [])
 
+    def _lookup_props(self, service_name, label):
+        """service_lookup + required-service guard + properties dict — shared by the
+        pubsub/session/endpoint resolvers below."""
+        svc = self.service_lookup(service_name)
+        if not svc:
+            raise RuntimeError(f"pxGrid {label} service not available")
+        return svc, svc.get("properties", {})
+
     def resolve_pubsub(self):
         """Return (peer_node, ws_url, secret) for the pubsub (WSS) service."""
-        svc = self.service_lookup(PUBSUB_SERVICE)
-        if not svc:
-            raise RuntimeError("pxGrid pubsub service not available")
+        svc, props = self._lookup_props(PUBSUB_SERVICE, "pubsub")
         peer = svc["nodeName"]
-        props = svc.get("properties", {})
         ws_url = props.get("wsUrl") or props.get("wsPubsubService")
         secret = self.access_secret(peer)
         return peer, ws_url, secret
@@ -318,10 +325,7 @@ class PxGridControl:
         `sessionTopic` (universally available + authorized for any session-service
         client); prefers `sessionTopicAll` only when PXGRID_SESSION_TOPIC_ALL=true,
         since .all is 3.3p2/3.4+ and needs the client's group authorized for it."""
-        svc = self.service_lookup(SESSION_SERVICE)
-        if not svc:
-            raise RuntimeError("pxGrid session service not available")
-        props = svc.get("properties", {})
+        _, props = self._lookup_props(SESSION_SERVICE, "session")
         base, all_topic = props.get("sessionTopic"), props.get("sessionTopicAll")
         if getattr(self.cfg, "pxgrid_session_topic_all", False):
             return _rest_base(props), all_topic or base
@@ -329,8 +333,5 @@ class PxGridControl:
 
     def endpoint_topic(self):
         """Return (rest_base, topic) for the endpoint service."""
-        svc = self.service_lookup(ENDPOINT_SERVICE)
-        if not svc:
-            raise RuntimeError("pxGrid endpoint service not available")
-        props = svc.get("properties", {})
+        _, props = self._lookup_props(ENDPOINT_SERVICE, "endpoint")
         return _rest_base(props), props.get("endpointTopic") or props.get("topic")

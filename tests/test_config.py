@@ -17,12 +17,21 @@ def test_b_strips_trailing_cr_and_whitespace(monkeypatch):
     assert _b("X", True) is False
 
 
+def test_b_accepts_common_boolean_spellings(monkeypatch):
+    for truthy in ("1", "yes", "on", "TRUE", '"true"'):
+        monkeypatch.setenv("X", truthy)
+        assert _b("X", False) is True, truthy
+    for falsy in ("0", "no", "off", "False", "'false'"):
+        monkeypatch.setenv("X", falsy)
+        assert _b("X", True) is False, falsy
+
+
 def test_b_falls_back_to_default_and_warns_on_garbage(monkeypatch, caplog):
-    monkeypatch.setenv("X", "1")
+    monkeypatch.setenv("X", "maybe")
     with caplog.at_level(logging.WARNING):
         assert _b("X", True) is True
         assert _b("X", False) is False
-    assert any("not \"true\" or \"false\"" in r.message for r in caplog.records)
+    assert any("not a recognized boolean" in r.message for r in caplog.records)
 
 
 def test_b_uses_default_when_unset(monkeypatch):

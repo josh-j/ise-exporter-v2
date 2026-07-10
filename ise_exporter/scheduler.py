@@ -117,4 +117,7 @@ class PollScheduler:
             self.run_cycle()
             nxt += self.cfg.scrape_interval
             while time.time() < nxt and not shutdown.is_set():
-                time.sleep(min(nxt - time.time(), 1))
+                # max(0, ...): time.time() is re-read here, so it can edge past nxt between
+                # the guard and this line — a negative sleep would raise ValueError and kill
+                # the main loop.
+                time.sleep(max(0, min(nxt - time.time(), 1)))

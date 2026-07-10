@@ -112,6 +112,7 @@ class PxGridStreamer:
         self.endpoints = {}          # key -> endpoint attr dict
         self.lock = threading.RLock()
         self.ws_lock = threading.Lock()  # serializes writes to self.ws across threads
+        self.bootstrap_lock = threading.Lock()  # serializes concurrent resyncs (see _bootstrap)
         self.buffer = []             # events captured during bootstrap
         self.syncing = False
         self.connected = False
@@ -176,6 +177,15 @@ class PxGridStreamer:
                 return
 
     def _bootstrap(self, reason):
+        # Serialize resyncs: a gap-resync (recv thread, _recv_loop) and a scheduled-resync
+        # (maintenance thread, _maintenance_loop) must not run concurrently — one would
+        # clear the buffer / rebuild state the other is mid-snapshot on, losing buffered
+        # events and clobbering state. Neither caller holds self.lock here and the order is
+        # always bootstrap_lock -> lock, so there's no deadlock.
+        with self.bootstrap_lock:
+            self._bootstrap_locked(reason)
+
+    def _bootstrap_locked(self, reason):
         with self.lock:
             self.syncing = True
             self.buffer.clear()      # events can only arrive after the in-bootstrap subscribe
@@ -193,9 +203,14 @@ class PxGridStreamer:
             hb_thread.join(timeout=2)
 
         with self.lock:
-            self.sessions = {_session_key(s): s for s in snap_sessions
-                             if _session_key(s) and _session_state(s) not in _GONE_STATES}
-            self.endpoints = {_endpoint_key(e): e for e in snap_endpoints if _endpoint_key(e)}
+            # None == snapshot failed: keep last-known state rather than wiping populated
+            # gauges to zero on a transient error during a scheduled/gap resync. [] is a
+            # genuine empty result and does replace state.
+            if snap_sessions is not None:
+                self.sessions = {_session_key(s): s for s in snap_sessions
+                                 if _session_key(s) and _session_state(s) not in _GONE_STATES}
+            if snap_endpoints is not None:
+                self.endpoints = {_endpoint_key(e): e for e in snap_endpoints if _endpoint_key(e)}
             # drain: buffered events are newer than the snapshot, so they override it
             for event in self.buffer:
                 self._apply(event)
@@ -204,18 +219,21 @@ class PxGridStreamer:
         metrics.ise_pxgrid_resync_total.labels(reason=reason).inc()
         logger.info("pxGrid bootstrap(%s): %d sessions, %d endpoints",
                     reason, len(self.sessions), len(self.endpoints))
-        if snap_sessions and not snap_endpoints:
+        if snap_sessions and snap_endpoints is not None and not snap_endpoints:
             logger.warning("pxGrid bootstrap: got %d sessions but 0 endpoints — check the pxGrid "
                            "Group scope includes com.cisco.ise.endpoint, and that ISE's endpoint "
                            "database actually has entries (Context Visibility > Endpoints)",
                            len(snap_sessions))
 
     def _snapshot(self, service, method, key):
+        """Returns the snapshot list, [] for a genuinely-empty result, or None when the
+        query failed — the None lets _bootstrap preserve last-known state instead of
+        wiping it on a transient error (see _bootstrap)."""
         try:
             data = self.ctl.rest_query(service, method, {}, timeout=self.cfg.pxgrid_query_timeout)
         except Exception as e:
             logger.warning("%s snapshot failed: %s", method, e)
-            return []
+            return None
         return (data or {}).get(key, []) if isinstance(data, dict) else (data or [])
 
     def _snapshot_sessions(self):
@@ -226,7 +244,7 @@ class PxGridStreamer:
             return self.ctl.get_endpoints(timeout=self.cfg.pxgrid_query_timeout)
         except Exception as e:
             logger.warning("getEndpoints snapshot failed: %s", e)
-            return []
+            return None
 
     def _refresh_endpoints(self):
         """Refresh just the endpoint snapshot via getEndpoints — endpoint attributes

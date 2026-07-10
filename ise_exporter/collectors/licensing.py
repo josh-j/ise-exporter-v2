@@ -26,6 +26,8 @@ def collect(client, cfg, mappings):
             metrics.ise_license_enabled.labels(tier=name).set(
                 1 if tier.get("status", "DISABLED") == "ENABLED" else 0)
             compliance = tier.get("compliance", "")
-            is_compliant = "IN_COMPLIANCE" in compliance.upper() if compliance else True
+            # str(): ISE returns this as a string, but coerce so a stray non-string value
+            # can't AttributeError and fail the whole collector. Empty/absent -> compliant.
+            is_compliant = "IN_COMPLIANCE" in str(compliance).upper() if compliance else True
             metrics.ise_license_compliance.labels(tier=name).set(1 if is_compliant else 0)
         logger.info("Licensing: %d tiers", len(tiers) if isinstance(tiers, list) else 1)

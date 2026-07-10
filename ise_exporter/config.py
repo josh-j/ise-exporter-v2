@@ -30,16 +30,17 @@ def _b(v, d):
     raw = _s(v, None)
     if raw is None:
         return d
-    low = raw.lower()
-    if low == "true":
+    # accept the common boolean spellings AND strip stray quotes — the class of bug that
+    # cost real debugging time was COLLECT_PXGRID_STREAM=1 or ="true" (literal quotes some
+    # EnvironmentFile parsers don't strip) reading as neither and silently becoming the
+    # default with no indication why. A genuinely-unparseable value still warns.
+    low = raw.strip().strip("\"'").lower()
+    if low in ("true", "1", "yes", "on"):
         return True
-    if low == "false":
+    if low in ("false", "0", "no", "off"):
         return False
-    # this is exactly the class of bug that cost real debugging time: COLLECT_PXGRID_STREAM=1
-    # or ="true" (literal quotes some EnvironmentFile parsers don't strip) reads as
-    # neither true nor false and previously just became False with zero indication why.
-    logger.warning('%s=%r is not "true" or "false" — defaulting to %s '
-                   "(stray quotes, or a value like 1/yes instead of true?)", v, raw, d)
+    logger.warning("%s=%r is not a recognized boolean — defaulting to %s "
+                   "(use true/false, 1/0, yes/no, or on/off)", v, raw, d)
     return d
 
 

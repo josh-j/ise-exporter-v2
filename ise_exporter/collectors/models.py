@@ -18,7 +18,8 @@ from collections import defaultdict
 
 from .. import metrics
 from ..util import (clear_metric, first_nonempty, normalize_mac,
-                    parse_posture_report, normalize_agent_version)
+                    parse_posture_report, normalize_agent_version,
+                    SECURECLIENT_VERSION_KEYS, POSTURE_REPORT_KEYS)
 logger = logging.getLogger(__name__)
 
 # pxGrid emits camelCase; Context Visibility / ERS show PascalCase. Read both.
@@ -28,20 +29,13 @@ _TYPE_KEYS = ("mfcInfoEndpointType", "MFCInfoEndpointType", "mfcInfoDeviceType")
 _OS_KEYS = ("mfcInfoOperatingSystem", "MFCInfoOperatingSystem")
 _POLICY_KEYS = ("endPointPolicy", "EndPointPolicy", "MFCInfoEndpointPolicy")
 _OUI_KEYS = ("oui", "OUI")
-# Secure Client / posture agent version — attribute name varies (and may be absent
-# entirely) across ISE versions; read every plausible spelling. Best-effort: only
-# endpoints with a real value produce a series, so an all-blank deployment leaves
-# ise_endpoints_by_secureclient_version empty rather than one giant 'unknown' bucket.
-_SECURECLIENT_VERSION_KEYS = ("secureClientVersion", "SecureClientVersion",
-                              "anyConnectVersion", "AnyConnectVersion",
-                              "postureAgentVersion", "PostureAgentVersion",
-                              "AnyConnectAgentVersion")
-# Per-policy posture pass/fail lives in the endpoint's PostureReport attribute
-# (Context Visibility), collected here via getEndpoints. When getEndpoints returns 0
-# (common on streaming deployments) the same PostureReport is in each session's
-# other_attr_string, and authz.py emits ise_posture_policy_result from there as a
-# fallback (gated on pxgrid_endpoints_present so the two never double-count).
-_POSTURE_REPORT_KEYS = ("PostureReport", "postureReport")
+# Secure Client version + PostureReport attribute spellings live in util (shared with the
+# authz MnT fallback so they can't drift). Only endpoints with a real version value produce
+# a series, so an all-blank deployment leaves ise_endpoints_by_secureclient_version empty
+# rather than one giant 'unknown' bucket. When getEndpoints returns 0 (common on streaming
+# deployments) the same PostureReport is in each session's other_attr_string and authz.py
+# emits ise_posture_policy_result from there (gated on pxgrid_endpoints_present so the two
+# never double-count).
 _MAC_KEYS = ("macAddress", "MACAddress", "mac")
 
 
@@ -80,8 +74,9 @@ def collect(pxgrid, cfg):
 def _parse_profile_hierarchy(profiles):
     """getProfiles returns the policy catalog as a flat list with a colon-joined
     ancestry path, e.g. name='Apple-iPhone', fullName='Apple-Device:Apple-iDevice:
-    Apple-iPhone'. category is the hierarchy root; parent the immediate ancestor;
-    both are absent (empty) for a top-level policy that has no parent."""
+    Apple-iPhone'. category is the hierarchy root; parent the immediate ancestor.
+    For a top-level policy (no ancestry path) category is the policy's own name and
+    parent is empty (it has no ancestor)."""
     table = {}
     for p in profiles:
         name = first_nonempty(p, "name", "Name")
@@ -127,9 +122,18 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
         metrics.ise_profiler_hierarchy_age_seconds.set(time.time() - _hierarchy_fetched_at)
     metrics.ise_endpoints_pxgrid_total.set(len(endpoints))
     if not endpoints:
-        # pxGrid getEndpoints returned nothing — leave the model/profile gauges untouched
-        # so the ERS endpoint fallback (collectors/ers_endpoints.py) can own the profile
-        # breakdown. Clearing here would wipe it on every 30s projection tick.
+        # pxGrid getEndpoints returned nothing. Leave the profile / posture / Secure Client
+        # gauges untouched so their fallbacks can own them (ers_endpoints.py for the profile
+        # breakdown, authz.py's other_attr_string for posture + Secure Client version) —
+        # clearing those here would wipe the fallback's values on every 30s tick. But the
+        # MFC-derived gauges below have NO fallback source, so clear them rather than freezing
+        # them at stale values from when getEndpoints last delivered.
+        for metric in (metrics.ise_endpoints_by_hardware_model,
+                       metrics.ise_endpoints_by_manufacturer,
+                       metrics.ise_endpoints_by_endpoint_type,
+                       metrics.ise_endpoints_by_os,
+                       metrics.ise_endpoint_mfc_coverage):
+            clear_metric(metric)
         return
     mac_owner = mac_owner or {}
 
@@ -152,13 +156,13 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
         etype = first_nonempty(ep, *_TYPE_KEYS)
         os_ = first_nonempty(ep, *_OS_KEYS)
         policy = first_nonempty(ep, *_POLICY_KEYS)
-        scversion = normalize_agent_version(_ep_attr(ep, *_SECURECLIENT_VERSION_KEYS))
+        scversion = normalize_agent_version(_ep_attr(ep, *SECURECLIENT_VERSION_KEYS))
         if scversion:
             by_scversion[scversion] += 1
 
         # per-policy posture pass/fail from the endpoint's PostureReport attribute
         mac = normalize_mac(first_nonempty(ep, *_MAC_KEYS))
-        report = _ep_attr(ep, *_POSTURE_REPORT_KEYS)
+        report = _ep_attr(ep, *POSTURE_REPORT_KEYS)
         if report and mac:
             ep_with_report += 1
             owner = mac_owner.get(mac, "unknown")

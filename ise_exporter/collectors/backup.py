@@ -24,12 +24,18 @@ def collect(client, cfg, mappings):
             return
         metrics.ise_backup_configured.set(1)
 
-        if start_date and status == "COMPLETED":
-            ts = parse_ise_date(start_date)
-            if ts:
-                metrics.ise_backup_last_success_timestamp.set(ts.timestamp())
-                age_hours = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-                metrics.ise_backup_age_hours.set(age_hours)
-                logger.info("Backup: last success %.1f hours ago", age_hours)
+        ts = parse_ise_date(start_date) if (start_date and status == "COMPLETED") else None
+        if ts:
+            metrics.ise_backup_last_success_timestamp.set(ts.timestamp())
         else:
-            logger.info("Backup: last status was %s", status)
+            logger.info("Backup: last status was %s (not a completed backup)", status)
+
+        # Recompute age on EVERY poll from the last known success timestamp — not just when
+        # the current status is COMPLETED. Otherwise a stuck/failed/in-progress backup freezes
+        # age_hours at its last value and a 'backup too old' alert never fires during the
+        # outage. 0.0 == never seen a completed backup, so leave age unset in that case.
+        last_success = metrics.ise_backup_last_success_timestamp._value.get()
+        if last_success:
+            age_hours = (datetime.now(timezone.utc).timestamp() - last_success) / 3600
+            metrics.ise_backup_age_hours.set(age_hours)
+            logger.info("Backup: last success %.1f hours ago", age_hours)

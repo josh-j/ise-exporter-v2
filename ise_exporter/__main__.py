@@ -90,8 +90,8 @@ def pxgrid_check(cfg, *, check_stream=False):
             profiles = ctl.get_profiler_profiles(timeout=cfg.pxgrid_query_timeout)
             logger.info("pxGrid check: getEndpoints probe ok endpoints=%d (first page)", len(endpoints))
             if endpoints:
-                from .collectors.models import (_ep_attr, _POSTURE_REPORT_KEYS,
-                                                _SECURECLIENT_VERSION_KEYS)
+                from .collectors.models import _ep_attr
+                from .util import POSTURE_REPORT_KEYS, SECURECLIENT_VERSION_KEYS
                 ep = endpoints[0]
                 # dump the attribute keys — top level AND any nested attribute maps — so we
                 # can see exactly what getEndpoints returns and where posture attrs live.
@@ -101,8 +101,8 @@ def pxgrid_check(cfg, *, check_stream=False):
                     if isinstance(sub, dict):
                         logger.info("pxGrid check: sample endpoint %s keys: %s",
                                     container, sorted(sub.keys()))
-                n_report = sum(1 for e in endpoints if _ep_attr(e, *_POSTURE_REPORT_KEYS))
-                n_version = sum(1 for e in endpoints if _ep_attr(e, *_SECURECLIENT_VERSION_KEYS))
+                n_report = sum(1 for e in endpoints if _ep_attr(e, *POSTURE_REPORT_KEYS))
+                n_version = sum(1 for e in endpoints if _ep_attr(e, *SECURECLIENT_VERSION_KEYS))
                 logger.info("pxGrid check: posture attrs in sample — PostureReport on %d/%d, "
                             "PostureAgentVersion on %d/%d endpoints",
                             n_report, len(endpoints), n_version, len(endpoints))

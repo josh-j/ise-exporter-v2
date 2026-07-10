@@ -33,7 +33,11 @@ def _classify(det):
         ip = "unknown"
     name = det.get("name", "unknown")
 
-    location, ops_owner, device_type = "unknown", "unknown", "unknown"
+    # location default is capital "Unknown" to match normalize_location() / nad_labels(),
+    # so a NAD with no Location group shares a series with location-less sessions rather
+    # than splitting into a separate lowercase "unknown". (ops_owner/device_type stay
+    # lowercase — consistent with their own label sources.)
+    location, ops_owner, device_type = "Unknown", "unknown", "unknown"
     for g in det.get("NetworkDeviceGroupList", []):
         parts = g.split("#")
         if parts[0] == "Location" and len(parts) > 2:

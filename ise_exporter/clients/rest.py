@@ -82,17 +82,25 @@ class ISERestClient:
             ise_api_errors_total.labels(api=api_name, error_type="unknown", http_code="0").inc()
             return None
 
+    def _get_json(self, session, url, params=None, api_name="unknown"):
+        """GET + JSON-decode, returning the parsed body or None on request/parse failure.
+        Collapses the request→None-guard→json()→ValueError-guard boilerplate the JSON
+        accessors below all share."""
+        r = self._request(session, url, params, api_name=api_name)
+        if r is None:
+            return None
+        try:
+            return r.json()
+        except ValueError:
+            return None
+
     # --- generic accessors used by collectors ---
     def get_ers(self, path, params=None, get_all=False, api_name="ers"):
         """ERS JSON GET. Returns the SearchResult.resources LIST (following
         nextPage.href when get_all), or the raw dict when there's no SearchResult."""
         url = f"{self.ers_url}{path}"
-        r = self._request(self.session, url, params, api_name=api_name)
-        if r is None:
-            return None
-        try:
-            data = r.json()
-        except ValueError:
+        data = self._get_json(self.session, url, params, api_name=api_name)
+        if data is None:
             return None
         if "SearchResult" not in data:
             return data
@@ -105,14 +113,11 @@ class ISERestClient:
             href = (sr.get("nextPage") or {}).get("href", "")
             if "/ers" not in href:
                 break
-            r = self._request(self.session, f"{self.ers_url}{href.split('/ers', 1)[1]}",
-                              api_name=api_name)
-            if r is None:
+            page = self._get_json(self.session, f"{self.ers_url}{href.split('/ers', 1)[1]}",
+                                  api_name=api_name)
+            if page is None:
                 break
-            try:
-                sr = r.json().get("SearchResult", {})
-            except ValueError:
-                break
+            sr = page.get("SearchResult", {})
             resources.extend(sr.get("resources", []))
         return resources
 
@@ -121,24 +126,17 @@ class ISERestClient:
         url = f"{self.ers_url}{path}"
         p = dict(params or {})
         p.setdefault("size", 1)
-        r = self._request(self.session, url, p, api_name=api_name)
-        if r is None:
+        data = self._get_json(self.session, url, p, api_name=api_name)
+        if data is None:
             return None
-        try:
-            return r.json().get("SearchResult", {}).get("total")
-        except ValueError:
-            return None
+        return data.get("SearchResult", {}).get("total")
 
     def get_pan_api(self, path, api_name="pan_api", unwrap=True):
         """PAN OpenAPI JSON GET. Unwraps the `response` envelope by default; pass
         unwrap=False for endpoints that return a bare body (e.g. license tier-state)."""
         url = f"{self.pan_url}{path}"
-        r = self._request(self.session, url, api_name=api_name)
-        if r is None:
-            return None
-        try:
-            data = r.json()
-        except ValueError:
+        data = self._get_json(self.session, url, api_name=api_name)
+        if data is None:
             return None
         return data.get("response", data) if (unwrap and isinstance(data, dict)) else data
 

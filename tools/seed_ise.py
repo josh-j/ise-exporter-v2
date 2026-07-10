@@ -34,7 +34,7 @@ import random
 import urllib3
 
 urllib3.disable_warnings()
-from ciscoisesdk import IdentityServicesEngineAPI
+from ciscoisesdk import IdentityServicesEngineAPI  # noqa: E402  (must follow disable_warnings)
 
 MAC_PREFIX = "0A:5E:ED"     # locally-administered marker => trivial teardown
 MARKER = "vet-seed"         # description marker + authz-profile name prefix
@@ -62,7 +62,8 @@ AUTHZ_PROFILES = [
 
 def connect():
     host = os.environ.get("ISE_HOST", "10.81.0.10")
-    port = os.environ.get("ISE_ERS_PORT", "9060")
+    # ERS_PORT is the name the exporter uses; accept the older ISE_ERS_PORT as a fallback.
+    port = os.environ.get("ERS_PORT") or os.environ.get("ISE_ERS_PORT", "9060")
     user = os.environ.get("ISE_USER") or sys.exit("set ISE_USER")
     pw = os.environ.get("ISE_PASS") or sys.exit("set ISE_PASS")
     return IdentityServicesEngineAPI(
@@ -103,6 +104,10 @@ def _seeded_endpoints(api):
 def seed(api, n):
     profs = _profile_ids(api)
     pool = [(nm, pid) for nm, pid, w in profs for _ in range(w)]
+    if not pool:
+        print("no profiles resolved from PROFILE_MIX — nothing to seed "
+              "(check the profile names still exist in ISE)")
+        return 1
     made, err = 0, 0
     counts = {}
     for _ in range(n):
@@ -119,6 +124,7 @@ def seed(api, n):
     print(f"seeded {made} endpoints ({err} errors)")
     for nm in sorted(counts):
         print(f"  {nm:24s} {counts[nm]}")
+    return 0 if made else 1
 
 
 def verify(api):
@@ -129,6 +135,7 @@ def verify(api):
         total += c
         print(f"  {nm:24s} {c}")
     print(f"\ntotal listed: {total} ; seeded-marker endpoints ({MAC_PREFIX}*): {len(_seeded_endpoints(api))}")
+    return 0
 
 
 def authz(api):
@@ -139,9 +146,11 @@ def authz(api):
             print(f"  + {spec['name']} ({spec['access_type']})")
         except Exception as e:
             s = repr(e)
-            print(f"  {'~ exists' if 'exist' in s.lower() else 'err'}: {spec['name']} {s[:80] if 'exist' not in s.lower() else ''}")
+            exists = "exist" in s.lower()
+            print(f"  {'~ exists' if exists else 'err'}: {spec['name']} {'' if exists else s[:80]}")
     print("note: to land these in MnT sessions, wire them into the Default policy set's authz "
           "rules and drive `adws auth <ws> <user>` — then ise_session_authz_rule_endpoints populates.")
+    return 0
 
 
 def teardown(api):
@@ -164,20 +173,24 @@ def teardown(api):
             print(f"  deleted authz profile {spec['name']}")
         except Exception:
             pass
+    return 0 if d == len(eps) else 1
 
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "verify"
     api = connect()
     if cmd == "seed":
-        seed(api, int(sys.argv[2]) if len(sys.argv) > 2 else 150)
-    elif cmd == "authz":
-        authz(api)
-    elif cmd == "teardown":
-        teardown(api)
-    else:
-        verify(api)
+        try:
+            n = int(sys.argv[2]) if len(sys.argv) > 2 else 150
+        except ValueError:
+            sys.exit(f"seed count must be an integer, got {sys.argv[2]!r}")
+        return seed(api, n)
+    if cmd == "authz":
+        return authz(api)
+    if cmd == "teardown":
+        return teardown(api)
+    return verify(api)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

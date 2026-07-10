@@ -26,6 +26,13 @@ def failures(name):
     return _failures.get(name, 0)
 
 
+def _record_failure(name, error_type):
+    """Bump the scrape-error counter + consecutive-failure gauge for a failed collect."""
+    metrics.ise_scrape_errors_total.labels(collector=name, error_type=error_type).inc()
+    _failures[name] = _failures.get(name, 0) + 1
+    metrics.ise_consecutive_failures.labels(collector=name).set(_failures[name])
+
+
 def stream_active(cfg):
     """True only when pxGrid streaming is configured AND the stream is currently
     connected (ise_pxgrid_connected == 1). Collectors and the scheduler self-limit on
@@ -64,13 +71,9 @@ def observe(name):
         metrics.ise_consecutive_failures.labels(collector=name).set(0)
     except CollectorFailed as e:
         logger.warning("%s: %s", name, e)
-        metrics.ise_scrape_errors_total.labels(collector=name, error_type="no_data").inc()
-        _failures[name] = _failures.get(name, 0) + 1
-        metrics.ise_consecutive_failures.labels(collector=name).set(_failures[name])
+        _record_failure(name, "no_data")
     except Exception as e:
         logger.error("%s collection error: %s", name, e)
-        metrics.ise_scrape_errors_total.labels(collector=name, error_type="exception").inc()
-        _failures[name] = _failures.get(name, 0) + 1
-        metrics.ise_consecutive_failures.labels(collector=name).set(_failures[name])
+        _record_failure(name, "exception")
     finally:
         metrics.ise_collector_duration_seconds.labels(collector=name).set(time.time() - start)
