@@ -1,0 +1,34 @@
+name: Ubuntu Noble native install
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native-systemd-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate installer syntax
+        run: bash -n deploy/install.sh
+
+      - name: Install using the native systemd path
+        run: sudo ./deploy/install.sh "$PWD"
+
+      - name: Verify package, commands, and systemd installation
+        run: |
+          sudo /opt/ise-exporter/.venv/bin/python -c \
+            'import ise_exporter, oracledb, requests; print(oracledb.__version__)'
+          ise-cli --help
+          /opt/ise-exporter/.venv/bin/ise-exporter --help
+          test -L /usr/local/bin/ise-cli
+          sudo systemd-analyze verify /etc/systemd/system/ise-exporter.service
+
+      - name: Show service logs on failure
+        if: failure()
+        run: sudo journalctl -u ise-exporter --no-pager -n 200

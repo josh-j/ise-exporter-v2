@@ -3,7 +3,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-from ise_exporter.config import Config, _b, _csv, _i, _s
+from ise_exporter.config import Config, _b, _i, _s
 
 
 def test_b_accepts_true_false_case_insensitive(monkeypatch):
@@ -65,32 +65,15 @@ def test_s_default_when_unset(monkeypatch):
     assert _s("X", "fallback") == "fallback"
 
 
-def test_csv_strips_and_drops_empty_parts(monkeypatch):
-    monkeypatch.setenv("X", " asset_tag, ,ops_owner ")
-    assert _csv("X") == ("asset_tag", "ops_owner")
-
-
-def test_csv_preserves_spaces_inside_attribute_names(monkeypatch):
-    monkeypatch.setenv("X", "Ops Owner, Asset Category")
-    assert _csv("X") == ("Ops Owner", "Asset Category")
-
-
 def test_summary_excludes_password(monkeypatch):
     monkeypatch.setenv("ISE_PASS", "super-secret")
     monkeypatch.setenv("ISE_DATACONNECT_PASSWORD", "database-secret")
-    monkeypatch.setenv("COLLECT_TACACS_DATACONNECT", "true")
     monkeypatch.setenv("ISE_MNT_HOST", "mnt1.example.mil")
     monkeypatch.setenv("ISE_HOST", "pan1.example.mil")
-    monkeypatch.setenv("PXGRID_HOST", "pxgrid1.example.mil")
-    monkeypatch.setenv("PXGRID_NODE_NAME", "ise-exporter")
-    monkeypatch.setenv("PXGRID_CLIENT_CERT", "/certs/client.cer")
-    monkeypatch.setenv("PXGRID_CLIENT_KEY", "/certs/client.key")
     cfg = Config.from_env()
     assert "super-secret" not in cfg.summary()
     assert "database-secret" not in cfg.summary()
-    assert "pxgrid1.example.mil" in cfg.summary()
-    assert "collect_ers_endpoint_attributes=True" in cfg.summary()
-    assert cfg.pxgrid_ready is True
+    assert "pan1.example.mil" in cfg.summary()
     assert cfg.dataconnect_ready is True
     assert cfg.dataconnect_host == "mnt1.example.mil"
 
@@ -99,20 +82,10 @@ def test_env_example_is_parseable_ise33_80k_production_profile():
     path = Path(__file__).parents[1] / ".env.example"
     values = dotenv_values(path, interpolate=False)
 
-    assert values["COLLECT_PXGRID_STREAM"] == "true"
-    assert values["COLLECT_ERS_ENDPOINT_ATTRIBUTES"] == "true"
-    assert values["COLLECT_ERS_ENDPOINT_FALLBACK"] == "false"
-    assert values["ERS_ENDPOINT_ATTRIBUTE_PAGE_SIZE"] == "1000"
-    assert values["ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL"] == "604800"
     assert values["MAX_WORKERS"] == "12"
-    assert values["MAX_DETAIL_FETCHES_PER_CYCLE"] == "1000"
-    assert values["SESSION_DETAIL_CACHE_FILE"] == \
-        "/var/lib/ise-exporter/session-details-cache.json"
-    assert values["ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS"] == "Ops Owner"
-    assert values["COLLECT_TACACS_DATACONNECT"] == "true"
     assert values["ISE_DATACONNECT_MAX_GROUPS"] == "5000"
-    assert values["PXGRID_SESSION_TOPIC_ALL"] == "false"
-    assert values["PXGRID_SUBSCRIBE_ENDPOINT_TOPIC"] == "false"
+    assert values["ISE_DATACONNECT_SERVICE"] == "cpm10"
+    assert values["ISE_DATACONNECT_SSL_VERIFY"] == "true"
     # systemd EnvironmentFile= does not support trailing inline comments; keeping
     # comments on their own lines prevents them becoming part of numeric/boolean values.
     assignments = [line for line in path.read_text().splitlines()

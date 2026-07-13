@@ -5,194 +5,89 @@ import ise_exporter.__main__ as app
 
 
 def _cfg(**overrides):
-    base = dict(
+    values = dict(
         log_level="INFO",
-        pxgrid_host="px.example",
-        pxgrid_port=8910,
-        pxgrid_node_name="ise-exporter",
-        pxgrid_client_cert="/cert.pem",
-        pxgrid_client_key="/key.pem",
-        pxgrid_ca_bundle="/ca.pem",
-        pxgrid_query_timeout=5,
-        collect_pxgrid_endpoints=True,
-        collect_pxgrid_stream=False,
+        ise_host="pan.example",
+        dataconnect_host="mnt.example",
+        dataconnect_user="dataconnect",
+        dataconnect_password="secret",
+        dataconnect_ready=True,
+        exporter_port=9618,
     )
-    base.update(overrides)
-    ns = types.SimpleNamespace(**base)
-    ns.summary = lambda: "test-config"
-    return ns
+    values.update(overrides)
+    cfg = types.SimpleNamespace(**values)
+    cfg.summary = lambda: "test-config"
+    return cfg
 
 
-def _fake_pxgrid_control(calls):
-    class FakePxGridControl:
+def test_dataconnect_check_queries_catalog_and_closes(monkeypatch):
+    calls = []
+
+    class Client:
         def __init__(self, cfg):
-            self.cfg = cfg
+            calls.append("init")
 
-        def account_activate(self):
-            calls.append(("account_activate",))
+        def query(self, sql):
+            calls.append(sql)
+            return [{"view_count": 70}]
 
-        def session_topic(self):
-            calls.append(("session_topic",))
-            return "https://ise/session", "/topic/com.cisco.ise.session.all"
+        def close(self):
+            calls.append("close")
 
-        def endpoint_topic(self):
-            calls.append(("endpoint_topic",))
-            return "https://ise/endpoint", "/topic/com.cisco.ise.endpoint"
-
-        def resolve_pubsub(self):
-            calls.append(("resolve_pubsub",))
-            return "pubsub-node", ["wss://ise/pubsub"], "secret"
-
-        def rest_query(self, service, endpoint, body=None, timeout=120):
-            calls.append(("rest_query", service, endpoint, body or {}))
-            return {"sessions": [{"auditSessionId": "A1"}]}
-
-        def get_endpoints(self, **kwargs):
-            calls.append(("get_endpoints", kwargs))
-            return [{"macAddress": "00:00:00:00:00:01"}]
-
-        def get_profiler_profiles(self, **kwargs):
-            calls.append(("get_profiler_profiles", kwargs))
-            return [{"name": "Profile"}]
-
-    return FakePxGridControl
+    monkeypatch.setattr(app, "DataConnectClient", Client)
+    assert app.dataconnect_check(_cfg()) == 0
+    assert calls == ["init", "SELECT COUNT(*) AS view_count FROM user_views", "close"]
 
 
-def test_pxgrid_check_endpoint_mode_exercises_endpoint_and_profiler_probes(monkeypatch):
+def test_dataconnect_check_requires_credentials():
+    assert app.dataconnect_check(_cfg(dataconnect_ready=False)) == 1
+
+
+def test_dataconnect_schema_prints_catalog_metadata_and_closes(monkeypatch, capsys):
     calls = []
 
-    monkeypatch.setattr(app, "PxGridControl", _fake_pxgrid_control(calls))
+    class Client:
+        def __init__(self, cfg):
+            calls.append("init")
 
-    assert app.pxgrid_check(_cfg()) == 0
-    assert calls[0] == ("account_activate",)
-    assert ("session_topic",) not in calls
-    assert ("resolve_pubsub",) not in calls
-    assert any(call[0] == "get_endpoints" and call[1]["max_pages"] == 1 for call in calls)
-    assert any(call[0] == "get_profiler_profiles" for call in calls)
+        def query(self, sql):
+            calls.append(sql)
+            return [{"table_name": "RADIUS_ACCOUNTING", "column_name": "ACCT_SESSION_ID"}]
 
+        def close(self):
+            calls.append("close")
 
-def test_pxgrid_check_stream_mode_exercises_session_pubsub_and_endpoint_probes(monkeypatch):
-    calls = []
-
-    monkeypatch.setattr(app, "PxGridControl", _fake_pxgrid_control(calls))
-
-    assert app.pxgrid_check(_cfg(collect_pxgrid_stream=True)) == 0
-    assert ("session_topic",) in calls
-    assert ("resolve_pubsub",) in calls
-    assert any(call[:3] == ("rest_query", app.SESSION_SERVICE, "getSessions") for call in calls)
-    assert any(call[0] == "get_endpoints" and call[1]["max_pages"] == 1 for call in calls)
-
-
-def test_pxgrid_check_can_validate_stream_connect(monkeypatch):
-    calls = []
-
-    class FakeStreamer:
-        def __init__(self, control, mappings, shutdown):
-            calls.append(("streamer_init", mappings))
-
-        def _connect_ws(self):
-            calls.append(("connect_ws",))
-
-        def _close_ws(self):
-            calls.append(("close_ws",))
-
-    monkeypatch.setattr(app, "PxGridControl", _fake_pxgrid_control(calls))
-    monkeypatch.setattr(app, "PxGridStreamer", FakeStreamer)
-
-    assert app.pxgrid_check(_cfg(), check_stream=True) == 0
-    assert ("connect_ws",) in calls
-    assert ("close_ws",) in calls
-
-
-def test_pxgrid_check_closes_stream_after_connect_failure(monkeypatch):
-    calls = []
-
-    class FailingStreamer:
-        def __init__(self, control, mappings, shutdown):
-            calls.append(("streamer_init", mappings))
-
-        def _connect_ws(self):
-            calls.append(("connect_ws",))
-            raise RuntimeError("stomp failed")
-
-        def _close_ws(self):
-            calls.append(("close_ws",))
-
-    monkeypatch.setattr(app, "PxGridControl", _fake_pxgrid_control(calls))
-    monkeypatch.setattr(app, "PxGridStreamer", FailingStreamer)
-
-    assert app.pxgrid_check(_cfg(), check_stream=True) == 1
-    assert ("connect_ws",) in calls
-    assert ("close_ws",) in calls
-
-
-def test_pxgrid_check_stream_runs_when_streaming_is_configured(monkeypatch):
-    calls = []
-
-    monkeypatch.setattr(app, "pxgrid_check",
-                        lambda cfg, check_stream=False: calls.append(check_stream) or 0)
-    monkeypatch.setattr(app.Config, "from_env", classmethod(lambda cls: _cfg(collect_pxgrid_stream=True)))
-    monkeypatch.setattr(app, "load_dotenv", lambda *args, **kwargs: None)
-
-    assert app.main(["--pxgrid-check"]) == 0
-    assert calls == [True]
-
-
-def test_pxgrid_check_reports_missing_pxgrid_config():
-    assert app.pxgrid_check(_cfg(pxgrid_host="")) == 1
-
-
-def test_pxgrid_check_runs_endpoint_probe_even_when_stream_probe_fails(monkeypatch):
-    """A scoped/broken session-pubsub stage must not hide the endpoint + posture
-    diagnostics — each probe is independent."""
-    calls = []
-    Base = _fake_pxgrid_control(calls)
-
-    class Control(Base):
-        def resolve_pubsub(self):
-            calls.append(("resolve_pubsub",))
-            raise RuntimeError("pubsub subscribe not authorized")
-
-    monkeypatch.setattr(app, "PxGridControl", Control)
-
-    rc = app.pxgrid_check(_cfg(collect_pxgrid_stream=True))
-
-    assert rc == 1                                          # a probe failed
-    assert ("resolve_pubsub",) in calls                    # session/pubsub stage attempted + failed
-    assert any(c[0] == "get_endpoints" for c in calls)     # endpoint probe STILL ran
-    assert any(c[0] == "get_profiler_profiles" for c in calls)
+    monkeypatch.setattr(app, "DataConnectClient", Client)
+    assert app.dataconnect_schema(_cfg()) == 0
+    assert '"table_name": "RADIUS_ACCOUNTING"' in capsys.readouterr().out
+    assert "user_tab_columns" in calls[1]
+    assert calls[-1] == "close"
 
 
 def test_load_env_reads_deployment_env_file(monkeypatch, tmp_path):
-    """A manual `ise-exporter --pxgrid-check` must pick up the systemd deployment env
-    file even when there's no ./.env — otherwise the pxGrid vars come up 'missing'."""
     env_file = tmp_path / "ise-exporter.env"
-    env_file.write_text("PXGRID_HOST=deployed-host.example\n")
+    env_file.write_text("ISE_DATACONNECT_HOST=deployed-host.example\n")
     monkeypatch.setattr(app, "DEPLOY_ENV_FILE", str(env_file))
-    monkeypatch.delenv("PXGRID_HOST", raising=False)
+    monkeypatch.delenv("ISE_DATACONNECT_HOST", raising=False)
     try:
         app._load_env()
-        assert os.environ.get("PXGRID_HOST") == "deployed-host.example"
+        assert os.environ.get("ISE_DATACONNECT_HOST") == "deployed-host.example"
     finally:
-        os.environ.pop("PXGRID_HOST", None)
+        os.environ.pop("ISE_DATACONNECT_HOST", None)
 
 
 def test_load_env_preserves_literal_value_after_first_equals(monkeypatch, tmp_path):
-    """Secrets and paths are data: later '=' and '${...}' must not be parsed again."""
     env_file = tmp_path / "ise-exporter.env"
     env_file.write_text(
         "ISE_PASS=left=middle=right\n"
-        "PXGRID_NODE_NAME=${SHOULD_NOT_EXPAND}=node\n"
-        "PXGRID_CLIENT_KEY='key # 1=name.pem'\n"
+        "ISE_DATACONNECT_PASSWORD='secret # 1=name=value'\n"
     )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(app, "DEPLOY_ENV_FILE", str(env_file))
-    monkeypatch.setenv("SHOULD_NOT_EXPAND", "expanded")
-    for key in ("ISE_PASS", "PXGRID_NODE_NAME", "PXGRID_CLIENT_KEY"):
+    for key in ("ISE_PASS", "ISE_DATACONNECT_PASSWORD"):
         monkeypatch.delenv(key, raising=False)
 
     app._load_env()
 
     assert os.environ["ISE_PASS"] == "left=middle=right"
-    assert os.environ["PXGRID_NODE_NAME"] == "${SHOULD_NOT_EXPAND}=node"
-    assert os.environ["PXGRID_CLIENT_KEY"] == "key # 1=name.pem"
+    assert os.environ["ISE_DATACONNECT_PASSWORD"] == "secret # 1=name=value"

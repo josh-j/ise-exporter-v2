@@ -39,3 +39,18 @@ def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     assert 'chmod -R a+rX "$VENV"' in script
     assert 'chmod 640 "$ENV_FILE"' in script
     assert 'chmod 750 "$CERTS_DIR"' in script
+
+
+def test_install_script_supports_ubuntu_noble_with_standard_packages():
+    root = Path(__file__).parents[1]
+    script = (root / "deploy/install.sh").read_text()
+    workflow = (root / ".github/workflows/ubuntu-noble-install.yml").read_text()
+
+    assert "Ubuntu 24.04 LTS (Noble Numbat)" in script
+    assert "REQUIRED_APT_PACKAGES=(python3 python3-venv ca-certificates)" in script
+    assert 'apt-get install -y --no-install-recommends "${MISSING_APT_PACKAGES[@]}"' in script
+    assert "INSTALL_DIR=/opt/ise-exporter" in script
+    assert 'VENV="$INSTALL_DIR/.venv"' in script
+    assert "ubuntu-24.04" in workflow
+    assert "sudo ./deploy/install.sh" in workflow
+    assert "import ise_exporter, oracledb, requests" in workflow

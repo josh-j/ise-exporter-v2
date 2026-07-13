@@ -9,7 +9,7 @@ from ise_exporter.util import clear_metric
 
 @pytest.fixture(autouse=True)
 def _clear_metrics():
-    for metric in tacacs._METRICS:
+    for metric in tacacs._CONFIG_METRICS + tacacs._ACTIVITY_METRICS:
         clear_metric(metric)
     metrics.ise_tacacs_internal_users_total.set(0)
     metrics.ise_tacacs_dataconnect_up.set(0)
@@ -51,7 +51,7 @@ class Client:
 
 
 def test_collects_tacacs_inventory_rules_and_suspected_unused_account():
-    tacacs.collect(Client(), types.SimpleNamespace(
+    tacacs.collect_config(Client(), types.SimpleNamespace(
         tacacs_internal_user_max=1000, tacacs_unused_account_days=1, max_workers=2))
 
     assert metrics.ise_tacacs_internal_users_total._value.get() == 1
@@ -61,14 +61,6 @@ def test_collects_tacacs_inventory_rules_and_suspected_unused_account():
                  "username", "reason") == {
         ("netadmin", "object_not_modified_1d"): 1.0}
     assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 1.0
-    assert _rows(metrics.ise_tacacs_policy_set_hits, "policy_set") == {
-        ("Default",): 0.0}
-    assert _rows(metrics.ise_tacacs_authentication_rule_hits,
-                 "policy_set", "rule", "identity_source") == {
-        ("Default", "Default", "All_User_ID_Stores"): 0.0}
-    assert _rows(metrics.ise_tacacs_authorization_rule_hits,
-                 "profile", "command_sets") == {
-        ("Deny All Shell Profile", "DenyAllCommands"): 0.0}
     assert _rows(metrics.ise_tacacs_policy_objects_total, "object_type") == {
         ("policy_sets",): 1.0,
         ("authentication_rules",): 1.0,
@@ -98,7 +90,7 @@ def test_account_not_flagged_when_device_admin_policy_has_hits():
         return result
 
     client.get_ers = get_ers
-    tacacs.collect(client, types.SimpleNamespace(
+    tacacs.collect_config(client, types.SimpleNamespace(
         tacacs_internal_user_max=1000, max_workers=2))
 
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
@@ -114,7 +106,7 @@ def test_internal_user_list_row_survives_detail_fetch_failure():
         return original(path, params, get_all, api_name)
 
     client.get_ers = get_ers
-    tacacs.collect(client, types.SimpleNamespace(
+    tacacs.collect_config(client, types.SimpleNamespace(
         tacacs_internal_user_max=1000, tacacs_unused_account_days=180, max_workers=2))
 
     assert _rows(metrics.ise_tacacs_internal_user_info, "username") == {("netadmin",): 1.0}
@@ -149,11 +141,9 @@ def test_collects_dataconnect_account_attribution():
             self.closed = True
 
     dataconnect = DataConnect()
-    tacacs.collect(Client(), types.SimpleNamespace(
-        tacacs_internal_user_max=1000, tacacs_unused_account_days=180,
-        max_workers=2, dataconnect_max_groups=50), dataconnect=dataconnect)
+    tacacs.collect_activity(dataconnect, types.SimpleNamespace(dataconnect_max_groups=50))
 
-    assert dataconnect.closed is True
+    assert dataconnect.closed is False
     assert metrics.ise_tacacs_dataconnect_up._value.get() == 1
     assert _rows(metrics.ise_tacacs_account_authentication_events,
                  "username", "status", "device") == {

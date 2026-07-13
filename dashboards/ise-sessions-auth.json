@@ -1,4 +1,277 @@
 {
+  "annotations": {
+    "list": []
+  },
+  "description": "RADIUS authentication and accounting reporting from Cisco ISE 3.3 Patch 11 Data Connect. Likely active sessions are reconstructed from each accounting session ID's latest record.",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "RADIUS Reporting Window",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Authentication Events",
+      "description": "Authentication events in the bounded Data Connect view.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(ise_dataconnect_radius_authentication_events) or vector(0)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Likely Active Sessions",
+      "description": "Latest accounting record per session ID is Start or Interim, not Stop. Depends on NAD accounting quality.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(ise_dataconnect_radius_active_sessions) or vector(0)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Accounting Starts",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(ise_dataconnect_radius_accounting_events{event_type=~\"(?i).*start.*\"}) or vector(0)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Accounting Stops",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(ise_dataconnect_radius_accounting_events{event_type=~\"(?i).*stop.*\"}) or vector(0)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Authentication Events by Status",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events)",
+          "legendFormat": "{{status}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "Authentication Methods",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (authentication_method) (ise_dataconnect_radius_authentication_events))",
+          "legendFormat": "{{authentication_method}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Authentication by NAD",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events))",
+          "legendFormat": "{{nad}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Accounting Events by NAD",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_accounting_events))",
+          "legendFormat": "{{nad}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "RADIUS Response Time by Statistic",
+      "description": "Data Connect response-time aggregates; stat identifies average, maximum, or other view-provided aggregation.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_radius_response_time_seconds",
+          "legendFormat": "{{stat}} / {{status}} / {{nad}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "bargauge",
+      "title": "Accounting Session Duration",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(ise_dataconnect_radius_accounting_session_seconds)",
+          "legendFormat": "{{stat}} / {{nad}} / {{psn}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": [
+    "ise",
+    "radius",
+    "dataconnect"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-2d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "ISE Exporter / RADIUS Authentication & Accounting",
+  "uid": "ise-sessions-auth",
+  "version": 1,
   "__inputs": [
     {
       "name": "DS_PROMETHEUS",
@@ -7,267 +280,6 @@
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
-    }
-  ],
-  "__requires": [
-    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
-    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
-    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
-    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" },
-    { "type": "panel", "id": "table", "name": "Table", "version": "" },
-    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
-    { "type": "panel", "id": "heatmap", "name": "Heatmap", "version": "" },
-    { "type": "panel", "id": "row", "name": "Row", "version": "" }
-  ],
-  "annotations": { "list": [] },
-  "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
-  "links": [],
-  "liveNow": false,
-  "schemaVersion": 39,
-  "tags": ["ise", "cisco", "sessions", "authz"],
-  "templating": {
-    "list": [
-      {
-        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
-        "hide": 0,
-        "label": "Prometheus",
-        "name": "DS_PROMETHEUS",
-        "options": [{ "selected": true, "text": "Prometheus", "value": "prometheus" }],
-        "query": "prometheus",
-        "refresh": 1,
-        "regex": "",
-        "type": "datasource"
-      }
-    ]
-  },
-  "time": { "from": "now-6h", "to": "now" },
-  "timepicker": {},
-  "timezone": "",
-  "title": "ISE Exporter / Sessions & Authentication",
-  "uid": "ise-sessions-auth",
-  "version": 1,
-  "weekStart": "",
-  "panels": [
-    {
-      "id": 1, "type": "row", "title": "Session Volume", "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
-    },
-    {
-      "id": 2, "type": "stat", "title": "Active Sessions",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_active_sessions_total", "refId": "A" }],
-      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" }
-    },
-    {
-      "id": 3, "type": "stat", "title": "Authz Cache Warmup",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_session_warmup_progress", "refId": "A" }],
-      "fieldConfig": {
-        "defaults": { "unit": "percentunit",
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.95 }] } },
-        "overrides": []
-      },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" }
-    },
-    {
-      "id": 4, "type": "stat", "title": "Authz Detail Cache Size",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_session_detail_cache_size", "refId": "A" }],
-      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
-    },
-    {
-      "id": 5, "type": "stat", "title": "pxGrid Streaming",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_pxgrid_connected", "refId": "A" }],
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [{ "type": "value", "options": { "0": { "text": "POLL MODE / DOWN", "color": "yellow" }, "1": { "text": "STREAMING", "color": "green" } } }],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "yellow", "value": null }, { "color": "green", "value": 1 }] }
-        },
-        "overrides": []
-      },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto" }
-    },
-    {
-      "id": 6, "type": "timeseries", "title": "Active Sessions Over Time",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_active_sessions_total", "legendFormat": "active sessions", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
-    },
-    {
-      "id": 7, "type": "bargauge", "title": "Sessions by NAD (top 15)",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_radius_sessions_by_nad)", "legendFormat": "{{nas_hostname}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 8, "type": "bargauge", "title": "Sessions by Ops Owner",
-      "description": "Active sessions grouped by ops owner (each session's NAD → Ops Owner NDG). Works in both poll and stream mode. In stream mode this is the replacement for 'Sessions by PSN' (moved to the bottom), which pxGrid cannot populate — the session directory object carries no owning-PSN field.",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_radius_sessions_by_ops_owner", "legendFormat": "{{ops_owner}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 10, "type": "timeseries", "title": "Session Detail Fetch Rate",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_session_detail_fetches_total[5m])) by (result)", "legendFormat": "{{result}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi" } }
-    },
-    {
-      "id": 11, "type": "row", "title": "AuthZ Breakdown", "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }, "panels": []
-    },
-    {
-      "id": 12, "type": "timeseries", "title": "Endpoints by Session Status",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_status_endpoints) by (status)", "legendFormat": "{{status}}", "refId": "A" }],
-      "fieldConfig": {
-        "defaults": { "unit": "short",
-          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 30, "spanNulls": false, "showPoints": "never", "stacking": { "mode": "normal", "group": "A" } } },
-        "overrides": [
-          { "matcher": { "id": "byName", "options": "failed" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
-          { "matcher": { "id": "byName", "options": "passed" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
-        ]
-      },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } }
-    },
-    {
-      "id": 13, "type": "bargauge", "title": "Auth Methods (top 10)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum(ise_session_auth_methods) by (method))", "legendFormat": "{{method}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 14, "type": "bargauge", "title": "AuthZ Profiles (top 15)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, sum(ise_authz_unique_endpoints_by_profile) by (authz_profile))", "legendFormat": "{{authz_profile}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 15, "type": "table", "title": "Failure Reasons (top 10)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum(ise_session_failure_reasons) by (reason_code))", "format": "table", "instant": true, "refId": "A" }],
-      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
-      "options": { "showHeader": true },
-      "transformations": [
-        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
-      ]
-    },
-    {
-      "id": 16, "type": "table", "title": "Matched AuthZ Rules",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_authz_rule_endpoints) by (authz_rule)", "format": "table", "instant": true, "refId": "A" }],
-      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
-      "options": { "showHeader": true },
-      "transformations": [
-        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
-      ]
-    },
-    {
-      "id": 17, "type": "table", "title": "Matched Policy Sets",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_policy_set_endpoints) by (policy_set)", "format": "table", "instant": true, "refId": "A" }],
-      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
-      "options": { "showHeader": true },
-      "transformations": [
-        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true } } }
-      ]
-    },
-    {
-      "id": 21, "type": "row", "title": "Authentication Latency", "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 }, "panels": []
-    },
-    {
-      "id": 22, "type": "timeseries", "title": "Auth Latency Percentiles (p50 / p95 / p99)",
-      "description": "RADIUS auth transaction latency (ISE TotalAuthenLatency) — the combined authC+authZ policy pass; ISE has no separate authorization-latency figure. Percentiles are computed from the histogram over $__rate_interval. Note: ClientLatency (supplicant EAP round-trips) is not included, so this is effectively server-side processing time.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum(ise_radius_auth_latency_seconds_bucket) by (le))", "legendFormat": "p50", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(ise_radius_auth_latency_seconds_bucket) by (le))", "legendFormat": "p95", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum(ise_radius_auth_latency_seconds_bucket) by (le))", "legendFormat": "p99", "refId": "C" }
-      ],
-      "fieldConfig": {
-        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": true, "showPoints": "never" } },
-        "overrides": [
-          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
-          { "matcher": { "id": "byName", "options": "p95" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
-          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
-        ]
-      },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
-    },
-    {
-      "id": 23, "type": "timeseries", "title": "p95 Auth Latency by NAD (top 10)",
-      "description": "Per-NAD p95 latency — isolates a slow switch/WLC or a PSN with high RTT from one NAD. 'Top' recomputes each interval, so a NAD can slide in and out as it speeds up/slows down.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 47 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.95, sum(ise_radius_auth_latency_seconds_bucket) by (le, nad_hostname)))", "legendFormat": "{{nad_hostname}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5, "spanNulls": true, "showPoints": "never" } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"], "sortBy": "Last *", "sortDesc": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
-    },
-    {
-      "id": 24, "type": "heatmap", "title": "Auth Latency Distribution",
-      "description": "Histogram of RADIUS auth latency over time (per-bucket rate). Bright bands show where most auths land; a band drifting upward = a systemic slowdown (AD/PSN), a widening tail = a subset going slow.",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 55 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_radius_auth_latency_seconds_bucket) by (le)", "format": "heatmap", "legendFormat": "{{le}}", "refId": "A" }],
-      "options": {
-        "calculate": false,
-        "cellGap": 1,
-        "color": { "mode": "scheme", "scheme": "Spectral", "reverse": false, "steps": 64, "fill": "dark-orange" },
-        "yAxis": { "unit": "s", "axisPlacement": "left" },
-        "legend": { "show": true },
-        "tooltip": { "show": true, "yHistogram": false },
-        "filterValues": { "le": 1e-9 }
-      },
-      "fieldConfig": { "defaults": { "custom": { "scaleDistribution": { "type": "linear" }, "hideFrom": { "tooltip": false, "viz": false, "legend": false } } }, "overrides": [] }
-    },
-    {
-      "id": 19, "type": "row", "title": "PSN Session Load (poll mode only)", "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 63 }, "panels": []
-    },
-    {
-      "id": 18, "type": "bargauge", "title": "Sessions by PSN (poll mode only)",
-      "description": "Current active session count per Policy Service Node. Populated only in poll mode, from the MnT ActiveList `server` field. Empty when COLLECT_PXGRID_STREAM=true: the pxGrid session directory has no owning-PSN field, so the stream cannot attribute sessions to a PSN. Use 'Sessions by Ops Owner' for a breakdown that works in both modes.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 64 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_radius_sessions_by_psn", "legendFormat": "{{psn}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 20, "type": "timeseries", "title": "Session Delta by PSN (poll mode only)",
-      "description": "Net change in active sessions per PSN over the rate interval (delta of ise_radius_sessions_by_psn). Positive = PSN gaining sessions, negative = shedding them — a sharp negative spike on one PSN with a matching positive on another is the signature of a failover/rebalance. Poll mode only; empty under streaming (see 'Sessions by PSN').",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 64 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "delta(ise_radius_sessions_by_psn[$__rate_interval])", "legendFormat": "{{psn}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never", "gradientMode": "opacity" } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["min", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     }
   ]
 }

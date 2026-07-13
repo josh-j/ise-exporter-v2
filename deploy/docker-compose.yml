@@ -9,17 +9,9 @@ services:
     # if you change EXPORTER_PORT in .env, update both sides of this mapping too
     ports:
       - "9618:9618"
-    # pxGrid client cert/key/CA — only needed when COLLECT_PXGRID_* is enabled.
-    # Drop the files in deploy/certs/ and point PXGRID_CLIENT_CERT/KEY/CA_BUNDLE
-    # in .env at the in-container paths (e.g. /certs/client.cer).
     volumes:
-      - ./certs:/certs:ro
-      - ise-exporter-cache:/var/lib/ise-exporter
-    environment:
-      ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE: /var/lib/ise-exporter/endpoint-attributes-cache.json
-      SESSION_DETAIL_CACHE_FILE: /var/lib/ise-exporter/session-details-cache.json
+      - ./certs:/etc/ise-exporter/certs:ro
     restart: unless-stopped
-    # bounded endpoint-attribute and MnT session-detail caches live in this volume
     read_only: true
     tmpfs:
       - /tmp
@@ -31,6 +23,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-
-volumes:
-  ise-exporter-cache:

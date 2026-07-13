@@ -31,6 +31,52 @@ fi
 
 echo "==> source: $SOURCE_DIR"
 
+# --- native host prerequisites -------------------------------------------
+# Ubuntu 24.04 marks its system Python as externally managed. Keep it intact:
+# install only Ubuntu packages with apt and put all PyPI dependencies in the
+# dedicated /opt venv below. python-oracledb runs in thin mode, so Data Connect
+# does not require Oracle Instant Client or any third-party apt repository.
+if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    if [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 24.04 ]]; then
+        echo "==> detected Ubuntu 24.04 LTS (Noble Numbat)"
+    else
+        echo "==> detected ${PRETTY_NAME:-unknown Linux distribution}"
+    fi
+fi
+
+if command -v apt-get >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1; then
+    REQUIRED_APT_PACKAGES=(python3 python3-venv ca-certificates)
+    MISSING_APT_PACKAGES=()
+    for package in "${REQUIRED_APT_PACKAGES[@]}"; do
+        if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+            MISSING_APT_PACKAGES+=("$package")
+        fi
+    done
+    if (( ${#MISSING_APT_PACKAGES[@]} )); then
+        echo "==> installing standard OS prerequisites: ${MISSING_APT_PACKAGES[*]}"
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get install -y --no-install-recommends "${MISSING_APT_PACKAGES[@]}"
+    else
+        echo "==> standard OS prerequisites already installed"
+    fi
+fi
+
+for command_name in python3 useradd install systemctl; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        echo "error: required command not found: $command_name" >&2
+        echo "install Python 3.10+, venv, CA certificates, passwd, coreutils, and systemd" >&2
+        exit 1
+    fi
+done
+
+if ! python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+    echo "error: ise-exporter requires Python 3.10 or newer" >&2
+    exit 1
+fi
+
 # --- service account -------------------------------------------------------
 if ! id "$SERVICE_USER" &>/dev/null; then
     echo "==> creating system user $SERVICE_USER"
@@ -43,7 +89,7 @@ fi
 # root:ise-exporter, group-readable rather than root-only: EnvironmentFile= is read
 # by systemd (root) before it drops privileges, so root-only would work for the
 # service itself, but group-read also lets `sudo -u ise-exporter ise-exporter
-# --pxgrid-check` read the file directly via load_dotenv() for manual diagnostics.
+# --dataconnect-check` read the file directly for manual diagnostics.
 echo "==> ensuring directories"
 # Package code is not secret and must be traversable by every local user so the
 # /usr/local/bin/ise-cli entrypoint works. Configuration and certificates remain
@@ -104,7 +150,7 @@ chmod 750 "$CERTS_DIR"
 # ownership without touching content, and keep the private key tighter than certs.
 if compgen -G "$CERTS_DIR"'/*' > /dev/null; then
     chown root:"$SERVICE_USER" "$CERTS_DIR"/*
-    chmod 644 "$CERTS_DIR"/*.cer 2>/dev/null || true
+    chmod 644 "$CERTS_DIR"/*.cer "$CERTS_DIR"/*.pem 2>/dev/null || true
     chmod 640 "$CERTS_DIR"/*.key 2>/dev/null || true
 fi
 
@@ -129,10 +175,10 @@ echo
 echo "==> done — installed version $INSTALLED_VERSION"
 echo "==> logs: journalctl -u $SERVICE_NAME -f"
 echo "==> read-only CLI: $CLI_LINK --help"
-echo "==> pxGrid check (run as the service user so it can read the config + certs):"
-echo "    sudo -u $SERVICE_USER $INSTALL_DIR/.venv/bin/$SERVICE_NAME --pxgrid-check"
+echo "==> Data Connect check (run as the service user so it reads deployed config):"
+echo "    sudo -u $SERVICE_USER $INSTALL_DIR/.venv/bin/$SERVICE_NAME --dataconnect-check"
 if [[ "$FRESH_CONFIG" -eq 1 ]]; then
     echo "==> NOTE: this was a fresh install — edit $ENV_FILE (ISE_HOST/ISE_MNT_HOST/ISE_USER/ISE_PASS"
-    echo "    and, if using pxGrid, PXGRID_* + certs under $CERTS_DIR), then:"
+    echo "    plus ISE_DATACONNECT_* and the CA chain under $CERTS_DIR), then:"
     echo "    sudo systemctl restart $SERVICE_NAME"
 fi

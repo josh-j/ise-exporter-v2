@@ -1,8 +1,8 @@
 # TACACS account attribution
 
-ISE's Device Admin policy OpenAPI returns cumulative `hitCounts` for policy sets
-and rules. Those responses do not include a username, so aggregate policy counters
-cannot be accurately divided among internal accounts.
+ISE's Device Admin policy OpenAPI returns cumulative `hitCounts` without a
+username. The exporter intentionally omits these misleading lifetime counters;
+account attribution comes from bounded Data Connect activity.
 
 ISE 3.3 exposes the required account evidence through the read-only Data Connect
 service on the MnT node. For production queries, use the performance-oriented
@@ -30,8 +30,8 @@ GROUP BY username, authorization_policy, shell_profile, matched_command_set;
 
 The exporter API collector intentionally does not guess account usage from object
 modification dates or deployment-wide lifetime hit counts. The TACACS dashboard
-uses object age only as a clearly labelled review hint and shows policy/rule
-counter changes over the selected Grafana range.
+uses object age only as a clearly labelled review hint and shows bounded activity
+by account over the selected Grafana range.
 
 ## Exporter configuration
 
@@ -39,7 +39,6 @@ Enable Device Administration and Data Connect in ISE, set the Data Connect
 password, then configure:
 
 ```dotenv
-COLLECT_TACACS_DATACONNECT=true
 ISE_DATACONNECT_HOST=mnt1.example.mil
 ISE_DATACONNECT_PORT=2484
 ISE_DATACONNECT_SERVICE=cpm10

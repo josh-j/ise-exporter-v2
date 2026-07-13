@@ -1,5 +1,7 @@
 import types
 
+import pytest
+
 from ise_exporter.clients import dataconnect
 
 
@@ -44,6 +46,7 @@ def test_query_uses_tcps_and_returns_lowercase_mappings(monkeypatch):
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
     )
     client = dataconnect.DataConnectClient(cfg)
 
@@ -56,3 +59,31 @@ def test_query_uses_tcps_and_returns_lowercase_mappings(monkeypatch):
 
     client.close()
     assert connection.closed is True
+
+
+def test_connection_backoff_protects_dataconnect_account(monkeypatch):
+    attempts = 0
+
+    def fail(**_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("invalid credentials")
+
+    monkeypatch.setattr(dataconnect.oracledb, "connect", fail)
+    monkeypatch.setattr(dataconnect.time, "monotonic", lambda: 100.0)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="bad", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    for _ in range(3):
+        with pytest.raises(RuntimeError, match="invalid credentials"):
+            client.connect()
+    with pytest.raises(RuntimeError, match="reconnect suppressed"):
+        client.connect()
+
+    assert attempts == 3

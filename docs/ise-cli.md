@@ -1,9 +1,12 @@
 # ise-cli: read-only Cisco ISE operator CLI
 
-`ise-cli` is a read-only command interface over the same ERS, OpenAPI, and MnT
-transport used by the exporter. It is intended to provide a PowerCLI-like operator
-surface for discovery, troubleshooting, reporting, and automation without exposing
-write operations.
+`ise-cli` is a read-only operator interface over ERS, OpenAPI, and selected MnT
+XML diagnostics. It is intended to provide a PowerCLI-like surface for discovery,
+troubleshooting, reporting, and automation without exposing write operations.
+
+The exporter metric runtime does not use MnT XML. Its reporting plane is Data
+Connect, while MnT commands in this CLI are explicit, operator-initiated diagnostics
+for inspecting individual session, authentication, or Secure Client records.
 
 ## Configuration and routing
 
@@ -18,7 +21,7 @@ API routing is fixed by family:
 |---|---|---|
 | ERS | `ISE_HOST` | `https://HOST:ERS_PORT/ers` |
 | OpenAPI | `ISE_HOST` | `https://HOST/api/v1` |
-| MnT XML | `ISE_MNT_HOST` | `https://HOST/admin/API/mnt` |
+| MnT XML diagnostics only | `ISE_MNT_HOST` | `https://HOST/admin/API/mnt` |
 
 ## Commands
 
@@ -79,7 +82,7 @@ responses with the normalized CLI output.
 
 `sudo ./deploy/install.sh` installs `/usr/local/bin/ise-cli` for every local user.
 The package and interpreter are globally readable/executable, but the shared
-`/etc/ise-exporter/ise-exporter.env` and pxGrid credentials remain restricted to
-`root:ise-exporter`. An operator can either supply their own environment/`--env-file`
-or be explicitly added to the `ise-exporter` group when reuse of the service account
-configuration is intended.
+`/etc/ise-exporter/ise-exporter.env`, Data Connect password, and certificate
+material remain restricted to `root:ise-exporter`. An operator can either supply
+their own environment/`--env-file` or be explicitly added to the `ise-exporter`
+group when reuse of the service account configuration is intended.

@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 _failures = {}
 
 
+def _source(name):
+    return "dataconnect" if name.startswith("dataconnect_") or name == "tacacs_activity" else "rest"
+
+
 class CollectorFailed(Exception):
     """Raised by a collector when a primary API call yields no usable data."""
 
@@ -31,34 +35,7 @@ def _record_failure(name, error_type):
     metrics.ise_scrape_errors_total.labels(collector=name, error_type=error_type).inc()
     _failures[name] = _failures.get(name, 0) + 1
     metrics.ise_consecutive_failures.labels(collector=name).set(_failures[name])
-
-
-def stream_active(cfg):
-    """True only when pxGrid streaming is configured AND the stream is currently
-    connected (ise_pxgrid_connected == 1). Collectors and the scheduler self-limit on
-    THIS, not the raw config flag — so when the stream is down (pxGrid unreachable,
-    subscription rejected, creds missing, or not connected yet) they fall back to full
-    MnT polling instead of leaving session/authz metrics frozen at their last projected
-    values. The connected gauge is the single source of truth, set by the streamer."""
-    if not getattr(cfg, "collect_pxgrid_stream", False):
-        return False
-    try:
-        return metrics.ise_pxgrid_connected._value.get() >= 1
-    except Exception:
-        return False
-
-
-def pxgrid_endpoints_present():
-    """True when pxGrid getEndpoints last delivered endpoints (ise_endpoints_pxgrid_total
-    > 0) — i.e. models.py owns pxGrid endpoint enrichment gauges. ERS remains the
-    endpoint inventory baseline on ISE 3.3, but shared MFC/profile gauges must not be
-    double-cleared when pxGrid is actively enriching them. MnT session
-    other_attr_string posture + Secure Client version also defers while getEndpoints
-    is delivering the same fields."""
-    try:
-        return metrics.ise_endpoints_pxgrid_total._value.get() > 0
-    except Exception:
-        return False
+    metrics.ise_dataset_up.labels(dataset=name, source=_source(name)).set(0)
 
 
 @contextmanager
@@ -66,7 +43,11 @@ def observe(name):
     start = time.time()
     try:
         yield
-        metrics.ise_last_successful_scrape.labels(collector=name).set(time.time())
+        completed = time.time()
+        metrics.ise_last_successful_scrape.labels(collector=name).set(completed)
+        metrics.ise_dataset_up.labels(dataset=name, source=_source(name)).set(1)
+        metrics.ise_dataset_last_success_timestamp.labels(
+            dataset=name, source=_source(name)).set(completed)
         _failures[name] = 0
         metrics.ise_consecutive_failures.labels(collector=name).set(0)
     except CollectorFailed as e:

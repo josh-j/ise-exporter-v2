@@ -1,340 +1,111 @@
-# ise-exporter
+# Cisco ISE exporter
 
-Prometheus exporter for Cisco ISE. Two execution engines sharing one metric
-registry: a REST **poll** scheduler (health plane, NAD inventory, sessions) and
-an optional pxGrid **stream** engine (sessions/endpoints/models via topics).
+Prometheus exporter and read-only operator CLI for exactly **Cisco ISE
+3.3.0.430 Patch 11**, the release used by the `laba-ise-001` lab. Normal startup
+checks the appliance version and installed patch and fails closed for any other
+release.
 
-Requires Python ≥ 3.10. Exposes Prometheus metrics on `:9618/metrics` by default.
+The metric runtime has two fixed collection planes:
 
-The package also installs `ise-cli`, a read-only Cisco ISE operator interface over
-ERS, OpenAPI, and MnT. It provides bounded inventory queries, active sessions,
-endpoint/Secure Client troubleshooting, structured table/JSON/JSONL/CSV output,
-local command schemas, and a safe GET-only escape hatch. See
-[`docs/ise-cli.md`](docs/ise-cli.md).
+- PAN ERS/OpenAPI owns platform and configuration state: deployment, NADs,
+  certificates, licenses, backups, patches, and Device Administration objects.
+- MnT Data Connect owns reporting state: RADIUS, accounting-derived sessions,
+  endpoints, profiling, posture/Secure Client, PSN health, diagnostics, and
+  TACACS activity.
 
-## Layout
-- `ise_exporter/config.py` — all env config (one dataclass)
-- `ise_exporter/metrics.py` — central metric registry (import surface)
-- `ise_exporter/clients/` — transport only (ERS/PAN/MnT REST, pxGrid control)
-- `ise_exporter/collectors/` — poll-mode metric producers
-- `ise_exporter/scheduler.py` — poll engine (interval tiers, failure gating)
-- `ise_exporter/streaming.py` — pxGrid stream engine (subscribe→snapshot→drain→live)
-- `dashboards/` — Grafana JSON
-- `docs/api-schemas/` — captured Cisco ISE 3.3 Patch 11 OpenAPI schemas
-- `deploy/` — Dockerfile, docker-compose, systemd unit, `install.sh` (idempotent install/upgrade)
+There is no dynamic source selection or fallback. Legacy MnT XML remains only
+in `ise-cli` and curl probes for explicit operator troubleshooting; it is never
+called by a metric collector. No ISE shell, SSH, root access, or Oracle Instant
+Client is required. See [architecture](docs/architecture.md) for ownership and
+failure semantics.
 
-## Configure
-All configuration is environment variables. Start from the template:
+## ISE prerequisites
 
-    cp .env.example .env        # then edit
+- ISE `3.3.0.430` with Patch `11` installed.
+- ERS/OpenAPI enabled and a read-only API account.
+- Data Connect enabled on the MnT node with an Essentials license.
+- The fixed Data Connect user, a non-expired password, TCPS port `2484`, and
+  service `cpm10`.
+- The MnT Admin certificate's issuing CA chain when TLS verification is enabled.
 
-Required: `ISE_HOST` (PAN/ERS node), `ISE_MNT_HOST` (MnT node), `ISE_USER`,
-`ISE_PASS`. Everything else has a default — see `.env.example` for the full set
-and `ise_exporter/config.py` for the authoritative list. The checked-in sample is
-tuned for maximum collection on ISE 3.3 at roughly 80,000 endpoints: pxGrid session
-streaming, ERS baseline inventory, a 1,000-endpoint hourly detail budget, 12 workers,
-and persistent cache storage. At that rate a complete ERS detail pass takes about
-80 hours and remains inside the seven-day TTL. Common knobs:
+Data Connect uses `python-oracledb` Thin mode over TCPS. It does not require a
+rooted ISE appliance, direct database-table access, or native Oracle libraries.
 
-| var | default | purpose |
-|-----|---------|---------|
-| `EXPORTER_PORT` | `9618` | metrics listen port |
-| `SCRAPE_INTERVAL` | `120` | base poll loop period (s) |
-| `FAST_INTERVAL` / `MEDIUM_INTERVAL` / `SLOW_INTERVAL` | `60` / `300` / `3600` | per-tier collector cadence (s) |
-| `MAX_WORKERS` | `10` | concurrency for per-MAC authz and ERS endpoint-attribute fan-out |
-| `AUTH_FAILURE_THRESHOLD` / `AUTH_FAILURE_BACKOFF` | `3` / `900` | suppress API requests after repeated 401s to avoid account lockout |
-| `COLLECT_AUTHZ` | `true` | per-MAC authz/policy-set/matched-rule metrics |
-| `COLLECT_TACACS` | `true` | internal-user hygiene plus Device Admin policy/rule hit-count metrics |
-| `COLLECT_TACACS_DATACONNECT` | `false` | per-account TACACS authentication, authorization, and accounting from the MnT Data Connect two-day views |
-| `ISE_DATACONNECT_HOST` / `PORT` / `SERVICE` | MnT host / `2484` / `cpm10` | Data Connect TCPS endpoint reported by ISE |
-| `ISE_DATACONNECT_USER` / `PASSWORD` | `dataconnect` / empty | read-only Data Connect credential configured in ISE |
-| `ISE_DATACONNECT_CA_BUNDLE` / `SSL_VERIFY` | empty / `true` | Data Connect server trust and certificate verification |
-| `TACACS_INTERNAL_USER_MAX` | `1000` | maximum internal-user details/username-labelled series collected per slow cycle |
-| `COLLECT_PXGRID_ENDPOINTS` | `true` | optional pxGrid `getEndpoints` enrichment when ISE publishes endpoint context |
-| `COLLECT_PXGRID_STREAM` | `false` | replace sessions+endpoints polling with pxGrid topics |
-| `COLLECT_ERS_ENDPOINT_ATTRIBUTES` | `true` | slow cached sweep of ERS `/endpoint/{id}` detail data |
-| `ERS_ENDPOINT_ATTRIBUTE_PAGE_SIZE` / `ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL` | `500` / `604800` | endpoint-attribute refresh batch size and cache TTL |
-| `ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE` | `/tmp/ise-exporter-endpoint-attributes-cache.json` | local cache for multi-cycle endpoint-attribute scans |
-| `SESSION_DETAIL_CACHE_FILE` | `/tmp/ise-exporter-session-details-cache.json` | private, restart-safe MnT auth/session-detail cache (written mode `0600`) |
-| `ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS` | empty | optional comma-list of custom endpoint attributes to bucket by value |
-| `PXGRID_ENDPOINT_ZERO_BACKOFF` | `3600` | retry cadence after pxGrid `getEndpoints` returns zero endpoints |
-| `PXGRID_HOST` / `PXGRID_NODE_NAME` | — | pxGrid controller + registered consumer name |
-| `PXGRID_CLIENT_CERT` / `PXGRID_CLIENT_KEY` / `PXGRID_CA_BUNDLE` | — | pxGrid mTLS material (key must be an unencrypted PEM) |
-| `PXGRID_PROFILER_HIERARCHY_TTL` | `3600` | how often to re-fetch the profiler category/parent catalog (seconds) |
+## Configuration
 
-pxGrid (model collector or streaming) needs `PXGRID_HOST`, `PXGRID_NODE_NAME`,
-`PXGRID_CLIENT_CERT`, and `PXGRID_CLIENT_KEY`. `PXGRID_CA_BUNDLE` is strongly
-recommended so the exporter validates the ISE server certificate.
-On first use, the exporter calls pxGrid `AccountActivate`; if ISE returns
-`PENDING` or `DISABLED`, approve/enable the `PXGRID_NODE_NAME` account in ISE and
-restart or wait for the next retry. Endpoint model collection uses pxGrid
-`getEndpoints` with a timestamp filter and paging, so it can download more than
-one page of endpoints.
-If `COLLECT_PXGRID_STREAM=true` but the pxGrid creds are incomplete, the exporter
-falls back to polling sessions/endpoints rather than dropping them.
+Copy [.env.example](.env.example) and set at least:
 
-Per-account TACACS attribution requires Device Administration and Data Connect to
-be enabled on the MnT node. Set `COLLECT_TACACS_DATACONNECT=true` and the
-`ISE_DATACONNECT_*` values from ISE's Data Connect details API. The exporter uses
-only Cisco's bounded `TACACS_*_LAST_TWO_DAYS` views, caps grouped series with
-`ISE_DATACONNECT_MAX_GROUPS`, and performs read-only SQL over TCPS. See
-[`docs/tacacs-account-attribution.md`](docs/tacacs-account-attribution.md).
+```dotenv
+ISE_HOST=pan1.example.mil
+ISE_MNT_HOST=mnt1.example.mil
+ISE_USER=ers.readonly
+ISE_PASS=use-a-secret-store
 
-ERS endpoint collection is the baseline endpoint inventory path, especially on
-ISE 3.3 where pxGrid `getEndpoints` commonly returns zero even though ERS and
-Context Visibility have endpoint records. pxGrid `getEndpoints` is treated as
-optional enrichment: when it returns endpoints, it can add MFC hardware model,
-manufacturer, endpoint type/OS, Secure Client version, and PostureReport fields
-that ERS does not provide. After an empty `getEndpoints` result, the exporter
-backs off for `PXGRID_ENDPOINT_ZERO_BACKOFF` seconds before probing it again.
+ISE_DATACONNECT_HOST=mnt1.example.mil
+ISE_DATACONNECT_USER=dataconnect
+ISE_DATACONNECT_PASSWORD=use-a-secret-store
+ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer
+```
 
-Endpoint model collection also joins ISE's profiler *policy catalog* (category/
-parent hierarchy from Policy > Profiling, via the `com.cisco.ise.config.profiler`
-pxGrid service's `getProfiles`) onto per-profile endpoint counts when available,
-emitting `ise_endpoints_by_profile_all{category,parent,profile}` — see
-`dashboards/ise-endpoint-profiles.json`. The catalog is cached and re-fetched at
-most every `PXGRID_PROFILER_HIERARCHY_TTL` seconds (default `3600`) since it
-rarely changes; a failed fetch just falls back to `category="unknown"` rather than
-breaking the per-profile counts themselves.
+Values are parsed literally after the first `=`; `${NAME}` and additional `=`
+characters in passwords are preserved. Inline comments on integer values are
+not supported. The sample is production-oriented for roughly 80,000 endpoints:
+database-side aggregation, bounded result groups, 60-second fast reporting,
+five-minute posture/config reporting, and hourly inventory/slow state.
 
-ERS endpoint detail collection reads `GET /ers/config/endpoint/{id}`. That call is
-per-endpoint, so the exporter does not expose raw attributes. It walks one bounded
-page per slow cycle, caches
-records for `ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL`, persists them to
-`ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE`, and emits low-cardinality aggregates: profiled
-policy, MFC manufacturer/model/OS, identity group, static assignment, coverage, and
-explicitly configured custom endpoint attributes. It also owns the ERS baseline endpoint total/profile
-gauges when pxGrid endpoint enrichment is empty. The cache contains endpoint
-metadata; store it on local disk with normal service-account permissions, not in a
-public volume.
+Before starting the service, verify the reporting connection:
 
-To verify host routing and inspect one endpoint without starting the exporter, export
-`ISE_HOST`, `ISE_MNT_HOST`, `ISE_USER`, and `ISE_PASS`, then run:
+```bash
+ise-exporter --dataconnect-check
+ise-exporter --dataconnect-schema  # JSON column metadata; does not read event rows
+```
 
-    tools/curl_ers_endpoint_detail.sh AA:BB:CC:DD:EE:FF
-    tools/curl_mnt_endpoint_attributes.sh AA:BB:CC:DD:EE:FF
-    tools/curl_secure_client_attributes.sh AA:BB:CC:DD:EE:FF
+## Ubuntu Server 24.04 LTS
 
-The first script always targets the PAN/ERS node. The second always targets the MnT
-node and prints the raw session fields. The Secure Client probe uses that same MnT
-path but feeds `other_attr_string` through the exporter's own parser and prints the
-five posture fields plus parsed policy-level results.
+Noble Numbat is the native production target. The installer uses standard
+Ubuntu packages and puts PyPI dependencies in an isolated venv:
 
-Pass `--schema` or `--schema-only` instead of a MAC to any probe to print its API
-route and expected response fields as JSON without making a request or requiring
-credentials.
+```bash
+sudo ./deploy/install.sh
+sudoedit /etc/ise-exporter/ise-exporter.env
+sudo systemctl restart ise-exporter
+sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --dataconnect-check
+curl --fail --silent http://127.0.0.1:9618/metrics | head
+```
 
-## pxGrid setup (ISE side)
+It installs `ise-cli` in `/usr/local/bin` for all local users while keeping the
+environment file and CA material restricted. Re-running the installer upgrades
+the application without overwriting configuration. Full details are in the
+[Ubuntu Noble guide](docs/ubuntu-noble.md).
 
-Only needed if you want `COLLECT_PXGRID_ENDPOINTS` (default on) or
-`COLLECT_PXGRID_STREAM`. Skip this if you're running poll-only against ERS/MnT.
-The flow below is for on-prem pxGrid 2.0 and is compatible with Cisco ISE 3.3
-and 3.4; the exporter does not require pxGrid Cloud or the 3.4-only filtering
-feature.
+## Development and containers
 
-**1. Enable the pxGrid persona.** *Administration > System > Deployment*, edit a
-node, check **pxGrid**, save. Cisco recommends a primary + secondary pxGrid
-node pair for HA in production, same as PAN HA. The session/endpoint topics
-also require the serving PSNs to have **Session Services** enabled (standard
-for any PSN already doing 802.1X/MAB).
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/ruff check .
+PYTHONPATH=. .venv/bin/pytest -q
+```
 
-**2. pxGrid Settings.** *Administration/Work Centers > pxGrid Services > Settings*:
-- **Automatically approve new certificate-based accounts** — leave off unless
-  you want new clients auto-enabled with no admin approval step. This repo's
-  earlier troubleshooting assumed manual approval (`AccountActivate` returns
-  `PENDING` until an admin approves it — see step 4).
-- **Allow password based account creation** — leave off; this exporter is
-  certificate-authenticated only.
+For Docker, copy `.env.example` to `.env`, provide the CA under
+`deploy/certs`, then run `docker compose -f deploy/docker-compose.yml up -d`.
+Prometheus scrapes port `9618`.
 
-**3. Generate the client certificate.** *Administration/Work Centers > pxGrid
-Services > Client Management > Certificates* (exact menu path varies slightly
-by ISE 3.x patch):
-- "I want to": **Generate a single certificate (without a certificate signing
-  request)**
-- **Common Name (CN)**: match `PXGRID_NODE_NAME` exactly (e.g. `ise-exporter`)
-  — this is also the pxGrid node identity, not just the cert subject.
-- **Certificate Download Format**: PEM, key in PKCS8 PEM (include cert chain).
-- Set a certificate password, click **Create** — ISE emails/downloads a zip
-  with the client cert, the (password-protected) private key, and the CA
-  chain that signed both.
-- **Strip the key passphrase** — the exporter requires an unencrypted PEM key
-  (`requests`/`ssl` don't prompt for one):
+## Dashboards and diagnostics
 
-      openssl rsa -in client-protected.key -out client.key
+Grafana dashboards are in [dashboards](dashboards/README.md). They use the new
+Data Connect metric families directly and show only dimensions supported by the
+Patch 11 reporting views. Current-session counts are inferred from each RADIUS
+accounting session ID's latest Start/Interim/Stop record, so correctness depends
+on NAD accounting quality.
 
-  If your org's PKI policy requires an external CA instead of ISE's internal
-  one: generate a CSR, get it signed externally, then import the resulting
-  cert *and* its CA chain into *Administration > System > Certificates >
-  Trusted Certificates* so ISE trusts it for mTLS.
-- Rename/place the three files to match your env vars, e.g.
-  `PXGRID_CLIENT_CERT=/etc/ise-exporter/certs/client.cer`,
-  `PXGRID_CLIENT_KEY=/etc/ise-exporter/certs/client.key`,
-  `PXGRID_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer` — see the systemd
-  section below for permissions.
+The read-only `ise-cli` and scripts under `tools/` are separate diagnostic
+surfaces. Each curl probe supports `--schema-only`, which needs no credentials
+or network. The Secure Client probe calls the same MnT diagnostic path and parser
+as the CLI; it does not participate in exporter collection.
 
-**4. Approve the client.** The exporter self-registers on first
-`AccountActivate` call. In *Administration/Work Centers > pxGrid Services >
-Client Management > Clients*, find the row matching `PXGRID_NODE_NAME`
-(status **Pending**), select it, click **Approve**. If your ISE version
-exposes pxGrid Group-based authorization, consider scoping this client to
-read-only session/endpoint/pubsub/profiler-config services rather than the
-default unrestricted access — the exporter's code only ever reads, but an
-approved pxGrid credential is capable of whatever services your deployment
-publishes (ANC, TrustSec, etc.) unless explicitly scoped down. The profiler
-category/parent hierarchy (`ise_endpoints_by_profile_all`, see "Endpoint
-model collection" above) needs `com.cisco.ise.config.profiler` specifically —
-if that service is excluded from the group, its data just falls back to
-`category="unknown"` rather than failing the whole client.
+Additional references:
 
-If you *do* scope the client to a custom group (say `exporter`), the
-least-privilege pxGrid **policy** it needs — REST `gets` on the query services
-plus pubsub `subscribe` on the topics streaming mode consumes — is:
-
-| Service | Operation | For |
-|---------|-----------|-----|
-| `com.cisco.ise.session` | `gets` | session snapshot (getSessions) + poll |
-| `com.cisco.ise.endpoint` | `gets` | endpoint snapshot (getEndpoints) |
-| `com.cisco.ise.config.profiler` | `gets` | profiler policy catalog (getProfiles) |
-| `com.cisco.ise.pubsub` | `subscribe /topic/com.cisco.ise.session` | live session events |
-| `com.cisco.ise.pubsub` | `subscribe /topic/com.cisco.ise.endpoint` | live endpoint events |
-
-A subscribe that the group isn't authorized for makes ISE **drop the WebSocket**
-right after CONNECT — which reads as a flapping/failing stream, not a clear
-"permission denied". The exporter logs `pxGrid SUBSCRIBE <name> topic -> <dest>`
-for each subscription so you can see exactly which destination ISE rejected.
-
-The exporter subscribes to the **base** `sessionTopic`
-(`/topic/com.cisco.ise.session`) by default — it's on every ISE and authorized
-for any session-service client. `sessionTopicAll` (`…​.session.all`) only exists
-on ISE 3.3 patch 2 / 3.4+ and needs the group authorized for that specific
-topic; set `PXGRID_SESSION_TOPIC_ALL=true` (and add the matching subscribe
-policy) only if you actually want it.
-
-**5. Network reachability.** pxGrid 2.0 uses TCP/8910 for both the REST
-control plane and the WSS pubsub subscription (streaming mode). In a
-multi-PSN deployment, `ServiceLookup` can hand back a *different* node than
-`PXGRID_HOST` for the pubsub service — make sure firewall rules cover every
-node that could serve `com.cisco.ise.pubsub`, not just the one in your config.
-
-**6. Verify from the exporter side** before enabling streaming in production:
-
-    ise-exporter --pxgrid-check-stream
-
-On a **systemd-deployed host**, the CLI auto-loads `/etc/ise-exporter/ise-exporter.env`
-(overridable with `ISE_EXPORTER_ENV_FILE`), but run it as a user that can read that
-file *and* the client key — i.e. the service account (or root):
-
-    sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --pxgrid-check
-
-Running it as your own login from a random directory is what produces
-`missing PXGRID_HOST, PXGRID_NODE_NAME, …` — the config file wasn't in scope.
-
-## Run
-
-### From source
-
-    pip install -e .
-    cp .env.example .env         # edit
-    ise-exporter --pxgrid-check   # optional: validate pxGrid account/services/probes
-    ise-exporter --pxgrid-check-stream  # optional: also validate WSS/STOMP streaming
-    ise-exporter
-    # metrics at http://localhost:9618/metrics
-
-    pip install -e ".[dev]" && pytest      # tests
-
-### Docker
-
-    # build (run from the repo root so the context includes ise_exporter/)
-    docker build -f deploy/Dockerfile -t ise-exporter:2.0.0 .
-
-    # run
-    docker run --rm -p 9618:9618 --env-file .env \
-      -v "$PWD/deploy/certs:/certs:ro" \
-      -v ise-exporter-cache:/var/lib/ise-exporter \
-      -e ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE=/var/lib/ise-exporter/endpoint-attributes-cache.json \
-      ise-exporter:2.0.0
-
-Lean multi-stage build (no build tools in the runtime image), runs as
-`nobody:nogroup`, and ships a `HEALTHCHECK` that polls `/metrics`.
-
-### docker compose
-
-    cd deploy
-    # .env lives at the repo root; certs (if streaming) go in deploy/certs/
-    docker compose up -d --build
-    docker compose logs -f
-
-The compose service is `read_only` with a tmpfs `/tmp` and `no-new-privileges`,
-with a named volume mounted only at `/var/lib/ise-exporter` for the bounded ERS
-endpoint-attribute cache. Change `EXPORTER_PORT` in `.env`? Update the `ports:`
-mapping in `docker-compose.yml` to match.
-
-### systemd
-
-**Automated (recommended):** `deploy/install.sh` does everything below —
-user, directories, venv, package (upgrade-in-place if already installed),
-config skeleton (seeded once, never overwritten), permissions, and the
-systemd unit. Safe to re-run for upgrades: pull the latest checkout and
-run it again.
-
-    git pull   # or clone fresh
-    sudo ./deploy/install.sh
-    # fresh install: edit /etc/ise-exporter/ise-exporter.env, drop pxGrid
-    # certs in /etc/ise-exporter/certs/, then: sudo systemctl restart ise-exporter
-    # upgrade: that's it — it restarts the service with the new version
-
-Or run it against a checkout elsewhere: `sudo ./deploy/install.sh /path/to/checkout`.
-
-**Manual**, for reference or if you need to customize a step:
-
-    sudo useradd --system --no-create-home ise-exporter
-    sudo install -d -o root -g ise-exporter -m 750 /opt/ise-exporter /etc/ise-exporter
-    sudo python3 -m venv /opt/ise-exporter/.venv
-    sudo /opt/ise-exporter/.venv/bin/pip install /path/to/ise-exporter
-    sudo cp .env /etc/ise-exporter/ise-exporter.env
-    sudo chown root:ise-exporter /etc/ise-exporter/ise-exporter.env
-    sudo chmod 640 /etc/ise-exporter/ise-exporter.env
-    sudo cp deploy/ise-exporter.service /etc/systemd/system/
-    sudo systemctl daemon-reload && sudo systemctl enable --now ise-exporter
-
-The unit is hardened (`ProtectSystem=strict`, `NoNewPrivileges`, `PrivateTmp`,
-`ReadOnlyPaths=/etc/ise-exporter`) — appropriate since that env file holds
-`ISE_PASS` in plaintext. Its only writable persistent path is the systemd
-`StateDirectory=ise-exporter` at `/var/lib/ise-exporter`, used for the ERS
-endpoint-attribute cache. `root:ise-exporter, 0640` rather than root-only:
-systemd's `EnvironmentFile=` is read by the manager (root) before it drops to
-`User=ise-exporter`, so root-only would work for the service itself, but
-group-read also lets you run diagnostics as the service account (e.g.
-`sudo -u ise-exporter ise-exporter --pxgrid-check`, which reads the file
-in-process via `load_dotenv()` rather than inheriting it from systemd).
-
-**pxGrid TLS material** (`PXGRID_CLIENT_CERT`/`_KEY`/`_CA_BUNDLE`) isn't part of
-the env file — it's separate files the env file only points to by path. Put
-them under the same tree and lock down the private key specifically:
-
-    sudo install -d -o root -g ise-exporter -m 750 /etc/ise-exporter/certs
-    sudo cp client.cer client.key ise-ca.cer /etc/ise-exporter/certs/
-    sudo chown root:ise-exporter /etc/ise-exporter/certs/*
-    sudo chmod 640 /etc/ise-exporter/certs/client.key   # private key — keep this tight
-    sudo chmod 644 /etc/ise-exporter/certs/client.cer /etc/ise-exporter/certs/ise-ca.cer  # public certs, fine to read broadly
-
-Then set `PXGRID_CLIENT_CERT=/etc/ise-exporter/certs/client.cer`,
-`PXGRID_CLIENT_KEY=/etc/ise-exporter/certs/client.key`, and
-`PXGRID_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer` in the env file (paths
-are already covered read-only by `ReadOnlyPaths=/etc/ise-exporter`, since it
-applies recursively). A missing or unreadable path here fails at first pxGrid
-call with a wrapped/cryptic error (`Connection aborted` / `invalid path`) —
-check `journalctl -u ise-exporter` right after start for an explicit
-`pxGrid client cert/key/CA bundle not found|not readable` line instead; that
-check now runs at startup rather than surfacing only when a collector cycle
-first needs it.
-
-## Plane ownership
-| plane | source | notes |
-|-------|--------|-------|
-| sessions / authz(passed) | stream (or MnT poll fallback) | |
-| endpoint inventory / profile attributes | ERS poll | baseline path; expected to work on ISE 3.3 |
-| endpoint MFC / Secure Client enrichment | pxGrid getEndpoints | optional; often empty on ISE 3.3 |
-| failed auth / policy-set / matched-rule | MnT poll | not on session topic; runs in both modes |
-| NAD inventory | ERS poll | label join for streamed sessions |
-| nodes / certs / license / backup / patch | PAN OpenAPI poll | no pxGrid equivalent |
+- [Migration roadmap](docs/migration-pxgrid-removal.md)
+- [TACACS account attribution](docs/tacacs-account-attribution.md)
+- [CLI and schema probes](docs/ise-cli.md)

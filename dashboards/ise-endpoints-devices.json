@@ -1,4 +1,273 @@
 {
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "description": "Endpoint reporting from Data Connect plus authoritative network-device inventory from REST/OpenAPI.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Endpoints",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_endpoints_total",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Network Devices",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ise_network_devices_total",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Populated Profiles",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "count(ise_dataconnect_endpoints_by_profile) or vector(0)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Identity Groups",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "count(ise_dataconnect_endpoints_by_identity_group) or vector(0)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Endpoints by Profile",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "topk(20, ise_dataconnect_endpoints_by_profile)",
+          "legendFormat": "{{profile}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "Endpoints by Identity Group",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "topk(20, ise_dataconnect_endpoints_by_identity_group)",
+          "legendFormat": "{{identity_group}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "piechart",
+      "title": "Posture Applicability",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_endpoints_by_posture_applicable",
+          "legendFormat": "{{applicable}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Profile Events by Source and Action",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 13
+      },
+      "targets": [
+        {
+          "expr": "topk(25, sum by (profile, source, action) (ise_dataconnect_profile_events))",
+          "legendFormat": "{{profile}} / {{source}} / {{action}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "bargauge",
+      "title": "Devices by Location",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "expr": "ise_network_devices_by_location",
+          "legendFormat": "{{location}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "bargauge",
+      "title": "Devices by Ops Owner",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 21
+      },
+      "targets": [
+        {
+          "expr": "ise_network_devices_by_ops_owner",
+          "legendFormat": "{{ops_owner}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Devices by Type",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 21
+      },
+      "targets": [
+        {
+          "expr": "ise_network_devices_by_type",
+          "legendFormat": "{{device_type}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    }
+  ],
+  "refresh": "15m",
+  "schemaVersion": 39,
+  "tags": [
+    "ise",
+    "endpoints",
+    "dataconnect",
+    "rest"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-2d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "ISE Exporter / Endpoints & Devices",
+  "uid": "ise-endpoints-devices",
+  "version": 1,
   "__inputs": [
     {
       "name": "DS_PROMETHEUS",
@@ -7,228 +276,6 @@
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
-    }
-  ],
-  "__requires": [
-    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
-    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
-    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
-    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" },
-    { "type": "panel", "id": "row", "name": "Row", "version": "" }
-  ],
-  "annotations": { "list": [] },
-  "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
-  "links": [],
-  "liveNow": false,
-  "schemaVersion": 39,
-  "tags": ["ise", "cisco", "endpoints", "devices"],
-  "templating": {
-    "list": [
-      {
-        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
-        "hide": 0,
-        "label": "Prometheus",
-        "name": "DS_PROMETHEUS",
-        "options": [{ "selected": true, "text": "Prometheus", "value": "prometheus" }],
-        "query": "prometheus",
-        "refresh": 1,
-        "regex": "",
-        "type": "datasource"
-      }
-    ]
-  },
-  "time": { "from": "now-6h", "to": "now" },
-  "timepicker": {},
-  "timezone": "",
-  "title": "ISE Exporter / Endpoints & Devices",
-  "uid": "ise-endpoints-devices",
-  "version": 1,
-  "weekStart": "",
-  "panels": [
-    {
-      "id": 1, "type": "row", "title": "Endpoint Inventory", "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
-    },
-    {
-      "id": 2, "type": "stat", "title": "Endpoints Total",
-      "description": "Total endpoints known to ISE. ERS is the baseline source, so this populates even when pxGrid getEndpoints returns 0.",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_total", "refId": "A" }],
-      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" }
-    },
-    {
-      "id": 3, "type": "stat", "title": "pxGrid Endpoints (getEndpoints)",
-      "description": "Endpoints returned by the pxGrid getEndpoints REST poll. 0 is expected on ISE 3.3; ERS still owns baseline endpoint/profile data, while pxGrid only enriches MFC/Secure Client fields when non-empty.",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_pxgrid_total", "refId": "A" }],
-      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" }
-    },
-    {
-      "id": 4, "type": "stat", "title": "Network Devices Total",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_total", "refId": "A" }],
-      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
-    },
-    {
-      "id": 5, "type": "stat", "title": "ERS Attr Cache",
-      "description": "Endpoints currently represented in the cached ERS /endpoint/{id}/attributes sweep. This grows a page per slow cycle and is independent of pxGrid endpoint publishing.",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_attribute_cache_entries", "refId": "A" }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
-        "overrides": []
-      },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
-    },
-    {
-      "id": 6, "type": "bargauge", "title": "Top Manufacturers",
-      "description": "MFC manufacturer attribute from pxGrid getEndpoints enrichment. ERS does not expose this field, so ISE 3.3 usually shows unknown/0 coverage.",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_manufacturer)", "legendFormat": "{{manufacturer}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 7, "type": "bargauge", "title": "Top Hardware Models",
-      "description": "MFC hardware-model attribute from pxGrid getEndpoints enrichment. ERS does not expose this field, so ISE 3.3 usually shows unknown/0 coverage.",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_hardware_model)", "legendFormat": "{{model}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 8, "type": "bargauge", "title": "Endpoint Types",
-      "description": "MFC endpoint-type attribute from pxGrid getEndpoints. The ERS profile-attribute sweep exposes a separate profiled device-type panel below.",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_by_endpoint_type", "legendFormat": "{{endpoint_type}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 9, "type": "bargauge", "title": "Operating Systems (top 15)",
-      "description": "MFC operating-system attribute from pxGrid getEndpoints. The ERS profile-attribute sweep exposes a separate profiled OS panel below.",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_os)", "legendFormat": "{{os}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 10, "type": "bargauge", "title": "Profiling Policy (top 15)",
-      "description": "Endpoints per profiling-policy name. ERS endpoint attributes are the baseline; pxGrid getEndpoints can enrich when it is non-empty.",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_profiled_policy) or topk(15, ise_endpoints_by_policy)", "legendFormat": "{{policy}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 11, "type": "bargauge", "title": "MFC Attribute Coverage",
-      "description": "Per-attribute fraction of endpoints with a non-empty MFC value. From pxGrid getEndpoints — empty (no data) when ISE isn't publishing endpoints; ERS cannot recover MFC attributes.",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_mfc_coverage", "legendFormat": "{{attribute}}", "refId": "A" }],
-      "fieldConfig": {
-        "defaults": { "unit": "percentunit", "min": 0, "max": 1,
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.85 }] } },
-        "overrides": []
-      },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 12, "type": "row", "title": "ERS Profiler Attributes", "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 }, "panels": []
-    },
-    {
-      "id": 16, "type": "stat", "title": "Attr Records Refreshed",
-      "description": "Endpoint detail/profile-attribute records refreshed by the last ERS attribute sweep.",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 22 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_attribute_scan_last_count", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
-    },
-    {
-      "id": 20, "type": "bargauge", "title": "Endpoint Identity Groups",
-      "description": "Endpoint identity group from ERS endpoint detail.",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 30 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_identity_group)", "legendFormat": "{{group}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 21, "type": "bargauge", "title": "Static Assignments",
-      "description": "Manual profile/group assignment flags from ERS endpoint detail.",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 30 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_static_assignment", "legendFormat": "{{assignment}}={{value}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 22, "type": "bargauge", "title": "ERS Attribute Coverage",
-      "description": "Fraction of cached endpoint records with each selected ERS endpoint attribute populated.",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 30 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_attribute_coverage", "legendFormat": "{{attribute}}", "refId": "A" }],
-      "fieldConfig": {
-        "defaults": { "unit": "percentunit", "min": 0, "max": 1,
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.85 }] } },
-        "overrides": []
-      },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 27, "type": "bargauge", "title": "Custom Endpoint Attributes",
-      "description": "Only keys explicitly listed in ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS are emitted.",
-      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 38 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_custom_attribute_value", "legendFormat": "{{key}}={{value}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 28, "type": "stat", "title": "Attr Fetch Errors",
-      "description": "Endpoint records that failed during the last ERS endpoint-attribute scan, split by stage.",
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 46 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_endpoint_attribute_fetch_errors) by (stage)", "legendFormat": "{{stage}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "horizontal", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
-    },
-    {
-      "id": 23, "type": "row", "title": "Network Device Inventory", "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 }, "panels": []
-    },
-    {
-      "id": 13, "type": "bargauge", "title": "Devices by Ops Owner",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 51 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_ops_owner", "legendFormat": "{{ops_owner}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
-    },
-    {
-      "id": 15, "type": "bargauge", "title": "Devices by Type",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 51 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_network_devices_by_type", "legendFormat": "{{device_type}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     }
   ]
 }

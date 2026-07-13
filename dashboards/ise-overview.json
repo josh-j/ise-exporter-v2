@@ -199,10 +199,10 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
     },
     {
-      "id": 16, "type": "table", "title": "Collector Enabled",
+      "id": 16, "type": "table", "title": "Authoritative Dataset Status",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_collector_enabled", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_dataset_up", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
           "mappings": [{ "type": "value", "options": { "0": { "text": "disabled", "color": "red" }, "1": { "text": "enabled", "color": "green" } } }] },
@@ -344,10 +344,10 @@
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },
     {
-      "id": 29, "type": "table", "title": "Last Successful Scrape (seconds ago)",
+      "id": 29, "type": "table", "title": "Dataset Snapshot Age (seconds)",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 56 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "time() - ise_last_successful_scrape_timestamp", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "time() - ise_dataset_last_success_timestamp", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } }, "unit": "s",
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 300 }, { "color": "red", "value": 3600 }] } },

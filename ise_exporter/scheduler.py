@@ -1,133 +1,93 @@
-"""Polling engine: interval tiers, failure gating, and the cycle dispatch.
-Owns last_run_times + failure_tracker (moved off the module globals). Drives the
-poll-mode collectors. When cfg.collect_pxgrid_stream is true, sessions+authz are
-skipped here because streaming.py feeds those gauges instead."""
-import time
-import logging
+"""Immutable collection plan for the exporter runtime.
 
-from . import metrics
-from . import collectors
-from .collectors import (sessions, authz, devices, endpoints, deployment,
-                         certificates, licensing, backup, patches, models, ers_endpoints,
-                         endpoint_attributes, tacacs)
+REST/OpenAPI owns platform and configuration state; Data Connect owns
+monitoring/reporting datasets. There is no runtime source fallback and no
+collector reads another collector's metrics to decide ownership.
+"""
+import logging
+import time
+
+from . import collectors, metrics
+from .collectors import (
+    backup,
+    certificates,
+    dataconnect_endpoints,
+    dataconnect_performance,
+    dataconnect_posture,
+    dataconnect_radius,
+    deployment,
+    devices,
+    licensing,
+    patches,
+    tacacs,
+)
 
 logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
 
 
 class PollScheduler:
-    def __init__(self, cfg, client, pxgrid=None, dataconnect=None):
+    def __init__(self, cfg, client, dataconnect=None):
         self.cfg = cfg
         self.client = client
-        self.pxgrid = pxgrid
         self.dataconnect = dataconnect
         self.last_run = {}
         self.mappings = {"ops_owner": {}, "hostname": {}, "location": {}}
-        self._streaming_state = None   # tracks stream up/down to log the fallback flip once
+        logger.info("collection plan: REST/OpenAPI=platform/config DataConnect=reporting")
 
-        # log the poll-vs-stream split ONCE, at the point that actually decides it —
-        # both flags are immutable for the process lifetime, so this can't go stale.
-        streaming = cfg.collect_pxgrid_stream and pxgrid is not None
-        if cfg.collect_pxgrid_stream and pxgrid is None:
-            logger.warning("scheduler: COLLECT_PXGRID_STREAM=true but no usable pxGrid client — "
-                           "falling back to polling for sessions/pxgrid_endpoints "
-                           "(see the 'pxGrid disabled' warning above for why)")
-        elif streaming:
-            logger.info("scheduler: pxgrid streaming=ON — projector owns session/endpoint gauges; "
-                       "sessions collector runs PSN-only, pxgrid_endpoints deferred to the stream")
-        else:
-            logger.info("scheduler: pxgrid streaming=OFF — polling all session/endpoint collectors")
-
-    def _due(self, name, now, fast, medium, slow):
+    def _due(self, name, now, tier):
         if name not in self.last_run:
             return True
-        # gated after too many failures, but half-open: allow one retry per slow tier
-        # so a transient outage doesn't disable a collector until process restart
         if collectors.failures(name) >= MAX_CONSECUTIVE_FAILURES:
             if (now - self.last_run[name]) < self.cfg.slow_interval:
                 metrics.ise_collector_enabled.labels(collector=name).set(0)
                 return False
         metrics.ise_collector_enabled.labels(collector=name).set(1)
-        tier = (self.cfg.fast_interval if name in fast else
-                self.cfg.medium_interval if name in medium else
-                self.cfg.slow_interval if name in slow else 0)
         return (now - self.last_run[name]) >= tier
+
+    def _run(self, name, now, tier, callback):
+        if self._due(name, now, tier):
+            callback()
+            self.last_run[name] = now
 
     def run_cycle(self):
         cfg, now = self.cfg, time.time()
-        fast = {"sessions", "endpoints"}
-        medium = {"devices", "deployment", "authz"}
-        slow = {"certificates", "licensing", "backup", "patches", "pxgrid_endpoints",
-                "ers_endpoint_profiles", "ers_endpoint_attributes", "tacacs"}
-        # "streaming" is now the LIVE state, not just config: true only while the pxGrid
-        # stream is actually connected. When it drops, this flips to false and the full
-        # session/authz/endpoint poll runs as a fallback until the stream recovers.
-        streaming = collectors.stream_active(cfg) and self.pxgrid is not None
-        if streaming != self._streaming_state:
-            if self._streaming_state is not None:
-                logger.info("scheduler: pxGrid stream %s — session/authz/endpoint collectors now %s",
-                            "UP" if streaming else "DOWN",
-                            "deferred to the stream" if streaming else "full MnT/REST polling (fallback)")
-            self._streaming_state = streaming
 
-        if self._due("deployment", now, fast, medium, slow):
-            deployment.collect(self.client, cfg, self.mappings)
-            self.last_run["deployment"] = now
-        if self._due("devices", now, fast, medium, slow):
-            devices.collect(self.client, cfg, self.mappings)
-            self.last_run["devices"] = now
-        sessions_due = self._due("sessions", now, fast, medium, slow)
-        authz_due = cfg.collect_authz and self._due("authz", now, fast, medium, slow)
-        active_list = None
-        active_list_prefetched = False
-        if sessions_due and authz_due and hasattr(self.client, "get_mnt_xml"):
-            active_list = self.client.get_mnt_xml("/Session/ActiveList", api_name="mnt_sessions")
-            active_list_prefetched = True
-        active_list_kw = {"active_list": active_list} if active_list_prefetched else {}
-        # sessions runs in BOTH modes: in stream mode it self-limits to the per-PSN
-        # gauge (ise_radius_sessions_by_psn), which the pxGrid session topic can't feed.
-        if sessions_due:
-            sessions.collect(self.client, cfg, self.mappings, **active_list_kw)
-            self.last_run["sessions"] = now
-        if self._due("endpoints", now, fast, medium, slow):
-            endpoints.collect(self.client, cfg, self.mappings)
-            self.last_run["endpoints"] = now
-        # authz runs in BOTH modes: in stream mode it emits only the failure-reason /
-        # matched-rule / policy-set signals the session topic can't carry (it self-limits)
-        if authz_due:
-            authz.collect(self.client, cfg, self.mappings, **active_list_kw)
-            self.last_run["authz"] = now
-        if cfg.collect_certificates and self._due("certificates", now, fast, medium, slow):
-            certificates.collect(self.client, cfg, self.mappings)
-            self.last_run["certificates"] = now
-        if cfg.collect_licensing and self._due("licensing", now, fast, medium, slow):
-            licensing.collect(self.client, cfg, self.mappings)
-            self.last_run["licensing"] = now
-        if cfg.collect_backup_status and self._due("backup", now, fast, medium, slow):
-            backup.collect(self.client, cfg, self.mappings)
-            self.last_run["backup"] = now
-        if cfg.collect_patches and self._due("patches", now, fast, medium, slow):
-            patches.collect(self.client, cfg, self.mappings)
-            self.last_run["patches"] = now
-        # bulk model collector only when NOT streaming (stream projects models itself)
-        if cfg.collect_pxgrid_endpoints and not streaming and self.pxgrid \
-                and self._due("pxgrid_endpoints", now, fast, medium, slow):
-            models.collect(self.pxgrid, cfg)
-            self.last_run["pxgrid_endpoints"] = now
-        # Legacy ERS profile-count fallback. When the richer ERS endpoint-attribute
-        # sweep is enabled it owns the ERS baseline endpoint/profile gauges, avoiding
-        # duplicate /config/endpoint and endpoint-detail fan-out on ISE 3.3.
-        if cfg.collect_ers_endpoint_fallback and not cfg.collect_ers_endpoint_attributes \
-                and self._due("ers_endpoint_profiles", now, fast, medium, slow):
-            ers_endpoints.collect(self.client, cfg)
-            self.last_run["ers_endpoint_profiles"] = now
-        if cfg.collect_ers_endpoint_attributes \
-                and self._due("ers_endpoint_attributes", now, fast, medium, slow):
-            endpoint_attributes.collect(self.client, cfg)
-            self.last_run["ers_endpoint_attributes"] = now
-        if getattr(cfg, "collect_tacacs", True) and self._due("tacacs", now, fast, medium, slow):
-            tacacs.collect(self.client, cfg, dataconnect=self.dataconnect)
-            self.last_run["tacacs"] = now
+        # REST/OpenAPI control plane: always authoritative in every profile.
+        self._run("deployment", now, cfg.medium_interval,
+                  lambda: deployment.collect(self.client, cfg, self.mappings))
+        self._run("devices", now, cfg.medium_interval,
+                  lambda: devices.collect(self.client, cfg, self.mappings))
+        if cfg.collect_certificates:
+            self._run("certificates", now, cfg.slow_interval,
+                      lambda: certificates.collect(self.client, cfg, self.mappings))
+        if cfg.collect_licensing:
+            self._run("licensing", now, cfg.slow_interval,
+                      lambda: licensing.collect(self.client, cfg, self.mappings))
+        if cfg.collect_backup_status:
+            self._run("backup", now, cfg.slow_interval,
+                      lambda: backup.collect(self.client, cfg, self.mappings))
+        if cfg.collect_patches:
+            self._run("patches", now, cfg.slow_interval,
+                      lambda: patches.collect(self.client, cfg, self.mappings))
+
+        # Data Connect reporting plane. Each domain owns disjoint metric families.
+        self._run("dataconnect_radius", now, cfg.fast_interval,
+                  lambda: dataconnect_radius.collect(self.dataconnect, cfg))
+        self._run("dataconnect_performance", now, cfg.fast_interval,
+                  lambda: dataconnect_performance.collect(self.dataconnect, cfg))
+        self._run("dataconnect_posture", now, cfg.medium_interval,
+                  lambda: dataconnect_posture.collect(self.dataconnect, cfg))
+        self._run("dataconnect_endpoints", now, cfg.slow_interval,
+                  lambda: dataconnect_endpoints.collect(self.dataconnect, cfg))
+
+        # TACACS configuration is REST-owned; activity is Data Connect-owned in
+        # standard mode. The collector exposes distinct metric families for each.
+        if cfg.collect_tacacs:
+            self._run("tacacs_config", now, cfg.slow_interval,
+                      lambda: tacacs.collect_config(self.client, cfg))
+            self._run("tacacs_activity", now, cfg.medium_interval,
+                      lambda: tacacs.collect_activity(self.dataconnect, cfg))
 
     def loop(self, shutdown):
         nxt = time.time()
@@ -135,7 +95,4 @@ class PollScheduler:
             self.run_cycle()
             nxt += self.cfg.scrape_interval
             while time.time() < nxt and not shutdown.is_set():
-                # max(0, ...): time.time() is re-read here, so it can edge past nxt between
-                # the guard and this line — a negative sleep would raise ValueError and kill
-                # the main loop.
                 time.sleep(max(0, min(nxt - time.time(), 1)))

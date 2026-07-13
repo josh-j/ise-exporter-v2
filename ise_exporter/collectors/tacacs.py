@@ -1,10 +1,8 @@
-"""TACACS / Device Administration inventory and policy-hit collector.
+"""TACACS / Device Administration configuration and activity collectors.
 
-ISE's supported ERS/OpenAPI surfaces expose internal-user inventory and cumulative
-Device Admin policy/rule hit counts, but not a per-account TACACS last-login time.
-Account attribution comes from the read-only Data Connect TACACS views. This
-collector keeps API-only hygiene signals explicit so object age is never presented
-as proof of last use.
+ERS/OpenAPI owns configuration inventory. Data Connect owns per-account activity.
+Cumulative policy hit counters are intentionally not exported because lifetime
+totals look like current traffic and cannot provide account attribution.
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -14,16 +12,16 @@ from ..util import clear_metric, normalize_bool_label
 from . import CollectorFailed, observe
 
 
-_METRICS = (
+_CONFIG_METRICS = (
     metrics.ise_tacacs_internal_user_info,
     metrics.ise_tacacs_internal_user_created_timestamp,
     metrics.ise_tacacs_internal_user_modified_timestamp,
     metrics.ise_tacacs_suspected_unused_internal_user,
     metrics.ise_tacacs_internal_user_hygiene_risk,
-    metrics.ise_tacacs_policy_set_hits,
-    metrics.ise_tacacs_authentication_rule_hits,
-    metrics.ise_tacacs_authorization_rule_hits,
     metrics.ise_tacacs_policy_objects_total,
+)
+
+_ACTIVITY_METRICS = (
     metrics.ise_tacacs_account_authentication_events,
     metrics.ise_tacacs_account_authorization_events,
     metrics.ise_tacacs_accounting_events,
@@ -42,17 +40,6 @@ def _timestamp(value):
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.timestamp()
-
-
-def _rule(row):
-    return row.get("rule", {}) if isinstance(row, dict) else {}
-
-
-def _hit_count(row):
-    try:
-        return int(row.get("hitCounts") or 0)
-    except (AttributeError, TypeError, ValueError):
-        return 0
 
 
 def _label(value):
@@ -92,6 +79,9 @@ def _collect_dataconnect(dataconnect, cfg):
         """,
     }
     rows = {kind: dataconnect.query(sql) for kind, sql in queries.items()}
+
+    for metric in _ACTIVITY_METRICS:
+        clear_metric(metric)
 
     last_seen = {}
     for row in rows["authentication"]:
@@ -137,8 +127,8 @@ def _collect_dataconnect(dataconnect, cfg):
             username=username, event_type=event_type).set(timestamp)
 
 
-def collect(client, cfg, dataconnect=None):
-    with observe("tacacs"):
+def collect_config(client, cfg):
+    with observe("tacacs_config"):
         resources = client.get_ers(
             "/config/internaluser", {"size": 100}, get_all=True,
             api_name="ers_tacacs_internal_users")
@@ -194,7 +184,7 @@ def collect(client, cfg, dataconnect=None):
         shell_profiles = client.get_pan_api(
             "/policy/device-admin/shell-profiles", api_name="tacacs_shell_profiles")
 
-        for metric in _METRICS:
+        for metric in _CONFIG_METRICS:
             clear_metric(metric)
         metrics.ise_tacacs_internal_users_total.set(len(resources))
         detail_count = sum(user.get("_detail_fetched") is True for user in users)
@@ -231,33 +221,6 @@ def collect(client, cfg, dataconnect=None):
                 metrics.ise_tacacs_suspected_unused_internal_user.labels(
                     username=username, reason=f"object_not_modified_{review_days}d").set(1)
 
-        for policy_set in policy_sets:
-            metrics.ise_tacacs_policy_set_hits.labels(
-                policy_set=str(policy_set.get("name") or "unknown"),
-                state=str(policy_set.get("state") or "unknown"),
-                service=str(policy_set.get("serviceName") or "unknown"),
-            ).set(_hit_count(policy_set))
-
-        for policy_set, row in auth_rows:
-            rule = _rule(row)
-            metrics.ise_tacacs_authentication_rule_hits.labels(
-                policy_set=str(policy_set.get("name") or "unknown"),
-                rule=str(rule.get("name") or "unknown"),
-                state=str(rule.get("state") or "unknown"),
-                identity_source=str(row.get("identitySourceName") or "unknown"),
-            ).set(_hit_count(rule))
-
-        for policy_set, row in authz_rows:
-            rule = _rule(row)
-            commands = row.get("commands") or []
-            metrics.ise_tacacs_authorization_rule_hits.labels(
-                policy_set=str(policy_set.get("name") or "unknown"),
-                rule=str(rule.get("name") or "unknown"),
-                state=str(rule.get("state") or "unknown"),
-                profile=str(row.get("profile") or "unknown"),
-                command_sets=",".join(str(command) for command in commands) or "none",
-            ).set(_hit_count(rule))
-
         object_counts = {
             "policy_sets": len(policy_sets),
             "authentication_rules": len(auth_rows),
@@ -268,14 +231,12 @@ def collect(client, cfg, dataconnect=None):
         for object_type, count in object_counts.items():
             metrics.ise_tacacs_policy_objects_total.labels(object_type=object_type).set(count)
 
-        if dataconnect is not None:
-            try:
-                _collect_dataconnect(dataconnect, cfg)
-                metrics.ise_tacacs_dataconnect_up.set(1)
-            except Exception:
-                metrics.ise_tacacs_dataconnect_up.set(0)
-                raise
-            finally:
-                dataconnect.close()
-        elif getattr(cfg, "collect_tacacs_dataconnect", False):
+
+def collect_activity(dataconnect, cfg):
+    with observe("tacacs_activity"):
+        try:
+            _collect_dataconnect(dataconnect, cfg)
+            metrics.ise_tacacs_dataconnect_up.set(1)
+        except Exception:
             metrics.ise_tacacs_dataconnect_up.set(0)
+            raise

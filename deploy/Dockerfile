@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir build \
 
 FROM python:3.12-slim
 LABEL org.opencontainers.image.title="ise-exporter" \
-      org.opencontainers.image.description="Prometheus exporter for Cisco ISE (REST poll + pxGrid stream)" \
+      org.opencontainers.image.description="Prometheus exporter for Cisco ISE" \
       org.opencontainers.image.version="2.0.0"
 WORKDIR /app
 COPY --from=build /dist/*.whl /tmp/
