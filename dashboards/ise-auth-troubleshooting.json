@@ -346,7 +346,7 @@
           { "matcher": { "id": "byName", "options": "passed" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-text" } }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
         ]
       },
-      "options": { "cellHeight": "sm", "showHeader": true, "footer": { "show": true, "countRows": true }, "sortBy": [{ "displayName": "failed", "desc": true }] },
+      "options": { "cellHeight": "sm", "showHeader": true, "footer": { "show": true, "countRows": true, "reducer": ["count"] }, "sortBy": [{ "displayName": "failed", "desc": true }] },
       "transformations": [
         { "id": "groupingToMatrix", "options": { "columnField": "status", "rowField": "nad_hostname", "valueField": "Value", "emptyValue": "zero" } }
       ]

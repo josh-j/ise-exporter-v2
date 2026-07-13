@@ -1369,6 +1369,9 @@
         "cellHeight": "sm",
         "footer": {
           "countRows": true,
+          "reducer": [
+            "count"
+          ],
           "show": true
         },
         "showHeader": true,
@@ -1394,7 +1397,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum by (nad_hostname, location, ops_owner) (\n  ise_session_status_endpoints{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}\n)",
+          "expr": "sum by (nad_hostname, location, ops_owner) (\n  ise_session_status_endpoints{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}\n)\nand on (nad_hostname, location, ops_owner)\n(\n  sum by (nad_hostname, location, ops_owner) (\n    ise_session_status_endpoints{status=\"failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}\n  ) > 0\n)",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
