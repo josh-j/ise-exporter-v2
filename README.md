@@ -51,6 +51,7 @@ and persistent cache storage. At that rate a complete ERS detail pass takes abou
 | `COLLECT_ERS_ENDPOINT_ATTRIBUTES` | `true` | slow cached sweep of ERS `/endpoint/{id}` detail data |
 | `ERS_ENDPOINT_ATTRIBUTE_PAGE_SIZE` / `ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL` | `500` / `604800` | endpoint-attribute refresh batch size and cache TTL |
 | `ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE` | `/tmp/ise-exporter-endpoint-attributes-cache.json` | local cache for multi-cycle endpoint-attribute scans |
+| `SESSION_DETAIL_CACHE_FILE` | `/tmp/ise-exporter-session-details-cache.json` | private, restart-safe MnT auth/session-detail cache (written mode `0600`) |
 | `ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS` | empty | optional comma-list of custom endpoint attributes to bucket by value |
 | `PXGRID_ENDPOINT_ZERO_BACKOFF` | `3600` | retry cadence after pxGrid `getEndpoints` returns zero endpoints |
 | `PXGRID_HOST` / `PXGRID_NODE_NAME` | — | pxGrid controller + registered consumer name |

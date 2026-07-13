@@ -17,8 +17,9 @@ services:
       - ise-exporter-cache:/var/lib/ise-exporter
     environment:
       ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE: /var/lib/ise-exporter/endpoint-attributes-cache.json
+      SESSION_DETAIL_CACHE_FILE: /var/lib/ise-exporter/session-details-cache.json
     restart: unless-stopped
-    # the exporter writes only its bounded endpoint-attribute cache under /var/lib/ise-exporter
+    # bounded endpoint-attribute and MnT session-detail caches live in this volume
     read_only: true
     tmpfs:
       - /tmp

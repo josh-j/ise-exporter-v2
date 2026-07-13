@@ -51,14 +51,15 @@ class Client:
 
 def test_collects_tacacs_inventory_rules_and_suspected_unused_account():
     tacacs.collect(Client(), types.SimpleNamespace(
-        tacacs_internal_user_max=1000, max_workers=2))
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=1, max_workers=2))
 
     assert metrics.ise_tacacs_internal_users_total._value.get() == 1
     assert _rows(metrics.ise_tacacs_internal_user_info, "username", "enabled") == {
         ("netadmin", "true"): 1.0}
     assert _rows(metrics.ise_tacacs_suspected_unused_internal_user,
                  "username", "reason") == {
-        ("netadmin", "no_device_admin_policy_hits"): 1.0}
+        ("netadmin", "object_not_modified_1d"): 1.0}
+    assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 1.0
     assert _rows(metrics.ise_tacacs_policy_set_hits, "policy_set") == {
         ("Default",): 0.0}
     assert _rows(metrics.ise_tacacs_authentication_rule_hits,
@@ -87,7 +88,33 @@ def test_account_not_flagged_when_device_admin_policy_has_hits():
         return result
 
     client.get_pan_api = get_pan_api
+    original_ers = client.get_ers
+
+    def get_ers(path, params=None, get_all=False, api_name="x"):
+        result = original_ers(path, params, get_all, api_name)
+        if path == "/config/internaluser/u1":
+            result["InternalUser"]["dateModified"] = "2999-01-01"
+        return result
+
+    client.get_ers = get_ers
     tacacs.collect(client, types.SimpleNamespace(
         tacacs_internal_user_max=1000, max_workers=2))
 
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
+
+
+def test_internal_user_list_row_survives_detail_fetch_failure():
+    client = Client()
+    original = client.get_ers
+
+    def get_ers(path, params=None, get_all=False, api_name="x"):
+        if path == "/config/internaluser/u1":
+            return None
+        return original(path, params, get_all, api_name)
+
+    client.get_ers = get_ers
+    tacacs.collect(client, types.SimpleNamespace(
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=180, max_workers=2))
+
+    assert _rows(metrics.ise_tacacs_internal_user_info, "username") == {("netadmin",): 1.0}
+    assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 0.0

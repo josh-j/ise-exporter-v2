@@ -69,6 +69,7 @@ class Config:
     auth_failure_threshold: int = 3
     device_cache_ttl: int = 10800
     session_detail_cache_ttl: int = 86400
+    session_detail_cache_file: str = "/tmp/ise-exporter-session-details-cache.json"
     max_detail_fetches_per_cycle: int = 2000
     recent_auth_status_max: int = 25
     collect_device_details: bool = True
@@ -79,6 +80,7 @@ class Config:
     collect_authz: bool = True
     collect_tacacs: bool = True
     tacacs_internal_user_max: int = 1000
+    tacacs_unused_account_days: int = 180
     collect_pxgrid_endpoints: bool = True
     collect_pxgrid_stream: bool = False
     # Legacy ERS endpoint profiling-policy breakdown, used only when the richer
@@ -156,6 +158,9 @@ class Config:
             auth_failure_threshold=_i("AUTH_FAILURE_THRESHOLD", 3),
             device_cache_ttl=_i("DEVICE_CACHE_TTL", 10800),
             session_detail_cache_ttl=_i("SESSION_DETAIL_CACHE_TTL", 86400),
+            session_detail_cache_file=_s(
+                "SESSION_DETAIL_CACHE_FILE",
+                "/tmp/ise-exporter-session-details-cache.json"),
             max_detail_fetches_per_cycle=_i("MAX_DETAIL_FETCHES_PER_CYCLE", 2000),
             recent_auth_status_max=_i("RECENT_AUTH_STATUS_MAX", 25),
             collect_device_details=_b("COLLECT_DEVICE_DETAILS", True),
@@ -166,6 +171,7 @@ class Config:
             collect_authz=_b("COLLECT_AUTHZ", True),
             collect_tacacs=_b("COLLECT_TACACS", True),
             tacacs_internal_user_max=_i("TACACS_INTERNAL_USER_MAX", 1000),
+            tacacs_unused_account_days=_i("TACACS_UNUSED_ACCOUNT_DAYS", 180),
             collect_pxgrid_endpoints=_b("COLLECT_PXGRID_ENDPOINTS", True),
             collect_pxgrid_stream=_b("COLLECT_PXGRID_STREAM", False),
             collect_ers_endpoint_fallback=_b("COLLECT_ERS_ENDPOINT_FALLBACK", True),

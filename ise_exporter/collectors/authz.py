@@ -66,9 +66,11 @@ def _posture_source_owners():
 
 def _detail_cache(cfg):
     global _cache
-    if _cache is None:
+    path = getattr(cfg, "session_detail_cache_file", "")
+    if (_cache is None or _cache.ttl != cfg.session_detail_cache_ttl
+            or _cache.path != path):
         from ..caches import SessionDetailCache
-        _cache = SessionDetailCache(cfg.session_detail_cache_ttl)
+        _cache = SessionDetailCache(cfg.session_detail_cache_ttl, path)
     return _cache
 
 
@@ -185,6 +187,7 @@ def collect(client, cfg, mappings, active_list=_UNSET):
 
         if not active_macs and not recent_status_macs:
             cache.cleanup(active_macs)   # no active sessions -> drop all cached detail
+            cache.save()
             for m in owned:
                 clear_metric(m)
             # status="failed" isn't in _STREAM_OWNED, so in stream mode the loop above didn't
@@ -376,6 +379,7 @@ def collect(client, cfg, mappings, active_list=_UNSET):
                 metrics.ise_endpoints_by_secureclient_version.labels(version=ver).set(len(macs))
 
         metrics.ise_session_detail_cache_size.set(cache.size())
+        cache.save()
         cached_count = len(details)
         warmup = cached_count / len(active_macs) if active_macs else 1.0
         metrics.ise_session_warmup_progress.set(warmup)

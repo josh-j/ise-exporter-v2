@@ -100,6 +100,8 @@ def test_env_example_is_parseable_ise33_80k_production_profile():
     assert values["ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL"] == "604800"
     assert values["MAX_WORKERS"] == "12"
     assert values["MAX_DETAIL_FETCHES_PER_CYCLE"] == "1000"
+    assert values["SESSION_DETAIL_CACHE_FILE"] == \
+        "/var/lib/ise-exporter/session-details-cache.json"
     assert values["ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS"] == "Ops Owner"
     assert values["PXGRID_SESSION_TOPIC_ALL"] == "false"
     assert values["PXGRID_SUBSCRIBE_ENDPOINT_TOPIC"] == "false"

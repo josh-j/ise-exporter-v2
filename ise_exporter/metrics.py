@@ -124,6 +124,9 @@ ise_patch_installed = Gauge("ise_patch_installed", "Patch installed", ["patch_nu
 # --- TACACS / Device Administration ---
 ise_tacacs_internal_users_total = Gauge(
     "ise_tacacs_internal_users_total", "ISE internal users available to Device Administration")
+ise_tacacs_internal_user_detail_coverage = Gauge(
+    "ise_tacacs_internal_user_detail_coverage",
+    "Fraction of enumerated internal users whose ERS detail was successfully fetched")
 ise_tacacs_internal_user_info = Gauge(
     "ise_tacacs_internal_user_info", "ISE internal-user account state",
     ["username", "enabled", "password_never_expires", "change_password", "identity_store"])
@@ -135,8 +138,11 @@ ise_tacacs_internal_user_modified_timestamp = Gauge(
     ["username"])
 ise_tacacs_suspected_unused_internal_user = Gauge(
     "ise_tacacs_suspected_unused_internal_user",
-    "Internal-user candidate for review based on Device Admin activity evidence",
+    "Internal-user candidate for review based on account object age",
     ["username", "reason"])
+ise_tacacs_internal_user_hygiene_risk = Gauge(
+    "ise_tacacs_internal_user_hygiene_risk", "Internal-user account hygiene review finding",
+    ["username", "risk"])
 ise_tacacs_policy_set_hits = Gauge(
     "ise_tacacs_policy_set_hits", "Device Admin policy-set hit count",
     ["policy_set", "state", "service"])

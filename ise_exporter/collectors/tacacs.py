@@ -2,9 +2,9 @@
 
 ISE's supported ERS/OpenAPI surfaces expose internal-user inventory and cumulative
 Device Admin policy/rule hit counts, but not a per-account TACACS last-login time.
-The suspected-unused signal is therefore intentionally conservative: enabled
-internal users are candidates only when the deployment's Device Admin policy sets
-have zero cumulative hits. The reason label makes that evidence explicit.
+Account attribution comes from the read-only Data Connect TACACS views. This
+collector keeps API-only hygiene signals explicit so object age is never presented
+as proof of last use.
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -19,6 +19,7 @@ _METRICS = (
     metrics.ise_tacacs_internal_user_created_timestamp,
     metrics.ise_tacacs_internal_user_modified_timestamp,
     metrics.ise_tacacs_suspected_unused_internal_user,
+    metrics.ise_tacacs_internal_user_hygiene_risk,
     metrics.ise_tacacs_policy_set_hits,
     metrics.ise_tacacs_authentication_rule_hits,
     metrics.ise_tacacs_authorization_rule_hits,
@@ -70,7 +71,16 @@ def collect(client, cfg):
                 return None
             result = client.get_ers(
                 f"/config/internaluser/{user_id}", api_name="ers_tacacs_internal_user_detail")
-            return (result or {}).get("InternalUser") if isinstance(result, dict) else None
+            detail = ((result or {}).get("InternalUser")
+                      if isinstance(result, dict) else None)
+            # The list row still contains a useful name/id when the per-user GET is
+            # forbidden or transiently fails. Keep inventory panels populated and
+            # expose detail coverage instead of silently dropping the account.
+            merged = dict(resource) if isinstance(resource, dict) else {}
+            if isinstance(detail, dict):
+                merged.update(detail)
+                merged["_detail_fetched"] = True
+            return merged or None
 
         with ThreadPoolExecutor(max_workers=max(1, getattr(cfg, "max_workers", 10))) as pool:
             users = [user for user in pool.map(fetch, selected) if isinstance(user, dict)]
@@ -101,7 +111,12 @@ def collect(client, cfg):
         for metric in _METRICS:
             clear_metric(metric)
         metrics.ise_tacacs_internal_users_total.set(len(resources))
+        detail_count = sum(user.get("_detail_fetched") is True for user in users)
+        metrics.ise_tacacs_internal_user_detail_coverage.set(
+            detail_count / len(selected) if selected else 1.0)
 
+        review_days = max(1, getattr(cfg, "tacacs_unused_account_days", 180))
+        cutoff = datetime.now(timezone.utc).timestamp() - review_days * 86400
         for user in users:
             username = str(user.get("name") or "unknown")
             enabled = normalize_bool_label(user.get("enabled"))
@@ -112,20 +127,23 @@ def collect(client, cfg):
                 change_password=normalize_bool_label(user.get("changePassword")),
                 identity_store=str(user.get("passwordIDStore") or "unknown"),
             ).set(1)
+            password_never_expires = normalize_bool_label(user.get("passwordNeverExpires"))
+            if enabled == "true" and password_never_expires == "true":
+                metrics.ise_tacacs_internal_user_hygiene_risk.labels(
+                    username=username, risk="password_never_expires").set(1)
+            if normalize_bool_label(user.get("changePassword")) == "true":
+                metrics.ise_tacacs_internal_user_hygiene_risk.labels(
+                    username=username, risk="change_password_required").set(1)
             for field, metric in (
                     ("dateCreated", metrics.ise_tacacs_internal_user_created_timestamp),
                     ("dateModified", metrics.ise_tacacs_internal_user_modified_timestamp)):
                 timestamp = _timestamp(user.get(field))
                 if timestamp is not None:
                     metric.labels(username=username).set(timestamp)
-
-        total_policy_hits = sum(_hit_count(policy_set) for policy_set in policy_sets)
-        if policy_sets and total_policy_hits == 0:
-            for user in users:
-                if normalize_bool_label(user.get("enabled")) == "true":
-                    metrics.ise_tacacs_suspected_unused_internal_user.labels(
-                        username=str(user.get("name") or "unknown"),
-                        reason="no_device_admin_policy_hits").set(1)
+            modified = _timestamp(user.get("dateModified"))
+            if enabled == "true" and modified is not None and modified < cutoff:
+                metrics.ise_tacacs_suspected_unused_internal_user.labels(
+                    username=username, reason=f"object_not_modified_{review_days}d").set(1)
 
         for policy_set in policy_sets:
             metrics.ise_tacacs_policy_set_hits.labels(

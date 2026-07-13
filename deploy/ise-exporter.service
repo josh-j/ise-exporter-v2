@@ -8,6 +8,7 @@ Type=simple
 User=ise-exporter
 Group=ise-exporter
 Environment=ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE=/var/lib/ise-exporter/endpoint-attributes-cache.json
+Environment=SESSION_DETAIL_CACHE_FILE=/var/lib/ise-exporter/session-details-cache.json
 EnvironmentFile=/etc/ise-exporter/ise-exporter.env
 ExecStart=/opt/ise-exporter/.venv/bin/ise-exporter
 Restart=on-failure
