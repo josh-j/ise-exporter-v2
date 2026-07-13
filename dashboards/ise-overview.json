@@ -178,7 +178,7 @@
       "id": 13, "type": "timeseries", "title": "Scrape Error Rate",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_scrape_errors_total[5m])) by (collector, error_type)", "legendFormat": "{{collector}} / {{error_type}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_scrape_errors_total[5m])) by (collector, error_type) or vector(0)", "legendFormat": "{{collector}} / {{error_type}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi" } }
     },
@@ -186,7 +186,7 @@
       "id": 14, "type": "timeseries", "title": "API Error Rate",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_api_errors_total[5m])) by (api, error_type, http_code)", "legendFormat": "{{api}} {{error_type}} {{http_code}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_api_errors_total[5m])) by (api, error_type, http_code) or vector(0)", "legendFormat": "{{api}} {{error_type}} {{http_code}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi" } }
     },

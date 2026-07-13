@@ -1,0 +1,170 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Cisco ISE API - Task Service",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://10.81.0.10:443",
+      "description": "Inferred Url"
+    }
+  ],
+  "tags": [
+    {
+      "name": "task-api-controller",
+      "description": "the task API"
+    }
+  ],
+  "paths": {
+    "/api/v1/task": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "get all task status",
+        "operationId": "getAllTaskStatus",
+        "responses": {
+          "200": {
+            "description": "List of task within 24 hours",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "exampleSetFlag": true,
+                  "items": {
+                    "$ref": "#/components/schemas/TaskStatus",
+                    "exampleSetFlag": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/task/{taskId}": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Monitor task status",
+        "operationId": "getTaskStatus",
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "description": "The id of the task executed before",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "task Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatus",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "title": "Error",
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "exampleSetFlag": true
+          },
+          "message": {
+            "type": "string",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "TaskStatus": {
+        "title": "TaskStatus",
+        "type": "object",
+        "properties": {
+          "detailStatus": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "object",
+              "exampleSetFlag": false
+            }
+          },
+          "executionStatus": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "failCount": {
+            "type": "integer",
+            "format": "int32",
+            "exampleSetFlag": true
+          },
+          "id": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "moduleType": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "resourcesCount": {
+            "type": "integer",
+            "format": "int32",
+            "exampleSetFlag": true
+          },
+          "startTime": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "successCount": {
+            "type": "integer",
+            "format": "int32",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      }
+    }
+  }
+}

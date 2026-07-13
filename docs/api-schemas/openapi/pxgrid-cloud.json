@@ -1,0 +1,692 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Cisco ISE API - pxGrid Cloud",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://10.81.0.10:443",
+      "description": "Inferred Url"
+    }
+  ],
+  "tags": [
+    {
+      "name": "pxgrid-api-controller",
+      "description": "the pxgrid API"
+    }
+  ],
+  "paths": {
+    "/api/v1/pxgrid/cloud/activation-url": {
+      "get": {
+        "tags": [
+          "pxGrid Cloud"
+        ],
+        "summary": "Get activation URL",
+        "description": "Returns the activation URL which can be used to activate the current Cisco ISE deployment with pxGrid Cloud.",
+        "operationId": "getActivationUrl",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivationUrlDetailsResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/pxgrid/cloud/enroll": {
+      "delete": {
+        "tags": [
+          "pxGrid Cloud"
+        ],
+        "summary": "Unenroll Cisco ISE from pxGrid Cloud",
+        "description": "Unenrolls the current Cisco ISE deployment from pxGrid Cloud and cleans up the enrollment data.",
+        "operationId": "unenrollIse",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnenrollResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnenrollResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized."
+          },
+          "403": {
+            "description": "Forbidden."
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/pxgrid/cloud/enroll/{hostname}": {
+      "post": {
+        "tags": [
+          "pxGrid Cloud"
+        ],
+        "summary": "Enroll Cisco ISE with pxGrid Cloud",
+        "description": "Enrolls the current Cisco ISE deployment with pxGrid Cloud. If there is a single cloud account associated with the user, then API completes the enrollment. If there are multiple cloud accounts associated, then API will return the list of tenants in the response. For such case, call the API again with the cloud account to which Cisco ISE should be enrolled to.",
+        "operationId": "enrollIse",
+        "parameters": [
+          {
+            "name": "hostname",
+            "in": "path",
+            "description": "Cisco ISE node where pxGrid Cloud has to be enrolled.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRegistrationInfo",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentDetailsResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/pxgrid/cloud/enrollment-info": {
+      "get": {
+        "tags": [
+          "pxGrid Cloud"
+        ],
+        "summary": "Get the enrolled device information",
+        "description": "Returns the pxGrid Cloud enrollment information for the current Cisco ISE deployment.",
+        "operationId": "getEnrolledDeviceInfo",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrolledDeviceDetailsResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/pxgrid/cloud/regions": {
+      "get": {
+        "tags": [
+          "pxGrid Cloud"
+        ],
+        "summary": "Get the list of pxGrid Cloud regions",
+        "description": "Returns the list of pxGrid Cloud regions.",
+        "operationId": "getRegions",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegionsResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActivationUrlDetails": {
+        "title": "ActivationUrlDetails",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Activation URL.",
+            "example": "https://id.cisco.com/activate?user_code=FQPJQLLM",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "ActivationUrlDetailsResponse": {
+        "title": "ActivationUrlDetailsResponse",
+        "required": [
+          "response",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "response": {
+            "$ref": "#/components/schemas/ActivationUrlDetails",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "description": "API version.",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "DeviceRegistrationInfo": {
+        "title": "DeviceRegistrationInfo",
+        "required": [
+          "hostConfigInfo"
+        ],
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "description": "Account identifier.",
+            "example": "599f76ed-6bd6-4182-9cd9-06d9c15a14dc",
+            "exampleSetFlag": true
+          },
+          "description": {
+            "type": "string",
+            "description": "Description for the registered device.",
+            "example": "ise-777",
+            "exampleSetFlag": true
+          },
+          "hostConfigInfo": {
+            "$ref": "#/components/schemas/HostConfigInfo",
+            "exampleSetFlag": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the device while will be registered",
+            "example": "ise-777",
+            "exampleSetFlag": true
+          },
+          "region": {
+            "type": "string",
+            "description": "Selected region name in which device has to be registered.",
+            "example": "us-west-2",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "EnrolledDeviceDetails": {
+        "title": "EnrolledDeviceDetails",
+        "required": [
+          "deviceName",
+          "enrollmentStatus",
+          "nodeCount",
+          "region"
+        ],
+        "type": "object",
+        "properties": {
+          "accountName": {
+            "type": "string",
+            "description": "Name of the account.",
+            "example": "tenantName",
+            "exampleSetFlag": true
+          },
+          "activeNode": {
+            "type": "string",
+            "description": "ISE node on which pxGrid Cloud connection is active.",
+            "example": "ise-node-1",
+            "exampleSetFlag": true
+          },
+          "cloudConnectionStatus": {
+            "type": "string",
+            "description": "Status of the connection with pxGrid Cloud.",
+            "exampleSetFlag": true,
+            "enum": [
+              "CONNECTED",
+              "DISCONNECTED",
+              "NOT_CONNECTED",
+              "UNKNOWN"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the enrolled device.",
+            "example": "ise-777",
+            "exampleSetFlag": true
+          },
+          "deviceName": {
+            "type": "string",
+            "description": "Name of the enrolled device.",
+            "example": "ise-777",
+            "exampleSetFlag": true
+          },
+          "enrollmentStatus": {
+            "type": "string",
+            "description": "Enrollment status for the device.",
+            "exampleSetFlag": true,
+            "enum": [
+              "delete-failed",
+              "deleting",
+              "enrolled",
+              "pending",
+              "stale",
+              "un-enrolled"
+            ]
+          },
+          "nodeCount": {
+            "type": "integer",
+            "description": "Number of nodes on which pxGrid Cloud is enabled.",
+            "format": "int32",
+            "example": 1,
+            "exampleSetFlag": true
+          },
+          "pxGridConnectionStatus": {
+            "type": "string",
+            "description": "Status of the connection with ISE pxGrid.",
+            "exampleSetFlag": true,
+            "enum": [
+              "CONNECTED",
+              "DISCONNECTED",
+              "NOT_CONNECTED",
+              "UNKNOWN"
+            ]
+          },
+          "region": {
+            "type": "string",
+            "description": "Region under which the device is enrolled.",
+            "example": "us-west-2",
+            "exampleSetFlag": true
+          },
+          "standbyNode": {
+            "type": "string",
+            "description": "ISE node on which pxGrid Cloud connection is on standby.",
+            "example": "ise-node-2",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "EnrolledDeviceDetailsResponse": {
+        "title": "EnrolledDeviceDetailsResponse",
+        "required": [
+          "response",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "response": {
+            "$ref": "#/components/schemas/EnrolledDeviceDetails",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "description": "API version.",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "EnrollmentAccount": {
+        "title": "EnrollmentAccount",
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "description": "Account identifier.",
+            "example": "599f76ed-6bd6-4182-9cd9-06d9c15a14dc",
+            "exampleSetFlag": true
+          },
+          "accountName": {
+            "type": "string",
+            "description": "Account name.",
+            "example": "Production Account",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "EnrollmentDetails": {
+        "title": "EnrollmentDetails",
+        "type": "object",
+        "properties": {
+          "accounts": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/EnrollmentAccount",
+              "exampleSetFlag": false
+            }
+          },
+          "responseType": {
+            "type": "string",
+            "description": "If there is a single cloud account associated with the user, then this value will be `TOKEN` and `data` attribute will have the token information. If there are multiple accounts associated, then this value will be `SELECT_TOKEN` and `accounts` attribute will have the list of accounts.",
+            "exampleSetFlag": true,
+            "enum": [
+              "SELECT_TENANT",
+              "TOKEN"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "activated",
+              "authorization_pending",
+              "registered"
+            ]
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "EnrollmentDetailsResponse": {
+        "title": "EnrollmentDetailsResponse",
+        "required": [
+          "response",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "response": {
+            "$ref": "#/components/schemas/EnrollmentDetails",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "description": "API version.",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "Error": {
+        "title": "Error",
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "arguments": {
+            "type": "array",
+            "description": "List of error arguments which can be used to replace dynamic fields when API fails.",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false
+            }
+          },
+          "code": {
+            "type": "string",
+            "description": "Unique error code when an API fails.",
+            "example": "pxcloud.unenroll.conflict.error",
+            "exampleSetFlag": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Error message when an API fails.",
+            "example": "ISE is already un-enrolled from cloud.",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Error details",
+        "exampleSetFlag": false
+      },
+      "HostConfigInfo": {
+        "title": "HostConfigInfo",
+        "type": "object",
+        "properties": {
+          "ipAddress": {
+            "type": "string",
+            "description": "IP address of the host.",
+            "example": "10.104.240.60",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Details of the ISE node on which pxGrid Cloud has to be enabled.",
+        "exampleSetFlag": false
+      },
+      "Region": {
+        "title": "Region",
+        "type": "object",
+        "properties": {
+          "fqdn": {
+            "type": "string",
+            "description": "Fully qualified domain name.",
+            "example": "neoffers.cisco.com",
+            "exampleSetFlag": true
+          },
+          "id": {
+            "type": "string",
+            "description": "Id of the region.",
+            "example": "us-west-2",
+            "exampleSetFlag": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of region.",
+            "example": "us-west-2",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "RegionsResponse": {
+        "title": "RegionsResponse",
+        "required": [
+          "response",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/Region",
+              "exampleSetFlag": false
+            }
+          },
+          "version": {
+            "type": "string",
+            "description": "API version.",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "UnenrollResponse": {
+        "title": "UnenrollResponse",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Message indicating the status of unenroll request.",
+            "example": "Unenroll request is accepted.",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Response for unenroll API",
+        "exampleSetFlag": false
+      }
+    }
+  }
+}

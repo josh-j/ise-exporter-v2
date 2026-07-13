@@ -329,32 +329,26 @@
     },
     {
       "id": 51, "type": "table", "title": "Auth Status by NAD",
-      "description": "Every NAD in scope with its passed + failed endpoint counts (outer join, so a NAD with only failures still shows). Sort by Failed to find where to look first; the Passed column gives scale — 50 failed / 5000 passed is different from 50 failed / 2 passed.",
+      "description": "Every NAD in scope with passed and failed endpoint counts. A single bounded query is pivoted by status, so NADs with only one status still show without a cross-query outer join.",
       "gridPos": { "h": 14, "w": 24, "x": 0, "y": 49 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (nad_hostname, location, ops_owner) (ise_session_status_endpoints{status=\"failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"})", "format": "table", "instant": true, "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (nad_hostname, location, ops_owner) (ise_session_status_endpoints{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"})", "format": "table", "instant": true, "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (nad_hostname, status) (ise_session_status_endpoints{ops_owner=~\"$ops_owner\", location=~\"$location\"})", "format": "table", "instant": true, "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "filterable": true }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "Failed" }, "properties": [
+          { "matcher": { "id": "byName", "options": "failed" }, "properties": [
             { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient" } },
             { "id": "min", "value": 0 },
             { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 20 }] } }
           ] },
-          { "matcher": { "id": "byName", "options": "Passed" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-text" } }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+          { "matcher": { "id": "byName", "options": "passed" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-text" } }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
         ]
       },
-      "options": { "cellHeight": "sm", "showHeader": true, "footer": { "show": true, "countRows": true }, "sortBy": [{ "displayName": "Failed", "desc": true }] },
+      "options": { "cellHeight": "sm", "showHeader": true, "footer": { "show": true, "countRows": true }, "sortBy": [{ "displayName": "failed", "desc": true }] },
       "transformations": [
-        { "id": "joinByField", "options": { "byField": "nad_hostname", "mode": "outer" } },
-        { "id": "organize", "options": {
-          "excludeByName": { "Time 1": true, "Time 2": true, "__name__ 1": true, "__name__ 2": true, "instance 1": true, "instance 2": true, "job 1": true, "job 2": true, "location 2": true, "ops_owner 2": true },
-          "indexByName": { "nad_hostname": 0, "location 1": 1, "ops_owner 1": 2, "Value #A": 3, "Value #B": 4 },
-          "renameByName": { "nad_hostname": "NAD", "location 1": "Location", "ops_owner 1": "Ops Owner", "Value #A": "Failed", "Value #B": "Passed" }
-        } }
+        { "id": "groupingToMatrix", "options": { "columnField": "status", "rowField": "nad_hostname", "valueField": "Value", "emptyValue": "zero" } }
       ]
     },
     {

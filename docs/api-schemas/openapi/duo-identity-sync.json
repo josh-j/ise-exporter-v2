@@ -1,0 +1,1416 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Cisco ISE API - Duo Identity Sync",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://10.81.0.10:443",
+      "description": "Inferred Url"
+    }
+  ],
+  "tags": [
+    {
+      "name": "duo-identitysync-api-controller",
+      "description": "the duo-identitysync API"
+    }
+  ],
+  "paths": {
+    "/api/v1/duo-identitysync/activedirectories": {
+      "get": {
+        "tags": [
+          "ActiveDirectories"
+        ],
+        "summary": "Get the list of all configured Active Directories",
+        "description": "Duo Identity Sync - Get the list of all configured Active Directories",
+        "operationId": "getActiveDirectories",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of all configured Active Directories",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "exampleSetFlag": true,
+                  "items": {
+                    "$ref": "#/components/schemas/ActiveDirectory",
+                    "exampleSetFlag": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "The specified resource was not found / MFA feature is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/duo-identitysync/adgroups/{activeDirectory}": {
+      "get": {
+        "tags": [
+          "ADGroups"
+        ],
+        "summary": "Get the list of all AD groups for the specified Active Directory",
+        "description": "Duo Identity Sync -  Get the list of all AD groups for the specified Active Directory",
+        "operationId": "getAdgroups",
+        "parameters": [
+          {
+            "name": "activeDirectory",
+            "in": "path",
+            "description": "List of AD groups for the specified Active Directory",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of all AD groups for the specified Active Directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "exampleSetFlag": true,
+                  "items": {
+                    "$ref": "#/components/schemas/AdG",
+                    "exampleSetFlag": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "The specified resource was not found / MFA feature is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/duo-identitysync/identitysync": {
+      "get": {
+        "tags": [
+          "Duo-IdentitySync"
+        ],
+        "summary": "Get the list of all Identity Sync configurations",
+        "description": "Duo Identity Sync - Get the list of all Identity Sync configurations",
+        "operationId": "getIdentitysync",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of all Identity Sync configurations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitysyncGetAllResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "The specified resource was not found / MFA feature is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Duo-IdentitySync"
+        ],
+        "summary": "Create a new Identity Sync configuration",
+        "description": "Duo Identity Sync - Create a new Identity Sync configuration",
+        "operationId": "createIdentitysync",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentitysyncInfo",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Successfully created a new IdnetitySync config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "The specified resource was not found / MFA feature is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/duo-identitysync/identitysync/status/{syncName}": {
+      "put": {
+        "tags": [
+          "Duo-IdentitySync"
+        ],
+        "summary": "Update Identity Sync Status",
+        "description": "Duo Identity Sync - update the Sync Status of the Identity Sync specified in the syncName.",
+        "operationId": "updateStatus",
+        "parameters": [
+          {
+            "name": "syncName",
+            "in": "path",
+            "description": "Sync connection to be updated",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncUpdate",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "update Identity Sync",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/duo-identitysync/identitysync/sync/cancel/{syncName}": {
+      "post": {
+        "tags": [
+          "Duo-IdentitySync"
+        ],
+        "summary": "Cancel the Sync between the ActiveDirectory and the MFA Provider",
+        "description": "Cancel the sync between the Active Directory and the corresponding MFA provider associated with this Identity Sync config.",
+        "operationId": "cancelSync",
+        "parameters": [
+          {
+            "name": "syncName",
+            "in": "path",
+            "description": "Name of the Identity Sync configuration used to cancel sync.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sync Pending Cancellation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "The specified resource was not found / MFA feature is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/duo-identitysync/identitysync/sync/{syncName}": {
+      "post": {
+        "tags": [
+          "Duo-IdentitySync"
+        ],
+        "summary": "Initiate the Sync between the ActiveDirectory and the MFA Provider",
+        "description": "Initiate the sync between the Active Directory and the corresponding MFA provider associated with this Identity Sync config.",
+        "operationId": "sync",
+        "parameters": [
+          {
+            "name": "syncName",
+            "in": "path",
+            "description": "Name of the Identity Sync configuration used to initiate sync.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sync in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "The specified resource was not found / MFA feature is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/duo-identitysync/identitysync/{syncName}": {
+      "get": {
+        "tags": [
+          "Duo-IdentitySync"
+        ],
+        "summary": "Get the specified Identity Sync config",
+        "description": "Duo Identity Sync - Get the Identity Sync config specified in the syncName",
+        "operationId": "getIdentitysyncBySyncName",
+        "parameters": [
+          {
+            "name": "syncName",
+            "in": "path",
+            "description": "This name is used to update, delete or retrieve the specific Identity Sync config.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Identity Sync config info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitysyncGetResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "The specified resource was not found / MFA feature is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Duo-IdentitySync"
+        ],
+        "summary": "Update the specified Identity Sync configuration",
+        "description": "Duo-Identity Sync - Update the Identity Sync configuration specified in the syncName.",
+        "operationId": "updateIdentitysyncBySyncName",
+        "parameters": [
+          {
+            "name": "syncName",
+            "in": "path",
+            "description": "This name is used to update, delete or retrieve the specific Identity Sync config.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentitysyncInfo",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successfully updated the Identity Sync config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "The specified resource was not found / MFA feature is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Duo-IdentitySync"
+        ],
+        "summary": "Delete the specified Identity Sync configuration",
+        "description": "Duo-Identity Sync - Delete the Identity Sync configuration specified in the syncName.",
+        "operationId": "deleteIdentitySyncBySyncName",
+        "parameters": [
+          {
+            "name": "syncName",
+            "in": "path",
+            "description": "This name is used to update, delete or retrieve the specific Identity Sync config.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully deleted the Identity Sync config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "The specified resource was not found / MFA feature is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActiveDirectory": {
+        "title": "ActiveDirectory",
+        "type": "object",
+        "properties": {
+          "directoryID": {
+            "type": "string",
+            "description": "Active Directory ID",
+            "example": "406dwor2-odpw-45nh-387w-spe129d5y345",
+            "exampleSetFlag": true
+          },
+          "domain": {
+            "type": "string",
+            "description": "Active Directory domain name",
+            "example": "test.com",
+            "exampleSetFlag": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the Active Directory",
+            "example": "ActiveDirectory1",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Active Directory information format",
+        "exampleSetFlag": false
+      },
+      "AdG": {
+        "title": "AdG",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Active Directory Group ID",
+            "example": "1y568sg7823fgs7",
+            "exampleSetFlag": true
+          },
+          "source": {
+            "type": "string",
+            "description": "Source of the Active Directory Group",
+            "example": "ActiveDirectory1",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Active Directory Group configuration format",
+        "exampleSetFlag": false
+      },
+      "AdGroup": {
+        "title": "AdGroup",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Active Directory Group ID",
+            "example": "1y568sg7823fgs7",
+            "exampleSetFlag": true
+          },
+          "sid": {
+            "type": "string",
+            "description": "Active Directory Group Security Identifier (SID)",
+            "example": "r1.com/S-1-5-32-545",
+            "exampleSetFlag": true
+          },
+          "source": {
+            "type": "string",
+            "description": "Source of the Active Directory Group",
+            "example": "ActiveDirectory1",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Active Directory Group information",
+        "exampleSetFlag": false
+      },
+      "DuoUser": {
+        "title": "DuoUser",
+        "type": "object",
+        "properties": {
+          "directoryname": {
+            "type": "string",
+            "description": "active directory that duo user is contained in",
+            "example": "ActiveDirectory1",
+            "exampleSetFlag": true
+          },
+          "email": {
+            "type": "string",
+            "description": "email of Duo user",
+            "example": "testuser@test.com",
+            "exampleSetFlag": true
+          },
+          "firstname": {
+            "type": "string",
+            "description": "first name of Duo user",
+            "example": "Test",
+            "exampleSetFlag": true
+          },
+          "groupname": {
+            "type": "string",
+            "description": "acrive directory group that duo user is contained in",
+            "example": "AcriveDirectoryGroup1",
+            "exampleSetFlag": true
+          },
+          "lastname": {
+            "type": "string",
+            "description": "last name of duo user",
+            "example": "User",
+            "exampleSetFlag": true
+          },
+          "notes": {
+            "type": "string",
+            "description": "notes of Duo user",
+            "example": "This is a Duo User",
+            "exampleSetFlag": true
+          },
+          "realname": {
+            "type": "string",
+            "description": "realname of Duo user",
+            "example": "Test User",
+            "exampleSetFlag": true
+          },
+          "status": {
+            "type": "string",
+            "description": "status of Duo user",
+            "example": "Active",
+            "exampleSetFlag": true
+          },
+          "username": {
+            "type": "string",
+            "description": "username of Duo user",
+            "example": "testduouser",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "User to be synced to Duo",
+        "exampleSetFlag": false
+      },
+      "Error": {
+        "title": "Error",
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "400",
+            "exampleSetFlag": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Bad Request",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "IdentitysyncGetAllInfo": {
+        "title": "IdentitysyncGetAllInfo",
+        "type": "object",
+        "properties": {
+          "adGroups": {
+            "type": "integer",
+            "description": "Number of Active Directory Groups",
+            "format": "int32",
+            "example": 20,
+            "exampleSetFlag": true
+          },
+          "destination": {
+            "type": "string",
+            "description": "Destination of Identity Sync (Mfa Provider)",
+            "example": "DuoConnection",
+            "exampleSetFlag": true
+          },
+          "lastSync": {
+            "type": "string",
+            "description": "Time of the last Sync",
+            "example": "2022-02-10T09:00:00",
+            "exampleSetFlag": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the Identity Sync configuration",
+            "example": "ADsync",
+            "exampleSetFlag": true
+          },
+          "source": {
+            "type": "string",
+            "description": "Source of the Identity Sync (Active Directory)",
+            "example": "ActiveDirectory",
+            "exampleSetFlag": true
+          },
+          "syncStatus": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "Cancelled",
+              "Failed",
+              "In Progress",
+              "Pending Cancellation",
+              "Success"
+            ]
+          }
+        },
+        "description": "List of all Identity Sync configurations",
+        "exampleSetFlag": false
+      },
+      "IdentitysyncGetAllResponse": {
+        "title": "IdentitysyncGetAllResponse",
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/IdentitysyncGetAllInfo",
+              "exampleSetFlag": false
+            }
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "List of all Identity Sync configurations",
+        "exampleSetFlag": false
+      },
+      "IdentitysyncGetInfo": {
+        "title": "IdentitysyncGetInfo",
+        "type": "object",
+        "properties": {
+          "identitySync": {
+            "$ref": "#/components/schemas/IdentitysyncGetInfoIdentitySync",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Identity Sync configuration information",
+        "exampleSetFlag": false
+      },
+      "IdentitysyncGetInfoIdentitySync": {
+        "title": "IdentitysyncGetInfoIdentitySync",
+        "type": "object",
+        "properties": {
+          "adGroups": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/AdGroup",
+              "exampleSetFlag": false
+            }
+          },
+          "configurations": {
+            "$ref": "#/components/schemas/IdentitysyncInfoIdentitySyncConfigurations",
+            "exampleSetFlag": true
+          },
+          "lastSync": {
+            "type": "string",
+            "description": "Time of the last Sync",
+            "example": "2022-02-10T09:00:00",
+            "exampleSetFlag": true
+          },
+          "syncName": {
+            "type": "string",
+            "description": "Name of the Identity Sync config",
+            "example": "ADSync",
+            "exampleSetFlag": true
+          },
+          "syncSchedule": {
+            "$ref": "#/components/schemas/SyncSchedule",
+            "exampleSetFlag": true
+          },
+          "syncStatus": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "Cancelled",
+              "Failed",
+              "In Progress",
+              "Pending Cancellation",
+              "Success"
+            ]
+          }
+        },
+        "description": "Identity Sync configuration",
+        "exampleSetFlag": false
+      },
+      "IdentitysyncGetResponse": {
+        "title": "IdentitysyncGetResponse",
+        "type": "object",
+        "properties": {
+          "response": {
+            "$ref": "#/components/schemas/IdentitysyncGetInfo",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Identity Sync configuration",
+        "exampleSetFlag": false
+      },
+      "IdentitysyncInfo": {
+        "title": "IdentitysyncInfo",
+        "type": "object",
+        "properties": {
+          "identitySync": {
+            "$ref": "#/components/schemas/IdentitysyncInfoIdentitySync",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Identity Sync information format",
+        "exampleSetFlag": false
+      },
+      "IdentitysyncInfoIdentitySync": {
+        "title": "IdentitysyncInfoIdentitySync",
+        "type": "object",
+        "properties": {
+          "adGroups": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/AdG",
+              "exampleSetFlag": false
+            }
+          },
+          "configurations": {
+            "$ref": "#/components/schemas/IdentitysyncInfoIdentitySyncConfigurations",
+            "exampleSetFlag": true
+          },
+          "lastSync": {
+            "type": "string",
+            "description": "Time of the last Sync",
+            "example": "2022-02-10T09:00:00",
+            "exampleSetFlag": true
+          },
+          "syncName": {
+            "type": "string",
+            "description": "Name of the Identity Sync configuration",
+            "example": "ADSync",
+            "exampleSetFlag": true
+          },
+          "syncSchedule": {
+            "$ref": "#/components/schemas/SyncSchedule",
+            "exampleSetFlag": true
+          },
+          "syncStatus": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "Cancelled",
+              "Failed",
+              "In Progress",
+              "Pending Cancellation",
+              "Success"
+            ]
+          }
+        },
+        "description": "Identity Sync config information format",
+        "exampleSetFlag": false
+      },
+      "IdentitysyncInfoIdentitySyncConfigurations": {
+        "title": "IdentitysyncInfoIdentitySyncConfigurations",
+        "type": "object",
+        "properties": {
+          "activeDirectories": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/ActiveDirectory",
+              "exampleSetFlag": false
+            }
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "SyncError": {
+        "title": "SyncError",
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Reason user failed sync",
+            "example": "Missing username",
+            "exampleSetFlag": true
+          },
+          "user": {
+            "$ref": "#/components/schemas/DuoUser",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "User sync fail format",
+        "exampleSetFlag": false
+      },
+      "SyncSchedule": {
+        "title": "SyncSchedule",
+        "type": "object",
+        "properties": {
+          "interval": {
+            "type": "integer",
+            "description": "Frequency of the sync schedule",
+            "format": "int32",
+            "example": 1,
+            "exampleSetFlag": true
+          },
+          "intervalUnit": {
+            "type": "string",
+            "description": "Unit of the time interval",
+            "exampleSetFlag": true,
+            "enum": [
+              "days",
+              "hours",
+              "weeks"
+            ]
+          },
+          "schedulerSync": {
+            "type": "string",
+            "description": "Type of Sync Schedule - If \"Recurring\", please specify schedule details",
+            "exampleSetFlag": true,
+            "enum": [
+              "none",
+              "recurring"
+            ]
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Start date and start time of the sync schedule",
+            "example": "2022-09-19T09:00:00",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "SyncUpdate": {
+        "title": "SyncUpdate",
+        "type": "object",
+        "properties": {
+          "errorList": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/SyncError",
+              "exampleSetFlag": false
+            }
+          },
+          "status": {
+            "type": "string",
+            "description": "status of sync",
+            "example": "Success",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Identity Sync Update Format",
+        "exampleSetFlag": false
+      }
+    }
+  }
+}

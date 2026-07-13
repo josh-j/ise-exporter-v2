@@ -9,6 +9,7 @@ status / failure-reason / auth-method / authz-profile / matched-rule / policy-se
 The matched-rule and policy-set come from other_attr_string and are the ground-truth
 open-mode vs closed-mode signal."""
 import logging
+import math
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
@@ -16,7 +17,7 @@ from .. import metrics
 from ..util import (clear_metric, clear_metric_where, normalize_mac,
                     normalize_location, parse_other_attr_string, normalize_posture,
                     parse_posture_report, normalize_agent_version, first_nonempty,
-                    SECURECLIENT_VERSION_KEYS, POSTURE_REPORT_KEYS)
+                    parse_step_latencies, SECURECLIENT_VERSION_KEYS, POSTURE_REPORT_KEYS)
 from . import observe, CollectorFailed, stream_active, pxgrid_endpoints_present
 from .devices import nad_labels
 
@@ -44,6 +45,8 @@ _UNIQUE_ENDPOINT_METRICS = (
 ) + _STREAM_OWNED
 
 _cache = None
+_observed_recent_auth_ids = {}
+_MAX_OBSERVED_RECENT_AUTHS = 10000
 
 
 def _detail_cache(cfg):
@@ -101,6 +104,48 @@ def _emit_unique(metric, accumulator, first_label):
     for (first, nad, loc, owner), macs in accumulator.items():
         metric.labels(**{first_label: first, "nad_hostname": nad,
                          "location": loc, "ops_owner": owner}).set(len(macs))
+
+
+def _milliseconds(value):
+    try:
+        milliseconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    return milliseconds / 1000.0 if milliseconds >= 0 and math.isfinite(milliseconds) else None
+
+
+def _observe_latency(detail, other, nad, loc, owner):
+    """Observe one freshly fetched authentication's total, client, and step timing."""
+    status = ("passed" if detail.get("passed", "").lower() == "true"
+              else "failed" if detail.get("failed", "").lower() == "true"
+              else "unknown")
+    psn = (detail.get("acs_server") or "unknown").strip() or "unknown"
+    total = _milliseconds(other.get("TotalAuthenLatency"))
+    if total is not None:
+        metrics.ise_radius_auth_latency_seconds.labels(
+            nad_hostname=nad, location=loc, ops_owner=owner, status=status
+        ).observe(total)
+        metrics.ise_radius_auth_latency_by_psn_seconds.labels(
+            psn=psn, status=status).observe(total)
+    client = _milliseconds(other.get("ClientLatency"))
+    if client is not None:
+        metrics.ise_radius_client_latency_seconds.labels(
+            psn=psn, status=status).observe(client)
+    for step_code, latency in parse_step_latencies(
+            detail.get("execution_steps"), other.get("StepLatency")):
+        metrics.ise_radius_step_latency_seconds.labels(
+            psn=psn, step_code=step_code, status=status).observe(latency)
+
+
+def _observe_recent_latency_once(detail, other, nad, loc, owner):
+    """Observe Live Log latency once per auth transaction despite repeated polling."""
+    auth_id = str(detail.get("auth_id") or detail.get("cpmsession_id") or "").strip()
+    if not auth_id or auth_id in _observed_recent_auth_ids:
+        return
+    _observe_latency(detail, other, nad, loc, owner)
+    _observed_recent_auth_ids[auth_id] = None
+    while len(_observed_recent_auth_ids) > _MAX_OBSERVED_RECENT_AUTHS:
+        _observed_recent_auth_ids.pop(next(iter(_observed_recent_auth_ids)))
 
 
 def collect(client, cfg, mappings, active_list=_UNSET):
@@ -218,14 +263,8 @@ def collect(client, cfg, mappings, active_list=_UNSET):
             # fetch so each authentication is sampled once — a Histogram is cumulative, so
             # re-observing a cache hit every scrape would inflate _count/_sum. status mirrors
             # ise_session_status_endpoints so latency panels can split passed vs failed.
-            lat_ms = other.get("TotalAuthenLatency", "")
-            if mac in newly_fetched and lat_ms.isdigit():
-                lat_status = ("passed" if detail.get("passed", "").lower() == "true"
-                              else "failed" if detail.get("failed", "").lower() == "true"
-                              else "unknown")
-                metrics.ise_radius_auth_latency_seconds.labels(
-                    nad_hostname=nad, location=loc, ops_owner=owner, status=lat_status
-                ).observe(int(lat_ms) / 1000.0)
+            if mac in newly_fetched:
+                _observe_latency(detail, other, nad, loc, owner)
 
             # posture: top-level MnT tag first, then the other-attr string (field name
             # varies by ISE version) — normalize_posture handles empty -> NotApplicable.
@@ -264,6 +303,9 @@ def collect(client, cfg, mappings, active_list=_UNSET):
                 method = detail.get("authentication_method", "")
                 if method:
                     methods[(method,) + key].add(mac)
+                _observe_recent_latency_once(
+                    detail, parse_other_attr_string(detail.get("other_attr_string", "")),
+                    nad, loc, owner)
 
         for m in owned:
             clear_metric(m)

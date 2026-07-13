@@ -3,7 +3,7 @@ from ise_exporter.util import (normalize_mac, normalize_location,
                                parse_other_attr_string, first_nonempty,
                                normalize_posture, normalize_bool_label,
                                parse_posture_report, normalize_agent_version,
-                               clear_metric_where)
+                               parse_step_latencies, clear_metric_where)
 
 
 def test_clear_metric_where_removes_only_matching_label_slice():
@@ -32,6 +32,16 @@ def test_other_attr_string():
     d = parse_other_attr_string("ISEPolicySetName=Wired Open Mode:!:AuthorizationPolicyMatchedRule=Default")
     assert d["ISEPolicySetName"] == "Wired Open Mode"
     assert d["AuthorizationPolicyMatchedRule"] == "Default"
+
+
+def test_parse_step_latencies_pairs_positions_with_execution_codes():
+    assert parse_step_latencies(
+        "11001, 15049, 24430", "1=0;2=17;3=2") == [
+            ("11001", 0.0), ("15049", 0.017), ("24430", 0.002)]
+
+
+def test_parse_step_latencies_ignores_invalid_values_and_positions():
+    assert parse_step_latencies("11001,15049", "0=1;1=-2;2=nan;3=4;x=5") == []
 
 
 def test_first_nonempty_oui_fallback():

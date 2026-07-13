@@ -1,0 +1,1256 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Cisco ISE API - TrustSec",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://10.81.0.10:443",
+      "description": "Inferred Url"
+    }
+  ],
+  "tags": [
+    {
+      "name": "trustsec-api-controller",
+      "description": "the trustsec API"
+    }
+  ],
+  "paths": {
+    "/api/v1/trustsec/sgacl/nbarapp": {
+      "get": {
+        "tags": [
+          "NBAR Application Management"
+        ],
+        "summary": "Get all NBAR Applications",
+        "description": "Get all NBAR Applications",
+        "operationId": "getNBARAppList",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "description": "Number of objects returned per page",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "sort type - asc or desc",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true,
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "description": "sort column by which objects needs to be sorted",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "description": "<div> <style type=\"text/css\" scoped> .apiServiceTable td, .apiServiceTable th { padding: 5px 10px !important; text-align: left; } </style> <span> <b>Simple filtering</b> should be available through the filter query string parameter. The structure of a filter is a triplet of field operator and value separated with dots. More than one filter can be sent. The logical operator common to ALL filter criteria will be by default AND, and can be changed by using the <i>\"filterType=or\"</i> query string parameter. Each resource Data model description should specify if an attribute is a filtered field. </span> <br /> <table class=\"apiServiceTable\"> <thead> <tr> <th>OPERATOR</th> <th>DESCRIPTION</th> </tr> </thead> <tbody> <tr> <td>EQ</td> <td>Equals</td> </tr> <tr> <td>NEQ</td> <td>Not Equals</td> </tr> <tr> <td>GT</td> <td>Greater Than</td> </tr> <tr> <td>LT</td> <td>Less Then</td> </tr> <tr> <td>STARTSW</td> <td>Starts With</td> </tr> <tr> <td>NSTARTSW</td> <td>Not Starts With</td> </tr> <tr> <td>ENDSW</td> <td>Ends With</td> </tr> <tr> <td>NENDSW</td> <td>Not Ends With</td> </tr> <tr> <td>CONTAINS</td> <td>Contains</td> </tr> <tr> <td>NCONTAINS</td> <td>Not Contains</td> </tr> </tbody> </table> </div>",
+            "required": false,
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "filterType",
+            "in": "query",
+            "description": "The logical operator common to ALL filter criteria will be by default AND, and can be changed by using the parameter",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true,
+              "enum": [
+                "AND",
+                "OR"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of NBAR Applications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NBARAppResult",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "NBAR Application Management"
+        ],
+        "summary": "Create NBAR application",
+        "description": "Create NBAR application",
+        "operationId": "createNBARApp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NBARApp",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdObject",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdObject",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trustsec/sgacl/nbarapp/{id}": {
+      "get": {
+        "tags": [
+          "NBAR Application Management"
+        ],
+        "summary": "Get NBAR Application by id",
+        "description": "Get NBAR Application by id",
+        "operationId": "getNBARAppById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Id",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List with the specified NBAR Application",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NBARAppResult",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "NBAR Application Management"
+        ],
+        "summary": "Update NBAR Application",
+        "description": "Update NBAR Application",
+        "operationId": "updateNBARApp",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Id",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NBARApp",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request was successful and the resource was updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "NBAR Application Management"
+        ],
+        "summary": "Delete NBAR Application",
+        "operationId": "deleteNBARApp",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Id",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted NBAR Application",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdObject",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trustsec/virtualnetwork": {
+      "get": {
+        "tags": [
+          "Virtual Network Management"
+        ],
+        "summary": "Get all Virtual Networks",
+        "description": "Get all Virtual Networks",
+        "operationId": "getVirtualNetworkList",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "description": "Number of objects returned per page",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "sort type - asc or desc",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true,
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "description": "sort column by which objects needs to be sorted",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "description": "<div> <style type=\"text/css\" scoped> .apiServiceTable td, .apiServiceTable th { padding: 5px 10px !important; text-align: left; } </style> <span> <b>Simple filtering</b> should be available through the filter query string parameter. The structure of a filter is a triplet of field operator and value separated with dots. More than one filter can be sent. The logical operator common to ALL filter criteria will be by default AND, and can be changed by using the <i>\"filterType=or\"</i> query string parameter. Each resource Data model description should specify if an attribute is a filtered field. </span> <br /> <table class=\"apiServiceTable\"> <thead> <tr> <th>OPERATOR</th> <th>DESCRIPTION</th> </tr> </thead> <tbody> <tr> <td>EQ</td> <td>Equals</td> </tr> <tr> <td>NEQ</td> <td>Not Equals</td> </tr> <tr> <td>GT</td> <td>Greater Than</td> </tr> <tr> <td>LT</td> <td>Less Then</td> </tr> <tr> <td>STARTSW</td> <td>Starts With</td> </tr> <tr> <td>NSTARTSW</td> <td>Not Starts With</td> </tr> <tr> <td>ENDSW</td> <td>Ends With</td> </tr> <tr> <td>NENDSW</td> <td>Not Ends With</td> </tr> <tr> <td>CONTAINS</td> <td>Contains</td> </tr> <tr> <td>NCONTAINS</td> <td>Not Contains</td> </tr> </tbody> </table> </div>",
+            "required": false,
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          },
+          {
+            "name": "filterType",
+            "in": "query",
+            "description": "The logical operator common to ALL filter criteria will be by default AND, and can be changed by using the parameter",
+            "required": false,
+            "style": "form",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true,
+              "enum": [
+                "AND",
+                "OR"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of Virtual Networks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VirtualNetworkResult",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Virtual Network Management"
+        ],
+        "summary": "Create Virtual Network",
+        "description": "Create Virtual Network",
+        "operationId": "createVirtualNetwork",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VirtualNetworkRequest",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdObject",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdObject",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trustsec/virtualnetwork/bulk/create": {
+      "post": {
+        "tags": [
+          "Virtual Network Management"
+        ],
+        "summary": "Create Virtual Network in bulk",
+        "operationId": "bulkCreateVirtualNetworks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "exampleSetFlag": true,
+                "items": {
+                  "$ref": "#/components/schemas/VirtualNetworkRequest",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "202": {
+            "description": "Task accepted -- id can be used to track the task through the task API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trustsec/virtualnetwork/bulk/delete": {
+      "post": {
+        "tags": [
+          "Virtual Network Management"
+        ],
+        "summary": "Delete Virtual Network in bulk",
+        "operationId": "bulkDeleteVirtualNetworks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "exampleSetFlag": true,
+                "items": {
+                  "type": "string",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "202": {
+            "description": "Task accepted -- id can be used to track the task through the task API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trustsec/virtualnetwork/bulk/update": {
+      "post": {
+        "tags": [
+          "Virtual Network Management"
+        ],
+        "summary": "Update Virtual Network in bulk",
+        "operationId": "bulkUpdateVirtualNetworks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "exampleSetFlag": true,
+                "items": {
+                  "$ref": "#/components/schemas/VirtualNetworkRequest",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "202": {
+            "description": "Task accepted -- id can be used to track the task through the task API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trustsec/virtualnetwork/{id}": {
+      "get": {
+        "tags": [
+          "Virtual Network Management"
+        ],
+        "summary": "Get Virtual Network by id",
+        "description": "Get Virtual Network by id",
+        "operationId": "getVirtualNetworkById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Id",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List with the specified Virtual Network",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VirtualNetworkResult",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Virtual Network Management"
+        ],
+        "summary": "Update Virtual Network",
+        "description": "Update Virtual Network",
+        "operationId": "updateVirtualNetwork",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Id",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VirtualNetworkRequest",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request was successful and the resource was updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Virtual Network Management"
+        ],
+        "summary": "Delete Virtual Network",
+        "operationId": "deleteVirtualNetwork",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Id",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted Virtual Network",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdObject",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request for this specified resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "title": "Error",
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "example": 400,
+            "exampleSetFlag": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Some error occurred",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "IdObject": {
+        "title": "IdObject",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "resource id",
+            "example": "b8e52b05-5b5c-4d1c-8022-33769738c696",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Resource Id Object",
+        "exampleSetFlag": false
+      },
+      "NBARApp": {
+        "title": "NBARApp",
+        "required": [
+          "description",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "id": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "name": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "networkIdentities": {
+            "type": "array",
+            "description": "Array of NIs",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/NetworkIdentityEx",
+              "exampleSetFlag": false
+            }
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "NBARAppResult": {
+        "title": "NBARAppResult",
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/NBARApp",
+              "exampleSetFlag": false
+            }
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "NBAR Application Result",
+        "exampleSetFlag": false
+      },
+      "NetworkIdentityEx": {
+        "title": "NetworkIdentityEx",
+        "required": [
+          "ports",
+          "protocol"
+        ],
+        "type": "object",
+        "properties": {
+          "ports": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "TaskResponse": {
+        "title": "TaskResponse",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "VirtualNetworkRequest": {
+        "title": "VirtualNetworkRequest",
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "additionalAttributes": {
+            "type": "string",
+            "description": "JSON String of additional attributes for the Virtual Network",
+            "exampleSetFlag": true
+          },
+          "id": {
+            "type": "string",
+            "description": "Identifier of the Virtual Network",
+            "example": "12345678-f0e7-456b-a2d1-876543320b17",
+            "exampleSetFlag": true
+          },
+          "lastUpdate": {
+            "type": "string",
+            "description": "Last update timestamp of the Virtual Network",
+            "readOnly": true,
+            "example": "2021-01-30T08:30:00Z",
+            "exampleSetFlag": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the Virtual Network",
+            "example": "vn1",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Virtual Network",
+        "exampleSetFlag": false
+      },
+      "VirtualNetworkResult": {
+        "title": "VirtualNetworkResult",
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "array",
+            "description": "Array of Virtual Network",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/VirtualNetworkRequest",
+              "exampleSetFlag": false
+            }
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Virtual Network Result",
+        "exampleSetFlag": false
+      }
+    }
+  }
+}

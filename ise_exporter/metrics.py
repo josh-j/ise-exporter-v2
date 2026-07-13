@@ -39,6 +39,21 @@ ise_radius_auth_latency_seconds = Histogram(
     "RADIUS authentication+authorization transaction latency (ISE TotalAuthenLatency)",
     ["nad_hostname", "location", "ops_owner", "status"],
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
+ise_radius_auth_latency_by_psn_seconds = Histogram(
+    "ise_radius_auth_latency_by_psn_seconds",
+    "RADIUS authentication+authorization transaction latency by PSN",
+    ["psn", "status"],
+    buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
+ise_radius_client_latency_seconds = Histogram(
+    "ise_radius_client_latency_seconds",
+    "Client-side latency reported by ISE",
+    ["psn", "status"],
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5])
+ise_radius_step_latency_seconds = Histogram(
+    "ise_radius_step_latency_seconds",
+    "Per-execution-step latency reported by ISE StepLatency, keyed by execution step code",
+    ["psn", "step_code", "status"],
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5])
 
 # --- posture / device trust (Secure Client) ---
 # Unique endpoints (distinct MAC) per posture status, per site/ops-owner. Populated

@@ -1,0 +1,146 @@
+[
+  {
+    "name": "Backup Restore",
+    "url": "/v3/api-docs?group=Backup Restore",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Backup Restore"
+  },
+  {
+    "name": "Certificates",
+    "url": "/v3/api-docs?group=Certificates",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Certificates"
+  },
+  {
+    "name": "CustomAttributes",
+    "url": "/v3/api-docs?group=CustomAttributes",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=CustomAttributes"
+  },
+  {
+    "name": "Dataconnect",
+    "url": "/v3/api-docs?group=Dataconnect",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Dataconnect"
+  },
+  {
+    "name": "Deployment",
+    "url": "/v3/api-docs?group=Deployment",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Deployment"
+  },
+  {
+    "name": "Duo Identity Sync",
+    "url": "/v3/api-docs?group=Duo Identity Sync",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Duo Identity Sync"
+  },
+  {
+    "name": "Endpoint Replication",
+    "url": "/v3/api-docs?group=Endpoint Replication",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Endpoint Replication"
+  },
+  {
+    "name": "Endpoints",
+    "url": "/v3/api-docs?group=Endpoints",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Endpoints"
+  },
+  {
+    "name": "FiveG",
+    "url": "/v3/api-docs?group=FiveG",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=FiveG"
+  },
+  {
+    "name": "IPsec",
+    "url": "/v3/api-docs?group=IPsec",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=IPsec"
+  },
+  {
+    "name": "Integration Catalog",
+    "url": "/v3/api-docs?group=Integration Catalog",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Integration Catalog"
+  },
+  {
+    "name": "LSD Settings",
+    "url": "/v3/api-docs?group=LSD Settings",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=LSD Settings"
+  },
+  {
+    "name": "License",
+    "url": "/v3/api-docs?group=License",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=License"
+  },
+  {
+    "name": "MFA",
+    "url": "/v3/api-docs?group=MFA",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=MFA"
+  },
+  {
+    "name": "Patch",
+    "url": "/v3/api-docs?group=Patch",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Patch"
+  },
+  {
+    "name": "Policy",
+    "url": "/v3/api-docs?group=Policy",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Policy"
+  },
+  {
+    "name": "Repository",
+    "url": "/v3/api-docs?group=Repository",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Repository"
+  },
+  {
+    "name": "SGT Reservation",
+    "url": "/v3/api-docs?group=SGT Reservation",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=SGT Reservation"
+  },
+  {
+    "name": "System Settings",
+    "url": "/v3/api-docs?group=System Settings",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=System Settings"
+  },
+  {
+    "name": "Task Service",
+    "url": "/v3/api-docs?group=Task Service",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Task Service"
+  },
+  {
+    "name": "TrustSec",
+    "url": "/v3/api-docs?group=TrustSec",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=TrustSec"
+  },
+  {
+    "name": "Upgrade",
+    "url": "/v3/api-docs?group=Upgrade",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=Upgrade"
+  },
+  {
+    "name": "pxGrid Cloud",
+    "url": "/v3/api-docs?group=pxGrid Cloud",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=pxGrid Cloud"
+  },
+  {
+    "name": "pxGrid Direct",
+    "url": "/v3/api-docs?group=pxGrid Direct",
+    "swaggerVersion": "3.0.3",
+    "location": "/v3/api-docs?group=pxGrid Direct"
+  }
+]

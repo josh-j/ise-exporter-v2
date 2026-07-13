@@ -2,6 +2,7 @@
 monolithic ise_exporter.py.)"""
 from datetime import datetime, timezone
 import logging
+import math
 import re
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,33 @@ def parse_other_attr_string(s):
         k, v = k.strip(), v.strip()
         if k and v:
             result[k] = v
+    return result
+
+
+def parse_step_latencies(execution_steps, step_latency):
+    """Pair ISE's positional ``StepLatency`` values with ``execution_steps`` codes.
+
+    ISE reports latencies as ``1=0;2=4;...`` in milliseconds while the matching
+    step codes are a comma-separated list. Malformed, negative, non-finite, and
+    out-of-range entries are ignored so a bad attribute cannot create arbitrary
+    Prometheus labels.
+    """
+    codes = [code.strip() for code in str(execution_steps or "").split(",")]
+    if not codes or not step_latency:
+        return []
+    result = []
+    for item in str(step_latency).split(";"):
+        position, separator, raw_ms = item.partition("=")
+        if not separator:
+            continue
+        try:
+            index = int(position.strip()) - 1
+            milliseconds = float(raw_ms.strip())
+        except (TypeError, ValueError):
+            continue
+        if (0 <= index < len(codes) and codes[index].isdigit()
+                and milliseconds >= 0 and math.isfinite(milliseconds)):
+            result.append((codes[index], milliseconds / 1000.0))
     return result
 
 

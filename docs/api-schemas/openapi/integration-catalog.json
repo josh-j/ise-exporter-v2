@@ -1,0 +1,722 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Cisco ISE API - Integration Catalog",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://10.81.0.10:443",
+      "description": "Inferred Url"
+    }
+  ],
+  "tags": [
+    {
+      "name": "integration-catalog-api-controller",
+      "description": "the integration-catalog API"
+    }
+  ],
+  "paths": {
+    "/api/v1/integration-catalog/applications": {
+      "get": {
+        "tags": [
+          "Integration Catalog"
+        ],
+        "summary": "Get the list of applications",
+        "description": "Returns the list of applications within the integration catalog.",
+        "operationId": "getApplications",
+        "responses": {
+          "200": {
+            "description": "List of applications.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationsResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/integration-catalog/applications/pxgrid-cloud/{id}": {
+      "get": {
+        "tags": [
+          "Integration Catalog"
+        ],
+        "summary": "Get the details of a pxGrid Cloud application",
+        "description": "Returns the details of a pxGrid Cloud application for the given `id`.",
+        "operationId": "getApplication",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of an application.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Details of the application.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Resource Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/integration-catalog/applications/pxgrid-cloud/{id}/activate": {
+      "post": {
+        "tags": [
+          "Integration Catalog"
+        ],
+        "summary": "Activate a pxGrid Cloud application",
+        "description": "Activate the given pxGrid Cloud application on the current ISE deployment.",
+        "operationId": "activateApplication",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of an application.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "exampleSetFlag": true,
+                "items": {
+                  "type": "string",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "Error-ModelName{namespace='java.lang', name='Void'}",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "202": {
+            "description": "Accepted. Check `GET /integration-catalog/applications/pxgrid-cloud/{id}` API to fetch the activation details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "Error-ModelName{namespace='java.lang', name='Void'}",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Resource Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/integration-catalog/applications/pxgrid-cloud/{id}/deactivate": {
+      "post": {
+        "tags": [
+          "Integration Catalog"
+        ],
+        "summary": "Deactivate a pxGrid Cloud application",
+        "description": "Deactivate the given pxGrid Cloud application on the current ISE deployment.",
+        "operationId": "deactivateApplication",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of an application.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "202": {
+            "description": "Accepted. Check `GET /integration-catalog/applications/pxgrid-cloud/{id}` API to fetch the deactivation details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "Error-ModelName{namespace='java.lang', name='Void'}",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Resource Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/integration-catalog/applications/pxgrid-cloud/{id}/issue-otp": {
+      "post": {
+        "tags": [
+          "Integration Catalog"
+        ],
+        "summary": "Generate OTP for a pxGrid Cloud application",
+        "description": "Generate OTP of the pxGrid Cloud application for the given `id`.",
+        "operationId": "issueApplicationOtp",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of an application.",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Application OTP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationOtpResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Resource Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resource Conflict - Tenant is already subscribed to the application",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Application": {
+        "title": "Application",
+        "required": [
+          "availableScopes",
+          "categories",
+          "id",
+          "instantiable",
+          "lastUsed",
+          "name",
+          "regions",
+          "status",
+          "tenantAppActivationStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "appLogoImage": {
+            "type": "string",
+            "description": "Location of the application logo image.",
+            "example": "https://cdn.cookielaw.org/logos/03fc55fe-0057-4b2f-817d-763e7ecdb316/a7f4c642-c43c-4666-acea-858c0449029c/cisco-logo-transparent.png",
+            "exampleSetFlag": true
+          },
+          "availableScopes": {
+            "type": "array",
+            "description": "List of scopes published by the application.",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/Scope",
+              "exampleSetFlag": false
+            }
+          },
+          "categories": {
+            "type": "array",
+            "description": "Categories of the application.",
+            "example": "[\"Network Security\",\"pxGrid cloud\"]",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false
+            }
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the application.",
+            "example": "Firepower Management Center (FMC) integrates with Cisco ISE to provide user identity based access policy.",
+            "exampleSetFlag": true
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique application id.",
+            "example": "fmcmi-pxgrid",
+            "exampleSetFlag": true
+          },
+          "instances": {
+            "type": "array",
+            "description": "List of child application instances.",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/Application",
+              "exampleSetFlag": false
+            }
+          },
+          "instantiable": {
+            "type": "boolean",
+            "description": "Flag to indicate whether the application supports multiple instances or not.",
+            "example": true,
+            "exampleSetFlag": true
+          },
+          "lastUsed": {
+            "type": "boolean",
+            "description": "Flag to indicate whether the instance of application recently used by user or not.",
+            "example": true,
+            "exampleSetFlag": true
+          },
+          "linkedScopes": {
+            "type": "array",
+            "description": "List of scopes which have been activated for this application on the device. This will have value only after application is activated.",
+            "example": "[\"session\"]",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false,
+              "enum": [
+                "anc",
+                "echo",
+                "endpoint",
+                "mdm",
+                "profiler",
+                "radius",
+                "session",
+                "trustsec",
+                "udn"
+              ]
+            }
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the application.",
+            "example": "Firewall Management Center",
+            "exampleSetFlag": true
+          },
+          "profile": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "exampleSetFlag": false
+            },
+            "example": "{\"token_redeem_url\":\"https://myapp.vendor.com/redeemOtp\"}",
+            "exampleSetFlag": true
+          },
+          "regions": {
+            "type": "array",
+            "description": "List of regions where the application is available.",
+            "example": "[\"us-west-2\"]",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false
+            }
+          },
+          "status": {
+            "type": "string",
+            "description": "Activation status of the application.",
+            "example": "Activated",
+            "exampleSetFlag": true,
+            "enum": [
+              "Activated",
+              "Activating",
+              "Activation Failure",
+              "Activation Unresponsive",
+              "Deactivating",
+              "Deactivation Failure",
+              "Deactivation Unresponsive",
+              "Not Activated",
+              "pending"
+            ]
+          },
+          "tenantAppActivationStatus": {
+            "type": "boolean",
+            "description": "Flag to indicate whether the application has been activated for the tenant or not.",
+            "example": true,
+            "exampleSetFlag": true
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Vendor of the application.",
+            "example": "Cisco Firepower (Cisco Secure Firewall)",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Object which describe the attributes of an cloud application.",
+        "exampleSetFlag": false
+      },
+      "ApplicationListResponse": {
+        "title": "ApplicationListResponse",
+        "type": "object",
+        "properties": {
+          "applications": {
+            "type": "array",
+            "description": "List of the applications.",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/Application",
+              "exampleSetFlag": false
+            }
+          },
+          "errors": {
+            "type": "array",
+            "description": "List of errors while fetching the applications.",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false
+            }
+          }
+        },
+        "description": "List of applications and errors.",
+        "exampleSetFlag": false
+      },
+      "ApplicationOtpResponse": {
+        "title": "ApplicationOtpResponse",
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "object",
+            "example": "{\"otp\":\"fllXnWacP3D1ivxn84btAMApvsAytYNtvhkOIPad2h5mQLf6FTHo8PEa8kqqzXVB\"}",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "description": "Version of the API response.",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Response containing application OTP.",
+        "exampleSetFlag": false
+      },
+      "ApplicationResponse": {
+        "title": "ApplicationResponse",
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "response": {
+            "$ref": "#/components/schemas/Application",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "description": "Version of the API response.",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Response containing application details.",
+        "exampleSetFlag": false
+      },
+      "ApplicationsResponse": {
+        "title": "ApplicationsResponse",
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "response": {
+            "$ref": "#/components/schemas/ApplicationListResponse",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "description": "Version of the API response.",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Response containing list of applications.",
+        "exampleSetFlag": false
+      },
+      "Error": {
+        "title": "Error",
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "arguments": {
+            "type": "array",
+            "description": "List of error arguments which can be used to replace dynamic fields when API fails.",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false
+            }
+          },
+          "code": {
+            "type": "string",
+            "description": "Unique error code when an API fails.",
+            "example": "invalid.application.scope",
+            "exampleSetFlag": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Error message when an API fails.",
+            "example": "Invalid application scope(s), possible scopes are: [anc, echo, endpoint, mdm, profiler, radius, session, trustsec, udn]",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Error details",
+        "exampleSetFlag": false
+      },
+      "Scope": {
+        "title": "Scope",
+        "required": [
+          "key"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Unique key of the data scope of an application.",
+            "example": "session",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Object which explain about scope of an application.",
+        "exampleSetFlag": false
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+Backup Restore	backup-restore.json	5	12
+Certificates	certificates.json	16	52
+CustomAttributes	customattributes.json	3	3
+Dataconnect	dataconnect.json	5	10
+Deployment	deployment.json	15	31
+Duo Identity Sync	duo-identity-sync.json	7	16
+Endpoint Replication	endpoint-replication.json	1	6
+Endpoints	endpoints.json	5	5
+FiveG	fiveg.json	10	19
+IPsec	ipsec.json	6	14
+Integration Catalog	integration-catalog.json	5	7
+LSD Settings	lsd-settings.json	1	2
+License	license.json	7	18
+MFA	mfa.json	5	11
+Patch	patch.json	6	12
+Policy	policy.json	74	53
+Repository	repository.json	3	15
+SGT Reservation	sgt-reservation.json	3	11
+System Settings	system-settings.json	2	5
+Task Service	task-service.json	2	2
+TrustSec	trustsec.json	7	8
+Upgrade	upgrade.json	8	15
+pxGrid Cloud	pxgrid-cloud.json	5	13
+pxGrid Direct	pxgrid-direct.json	6	19

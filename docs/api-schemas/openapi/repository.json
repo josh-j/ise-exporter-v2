@@ -1,0 +1,1171 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Cisco ISE API - Repository",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://10.81.0.10:443",
+      "description": "Inferred Url"
+    }
+  ],
+  "tags": [
+    {
+      "name": "repository-api-controller",
+      "description": "the repository API"
+    }
+  ],
+  "paths": {
+    "/api/v1/repository": {
+      "get": {
+        "tags": [
+          "Repository"
+        ],
+        "summary": "Get list of repositories",
+        "description": "This will get the full list of repository definitions on the system. ",
+        "operationId": "getRepositories",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryListResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error [Returned when retrieval of list of repositories configured failed]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Repository"
+        ],
+        "summary": "Create a new repository",
+        "description": "Create a new repository in the system. The name provided for the repository must be unique. ",
+        "operationId": "createRepository",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Repository",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict [Returned when attempting to create a repository configuration that already exists]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error [Returned when the creation of repository configuration failed]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/repository/{repositoryName}": {
+      "get": {
+        "tags": [
+          "Repository"
+        ],
+        "summary": "Get a specific repository",
+        "description": "Get a specific repository identified by the name passed in the URL. ",
+        "operationId": "getRepository",
+        "parameters": [
+          {
+            "name": "repositoryName",
+            "in": "path",
+            "description": "Unique name for a repository",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found [Returned when the details of the requested repository is Not Found configured]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error [Returned when retrieval of requested repository failed]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Repository"
+        ],
+        "summary": "Update the definition of a specific repository",
+        "description": "Update the definition of a specific repository, providing ALL parameters for the repository. ",
+        "operationId": "updateRepository",
+        "parameters": [
+          {
+            "name": "repositoryName",
+            "in": "path",
+            "description": "Unique name for a repository",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Repository",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden [Updating a repository whose name does not match with the payload is Forbidden]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found [Returned when the repository requested for update is Not Found configured]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error [Returned when update on the requested repository failed]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Repository"
+        ],
+        "summary": "Delete a specific repository",
+        "description": "Long description TBD ",
+        "operationId": "deleteRepository",
+        "parameters": [
+          {
+            "name": "repositoryName",
+            "in": "path",
+            "description": "Unique name for a repository",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found [Returned when the repository requested to delete is Not Found configured]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error [Returned when delete on the requested repository failed]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/repository/{repositoryName}/files": {
+      "get": {
+        "tags": [
+          "Repository"
+        ],
+        "summary": "Get list of files in a repository",
+        "description": "This will get the full list of files present in the named repository. ",
+        "operationId": "getRepositoryFiles",
+        "parameters": [
+          {
+            "name": "repositoryName",
+            "in": "path",
+            "description": "Unique name for a repository",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryFilenameListResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden [Listing of files from TFTP repository is Forbidden]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found [Returned when the repository requested to list the files from is Not Found configured]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error [Returned when the repository requested to list the files from failed]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CDROM": {
+        "title": "CDROM",
+        "required": [
+          "name",
+          "path",
+          "protocol"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "repo_name",
+            "exampleSetFlag": true
+          },
+          "path": {
+            "type": "string",
+            "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "/path/to/cdrom",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "CDROM",
+              "DISK",
+              "FTP",
+              "HTTP",
+              "HTTPS",
+              "NFS",
+              "SFTP",
+              "TFTP"
+            ]
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "DISK": {
+        "title": "DISK",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "repo_name",
+            "exampleSetFlag": true
+          },
+          "path": {
+            "type": "string",
+            "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "/",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "CDROM",
+              "DISK",
+              "FTP",
+              "HTTP",
+              "HTTPS",
+              "NFS",
+              "SFTP",
+              "TFTP"
+            ]
+          }
+        },
+        "exampleSetFlag": true,
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Repository",
+            "exampleSetFlag": false
+          },
+          {
+            "title": "DISK",
+            "required": [
+              "name",
+              "path",
+              "protocol"
+            ],
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+                "example": "repo_name",
+                "exampleSetFlag": true
+              },
+              "path": {
+                "type": "string",
+                "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+                "example": "/",
+                "exampleSetFlag": true
+              },
+              "protocol": {
+                "type": "string",
+                "exampleSetFlag": true,
+                "enum": [
+                  "CDROM",
+                  "DISK",
+                  "FTP",
+                  "HTTP",
+                  "HTTPS",
+                  "NFS",
+                  "SFTP",
+                  "TFTP"
+                ]
+              }
+            },
+            "exampleSetFlag": false
+          }
+        ]
+      },
+      "ErrorResponse": {
+        "title": "ErrorResponse",
+        "type": "object",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/Message",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "FTP": {
+        "title": "FTP",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "repo_name",
+            "exampleSetFlag": true
+          },
+          "password": {
+            "type": "string",
+            "description": "Password can contain alphanumeric and/or special characters.",
+            "exampleSetFlag": true
+          },
+          "path": {
+            "type": "string",
+            "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "/path/to/ftp",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "CDROM",
+              "DISK",
+              "FTP",
+              "HTTP",
+              "HTTPS",
+              "NFS",
+              "SFTP",
+              "TFTP"
+            ]
+          },
+          "serverName": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "userName": {
+            "type": "string",
+            "description": "Username may contain alphanumeric and _-./@\\\\$ characters.",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": true,
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Repository",
+            "exampleSetFlag": false
+          },
+          {
+            "title": "FTP",
+            "required": [
+              "name",
+              "password",
+              "path",
+              "protocol",
+              "serverName",
+              "userName"
+            ],
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+                "example": "repo_name",
+                "exampleSetFlag": true
+              },
+              "password": {
+                "type": "string",
+                "description": "Password can contain alphanumeric and/or special characters.",
+                "exampleSetFlag": true
+              },
+              "path": {
+                "type": "string",
+                "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+                "example": "/path/to/ftp",
+                "exampleSetFlag": true
+              },
+              "protocol": {
+                "type": "string",
+                "exampleSetFlag": true,
+                "enum": [
+                  "CDROM",
+                  "DISK",
+                  "FTP",
+                  "HTTP",
+                  "HTTPS",
+                  "NFS",
+                  "SFTP",
+                  "TFTP"
+                ]
+              },
+              "serverName": {
+                "type": "string",
+                "exampleSetFlag": true
+              },
+              "userName": {
+                "type": "string",
+                "description": "Username may contain alphanumeric and _-./@\\\\$ characters.",
+                "exampleSetFlag": true
+              }
+            },
+            "exampleSetFlag": false
+          }
+        ]
+      },
+      "HTTP": {
+        "title": "HTTP",
+        "required": [
+          "name",
+          "path",
+          "protocol",
+          "serverName"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "repo_name",
+            "exampleSetFlag": true
+          },
+          "path": {
+            "type": "string",
+            "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "/path/to/http",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "CDROM",
+              "DISK",
+              "FTP",
+              "HTTP",
+              "HTTPS",
+              "NFS",
+              "SFTP",
+              "TFTP"
+            ]
+          },
+          "serverName": {
+            "type": "string",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "HTTPS": {
+        "title": "HTTPS",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "repo_name",
+            "exampleSetFlag": true
+          },
+          "path": {
+            "type": "string",
+            "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "/path/to/https",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "CDROM",
+              "DISK",
+              "FTP",
+              "HTTP",
+              "HTTPS",
+              "NFS",
+              "SFTP",
+              "TFTP"
+            ]
+          },
+          "serverName": {
+            "type": "string",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": true,
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Repository",
+            "exampleSetFlag": false
+          },
+          {
+            "title": "HTTPS",
+            "required": [
+              "name",
+              "path",
+              "protocol",
+              "serverName"
+            ],
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+                "example": "repo_name",
+                "exampleSetFlag": true
+              },
+              "path": {
+                "type": "string",
+                "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+                "example": "/path/to/https",
+                "exampleSetFlag": true
+              },
+              "protocol": {
+                "type": "string",
+                "exampleSetFlag": true,
+                "enum": [
+                  "CDROM",
+                  "DISK",
+                  "FTP",
+                  "HTTP",
+                  "HTTPS",
+                  "NFS",
+                  "SFTP",
+                  "TFTP"
+                ]
+              },
+              "serverName": {
+                "type": "string",
+                "exampleSetFlag": true
+              }
+            },
+            "exampleSetFlag": false
+          }
+        ]
+      },
+      "Message": {
+        "title": "Message",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "NFS": {
+        "title": "NFS",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "repo_name",
+            "exampleSetFlag": true
+          },
+          "path": {
+            "type": "string",
+            "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "/path/to/nfs",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "CDROM",
+              "DISK",
+              "FTP",
+              "HTTP",
+              "HTTPS",
+              "NFS",
+              "SFTP",
+              "TFTP"
+            ]
+          },
+          "serverName": {
+            "type": "string",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": true,
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Repository",
+            "exampleSetFlag": false
+          },
+          {
+            "title": "NFS",
+            "required": [
+              "name",
+              "path",
+              "protocol",
+              "serverName"
+            ],
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+                "example": "repo_name",
+                "exampleSetFlag": true
+              },
+              "path": {
+                "type": "string",
+                "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+                "example": "/path/to/nfs",
+                "exampleSetFlag": true
+              },
+              "protocol": {
+                "type": "string",
+                "exampleSetFlag": true,
+                "enum": [
+                  "CDROM",
+                  "DISK",
+                  "FTP",
+                  "HTTP",
+                  "HTTPS",
+                  "NFS",
+                  "SFTP",
+                  "TFTP"
+                ]
+              },
+              "serverName": {
+                "type": "string",
+                "exampleSetFlag": true
+              }
+            },
+            "exampleSetFlag": false
+          }
+        ]
+      },
+      "Repository": {
+        "title": "Repository",
+        "required": [
+          "name",
+          "protocol"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "repo_name",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "CDROM",
+              "DISK",
+              "FTP",
+              "HTTP",
+              "HTTPS",
+              "NFS",
+              "SFTP",
+              "TFTP"
+            ]
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "RepositoryFilenameListResponse": {
+        "title": "RepositoryFilenameListResponse",
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false
+            }
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "RepositoryListResponse": {
+        "title": "RepositoryListResponse",
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/Repository",
+              "exampleSetFlag": false
+            }
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "RepositoryResponse": {
+        "title": "RepositoryResponse",
+        "type": "object",
+        "properties": {
+          "response": {
+            "$ref": "#/components/schemas/Repository",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "SFTP": {
+        "title": "SFTP",
+        "required": [
+          "enablePki",
+          "name",
+          "path",
+          "protocol",
+          "serverName",
+          "userName"
+        ],
+        "type": "object",
+        "properties": {
+          "enablePki": {
+            "type": "boolean",
+            "example": false,
+            "exampleSetFlag": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "repo_name",
+            "exampleSetFlag": true
+          },
+          "password": {
+            "type": "string",
+            "description": "Password can contain alphanumeric and/or special characters.",
+            "exampleSetFlag": true
+          },
+          "path": {
+            "type": "string",
+            "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "/path/to/sftp",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "CDROM",
+              "DISK",
+              "FTP",
+              "HTTP",
+              "HTTPS",
+              "NFS",
+              "SFTP",
+              "TFTP"
+            ]
+          },
+          "serverName": {
+            "type": "string",
+            "exampleSetFlag": true
+          },
+          "userName": {
+            "type": "string",
+            "description": "Username may contain alphanumeric and _-./@\\\\$ characters.",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "The SFTP repository type can either use username/password authentication **or** PKI-based authentication. Thus an SFTP repository, when created, must have either enablePki set **or** have both the user name and the password. ",
+        "exampleSetFlag": false
+      },
+      "SuccessResponse": {
+        "title": "SuccessResponse",
+        "type": "object",
+        "properties": {
+          "success": {
+            "$ref": "#/components/schemas/Message",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "TFTP": {
+        "title": "TFTP",
+        "required": [
+          "name",
+          "path",
+          "protocol",
+          "serverName"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Repository name should be less than 80 characters and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "repo_name",
+            "exampleSetFlag": true
+          },
+          "path": {
+            "type": "string",
+            "description": "Path should always start with \"/\" and can contain alphanumeric, underscore, hyphen and dot characters.",
+            "example": "/path/to/tftp",
+            "exampleSetFlag": true
+          },
+          "protocol": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "CDROM",
+              "DISK",
+              "FTP",
+              "HTTP",
+              "HTTPS",
+              "NFS",
+              "SFTP",
+              "TFTP"
+            ]
+          },
+          "serverName": {
+            "type": "string",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      }
+    }
+  }
+}

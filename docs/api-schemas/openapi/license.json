@@ -1,0 +1,1334 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Cisco ISE API - License",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://10.81.0.10:443",
+      "description": "Inferred Url"
+    }
+  ],
+  "tags": [
+    {
+      "name": "license-api-controller",
+      "description": "the license API"
+    }
+  ],
+  "paths": {
+    "/api/v1/license/system/connection-type": {
+      "get": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "License - Connection Type",
+        "description": "Get connection type",
+        "operationId": "getConnectionType",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartState",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/license/system/eval-license": {
+      "get": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "License - registration information",
+        "description": "Get registration information",
+        "operationId": "getEvalLicenseInfo",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalLicenseSettings",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/license/system/feature-to-tier-mapping": {
+      "get": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "License - feature to tier mapping",
+        "description": "Get feature to tier mapping",
+        "operationId": "getFeatureToTierMapping",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "exampleSetFlag": true,
+                  "items": {
+                    "$ref": "#/components/schemas/FeatureToTierMap",
+                    "exampleSetFlag": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/license/system/miscellaneous-license": {
+      "get": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "Get miscellaneous license information",
+        "description": "Get miscellaneous license information",
+        "operationId": "getMiscLicenseState",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "miscellaneous license information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MiscellaneousLicenseResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request is not valid content: application/json:   schema:     $ref: \"#/components/schemas/ErrorResponse\" "
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "Miscellaneous license",
+        "description": "Enable/Disable Miscellaneous license",
+        "operationId": "handleLicenseOperation",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MiscellaneousLicensePost",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Enabled or Disabled the analytics license ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Request is not valid ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/license/system/register": {
+      "get": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "License - registration information",
+        "description": "Get registration information",
+        "operationId": "getRegistrationInfo",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterationInfoGetResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "License - registration information",
+        "description": "License - Configure registration information. <br> **Please note that Transport Gateway connection method is no longer supported in ISE.**",
+        "operationId": "createRegistrationInfo",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterationInfoPost",
+                "exampleSetFlag": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "deregister or update or renew the Smart Licensing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "register the Smart Licensing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/license/system/smart-state": {
+      "get": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "License - smart license information",
+        "description": "Get smart license information",
+        "operationId": "getSmartState",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Smart state information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartStateResponse",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "License - smart state information",
+        "description": "License - Configure smart state information.",
+        "operationId": "configureSmartState",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "exampleSetFlag": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/license/system/tier-state": {
+      "get": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "Get tier state information",
+        "description": "Get tier state information",
+        "operationId": "getTierStateInfo",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "exampleSetFlag": true,
+                  "items": {
+                    "$ref": "#/components/schemas/TierStateSettings",
+                    "exampleSetFlag": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Licensing"
+        ],
+        "summary": "Post tier state information",
+        "description": "<span>Applicable values for <b>name</b> & <b>status</b> parameters:</span> <ul> <li><b>name:</b> ESSENTIAL, ADVANTAGE, PREMIER, DEVICEADMIN</li> <li><b>status:</b> ENABLED, DISABLED</li> </ul>",
+        "operationId": "updateTierStateInfo",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "request Id, will return in the response headers, and appear in logs",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "exampleSetFlag": true
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "exampleSetFlag": true,
+                "items": {
+                  "$ref": "#/components/schemas/TierStateSettingsRequest",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tier list response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TierListResponseEntity",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "The specified resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error [Returned when retrieval of list of tiers configured failed]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error",
+                  "exampleSetFlag": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BasicAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "title": "Error",
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "400",
+            "exampleSetFlag": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Bad Request",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "ErrorResponse": {
+        "title": "ErrorResponse",
+        "type": "object",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/Message",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "EvalLicenseSettings": {
+        "title": "EvalLicenseSettings",
+        "type": "object",
+        "properties": {
+          "daysRemaining": {
+            "type": "integer",
+            "description": "Number of eval license days left",
+            "format": "int32",
+            "example": 47,
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Get Eval license settings",
+        "exampleSetFlag": false
+      },
+      "FeatureToTierMap": {
+        "title": "FeatureToTierMap",
+        "type": "object",
+        "properties": {
+          "featureName": {
+            "type": "array",
+            "description": "<p>List of feature names</p>",
+            "example": "[\"GROUP_BYOD\",\"GROUP_PROF\",\"ENDPOINT_POLICY\",\"LOGICAL_PROFILE\",\"EPS_STATS\",\"ANC_POLICY\",\"BYOD_REGISTRATION\",\"MSE_LOCATION\",\"POSTURE_STATUS\",\"EXTERNAL_MDM\"]",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false
+            }
+          },
+          "tier": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "ADVANTAGE",
+              "DEVICEADMIN",
+              "ESSENTIAL",
+              "PREMIER",
+              "VM"
+            ]
+          }
+        },
+        "description": "Get License feature to tier mapping",
+        "exampleSetFlag": false
+      },
+      "Message": {
+        "title": "Message",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Success",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "MiscellaneousLicensePost": {
+        "title": "MiscellaneousLicensePost",
+        "required": [
+          "action",
+          "licenseType",
+          "token"
+        ],
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "DISABLE",
+              "ENABLE"
+            ]
+          },
+          "licenseType": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "ANALYTICS"
+            ]
+          },
+          "token": {
+            "type": "string",
+            "description": "Token to perform license operation",
+            "example": "token to be provided by ISE PM",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Miscellaneous License operation",
+        "exampleSetFlag": false
+      },
+      "MiscellaneousLicenseResponse": {
+        "title": "MiscellaneousLicenseResponse",
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/MiscellaneousLicenseResponseEntity",
+              "exampleSetFlag": false
+            }
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "State of the Miscellaneous license",
+        "exampleSetFlag": false
+      },
+      "MiscellaneousLicenseResponseEntity": {
+        "title": "MiscellaneousLicenseResponseEntity",
+        "type": "object",
+        "properties": {
+          "LicenseType": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "ANALYTICS"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "DISABLED",
+              "ENABLED"
+            ]
+          }
+        },
+        "description": "Miscellaneous license state",
+        "exampleSetFlag": false
+      },
+      "RegisterationInfoGet": {
+        "title": "RegisterationInfoGet",
+        "type": "object",
+        "properties": {
+          "connectionType": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "HTTP_DIRECT",
+              "PROXY",
+              "SSM_ONPREM_SERVER",
+              "TRANSPORT_GATEWAY"
+            ]
+          },
+          "registrationState": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "ENABLED",
+              "REGISTERED"
+            ]
+          },
+          "ssmOnPremServer": {
+            "type": "string",
+            "description": "If connection type is selected as SSM_ONPREM_SERVER, then  IP address or the hostname (or FQDN) of the SSM On-Prem server Host.",
+            "example": "CSSM28.demo.local",
+            "exampleSetFlag": true
+          },
+          "tier": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false,
+              "enum": [
+                "ADVANTAGE",
+                "DEVICEADMIN",
+                "ESSENTIAL",
+                "PREMIER",
+                "VM"
+              ]
+            }
+          }
+        },
+        "description": "Registration information format. <br> **Please note that Transport Gateway connection method is no longer supported in ISE.**",
+        "exampleSetFlag": false
+      },
+      "RegisterationInfoGetResponse": {
+        "title": "RegisterationInfoGetResponse",
+        "type": "object",
+        "properties": {
+          "response": {
+            "$ref": "#/components/schemas/RegisterationInfoGet",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Registration information format",
+        "exampleSetFlag": false
+      },
+      "RegisterationInfoPost": {
+        "title": "RegisterationInfoPost",
+        "type": "object",
+        "properties": {
+          "connectionType": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "HTTP_DIRECT",
+              "PROXY",
+              "SSM_ONPREM_SERVER",
+              "TRANSPORT_GATEWAY"
+            ]
+          },
+          "registrationType": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "DEREGISTER",
+              "REGISTER",
+              "RENEW",
+              "UPDATE"
+            ]
+          },
+          "ssmOnPremServer": {
+            "type": "string",
+            "description": "If connection type is selected as SSM_ONPREM_SERVER, then  IP address or the hostname (or FQDN) of the SSM On-Prem server Host.",
+            "example": "CSSM28.demo.local",
+            "exampleSetFlag": true
+          },
+          "tier": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "type": "string",
+              "exampleSetFlag": false,
+              "enum": [
+                "ADVANTAGE",
+                "DEVICEADMIN",
+                "ESSENTIAL",
+                "PREMIER",
+                "VM"
+              ]
+            }
+          },
+          "token": {
+            "type": "string",
+            "description": "token",
+            "example": "NzFjNjQyYWYtMjkyYS00OGJiLTkzNzYtNWY5Nzg5OTU4ZjhkLTE2MzE2MTM1%0AMTg4ODl8QU0wdWUzRmZXRnhBQzBWZldmTmZaTjFwdzdaZ0diVXpmU0hjTUVz%0AS0NYZz0%3D%0A",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "Registration information format. <br> **Please note that Transport Gateway connection method is no longer supported in ISE.**",
+        "exampleSetFlag": false
+      },
+      "SmartState": {
+        "title": "SmartState",
+        "type": "object",
+        "properties": {
+          "connectionType": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "HTTP_DIRECT",
+              "PROXY",
+              "SSM_ONPREM_SERVER",
+              "TRANSPORT_GATEWAY"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "DISABLED",
+              "ENABLED"
+            ]
+          }
+        },
+        "description": "State of the smart license format. <br> **Please note that Transport Gateway connection method is no longer supported in ISE.**",
+        "exampleSetFlag": false
+      },
+      "SmartStateResponse": {
+        "title": "SmartStateResponse",
+        "type": "object",
+        "properties": {
+          "response": {
+            "$ref": "#/components/schemas/SmartState",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "description": "State of the smart license format",
+        "exampleSetFlag": false
+      },
+      "SuccessResponse": {
+        "title": "SuccessResponse",
+        "type": "object",
+        "properties": {
+          "success": {
+            "$ref": "#/components/schemas/Message",
+            "exampleSetFlag": true
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "TierListResponseEntity": {
+        "title": "TierListResponseEntity",
+        "required": [
+          "response",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "array",
+            "exampleSetFlag": true,
+            "items": {
+              "$ref": "#/components/schemas/TierResponseEntity",
+              "exampleSetFlag": false
+            }
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0",
+            "exampleSetFlag": true
+          }
+        },
+        "exampleSetFlag": false
+      },
+      "TierResponseEntity": {
+        "title": "TierResponseEntity",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Response message on successful change of license tier state.",
+            "example": "ADVANTAGE tier state changed successfully.",
+            "exampleSetFlag": true
+          },
+          "name": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "ADVANTAGE",
+              "DEVICEADMIN",
+              "ESSENTIAL",
+              "PREMIER",
+              "VM"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "DISABLED",
+              "ENABLED"
+            ]
+          }
+        },
+        "description": "Tier for Licensing state",
+        "exampleSetFlag": false
+      },
+      "TierStateSettings": {
+        "title": "TierStateSettings",
+        "type": "object",
+        "properties": {
+          "compliance": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "COMPLIANT",
+              "EVALUATION",
+              "EVALUATION_EXPIRED",
+              "FULL_COMPLIANCE",
+              "NONCOMPLIANT",
+              "RELEASED_ENTITLEMENT",
+              "RESERVED_IN_COMPLIANCE"
+            ]
+          },
+          "consumptionCounter": {
+            "type": "integer",
+            "description": "Compliance counter for tier",
+            "format": "int32",
+            "example": 100,
+            "exampleSetFlag": true
+          },
+          "daysOutOfCompliance": {
+            "type": "string",
+            "description": "Number of days tier is out of compliance",
+            "example": "20",
+            "exampleSetFlag": true
+          },
+          "lastAuthorization": {
+            "type": "string",
+            "description": "Last date of authorization",
+            "example": "1-Nov-2019",
+            "exampleSetFlag": true
+          },
+          "name": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "ADVANTAGE",
+              "DEVICEADMIN",
+              "ESSENTIAL",
+              "PREMIER",
+              "VM"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "DISABLED",
+              "ENABLED"
+            ]
+          }
+        },
+        "description": "License Tier state information",
+        "exampleSetFlag": false
+      },
+      "TierStateSettingsRequest": {
+        "title": "TierStateSettingsRequest",
+        "required": [
+          "name",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "ADVANTAGE",
+              "DEVICEADMIN",
+              "ESSENTIAL",
+              "PREMIER",
+              "VM"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "exampleSetFlag": true,
+            "enum": [
+              "DISABLED",
+              "ENABLED"
+            ]
+          }
+        },
+        "exampleSetFlag": false
+      }
+    }
+  }
+}

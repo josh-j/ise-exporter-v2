@@ -285,6 +285,31 @@ def test_authz_scans_ers_endpoint_macs_for_recent_failures():
     assert failures[("24408", "AD Lab")] == 1.0
 
 
+def test_recent_auth_latency_is_observed_once_per_transaction():
+    from ise_exporter import metrics
+    from ise_exporter.collectors import authz
+    from ise_exporter.util import clear_metric
+
+    clear_metric(metrics.ise_radius_auth_latency_by_psn_seconds)
+    clear_metric(metrics.ise_radius_client_latency_seconds)
+    clear_metric(metrics.ise_radius_step_latency_seconds)
+    authz._observed_recent_auth_ids.clear()
+    detail = {
+        "auth_id": "txn-1", "passed": "false", "failed": "true",
+        "acs_server": "psn-a", "execution_steps": "11001,24408",
+    }
+    other = {"TotalAuthenLatency": "64", "ClientLatency": "3",
+             "StepLatency": "1=4;2=60"}
+
+    authz._observe_recent_latency_once(detail, other, "nad-a", "Lab", "Team")
+    authz._observe_recent_latency_once(detail, other, "nad-a", "Lab", "Team")
+
+    samples = metrics.ise_radius_auth_latency_by_psn_seconds.collect()[0].samples
+    count = next(s.value for s in samples
+                 if s.name.endswith("_count") and s.labels["psn"] == "psn-a")
+    assert count == 1
+
+
 def test_authz_defers_posture_report_to_getendpoints_when_present():
     """When getEndpoints is delivering endpoints, models.py owns the posture-policy /
     Secure Client gauges — authz must NOT also emit them (no double-count)."""
