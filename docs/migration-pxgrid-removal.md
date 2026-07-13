@@ -120,11 +120,11 @@ collectors to the exact ISE 3.3.0.430 Patch 11 architecture documented in
 - [x] Run Ruff and the complete pytest suite after all parallel migration work
   is merged.
 - [x] Build and inspect both wheel and source distribution.
-- [ ] Run the Ubuntu Noble installation CI job.
+- [x] Run the Ubuntu Noble installation CI job.
 - [x] Run the complete live-lab collection cycle against `laba-ise-001` and
   confirm all enabled collectors report success.
 - [ ] Verify Prometheus queries and every Grafana dashboard against the live
   exporter.
 - [x] Confirm a repository-wide search has no unrelated assistant-vendor references.
-- [ ] Commit the complete migration as one reviewed change and push the tracking
+- [x] Commit the complete migration as one reviewed change and push the tracking
   branch only after every required gate passes.
