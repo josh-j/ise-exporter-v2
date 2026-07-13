@@ -3,6 +3,21 @@
 # use curl_mnt_endpoint_attributes.sh for the live MnT other-attributes source.
 set -euo pipefail
 
+if [[ ${1:-} == --schema || ${1:-} == --schema-only ]]; then
+  printf '%s\n' '{
+  "api": "ERS",
+  "method": "GET",
+  "host_env": "ISE_HOST",
+  "lookup_path": "/ers/config/endpoint?filter=mac.EQ.{MAC}",
+  "detail_path": "/ers/config/endpoint/{endpoint_id}",
+  "response": {
+    "envelope": "ERSEndPoint",
+    "fields": ["id", "name", "mac", "profileId", "groupId", "customAttributes", "mfcAttributes"]
+  }
+}'
+  exit 0
+fi
+
 mac=${1:?usage: tools/curl_ers_endpoint_detail.sh MAC}
 : "${ISE_HOST:?set ISE_HOST to the PAN/ERS node}"
 : "${ISE_USER:?set ISE_USER}"

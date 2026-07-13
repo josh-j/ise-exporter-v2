@@ -3,6 +3,17 @@
 # PostureAgentVersion, PostureStatus, and the rest of other_attr_string.
 set -euo pipefail
 
+if [[ ${1:-} == --schema || ${1:-} == --schema-only ]]; then
+  printf '%s\n' '{
+  "api": "MnT XML",
+  "method": "GET",
+  "host_env": "ISE_MNT_HOST",
+  "path": "/admin/API/mnt/Session/MACAddress/{MAC}",
+  "fields": ["calling_station_id", "acs_server", "posture_status", "other_attr_string"]
+}'
+  exit 0
+fi
+
 mac=${1:?usage: tools/curl_mnt_endpoint_attributes.sh MAC}
 : "${ISE_MNT_HOST:?set ISE_MNT_HOST to the MnT node}"
 : "${ISE_USER:?set ISE_USER}"

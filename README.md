@@ -95,9 +95,16 @@ To verify host routing and inspect one endpoint without starting the exporter, e
 
     tools/curl_ers_endpoint_detail.sh AA:BB:CC:DD:EE:FF
     tools/curl_mnt_endpoint_attributes.sh AA:BB:CC:DD:EE:FF
+    tools/curl_secure_client_attributes.sh AA:BB:CC:DD:EE:FF
 
 The first script always targets the PAN/ERS node. The second always targets the MnT
-node and prints the session fields containing Secure Client posture attributes.
+node and prints the raw session fields. The Secure Client probe uses that same MnT
+path but feeds `other_attr_string` through the exporter's own parser and prints the
+five posture fields plus parsed policy-level results.
+
+Pass `--schema` or `--schema-only` instead of a MAC to any probe to print its API
+route and expected response fields as JSON without making a request or requiring
+credentials.
 
 ## pxGrid setup (ISE side)
 
