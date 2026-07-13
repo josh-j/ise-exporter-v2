@@ -9,6 +9,14 @@ commands, `help COMMAND` shows command-specific options, and `exit`, `quit`, or
 Ctrl-D leave the shell. Interactive history is retained in
 `~/.local/state/ise-cli/history` (override with `ISE_CLI_HISTORY`).
 
+Tab completion is context-aware. It completes commands, valid options, enum values,
+output/select fields, generic GET families and known paths, and Data Connect view
+names. Where credentials are configured, it also offers bounded,
+prefix-filtered endpoint identifiers, ISE nodes/PSNs, profiles, NADs, and usernames.
+Remote suggestions are capped at 25 rows and cached for 30 seconds; completion
+failures are silent and never prevent command entry. Press Tab twice to display all
+matching choices.
+
 ```console
 $ ise-cli
 Cisco ISE read-only shell. Type ? for commands, help COMMAND for details.
@@ -73,7 +81,7 @@ before use with ERS or MnT.
 | `health` | Check PAN/ERS and MnT reachability independently |
 | `nodes` | List deployment nodes from OpenAPI |
 | `nads` | List Network Access Devices from ERS |
-| `endpoints` | List endpoints from ERS |
+| `endpoints [PATTERN]` | List endpoints from ERS, optionally using a friendly name wildcard |
 | `endpoint IDENTIFIER` | Resolve and inspect one endpoint; optionally join its MnT session |
 | `resolve IDENTIFIER` | Show identifier kind, resolution source, MAC/IP/hostname, endpoint, and sessions |
 | `sessions` | List active MnT sessions |
@@ -97,7 +105,9 @@ before use with ERS or MnT.
 Inventory commands return at most 100 rows by default. Use `--limit N` for a larger
 bounded query or `--all` to explicitly enumerate the complete inventory. On an
 80,000-endpoint deployment, prefer bounded queries and ERS filters during interactive
-work.
+work. Inside `ise-cli`, `endpoints` accepts `NAME`, `PREFIX-*`, `*-SUFFIX`, and
+`*TEXT*`. These become server-side ISE filters, not client-side scans. In a normal OS
+shell, quote wildcard arguments so the local shell does not expand them.
 
 ## Examples
 
@@ -105,6 +115,7 @@ work.
 ise-cli health
 ise-cli nodes --output json
 ise-cli endpoints --limit 25 --select id,name,description
+ise-cli endpoints 'LAB-*' --limit 25
 ise-cli endpoints --filter 'groupId.EQ.abc-123' --output csv
 ise-cli endpoint AA:BB:CC:DD:EE:FF --include-session --output json
 ise-cli endpoint aabb.ccdd.eeff

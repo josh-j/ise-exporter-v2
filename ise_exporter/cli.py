@@ -19,6 +19,7 @@ import re
 import shlex
 import socket
 import sys
+import time
 
 from dotenv import load_dotenv
 from rich import box
@@ -280,6 +281,23 @@ DATACONNECT_REPORTS = {
 
 DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {"dataconnect-schema"}
 
+COMPLETION_LIMIT = 25
+COMPLETION_CACHE_TTL = 30.0
+
+COMPLETION_STATUS_VALUES = {
+    "radius-auth": ("failed", "passed", "success"),
+    "posture": ("Compliant", "NonCompliant", "NotApplicable", "Unknown"),
+}
+
+COMPLETION_FILTER_FIELDS = {
+    "endpoints": ("mac.EQ.", "name.EQ.", "groupId.EQ.", "profileId.EQ."),
+    "nads": ("name.EQ.", "ipaddress.EQ.", "NetworkDeviceGroup.EQ."),
+    "profiles": ("name.EQ.",),
+    "tacacs-users": ("name.EQ.", "identityGroup.EQ."),
+    "identity-groups": ("name.EQ.",),
+    "network-device-groups": ("name.EQ.",),
+}
+
 
 class CLIError(RuntimeError):
     pass
@@ -324,6 +342,10 @@ def build_parser(*, require_command=False):
                          help="explicitly enumerate every result")
         sub.add_argument("--filter", action="append", default=[],
                          help="ISE ERS filter expression; repeatable")
+        if name == "endpoints":
+            sub.add_argument(
+                "pattern", nargs="?",
+                help="friendly name search: NAME, PREFIX-*, *-SUFFIX, or *TEXT*")
 
     sub = command("sessions", "list active MnT sessions")
     sub.add_argument("--limit", type=int, default=100)
@@ -453,6 +475,24 @@ def _params(items):
             raise CLIError(f"invalid --param {item!r}; expected KEY=VALUE")
         result[key] = value
     return result
+
+
+def _glob_filter(field, pattern):
+    """Translate a simple operator glob into an ISE server-side filter."""
+    guidance = ("search supports NAME, PREFIX-*, *-SUFFIX, or *TEXT* "
+                "(advanced users can use --filter)")
+    if not pattern or "?" in pattern or pattern.count("*") > 2:
+        raise CLIError(guidance)
+    if pattern == "*":
+        return None
+    starts = pattern.startswith("*")
+    ends = pattern.endswith("*")
+    value = pattern.strip("*")
+    if "*" in value or not value:
+        raise CLIError(guidance)
+    operator = ("CONTAINS" if starts and ends else "ENDSW" if starts
+                else "STARTSW" if ends else "EQ")
+    return f"{field}.{operator}.{value}"
 
 
 def _ers_rows(client, path, *, limit=100, all_rows=False, filters=()):
@@ -880,8 +920,14 @@ def _execute(args, client, cfg, dataconnect=None):
             raise CLIError("ISE returned no deployment-node response")
         return result
     if command in ERS_INVENTORIES:
+        filters = list(args.filter)
+        pattern = getattr(args, "pattern", None)
+        if pattern:
+            friendly_filter = _glob_filter("name", pattern)
+            if friendly_filter:
+                filters.append(friendly_filter)
         return _ers_rows(client, ERS_INVENTORIES[command], limit=args.limit,
-                         all_rows=args.all, filters=args.filter)
+                         all_rows=args.all, filters=filters)
     if command in OPENAPI_INVENTORIES:
         path, unwrap = OPENAPI_INVENTORIES[command]
         result = client.get_pan_api(path, api_name=f"cli_{command}", unwrap=unwrap)
@@ -1071,6 +1117,7 @@ class ISEShell(cmd.Cmd):
         self.cfg = cfg or getattr(client, "cfg", None)
         self.dataconnect = dataconnect
         self.parser = build_parser(require_command=True)
+        self._completion_cache = {}
         if self.use_rawinput:
             self._enable_history()
 
@@ -1083,6 +1130,8 @@ class ISEShell(cmd.Cmd):
             if history.exists():
                 readline.read_history_file(history)
             readline.set_history_length(1000)
+            readline.parse_and_bind("set show-all-if-ambiguous on")
+            readline.parse_and_bind("set completion-ignore-case on")
             atexit.register(readline.write_history_file, history)
         except (ImportError, OSError):
             pass
@@ -1156,7 +1205,316 @@ class ISEShell(cmd.Cmd):
 
     def completenames(self, text, *_ignored):
         names = sorted((*COMMAND_SCHEMAS, "help", "exit", "quit"))
-        return [name + " " for name in names if name.startswith(text)]
+        return self._matching(names, text, add_space=True)
+
+    def complete_help(self, text, *_ignored):
+        return self._matching((*COMMAND_SCHEMAS, "help", "exit", "quit"), text)
+
+    def completedefault(self, text, line, begidx, endidx):
+        return self.completion_candidates(line, cursor=endidx)
+
+    def completion_candidates(self, line, *, cursor=None):
+        """Return context-aware readline candidates for an interactive command line."""
+        prefix = line[:len(line) if cursor is None else cursor]
+        words = self._completion_words(prefix)
+        if not words:
+            return self.completenames("")
+        if len(words) == 1 and not prefix.endswith((" ", "\t")):
+            return self.completenames(words[0])
+
+        command = words[0]
+        current = words[-1]
+        if command in ("help", "?"):
+            return self._matching(COMMAND_SCHEMAS, current)
+        parser = _subparser(self.parser, command)
+        if parser is None:
+            return []
+
+        before = words[1:-1]
+        option_actions = {
+            option: action for action in parser._actions for option in action.option_strings
+        }
+
+        # --option=value is common in shells and should complete like two tokens.
+        if current.startswith("-") and "=" in current:
+            option, value_prefix = current.split("=", 1)
+            action = option_actions.get(option)
+            if action is not None and action.nargs != 0:
+                values = self._action_values(command, action, value_prefix, before)
+                return [f"{option}={value}" for value in values]
+
+        previous = before[-1] if before else None
+        action = option_actions.get(previous)
+        if action is not None and action.nargs != 0:
+            return self._action_values(command, action, current, before[:-1])
+
+        candidates = []
+        if current.startswith("-") or current == "":
+            used = set(before)
+            for action in parser._actions:
+                if not action.option_strings or action.help is argparse.SUPPRESS:
+                    continue
+                repeatable = isinstance(action, argparse._AppendAction)
+                if not repeatable and any(option in used for option in action.option_strings):
+                    continue
+                candidates.extend(action.option_strings)
+
+        if not current.startswith("-"):
+            candidates.extend(self._positional_values(
+                command, current, self._consumed_positionals(parser, before)))
+        return self._matching(candidates, current, add_space=True)
+
+    @staticmethod
+    def _completion_words(prefix):
+        try:
+            words = shlex.split(prefix)
+        except ValueError:
+            # Keep completion useful while the user is in an unfinished quote.
+            words = prefix.split()
+        if prefix.endswith((" ", "\t")):
+            words.append("")
+        return words
+
+    @staticmethod
+    def _matching(values, prefix, *, add_space=False):
+        prefix_folded = prefix.casefold()
+        matches = []
+        for value in values:
+            value = str(value)
+            comparable = value
+            if value[:1] in ("'", '"'):
+                try:
+                    comparable = shlex.split(value)[0]
+                except (ValueError, IndexError):
+                    pass
+            if comparable.casefold().startswith(prefix_folded) and value not in matches:
+                matches.append(value)
+        matches.sort(key=str.casefold)
+        if add_space and len(matches) == 1:
+            matches[0] += " "
+        return matches
+
+    def _action_values(self, command, action, prefix, before):
+        if action.choices is not None:
+            return self._matching(action.choices, prefix, add_space=True)
+        destination = action.dest
+        if destination == "env_file":
+            return self._path_values(prefix)
+        if destination == "output":
+            return self._matching(("table", "json", "jsonl", "csv"), prefix,
+                                  add_space=True)
+        if destination == "status":
+            return self._matching(COMPLETION_STATUS_VALUES.get(command, ()), prefix,
+                                  add_space=True)
+        if destination == "filter":
+            return self._matching(COMPLETION_FILTER_FIELDS.get(command, ()), prefix)
+        if destination == "select":
+            return self._select_values(command, prefix)
+        if destination == "identifier":
+            return self._quote_values(self._endpoint_values(prefix), prefix)
+        if destination in ("node", "psn"):
+            return self._quote_values(self._node_values(prefix), prefix)
+        if destination == "profile":
+            return self._quote_values(self._dc_values(
+                "ENDPOINTS_DATA", "ENDPOINT_POLICY", prefix), prefix)
+        if destination in ("nad", "device"):
+            table = "RADIUS_AUTHENTICATIONS" if destination == "nad" else \
+                "TACACS_ACCOUNTING_LAST_TWO_DAYS"
+            column = "DEVICE_NAME"
+            return self._quote_values(self._dc_values(table, column, prefix), prefix)
+        if destination == "username":
+            table = ("TACACS_AUTHENTICATION_LAST_TWO_DAYS"
+                     if command == "tacacs-activity" else "RADIUS_AUTHENTICATIONS")
+            return self._quote_values(self._dc_values(table, "USERNAME", prefix), prefix)
+        return []
+
+    @staticmethod
+    def _consumed_positionals(parser, words):
+        option_actions = {
+            option: action for action in parser._actions for option in action.option_strings
+        }
+        positionals = []
+        skip_value = False
+        for word in words:
+            if skip_value:
+                skip_value = False
+                continue
+            option = word.split("=", 1)[0] if word.startswith("-") else None
+            action = option_actions.get(option)
+            if action is not None:
+                skip_value = action.nargs != 0 and "=" not in word
+                continue
+            positionals.append(word)
+        return positionals
+
+    def _positional_values(self, command, prefix, positionals):
+        if command in ("endpoint", "resolve", "session", "auth-status", "secure-client"):
+            return [] if positionals else self._quote_values(
+                self._endpoint_values(prefix), prefix)
+        if command == "endpoints":
+            return [] if positionals or "*" in prefix else self._quote_values(
+                self._endpoint_values(prefix), prefix)
+        if command == "schema":
+            return [] if positionals else list(COMMAND_SCHEMAS)
+        if command == "dataconnect-schema":
+            return [] if positionals else self._quote_values(
+                self._dataconnect_tables(prefix), prefix)
+        if command == "get":
+            if not positionals:
+                return ["ers", "openapi", "mnt"]
+            if len(positionals) == 1:
+                return self._get_paths(positionals[0])
+        return []
+
+    def _select_values(self, command, prefix):
+        selected, separator, field_prefix = prefix.rpartition(",")
+        fields = DATACONNECT_REPORTS.get(command, {}).get("columns", ())
+        if not fields:
+            fields = ("id", "name", "description", "hostname", "ipAddress", "mac")
+        matches = self._matching((str(field).lower() for field in fields), field_prefix)
+        lead = f"{selected}," if separator else ""
+        return [lead + match for match in matches]
+
+    @staticmethod
+    def _get_paths(family):
+        key = "path" if family == "ers" else "paths"
+        paths = []
+        for schema in COMMAND_SCHEMAS.values():
+            api = str(schema.get("api", "")).lower()
+            if family not in api and not (family == "openapi" and "openapi" in api):
+                continue
+            values = schema.get(key, schema.get("path", schema.get("paths", ())))
+            if isinstance(values, str):
+                values = (values,)
+            for value in values:
+                if family == "ers" and value.startswith("/ers"):
+                    value = value[4:]
+                elif family == "openapi" and value.startswith("/api/v1"):
+                    value = value[7:]
+                elif family == "mnt" and value.startswith("/admin/API/mnt"):
+                    value = value[14:]
+                if "{" not in value:
+                    paths.append(value)
+        return paths
+
+    @staticmethod
+    def _path_values(prefix):
+        path = Path(prefix or ".").expanduser()
+        directory = path if prefix.endswith(os.sep) else path.parent
+        name_prefix = "" if prefix.endswith(os.sep) else path.name
+        try:
+            entries = sorted(directory.iterdir(), key=lambda item: item.name.casefold())
+        except OSError:
+            return []
+        lead = "" if str(directory) == "." else str(directory) + os.sep
+        values = []
+        for entry in entries:
+            if entry.name.casefold().startswith(name_prefix.casefold()):
+                values.append(lead + entry.name + (os.sep if entry.is_dir() else ""))
+        return values
+
+    @staticmethod
+    def _quote_values(values, prefix):
+        # readline replaces the current token; shell quoting keeps names containing spaces valid.
+        return [shlex.quote(str(value)) for value in values
+                if str(value).casefold().startswith(prefix.casefold())]
+
+    def _cached_completion(self, key, loader):
+        now = time.monotonic()
+        cached = self._completion_cache.get(key)
+        if cached and now - cached[0] < COMPLETION_CACHE_TTL:
+            return cached[1]
+        try:
+            values = []
+            for value in loader():
+                if value not in values:
+                    values.append(value)
+                if len(values) >= COMPLETION_LIMIT:
+                    break
+            values = tuple(values)
+        except Exception:
+            values = ()
+        self._completion_cache[key] = (now, values)
+        return values
+
+    def _completion_runtime(self, command):
+        # Completion must never print config/network failures or break the prompt.
+        with contextlib.redirect_stdout(self.stdout), contextlib.redirect_stderr(self.stdout):
+            self._runtime(command)
+
+    @staticmethod
+    def _like_prefix(prefix):
+        return prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+    def _dc_values(self, table, column, prefix):
+        key = ("dc", table, column, prefix.casefold())
+
+        def load():
+            self._completion_runtime("dataconnect-schema")
+            if self.dataconnect is None:
+                return ()
+            sql = (
+                f"SELECT DISTINCT {column} AS value FROM {table} "
+                f"WHERE {column} IS NOT NULL AND UPPER({column}) LIKE :prefix ESCAPE '\\' "
+                f"FETCH FIRST {COMPLETION_LIMIT} ROWS ONLY")
+            rows = self.dataconnect.query(
+                sql, {"prefix": self._like_prefix(prefix.upper())})
+            return (row.get("value") for row in rows if row.get("value") not in (None, ""))
+
+        return self._cached_completion(key, load)
+
+    def _endpoint_values(self, prefix):
+        key = ("endpoints", prefix.casefold())
+
+        def load():
+            self._completion_runtime("endpoint-report")
+            if self.dataconnect is None:
+                return ()
+            like = self._like_prefix(prefix.upper())
+            sql = (
+                "SELECT MAC_ADDRESS, ENDPOINT_IP, HOSTNAME FROM ENDPOINTS_DATA "
+                "WHERE UPPER(MAC_ADDRESS) LIKE :prefix ESCAPE '\\' "
+                "OR UPPER(ENDPOINT_IP) LIKE :prefix ESCAPE '\\' "
+                "OR UPPER(HOSTNAME) LIKE :prefix ESCAPE '\\' "
+                f"FETCH FIRST {COMPLETION_LIMIT} ROWS ONLY")
+            rows = self.dataconnect.query(sql, {"prefix": like})
+            values = []
+            for row in rows:
+                values.extend(row.get(field) for field in (
+                    "hostname", "endpoint_ip", "mac_address"))
+            return (value for value in values if value not in (None, ""))
+
+        return self._cached_completion(key, load)
+
+    def _dataconnect_tables(self, prefix):
+        known = set()
+        for report in DATACONNECT_REPORTS.values():
+            known.update(value for key, value in report.items()
+                         if key in ("table", "condition_table"))
+            known.update(report.get("tables", {}).values())
+        live = self._dc_values("USER_TAB_COLUMNS", "TABLE_NAME", prefix)
+        return sorted(known | set(live), key=str.casefold)
+
+    def _node_values(self, prefix):
+        key = ("nodes", prefix.casefold())
+
+        def load():
+            values = list(self._dc_values("KEY_PERFORMANCE_METRICS", "ISE_NODE", prefix))
+            try:
+                self._completion_runtime("nodes")
+                rows = self.client.get_pan_api(
+                    "/deployment/node", api_name="cli_completion_nodes")
+                if isinstance(rows, dict):
+                    rows = rows.get("response", rows.get("items", ()))
+                for row in rows or ():
+                    if isinstance(row, dict):
+                        values.append(first_nonempty(
+                            row.get("hostname"), row.get("name"), row.get("fqdn")))
+            except Exception:
+                pass
+            return (value for value in values if value)
+
+        return self._cached_completion(key, load)
 
     def close(self):
         if self.dataconnect is not None:

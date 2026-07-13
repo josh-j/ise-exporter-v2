@@ -97,6 +97,30 @@ class FakeDataConnect:
         self.closed = True
 
 
+class CompletionDataConnect(FakeDataConnect):
+    def query(self, sql, parameters=None):
+        self.calls.append((sql, parameters or {}))
+        lowered = sql.lower()
+        if "select mac_address, endpoint_ip, hostname" in lowered:
+            return [
+                {"mac_address": "AA:BB:CC:DD:EE:FF", "endpoint_ip": "192.0.2.25",
+                 "hostname": "client-25.example.test"},
+                {"mac_address": "00:11:22:33:44:55", "endpoint_ip": "192.0.2.26",
+                 "hostname": "client with space"},
+            ]
+        if "select distinct endpoint_policy" in lowered:
+            return [{"value": "Windows Workstations"}, {"value": "Windows Servers"}]
+        if "select distinct ise_node" in lowered:
+            return [{"value": "laba-ise-001"}, {"value": "laba-ise-002"}]
+        if "select distinct username" in lowered:
+            return [{"value": "alice"}, {"value": "alex admin"}]
+        if "select distinct device_name" in lowered:
+            return [{"value": "access-switch-01"}, {"value": "access switch 02"}]
+        if "select distinct table_name" in lowered:
+            return [{"value": "CUSTOM_REPORT_VIEW"}]
+        return super().query(sql, parameters)
+
+
 def test_schema_is_network_and_credential_free(capsys):
     assert cli.main(["schema", "secure-client", "--output", "json"]) == 0
     schema = json.loads(capsys.readouterr().out)
@@ -114,6 +138,30 @@ def test_endpoints_are_bounded_and_paginated(capsys):
     calls = [call for call in client.calls if call[0] == "ers"]
     assert [call[2]["page"] for call in calls] == [1, 2]
     assert [call[2]["size"] for call in calls] == [100, 25]
+
+
+@pytest.mark.parametrize(("pattern", "expected"), (
+    ("LAB-*", "name.STARTSW.LAB-"),
+    ("*-WIN", "name.ENDSW.-WIN"),
+    ("*LAPTOP*", "name.CONTAINS.LAPTOP"),
+    ("LAB-001", "name.EQ.LAB-001"),
+))
+def test_endpoints_wildcards_are_server_side_ers_filters(pattern, expected, capsys):
+    client = FakeClient()
+
+    assert cli.main(["endpoints", pattern, "--limit", "5", "-o", "json"],
+                    client=client) == 0
+
+    assert client.calls[0][2]["filter"] == expected
+
+
+def test_endpoints_rejects_complex_wildcard_without_enumerating():
+    client = FakeClient()
+
+    with pytest.raises(SystemExit):
+        cli.main(["endpoints", "LAB-*-WIN"], client=client)
+
+    assert client.calls == []
 
 
 def test_secure_client_uses_mnt_session_path_and_exporter_parsers(capsys):
@@ -322,3 +370,61 @@ def test_repl_recovers_from_parse_error_and_runs_next_command():
     rendered = stdout.getvalue()
     assert "invalid choice" in rendered
     assert '"api": "ERS + MnT + optional Data Connect"' in rendered
+
+
+def test_repl_completion_uses_parser_options_and_enum_choices():
+    shell = cli.ISEShell(client=FakeClient(), dataconnect=CompletionDataConnect(),
+                         stdin=io.StringIO(), stdout=io.StringIO())
+
+    options = shell.completion_candidates("radius-auth --")
+    assert {"--identifier", "--username", "--nad", "--status", "--limit",
+            "--output", "--select"}.issubset(set(options))
+    assert shell.completion_candidates(
+        "tacacs-activity --event-type a") == [
+            "accounting", "authentication", "authorization"]
+    assert shell.completion_candidates("radius-auth --output js") == [
+        "json", "jsonl"]
+    assert shell.completion_candidates("posture --status N") == [
+        "NonCompliant", "NotApplicable"]
+
+
+def test_repl_completion_tracks_positionals_even_after_option_values():
+    shell = cli.ISEShell(client=FakeClient(), dataconnect=CompletionDataConnect(),
+                         stdin=io.StringIO(), stdout=io.StringIO())
+
+    assert shell.completion_candidates(
+        "endpoint --output json cli") == [
+            "'client with space'", "client-25.example.test"]
+    assert shell.completion_candidates("get openapi /lic") == [
+        "/license/system/tier-state "]
+    assert shell.completion_candidates("schema sec") == ["secure-client "]
+
+
+def test_repl_completion_offers_bounded_quoted_live_values_and_caches_them():
+    dataconnect = CompletionDataConnect()
+    shell = cli.ISEShell(client=FakeClient(), dataconnect=dataconnect,
+                         stdin=io.StringIO(), stdout=io.StringIO())
+
+    assert shell.completion_candidates("endpoint client") == [
+        "'client with space'", "client-25.example.test"]
+    first_call_count = len(dataconnect.calls)
+    assert shell.completion_candidates("endpoint client") == [
+        "'client with space'", "client-25.example.test"]
+    assert len(dataconnect.calls) == first_call_count
+    assert shell.completion_candidates("endpoint-report --profile Win") == [
+        "'Windows Workstations'", "'Windows Servers'"]
+    assert shell.completion_candidates("certificates --node laba-") == [
+        "laba-ise-001", "laba-ise-002"]
+    endpoint_sql, parameters = dataconnect.calls[0]
+    assert "FETCH FIRST 25 ROWS ONLY" in endpoint_sql
+    assert parameters == {"prefix": "CLIENT%"}
+
+
+def test_repl_completion_offers_schema_tables_and_comma_select_fields():
+    shell = cli.ISEShell(client=FakeClient(), dataconnect=CompletionDataConnect(),
+                         stdin=io.StringIO(), stdout=io.StringIO())
+
+    tables = shell.completion_candidates("dataconnect-schema C")
+    assert tables == ["CUSTOM_REPORT_VIEW "]
+    assert shell.completion_candidates(
+        "radius-auth --select timestamp,user") == ["timestamp,username"]
