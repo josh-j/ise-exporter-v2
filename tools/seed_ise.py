@@ -17,7 +17,8 @@ seeds the two dimensions that are actually vetted: the endpoint profile breakdow
 (here) and authorization profiles for the session dimension (--authz).
 
 Config via env (same names the exporter uses):
-    ISE_HOST      (default 10.81.0.10)
+    ISE_HOST      (PAN/ERS; default 10.81.0.10)
+    ISE_MNT_HOST  (MnT; defaults to ISE_HOST)
     ISE_USER      (ERS admin, e.g. admin)
     ISE_PASS
     ISE_ERS_PORT  (default 9060)
@@ -62,6 +63,7 @@ AUTHZ_PROFILES = [
 
 def connect():
     host = os.environ.get("ISE_HOST", "10.81.0.10")
+    mnt_host = os.environ.get("ISE_MNT_HOST", host)
     # ERS_PORT is the name the exporter uses; accept the older ISE_ERS_PORT as a fallback.
     port = os.environ.get("ERS_PORT") or os.environ.get("ISE_ERS_PORT", "9060")
     user = os.environ.get("ISE_USER") or sys.exit("set ISE_USER")
@@ -69,7 +71,7 @@ def connect():
     return IdentityServicesEngineAPI(
         username=user, password=pw, uses_api_gateway=False,
         ers_base_url=f"https://{host}:{port}", ui_base_url=f"https://{host}",
-        mnt_base_url=f"https://{host}", px_grid_base_url=f"https://{host}:8910",
+        mnt_base_url=f"https://{mnt_host}", px_grid_base_url=f"https://{host}:8910",
         version="3.3_patch_1", verify=False, debug=False, uses_csrf_token=False)
 
 

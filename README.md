@@ -90,6 +90,15 @@ gauges when pxGrid endpoint enrichment is empty. The cache contains endpoint
 metadata; store it on local disk with normal service-account permissions, not in a
 public volume.
 
+To verify host routing and inspect one endpoint without starting the exporter, export
+`ISE_HOST`, `ISE_MNT_HOST`, `ISE_USER`, and `ISE_PASS`, then run:
+
+    tools/curl_ers_endpoint_detail.sh AA:BB:CC:DD:EE:FF
+    tools/curl_mnt_endpoint_attributes.sh AA:BB:CC:DD:EE:FF
+
+The first script always targets the PAN/ERS node. The second always targets the MnT
+node and prints the session fields containing Secure Client posture attributes.
+
 ## pxGrid setup (ISE side)
 
 Only needed if you want `COLLECT_PXGRID_ENDPOINTS` (default on) or

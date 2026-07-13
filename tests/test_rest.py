@@ -28,6 +28,42 @@ class _Resp:
         return self._data
 
 
+def test_api_families_route_to_their_configured_hosts():
+    cfg = types.SimpleNamespace(
+        ise_host="pan.example.mil", ise_mnt_host="mnt.example.mil", ers_port=9060,
+        ise_user="u", ise_pass="p",
+    )
+    client = ISERestClient(cfg)
+    json_calls = []
+
+    def fake_json(session, url, params=None, api_name="x"):
+        json_calls.append((session, url))
+        return {"response": {"ok": True}} if "/api/v1/" in url else {"ERSEndPoint": {}}
+
+    client._get_json = fake_json
+    client.get_ers("/config/endpoint/id-1")
+    client.get_pan_api("/deployment/node")
+
+    mnt_calls = []
+
+    def fake_request(session, url, params=None, timeout=30, api_name="x"):
+        mnt_calls.append((session, url))
+        return _Resp(b"<session><other_attr_string>PostureStatus=Compliant</other_attr_string></session>")
+
+    client._request = fake_request
+    result = client.get_mnt_xml("/Session/MACAddress/AA:BB:CC:DD:EE:FF")
+
+    assert json_calls == [
+        (client.session, "https://pan.example.mil:9060/ers/config/endpoint/id-1"),
+        (client.session, "https://pan.example.mil/api/v1/deployment/node"),
+    ]
+    assert mnt_calls == [(
+        client.mnt_session,
+        "https://mnt.example.mil/admin/API/mnt/Session/MACAddress/AA:BB:CC:DD:EE:FF",
+    )]
+    assert result["sessions"][0]["other_attr_string"] == "PostureStatus=Compliant"
+
+
 def test_get_ers_paginates_iteratively():
     c = ISERestClient.__new__(ISERestClient)
     c.ers_url = "https://h:9060/ers"
