@@ -233,6 +233,7 @@ def test_authz_uses_recent_auth_status_failures():
             return {"total": 0, "sessions": []}
 
     clear_metric(metrics.ise_session_failure_reasons)
+    clear_metric(metrics.ise_session_failure_auth_methods)
     clear_metric(metrics.ise_session_status_endpoints)
     authz._cache = None
 
@@ -241,6 +242,9 @@ def test_authz_uses_recent_auth_status_failures():
     failures = {(s.labels["reason_code"], s.labels["ops_owner"]): s.value
                 for s in metrics.ise_session_failure_reasons.collect()[0].samples}
     assert failures[("24408", "AD Lab")] == 1.0
+    failure_methods = {(s.labels["method"], s.labels["ops_owner"]): s.value
+                       for s in metrics.ise_session_failure_auth_methods.collect()[0].samples}
+    assert failure_methods[("dot1x", "AD Lab")] == 1.0
     assert metrics.ise_session_status_endpoints.labels(
         nad_hostname="lab-nad", location="Lab", ops_owner="AD Lab", status="failed"
     )._value.get() == 1

@@ -1,6 +1,6 @@
 # Grafana dashboards
 
-Nine dashboards, each scoped to one part of the exporter's metric surface
+Ten dashboards, each scoped to one part of the exporter's metric surface
 (`ise_exporter/metrics.py`):
 
 | File | Covers | Notes |
@@ -14,6 +14,7 @@ Nine dashboards, each scoped to one part of the exporter's metric surface
 | `ise-failure-triage.json` | RADIUS failure triage (headline counts, failure-code trend + leaderboard with decoded codes, failure×location/×ops-owner heatmaps, per-ops-owner failure rate, cert/PKI stat, NAD work queue) | Same metrics as auth-troubleshooting, different framing; filters by ops-owner/location/reason-code |
 | `ise-pxgrid-health.json` | pxGrid stream connection state, event throughput, resync counts, streamed state size | Only populated when `COLLECT_PXGRID_STREAM=true`; all panels correctly show "No data" in poll mode |
 | `ise-psn-troubleshooting.json` | PSN session distribution, deployment/collector/API health, total/client authentication latency, and per-execution-step latency | PSN session attribution is MnT poll-sourced; latency samples are recorded once per newly fetched session detail |
+| `ise-tacacs.json` | Internal-user hygiene, suspected-unused review candidates, Device Admin policy/authentication/authorization hit counts, shell profiles, and command sets | ISE exposes no per-account TACACS last login; suspected-unused is limited to enabled internal users when all Device Admin policy-set hits are zero |
 
 ## Import
 
@@ -85,17 +86,16 @@ IP is one of its registered `NetworkDeviceIPList` addresses.
   results below are the real signal.
 - **Per-policy pass/fail** (`ise_posture_policy_result{policy, result, ops_owner}`) —
   the "Posture Policy Results" section. Parsed from each endpoint's `PostureReport`
-  attribute, collected via the **getEndpoints REST poll** (not the endpoint topic,
-  not MnT). `policy` is the ISE posture policy name (encodes the check: `…-FIREWALL`,
+  attribute, collected via the **getEndpoints REST poll** or the cached ERS endpoint
+  custom attributes (not the endpoint topic). `policy` is the ISE posture policy name (encodes the check: `…-FIREWALL`,
   `…-AM`, `…-DE-BITLOCKER`, `…-PM-PATCH`, …); `result` is the policy-level roll-up
   (`Passed`/`Failed`/…); requirement/condition detail is dropped (too
   high-cardinality). `ops_owner` is joined from the endpoint's live session (stream
-  mode) and is `unknown` when no session matches. Needs ISE endpoint publishing on
-  (see the "No data" section below); refreshes every `PXGRID_ENDPOINT_REFRESH_INTERVAL`.
+  mode) and is `unknown` when no session matches or ERS owns the fallback.
 - **Posture agent version** (`ise_endpoints_by_secureclient_version{version}`) —
   from the endpoint's `PostureAgentVersion` / `SecureClientVersion` attribute via
-  getEndpoints (prefix like "Posture Agent for " stripped). Same source/gating as
-  the per-policy results.
+  getEndpoints or ERS endpoint custom attributes (prefix like "Posture Agent for "
+  stripped). Same source ownership as the per-policy results.
 - **MDM device trust** (`ise_session_mdm_status{dimension, value, ops_owner}`) —
   `dimension` ∈ registered/compliant/disk_encrypted/jailbroken/pin_locked,
   `value` ∈ true/false/unknown. **Stream mode only** (the pxGrid session object
@@ -169,4 +169,4 @@ scrape_configs:
 ## Notes
 
 - None of these dashboards filter by `job`/`instance` — they assume one Prometheus target per ISE deployment. Running more than one ise-exporter (e.g. separate prod/dev ISE clusters) against the same Prometheus? Either point each dashboard at a differently-scoped data source, or add `job`/`instance` template variables and append `{job=~"$job"}` to the queries.
-- `ise-overview.json`'s "Additional Signals" row covers the remaining metrics not in the other rows: `ise_license_enabled`, `ise_patch_installed`, `ise_backup_configured`/`ise_backup_last_success_timestamp`, `ise_api_requests_total`, `ise_collector_duration_seconds`, and `ise_last_successful_scrape_timestamp` staleness — between all nine dashboards, every metric in `metrics.py` has a panel.
+- `ise-overview.json`'s "Additional Signals" row covers the remaining metrics not in the other rows: `ise_license_enabled`, `ise_patch_installed`, `ise_backup_configured`/`ise_backup_last_success_timestamp`, `ise_api_requests_total`, `ise_collector_duration_seconds`, and `ise_last_successful_scrape_timestamp` staleness — between all ten dashboards, every metric in `metrics.py` has a panel.

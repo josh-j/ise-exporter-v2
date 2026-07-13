@@ -1112,7 +1112,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Auth method mix on NADs that have any failures. Caveat: this is methods-on-NADs-with-failures, not methods-of-failed-sessions specifically \u2014 close but not exact. If methods skew heavily toward MAB, the dominant failure path is probably MAB-related (unknown MACs, 11036). If dot1x dominates, look at supplicant/cert issues (11512, 12300, 12500).",
+      "description": "Auth method mix from failed Live Log sessions specifically. If methods skew heavily toward MAB, inspect unknown-MAC failures such as 11036. If dot1x dominates, inspect supplicant, identity-store, and certificate failures such as 11512, 12300, and 12500.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1168,7 +1168,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (method) (\n  ise_session_auth_methods{ops_owner=~\"$ops_owner\", location=~\"$location\"}\n  * on(nad_hostname)\n  (\n    (sum by (nad_hostname) (ise_session_failure_reasons{ops_owner=~\"$ops_owner\", location=~\"$location\"}) > 0)\n  )\n)",
+          "expr": "sum by (method) (ise_session_failure_auth_methods{ops_owner=~\"$ops_owner\", location=~\"$location\"})",
           "legendFormat": "{{method}}",
           "refId": "A"
         }

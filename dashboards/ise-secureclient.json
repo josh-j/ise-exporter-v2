@@ -169,10 +169,10 @@
     },
     {
       "id": 21, "type": "table", "title": "Posture Policies — Passed vs Failed",
-      "description": "Per posture policy (the individual checks: firewall, anti-malware, disk encryption, patch, ...), how many endpoints passed vs failed. Parsed from pxGrid getEndpoints when available, otherwise from MnT session other_attr_string when getEndpoints is empty. Empty only when no active session or endpoint carries a PostureReport.",
+      "description": "Per posture policy (firewall, anti-malware, disk encryption, patch, ...), how many endpoints passed vs failed. Parsed from pxGrid getEndpoints, cached ERS endpoint custom attributes, or MnT session attributes, in that ownership order.",
       "gridPos": { "h": 12, "w": 12, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (policy, result) (ise_posture_policy_result) or vector(0)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (policy, result) (ise_posture_policy_result)", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "filterable": true } },
         "overrides": [
@@ -194,7 +194,7 @@
       "description": "Posture policies with the most endpoints failing them — which specific checks (firewall, anti-malware, BitLocker, patch, ...) are driving non-compliance. From PostureReport.",
       "gridPos": { "h": 12, "w": 12, "x": 12, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, sum by (policy) (ise_posture_policy_result{result=\"Failed\"})) or vector(0)", "legendFormat": "{{policy}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, sum by (policy) (ise_posture_policy_result{result=\"Failed\"}))", "legendFormat": "{{policy}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },
@@ -250,21 +250,39 @@
     },
     {
       "id": 15, "type": "bargauge", "title": "Secure Client / Posture Agent Version (top 15)",
-      "description": "Endpoints by posture-agent / Secure Client version. From pxGrid getEndpoints when available, otherwise from MnT session other_attr_string (SecureClientVersion / AnyConnectVersion / PostureAgentVersion) when getEndpoints is empty. Empty only if no session or endpoint exposes a version attribute.",
+      "description": "Endpoints by posture-agent / Secure Client version from pxGrid getEndpoints, cached ERS endpoint custom attributes, or MnT session attributes. Empty only if no source exposes a version attribute.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_secureclient_version) or vector(0)", "legendFormat": "{{version}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_secureclient_version)", "legendFormat": "{{version}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },
     {
       "id": 16, "type": "bargauge", "title": "Endpoints by OS (top 10)",
-      "description": "MFC-derived operating system of profiled endpoints (reuses ise_endpoints_by_os). Requires COLLECT_PXGRID_ENDPOINTS=true.",
+      "description": "MFC-derived operating system of profiled endpoints from the ERS endpoint-attribute cache, optionally enriched by pxGrid. Unknown endpoints are excluded so learned operating systems remain visible.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, ise_endpoints_by_os)", "legendFormat": "{{os}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, ise_endpoints_by_os{os!=\"unknown\"})", "legendFormat": "{{os}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
+    },
+    {
+      "id": 23, "type": "stat", "title": "PostureReport Attribute Coverage",
+      "description": "Fraction of cached ERS endpoints carrying a PostureReport custom attribute. Zero explains an empty per-policy results section without implying that the dashboard query is broken.",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 52 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_attribute_coverage{attribute=\"posture_report\"} or vector(0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "green", "value": 0.5 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "textMode": "auto" }
+    },
+    {
+      "id": 24, "type": "stat", "title": "Agent Version Attribute Coverage",
+      "description": "Fraction of cached ERS endpoints carrying PostureAgentVersion, SecureClientVersion, or AnyConnectVersion.",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 52 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoint_attribute_coverage{attribute=\"secureclient_version\"} or vector(0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "green", "value": 0.5 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "textMode": "auto" }
     }
   ]
 }

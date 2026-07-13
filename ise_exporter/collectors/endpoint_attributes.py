@@ -5,13 +5,10 @@ slow cycle from a TTL cache and emits low-cardinality aggregates: profile policy
 (via profileId), identity group (via groupId), static assignment flags, and custom
 attributes.
 
-NOTE: the rich profiler-learned attributes shown in Context Visibility — MFC
-hardware model / manufacturer / OS / endpoint type, OUI, EndPointSource, certainty,
-MDM — are NOT exposed by any ERS or OpenAPI endpoint (verified against the ISE 3.3
-API / ciscoisesdk: there is no ``/endpoint/{id}/attributes`` resource). ISE serves
-them only via pxGrid getEndpoints (the ``mfcInfo*`` keys read in models.py). When
-pxGrid isn't delivering endpoints, those gauges have no data — there is no REST
-fallback for them.
+ISE 3.3 exposes MFC OS/manufacturer plus deployment-specific custom attributes on
+the ERS endpoint object. When posture integrations copy ``PostureReport`` and agent
+version into those custom attributes, this collector provides the stable fallback
+for the Secure Client dashboard without requiring pxGrid getEndpoints.
 """
 import logging
 import json
@@ -21,7 +18,9 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import metrics
-from ..util import clear_metric, normalize_bool_label
+from ..util import (clear_metric, first_nonempty, normalize_agent_version,
+                    normalize_bool_label, normalize_mac, parse_posture_report,
+                    POSTURE_REPORT_KEYS, SECURECLIENT_VERSION_KEYS)
 from . import CollectorFailed, observe, pxgrid_endpoints_present
 
 logger = logging.getLogger(__name__)
@@ -31,6 +30,12 @@ _group_cache = {}         # endpoint group id -> group name
 _profile_cache = {}       # profiler profile id -> policy/profile name
 _next_page = 1
 _cache_loaded = False
+_posture_attributes_present = False
+
+
+def posture_attributes_present():
+    """Whether cached ERS endpoints currently own posture-policy/agent metrics."""
+    return _posture_attributes_present
 
 
 def collect(client, cfg):
@@ -177,7 +182,12 @@ def _endpoint_detail(raw):
 
 
 def _emit_metrics(client, cfg, refreshed, errors, inventory_total=None):
+    global _posture_attributes_present
     pxgrid_has_endpoints = pxgrid_endpoints_present()
+    _posture_attributes_present = any(
+        first_nonempty(_custom_attrs(rec["detail"]),
+                       *(POSTURE_REPORT_KEYS + SECURECLIENT_VERSION_KEYS))
+        for rec in _records.values())
     metric_list = [
         metrics.ise_endpoint_attribute_fetch_errors,
         metrics.ise_endpoint_attribute_coverage,
@@ -196,6 +206,9 @@ def _emit_metrics(client, cfg, refreshed, errors, inventory_total=None):
             metrics.ise_endpoints_by_os,
             metrics.ise_endpoint_mfc_coverage,
         ))
+        if _posture_attributes_present:
+            metric_list.extend((metrics.ise_posture_policy_result,
+                                metrics.ise_endpoints_by_secureclient_version))
     for metric in metric_list:
         clear_metric(metric)
 
@@ -213,11 +226,13 @@ def _emit_metrics(client, cfg, refreshed, errors, inventory_total=None):
     by_group = defaultdict(int)
     by_static = defaultdict(int)
     by_custom = defaultdict(int)
-    coverage = defaultdict(int)
+    coverage = defaultdict(int, {"posture_report": 0, "secureclient_version": 0})
     profile_ids = {}          # leaf policy label -> profileId, for the ERS hierarchy fallback
     by_manufacturer = defaultdict(int)
     by_model = defaultdict(int)
     by_os = defaultdict(int)
+    by_scversion = defaultdict(set)
+    posture_policies = defaultdict(set)
     mfc_cov = defaultdict(int)
 
     custom_keys = set(cfg.ers_endpoint_custom_attribute_keys)
@@ -251,6 +266,16 @@ def _emit_metrics(client, cfg, refreshed, errors, inventory_total=None):
         _cover(mfc_cov, "os", os_)
 
         custom = _custom_attrs(ep)
+        endpoint_key = normalize_mac(ep.get("mac") or ep.get("name")) or str(ep.get("id") or "")
+        report = first_nonempty(custom, *POSTURE_REPORT_KEYS)
+        if report and endpoint_key:
+            coverage["posture_report"] += 1
+            for policy_name, result in parse_posture_report(report):
+                posture_policies[(policy_name, result, "unknown")].add(endpoint_key)
+        version = normalize_agent_version(first_nonempty(custom, *SECURECLIENT_VERSION_KEYS))
+        if version and endpoint_key:
+            coverage["secureclient_version"] += 1
+            by_scversion[version].add(endpoint_key)
         for key in custom_keys:
             value = custom.get(key)
             if value:
@@ -281,6 +306,14 @@ def _emit_metrics(client, cfg, refreshed, errors, inventory_total=None):
             metrics.ise_endpoint_mfc_coverage.labels(attribute=attr).set(mfc_cov.get(attr, 0) / cached)
         if not _emit_device_type_summary(client):
             metrics.ise_endpoints_by_endpoint_type.labels(endpoint_type="unknown").set(total)
+        if _posture_attributes_present:
+            for version, endpoint_keys in by_scversion.items():
+                metrics.ise_endpoints_by_secureclient_version.labels(
+                    version=version).set(len(endpoint_keys))
+            for (policy_name, result, owner), endpoint_keys in posture_policies.items():
+                metrics.ise_posture_policy_result.labels(
+                    policy=policy_name, result=result, ops_owner=owner
+                ).set(len(endpoint_keys))
     logger.info("ERS endpoint attributes: cache=%d refreshed=%d next_page=%d",
                 total, refreshed, _next_page)
 

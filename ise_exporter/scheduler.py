@@ -9,7 +9,7 @@ from . import metrics
 from . import collectors
 from .collectors import (sessions, authz, devices, endpoints, deployment,
                          certificates, licensing, backup, patches, models, ers_endpoints,
-                         endpoint_attributes)
+                         endpoint_attributes, tacacs)
 
 logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
@@ -57,7 +57,7 @@ class PollScheduler:
         fast = {"sessions", "endpoints"}
         medium = {"devices", "deployment", "authz"}
         slow = {"certificates", "licensing", "backup", "patches", "pxgrid_endpoints",
-                "ers_endpoint_profiles", "ers_endpoint_attributes"}
+                "ers_endpoint_profiles", "ers_endpoint_attributes", "tacacs"}
         # "streaming" is now the LIVE state, not just config: true only while the pxGrid
         # stream is actually connected. When it drops, this flips to false and the full
         # session/authz/endpoint poll runs as a fallback until the stream recovers.
@@ -124,6 +124,9 @@ class PollScheduler:
                 and self._due("ers_endpoint_attributes", now, fast, medium, slow):
             endpoint_attributes.collect(self.client, cfg)
             self.last_run["ers_endpoint_attributes"] = now
+        if getattr(cfg, "collect_tacacs", True) and self._due("tacacs", now, fast, medium, slow):
+            tacacs.collect(self.client, cfg)
+            self.last_run["tacacs"] = now
 
     def loop(self, shutdown):
         nxt = time.time()

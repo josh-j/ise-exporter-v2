@@ -36,6 +36,7 @@ _UNSET = object()
 # the only gauges it clears/emits, avoiding a double-clear war with the projector.
 _STREAM_OWNED = (
     metrics.ise_session_failure_reasons,
+    metrics.ise_session_failure_auth_methods,
     metrics.ise_session_authz_rule_endpoints,
     metrics.ise_session_policy_set_endpoints,
 )
@@ -47,6 +48,11 @@ _UNIQUE_ENDPOINT_METRICS = (
 _cache = None
 _observed_recent_auth_ids = {}
 _MAX_OBSERVED_RECENT_AUTHS = 10000
+
+
+def _endpoint_posture_owned():
+    from .endpoint_attributes import posture_attributes_present
+    return posture_attributes_present()
 
 
 def _detail_cache(cfg):
@@ -179,7 +185,7 @@ def collect(client, cfg, mappings, active_list=_UNSET):
                 clear_metric_where(metrics.ise_session_status_endpoints, status="failed")
             # no sessions -> no other_attr_string posture either; clear the fallback gauges
             # unless getEndpoints owns them.
-            if not pxgrid_endpoints_present():
+            if not pxgrid_endpoints_present() and not _endpoint_posture_owned():
                 clear_metric(metrics.ise_posture_policy_result)
                 clear_metric(metrics.ise_endpoints_by_secureclient_version)
             metrics.ise_session_detail_cache_size.set(cache.size())
@@ -217,6 +223,7 @@ def collect(client, cfg, mappings, active_list=_UNSET):
         failed = defaultdict(set)
         reasons = defaultdict(set)
         methods = defaultdict(set)
+        failed_methods = defaultdict(set)
         profiles = defaultdict(set)
         rules = defaultdict(set)
         policy_sets = defaultdict(set)
@@ -247,6 +254,8 @@ def collect(client, cfg, mappings, active_list=_UNSET):
             method = detail.get("authentication_method", "")
             if method:
                 methods[(method,) + key].add(mac)
+                if detail.get("failed", "").lower() == "true":
+                    failed_methods[(method,) + key].add(mac)
 
             for p in detail.get("selected_azn_profiles", "").split(","):
                 p = p.strip()
@@ -303,6 +312,7 @@ def collect(client, cfg, mappings, active_list=_UNSET):
                 method = detail.get("authentication_method", "")
                 if method:
                     methods[(method,) + key].add(mac)
+                    failed_methods[(method,) + key].add(mac)
                 _observe_recent_latency_once(
                     detail, parse_other_attr_string(detail.get("other_attr_string", "")),
                     nad, loc, owner)
@@ -312,6 +322,7 @@ def collect(client, cfg, mappings, active_list=_UNSET):
 
         # always emitted — the session topic can't carry these
         _emit_unique(metrics.ise_session_failure_reasons, reasons, "reason_code")
+        _emit_unique(metrics.ise_session_failure_auth_methods, failed_methods, "method")
         _emit_unique(metrics.ise_session_authz_rule_endpoints, rules, "authz_rule")
         _emit_unique(metrics.ise_session_policy_set_endpoints, policy_sets, "policy_set")
 
@@ -343,7 +354,7 @@ def collect(client, cfg, mappings, active_list=_UNSET):
         # returns 0) the same attributes are in each session's other_attr_string, so emit
         # them from the MnT fan-out here instead. Gated on getEndpoints being empty so the
         # two sources never double-count, and runs in BOTH poll and stream mode.
-        if not pxgrid_endpoints_present():
+        if not pxgrid_endpoints_present() and not _endpoint_posture_owned():
             clear_metric(metrics.ise_posture_policy_result)
             clear_metric(metrics.ise_endpoints_by_secureclient_version)
             for (pol, res, owner), macs in posture_policies.items():

@@ -24,6 +24,7 @@ ise_radius_sessions_by_psn = Gauge("ise_radius_sessions_by_psn", "Sessions per P
 ise_session_status_endpoints = Gauge("ise_session_status_endpoints", "Unique endpoints per NAD by status", ["nad_hostname", "location", "ops_owner", "status"])
 ise_session_failure_reasons = Gauge("ise_session_failure_reasons", "Unique endpoints by failure reason", ["reason_code", "nad_hostname", "location", "ops_owner"])
 ise_session_auth_methods = Gauge("ise_session_auth_methods", "Unique endpoints by auth method", ["method", "nad_hostname", "location", "ops_owner"])
+ise_session_failure_auth_methods = Gauge("ise_session_failure_auth_methods", "Unique failed endpoints by auth method", ["method", "nad_hostname", "location", "ops_owner"])
 ise_authz_unique_endpoints_by_profile = Gauge("ise_authz_unique_endpoints_by_profile", "Unique endpoints per authz profile", ["authz_profile", "nad_hostname", "location", "ops_owner"])
 ise_session_authz_rule_endpoints = Gauge("ise_session_authz_rule_endpoints", "Unique endpoints per matched authz rule", ["authz_rule", "nad_hostname", "location", "ops_owner"])
 ise_session_policy_set_endpoints = Gauge("ise_session_policy_set_endpoints", "Unique endpoints per policy set", ["policy_set", "nad_hostname", "location", "ops_owner"])
@@ -119,6 +120,35 @@ ise_backup_configured = Gauge("ise_backup_configured", "Backup configured")
 ise_version_info = Info("ise_version", "ISE version information")
 ise_patch_level = Gauge("ise_patch_level", "Highest installed patch number")
 ise_patch_installed = Gauge("ise_patch_installed", "Patch installed", ["patch_number"])
+
+# --- TACACS / Device Administration ---
+ise_tacacs_internal_users_total = Gauge(
+    "ise_tacacs_internal_users_total", "ISE internal users available to Device Administration")
+ise_tacacs_internal_user_info = Gauge(
+    "ise_tacacs_internal_user_info", "ISE internal-user account state",
+    ["username", "enabled", "password_never_expires", "change_password", "identity_store"])
+ise_tacacs_internal_user_created_timestamp = Gauge(
+    "ise_tacacs_internal_user_created_timestamp", "Internal-user creation timestamp",
+    ["username"])
+ise_tacacs_internal_user_modified_timestamp = Gauge(
+    "ise_tacacs_internal_user_modified_timestamp", "Internal-user last-modified timestamp",
+    ["username"])
+ise_tacacs_suspected_unused_internal_user = Gauge(
+    "ise_tacacs_suspected_unused_internal_user",
+    "Internal-user candidate for review based on Device Admin activity evidence",
+    ["username", "reason"])
+ise_tacacs_policy_set_hits = Gauge(
+    "ise_tacacs_policy_set_hits", "Device Admin policy-set hit count",
+    ["policy_set", "state", "service"])
+ise_tacacs_authentication_rule_hits = Gauge(
+    "ise_tacacs_authentication_rule_hits", "Device Admin authentication-rule hit count",
+    ["policy_set", "rule", "state", "identity_source"])
+ise_tacacs_authorization_rule_hits = Gauge(
+    "ise_tacacs_authorization_rule_hits", "Device Admin authorization-rule hit count",
+    ["policy_set", "rule", "state", "profile", "command_sets"])
+ise_tacacs_policy_objects_total = Gauge(
+    "ise_tacacs_policy_objects_total", "Configured Device Admin objects by type",
+    ["object_type"])
 
 # --- exporter self-observability ---
 ise_scrape_duration_seconds = Histogram("ise_scrape_duration_seconds", "Scrape time", buckets=[1, 5, 10, 30, 60, 120, 300])

@@ -77,6 +77,8 @@ class Config:
     collect_backup_status: bool = True
     collect_patches: bool = True
     collect_authz: bool = True
+    collect_tacacs: bool = True
+    tacacs_internal_user_max: int = 1000
     collect_pxgrid_endpoints: bool = True
     collect_pxgrid_stream: bool = False
     # Legacy ERS endpoint profiling-policy breakdown, used only when the richer
@@ -131,6 +133,7 @@ class Config:
         return (f"collect_pxgrid_stream={self.collect_pxgrid_stream} "
                 f"collect_pxgrid_endpoints={self.collect_pxgrid_endpoints} "
                 f"collect_ers_endpoint_attributes={self.collect_ers_endpoint_attributes} "
+                f"collect_tacacs={self.collect_tacacs} "
                 f"pxgrid_ready={self.pxgrid_ready} pxgrid_host={self.pxgrid_host!r} "
                 f"pxgrid_node_name={self.pxgrid_node_name!r} "
                 f"pxgrid_client_cert={self.pxgrid_client_cert!r} "
@@ -161,6 +164,8 @@ class Config:
             collect_backup_status=_b("COLLECT_BACKUP_STATUS", True),
             collect_patches=_b("COLLECT_PATCHES", True),
             collect_authz=_b("COLLECT_AUTHZ", True),
+            collect_tacacs=_b("COLLECT_TACACS", True),
+            tacacs_internal_user_max=_i("TACACS_INTERNAL_USER_MAX", 1000),
             collect_pxgrid_endpoints=_b("COLLECT_PXGRID_ENDPOINTS", True),
             collect_pxgrid_stream=_b("COLLECT_PXGRID_STREAM", False),
             collect_ers_endpoint_fallback=_b("COLLECT_ERS_ENDPOINT_FALLBACK", True),

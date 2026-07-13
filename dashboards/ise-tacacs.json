@@ -1,0 +1,158 @@
+{
+  "__inputs": [{"name":"DS_PROMETHEUS","label":"Prometheus","description":"","type":"datasource","pluginId":"prometheus","pluginName":"Prometheus"}],
+  "__requires": [
+    {"type":"grafana","id":"grafana","name":"Grafana","version":"10.0.0"},
+    {"type":"datasource","id":"prometheus","name":"Prometheus","version":"1.0.0"},
+    {"type":"panel","id":"stat","name":"Stat","version":""},
+    {"type":"panel","id":"bargauge","name":"Bar gauge","version":""},
+    {"type":"panel","id":"table","name":"Table","version":""},
+    {"type":"panel","id":"timeseries","name":"Time series","version":""},
+    {"type":"panel","id":"row","name":"Row","version":""},
+    {"type":"panel","id":"text","name":"Text","version":""}
+  ],
+  "annotations":{"list":[]}, "editable":true, "fiscalYearStartMonth":0,
+  "graphTooltip":1, "links":[], "liveNow":false, "schemaVersion":39,
+  "tags":["ise","cisco","tacacs","device-admin","accounts"],
+  "templating":{"list":[{
+    "current":{"selected":true,"text":"Prometheus","value":"prometheus"},
+    "hide":0,"label":"Prometheus","name":"DS_PROMETHEUS",
+    "options":[{"selected":true,"text":"Prometheus","value":"prometheus"}],
+    "query":"prometheus","refresh":1,"regex":"","type":"datasource"
+  }]},
+  "time":{"from":"now-24h","to":"now"}, "timepicker":{}, "timezone":"browser",
+  "refresh":"1m", "title":"ISE Exporter / TACACS & Device Administration",
+  "uid":"ise-tacacs", "version":1, "weekStart":"",
+  "panels":[
+    {"id":1,"type":"row","title":"TACACS Overview","collapsed":false,"gridPos":{"h":1,"w":24,"x":0,"y":0},"panels":[]},
+    {
+      "id":2,"type":"stat","title":"Internal Accounts","gridPos":{"h":4,"w":6,"x":0,"y":1},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"ise_tacacs_internal_users_total","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"blue","value":null}]}},"overrides":[]},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"],"values":false},"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","textMode":"auto"}
+    },
+    {
+      "id":3,"type":"stat","title":"Suspected Unused Accounts","description":"Enabled internal users flagged only when all Device Admin policy-set hit counts are zero. This is a review candidate signal, not a last-login assertion.","gridPos":{"h":4,"w":6,"x":6,"y":1},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"sum(ise_tacacs_suspected_unused_internal_user) or vector(0)","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":1}]}},"overrides":[]},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"],"values":false},"colorMode":"background","graphMode":"none","justifyMode":"auto","orientation":"auto","textMode":"auto"}
+    },
+    {
+      "id":4,"type":"stat","title":"Device Admin Policy Hits","gridPos":{"h":4,"w":6,"x":12,"y":1},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"sum(ise_tacacs_policy_set_hits) or vector(0)","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"orange","value":null},{"color":"green","value":1}]}},"overrides":[]},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"],"values":false},"colorMode":"value","graphMode":"area","justifyMode":"auto","orientation":"auto","textMode":"auto"}
+    },
+    {
+      "id":5,"type":"stat","title":"Enabled Policy Sets","gridPos":{"h":4,"w":6,"x":18,"y":1},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"count(ise_tacacs_policy_set_hits{state=\"enabled\"}) or vector(0)","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"],"values":false},"colorMode":"value","graphMode":"none","justifyMode":"auto","orientation":"auto","textMode":"auto"}
+    },
+    {
+      "id":6,"type":"bargauge","title":"Configured Device Admin Objects","gridPos":{"h":8,"w":12,"x":0,"y":5},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"ise_tacacs_policy_objects_total","legendFormat":"{{object_type}}","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"blue","value":null}]}},"overrides":[]},
+      "options":{"displayMode":"gradient","orientation":"horizontal","reduceOptions":{"calcs":["lastNotNull"],"values":false}}
+    },
+    {
+      "id":7,"type":"text","title":"Evidence Model","gridPos":{"h":8,"w":12,"x":12,"y":5},
+      "options":{"mode":"markdown","content":"### What ‘suspected unused’ means\nISE 3.3 ERS/OpenAPI does **not** expose per-account TACACS last-login timestamps. An enabled internal account is flagged only when every Device Admin policy set reports **zero cumulative hits**.\n\nUse the candidate list as a review queue. Confirm with external TACACS accounting/syslog or Data Connect before disabling an account. Policy/rule hit counters are cumulative since their last ISE reset."}
+    },
+    {"id":8,"type":"row","title":"Internal Account Hygiene","collapsed":false,"gridPos":{"h":1,"w":24,"x":0,"y":13},"panels":[]},
+    {
+      "id":9,"type":"table","title":"Suspected Unused Internal Accounts","description":"Review candidates based on the evidence shown. Absence does not prove recent use because supported APIs do not attribute TACACS activity to accounts.","gridPos":{"h":9,"w":12,"x":0,"y":14},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"ise_tacacs_suspected_unused_internal_user == 1","format":"table","instant":true,"refId":"A"}],
+      "fieldConfig":{"defaults":{"custom":{"align":"auto","cellOptions":{"type":"color-background"},"filterable":true},"thresholds":{"mode":"absolute","steps":[{"color":"orange","value":null}]}},"overrides":[]},
+      "options":{"cellHeight":"sm","showHeader":true,"footer":{"show":true,"countRows":true}},
+      "transformations":[{"id":"organize","options":{"excludeByName":{"Time":true,"Value":true,"__name__":true,"instance":true,"job":true},"renameByName":{"username":"Username","reason":"Evidence"}}}]
+    },
+    {
+      "id":10,"type":"table","title":"Internal Account State","gridPos":{"h":9,"w":12,"x":12,"y":14},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"ise_tacacs_internal_user_info","format":"table","instant":true,"refId":"A"}],
+      "fieldConfig":{"defaults":{"custom":{"align":"auto","cellOptions":{"type":"auto"},"filterable":true}},"overrides":[]},
+      "options":{"cellHeight":"sm","showHeader":true,"footer":{"show":true,"countRows":true}},
+      "transformations":[{"id":"organize","options":{"excludeByName":{"Time":true,"Value":true,"__name__":true,"instance":true,"job":true},"renameByName":{"username":"Username","enabled":"Enabled","password_never_expires":"Password Never Expires","change_password":"Must Change Password","identity_store":"Identity Store"}}}]
+    },
+    {
+      "id":11,"type":"bargauge","title":"Account Age","description":"Age since the internal-user object was created; this is not last-login age.","gridPos":{"h":8,"w":12,"x":0,"y":23},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"(time() - ise_tacacs_internal_user_created_timestamp) / 86400","legendFormat":"{{username}}","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"d","thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"yellow","value":180},{"color":"orange","value":365}]}},"overrides":[]},
+      "options":{"displayMode":"gradient","orientation":"horizontal","reduceOptions":{"calcs":["lastNotNull"],"values":false}}
+    },
+    {
+      "id":12,"type":"bargauge","title":"Days Since Account Modified","gridPos":{"h":8,"w":12,"x":12,"y":23},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"(time() - ise_tacacs_internal_user_modified_timestamp) / 86400","legendFormat":"{{username}}","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"d","thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"yellow","value":180},{"color":"orange","value":365}]}},"overrides":[]},
+      "options":{"displayMode":"gradient","orientation":"horizontal","reduceOptions":{"calcs":["lastNotNull"],"values":false}}
+    },
+    {"id":13,"type":"row","title":"Device Admin Policy Usage","collapsed":false,"gridPos":{"h":1,"w":24,"x":0,"y":31},"panels":[]},
+    {
+      "id":14,"type":"bargauge","title":"Policy Set Hits","gridPos":{"h":8,"w":8,"x":0,"y":32},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"sort_desc(ise_tacacs_policy_set_hits)","legendFormat":"{{policy_set}} / {{service}}","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"orange","value":null},{"color":"green","value":1}]}},"overrides":[]},
+      "options":{"displayMode":"gradient","orientation":"horizontal","reduceOptions":{"calcs":["lastNotNull"],"values":false}}
+    },
+    {
+      "id":15,"type":"bargauge","title":"Authentication Rule Hits","gridPos":{"h":8,"w":8,"x":8,"y":32},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"sort_desc(ise_tacacs_authentication_rule_hits)","legendFormat":"{{policy_set}} / {{rule}} / {{identity_source}}","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"orange","value":null},{"color":"green","value":1}]}},"overrides":[]},
+      "options":{"displayMode":"gradient","orientation":"horizontal","reduceOptions":{"calcs":["lastNotNull"],"values":false}}
+    },
+    {
+      "id":16,"type":"bargauge","title":"Authorization Rule Hits","gridPos":{"h":8,"w":8,"x":16,"y":32},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"sort_desc(ise_tacacs_authorization_rule_hits)","legendFormat":"{{policy_set}} / {{rule}} / {{profile}} / {{command_sets}}","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"orange","value":null},{"color":"green","value":1}]}},"overrides":[]},
+      "options":{"displayMode":"gradient","orientation":"horizontal","reduceOptions":{"calcs":["lastNotNull"],"values":false}}
+    },
+    {
+      "id":17,"type":"table","title":"Zero-Hit Authentication Rules","description":"Review shadowed, obsolete, or untested identity-source paths.","gridPos":{"h":9,"w":12,"x":0,"y":40},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"ise_tacacs_authentication_rule_hits == 0","format":"table","instant":true,"refId":"A"}],
+      "fieldConfig":{"defaults":{"custom":{"align":"auto","cellOptions":{"type":"color-background"},"filterable":true},"thresholds":{"mode":"absolute","steps":[{"color":"orange","value":null}]}},"overrides":[]},
+      "options":{"cellHeight":"sm","showHeader":true,"footer":{"show":true,"countRows":true}},
+      "transformations":[{"id":"organize","options":{"excludeByName":{"Time":true,"Value":true,"__name__":true,"instance":true,"job":true}}}]
+    },
+    {
+      "id":18,"type":"table","title":"Zero-Hit Authorization Rules","description":"Includes the shell profile and command sets attached to each unused authorization path.","gridPos":{"h":9,"w":12,"x":12,"y":40},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"ise_tacacs_authorization_rule_hits == 0","format":"table","instant":true,"refId":"A"}],
+      "fieldConfig":{"defaults":{"custom":{"align":"auto","cellOptions":{"type":"color-background"},"filterable":true},"thresholds":{"mode":"absolute","steps":[{"color":"orange","value":null}]}},"overrides":[]},
+      "options":{"cellHeight":"sm","showHeader":true,"footer":{"show":true,"countRows":true}},
+      "transformations":[{"id":"organize","options":{"excludeByName":{"Time":true,"Value":true,"__name__":true,"instance":true,"job":true}}}]
+    },
+    {"id":19,"type":"row","title":"Collector Health","collapsed":false,"gridPos":{"h":1,"w":24,"x":0,"y":49},"panels":[]},
+    {
+      "id":20,"type":"stat","title":"TACACS Collector Age","gridPos":{"h":5,"w":8,"x":0,"y":50},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"time() - ise_last_successful_scrape_timestamp{collector=\"tacacs\"}","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"s","thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"yellow","value":7200},{"color":"red","value":14400}]}},"overrides":[]},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"],"values":false},"colorMode":"background","graphMode":"none","justifyMode":"auto","orientation":"auto","textMode":"auto"}
+    },
+    {
+      "id":21,"type":"stat","title":"Consecutive TACACS Failures","gridPos":{"h":5,"w":8,"x":8,"y":50},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"ise_consecutive_failures{collector=\"tacacs\"} or vector(0)","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"red","value":1}]}},"overrides":[]},
+      "options":{"reduceOptions":{"calcs":["lastNotNull"],"values":false},"colorMode":"background","graphMode":"none","justifyMode":"auto","orientation":"auto","textMode":"auto"}
+    },
+    {
+      "id":22,"type":"timeseries","title":"TACACS API Request Rate","gridPos":{"h":5,"w":8,"x":16,"y":50},
+      "datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},
+      "targets":[{"expr":"sum by (api, status) (rate(ise_api_requests_total{api=~\".*tacacs.*\"}[5m])) or vector(0)","legendFormat":"{{api}} / {{status}}","refId":"A"}],
+      "fieldConfig":{"defaults":{"unit":"ops","custom":{"drawStyle":"line","lineWidth":1,"fillOpacity":10,"showPoints":"never","spanNulls":false}},"overrides":[]},
+      "options":{"legend":{"displayMode":"list","placement":"bottom","showLegend":true},"tooltip":{"mode":"multi"}}
+    }
+  ]
+}

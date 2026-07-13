@@ -14,6 +14,7 @@ def _cfg(**over):
                 collect_licensing=False, collect_backup_status=False, collect_patches=False,
                 collect_pxgrid_endpoints=False, collect_ers_endpoint_fallback=False,
                 collect_ers_endpoint_attributes=False,
+                collect_tacacs=False,
                 fast_interval=60, medium_interval=300, slow_interval=3600)
     base.update(over)
     return types.SimpleNamespace(**base)
@@ -108,6 +109,16 @@ def test_ers_endpoint_attributes_runs_when_enabled(monkeypatch):
     PollScheduler(_cfg(collect_ers_endpoint_attributes=True), client=None,
                   pxgrid=object()).run_cycle()
     assert "endpoint_attributes" in ran
+
+
+def test_tacacs_runs_when_enabled(monkeypatch):
+    ran = []
+    for name in ("deployment", "devices", "sessions", "endpoints", "authz", "tacacs"):
+        monkeypatch.setattr(getattr(S, name), "collect",
+                            (lambda n: (lambda *a, **k: ran.append(n)))(name))
+
+    PollScheduler(_cfg(collect_tacacs=True), client=None, pxgrid=None).run_cycle()
+    assert "tacacs" in ran
 
 
 def test_ers_profile_fallback_skips_when_endpoint_attributes_enabled(monkeypatch):

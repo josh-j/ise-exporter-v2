@@ -34,6 +34,8 @@ and `ise_exporter/config.py` for the authoritative list. Common knobs:
 | `MAX_WORKERS` | `10` | concurrency for per-MAC authz and ERS endpoint-attribute fan-out |
 | `AUTH_FAILURE_THRESHOLD` / `AUTH_FAILURE_BACKOFF` | `3` / `900` | suppress API requests after repeated 401s to avoid account lockout |
 | `COLLECT_AUTHZ` | `true` | per-MAC authz/policy-set/matched-rule metrics |
+| `COLLECT_TACACS` | `true` | internal-user hygiene plus Device Admin policy/rule hit-count metrics |
+| `TACACS_INTERNAL_USER_MAX` | `1000` | maximum internal-user details/username-labelled series collected per slow cycle |
 | `COLLECT_PXGRID_ENDPOINTS` | `true` | optional pxGrid `getEndpoints` enrichment when ISE publishes endpoint context |
 | `COLLECT_PXGRID_STREAM` | `false` | replace sessions+endpoints polling with pxGrid topics |
 | `COLLECT_ERS_ENDPOINT_ATTRIBUTES` | `true` | slow cached sweep of ERS `/endpoint/{id}/attributes` profiler data |

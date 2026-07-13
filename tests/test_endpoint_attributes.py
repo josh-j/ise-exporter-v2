@@ -15,6 +15,7 @@ def _reset_state():
     endpoint_attributes._profile_cache.clear()
     endpoint_attributes._next_page = 1
     endpoint_attributes._cache_loaded = False
+    endpoint_attributes._posture_attributes_present = False
     models._hierarchy = {}
     models._ers_profile_cache = {}
     for metric in (
@@ -31,6 +32,8 @@ def _reset_state():
         metrics.ise_endpoints_by_identity_group,
         metrics.ise_endpoint_static_assignment,
         metrics.ise_endpoint_custom_attribute_value,
+        metrics.ise_posture_policy_result,
+        metrics.ise_endpoints_by_secureclient_version,
     ):
         clear_metric(metric)
     metrics.ise_endpoint_attribute_cache_entries.set(0)
@@ -185,6 +188,39 @@ def test_mfc_manufacturer_and_os_from_ers_mfc_attributes():
     cov = _rows(metrics.ise_endpoint_mfc_coverage, "attribute")
     assert cov[("manufacturer",)] == 1.0   # both endpoints carry a manufacturer
     assert cov[("os",)] == 0.5             # only e1
+
+
+def test_posture_and_agent_metrics_from_ers_custom_attributes():
+    client = FakeClient()
+    original = client.get_ers
+
+    def get_ers(path, params=None, get_all=False, api_name="x"):
+        result = original(path, params, get_all, api_name)
+        if path == "/config/endpoint/e1":
+            endpoint = result["ERSEndPoint"]
+            endpoint["id"] = "e1"
+            endpoint["mac"] = "AA:BB:CC:00:00:01"
+            endpoint["customAttributes"]["customAttributes"].update({
+                "PostureAgentVersion": "Posture Agent for Windows 5.1.17.3394",
+                "PostureReport": (
+                    "C2CP-WIN-FIREWALL\\;Passed\\;(ok), "
+                    "C2CP-WIN-AM\\;Failed\\;(failed)"),
+            })
+        return result
+
+    client.get_ers = get_ers
+    endpoint_attributes.collect(client, _cfg())
+
+    assert endpoint_attributes.posture_attributes_present() is True
+    assert _rows(metrics.ise_endpoints_by_secureclient_version, "version") == {
+        ("Windows 5.1.17.3394",): 1.0}
+    assert _rows(metrics.ise_posture_policy_result, "policy", "result", "ops_owner") == {
+        ("C2CP-WIN-FIREWALL", "Passed", "unknown"): 1.0,
+        ("C2CP-WIN-AM", "Failed", "unknown"): 1.0,
+    }
+    coverage = _rows(metrics.ise_endpoint_attribute_coverage, "attribute")
+    assert coverage[("posture_report",)] == 0.5
+    assert coverage[("secureclient_version",)] == 0.5
 
 
 def test_endpoint_type_populated_from_openapi_device_type_summary():
