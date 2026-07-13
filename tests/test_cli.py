@@ -1,4 +1,5 @@
 import json
+import io
 import types
 
 import pytest
@@ -133,3 +134,31 @@ def test_csv_and_select_produce_pipeline_friendly_output(capsys):
 
     assert capsys.readouterr().out.splitlines() == [
         "calling_station_id,server", "AA:00,psn-1", "BB:00,psn-2"]
+
+
+def test_pretty_output_uses_property_list_for_single_nested_object():
+    output = io.StringIO()
+
+    cli.render({
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "agent_version": "Windows 5.1.18.314",
+        "policies": [{"policy": "C2CP-WIN-FIREWALL", "result": "Passed"}],
+    }, stream=output)
+
+    rendered = output.getvalue()
+    assert "mac" in rendered
+    assert "AA:BB:CC:DD:EE:FF" in rendered
+    assert "agent_version" in rendered
+    assert "Windows 5.1.18.314" in rendered
+    assert "C2CP-WIN-FIREWALL" in rendered
+
+
+def test_pretty_output_uses_table_for_multiple_objects():
+    output = io.StringIO()
+
+    cli.render([{"name": "pan-1", "role": "PAN"},
+                {"name": "psn-1", "role": "PSN"}], stream=output)
+
+    rendered = output.getvalue()
+    assert "name" in rendered and "role" in rendered
+    assert "pan-1" in rendered and "psn-1" in rendered

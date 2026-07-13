@@ -17,6 +17,7 @@ ENV_FILE="$CONFIG_DIR/ise-exporter.env"
 SERVICE_USER=ise-exporter
 SERVICE_NAME=ise-exporter
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
+CLI_LINK=/usr/local/bin/ise-cli
 
 if [[ $EUID -ne 0 ]]; then
     echo "must run as root: sudo $0 [path-to-repo-checkout]" >&2
@@ -44,7 +45,11 @@ fi
 # service itself, but group-read also lets `sudo -u ise-exporter ise-exporter
 # --pxgrid-check` read the file directly via load_dotenv() for manual diagnostics.
 echo "==> ensuring directories"
-install -d -o root -g "$SERVICE_USER" -m 750 "$INSTALL_DIR" "$CONFIG_DIR" "$CERTS_DIR"
+# Package code is not secret and must be traversable by every local user so the
+# /usr/local/bin/ise-cli entrypoint works. Configuration and certificates remain
+# restricted to root + the service group.
+install -d -o root -g root -m 755 "$INSTALL_DIR"
+install -d -o root -g "$SERVICE_USER" -m 750 "$CONFIG_DIR" "$CERTS_DIR"
 
 # --- venv + package (install or upgrade in place) ---------------------
 VENV="$INSTALL_DIR/.venv"
@@ -66,17 +71,21 @@ echo "==> installing/upgrading ise-exporter from $SOURCE_DIR"
 "$VENV/bin/pip" install -q --upgrade "$SOURCE_DIR"
 # Own the venv root:ise-exporter (NOT root:root): the service runs as
 # User/Group=ise-exporter and must READ+EXECUTE the interpreter, but not be able to
-# modify its own code (owner stays root, group gets no write). chmod g+rX forces
-# group traverse/read + execute regardless of the admin's umask — a restrictive
-# umask (027/077) otherwise leaves the venv group-inaccessible, and with root:root
-# ownership that locks the service user out and the unit fails at ExecStart. Applied
-# every run, so it also repairs a venv left mis-owned by an earlier version of this
-# script.
+# modify its own code (owner stays root, no non-root user gets write). chmod a+rX
+# makes the installed read-only CLI executable for every local user regardless of
+# the admin's umask. Applied every run, so it repairs older group-only installs too.
 chown -R root:"$SERVICE_USER" "$VENV"
-chmod -R g+rX "$VENV"
+chmod -R go-w "$VENV"
+chmod -R a+rX "$VENV"
 INSTALLED_VERSION="$("$VENV/bin/python" -c \
     "import importlib.metadata as m; print(m.version('ise-exporter'))")"
 echo "==> installed ise-exporter $INSTALLED_VERSION"
+
+# Global read-only operator CLI. The target remains root-owned in the venv; this
+# symlink only makes it discoverable on every user's normal PATH.
+echo "==> installing global read-only CLI at $CLI_LINK"
+install -d -o root -g root -m 755 "$(dirname "$CLI_LINK")"
+ln -sfn "$VENV/bin/ise-cli" "$CLI_LINK"
 
 # --- config: seed once, never overwrite on upgrade ---------------------
 FRESH_CONFIG=0
@@ -119,6 +128,7 @@ systemctl --no-pager --lines=0 status "$SERVICE_NAME" || true
 echo
 echo "==> done — installed version $INSTALLED_VERSION"
 echo "==> logs: journalctl -u $SERVICE_NAME -f"
+echo "==> read-only CLI: $CLI_LINK --help"
 echo "==> pxGrid check (run as the service user so it can read the config + certs):"
 echo "    sudo -u $SERVICE_USER $INSTALL_DIR/.venv/bin/$SERVICE_NAME --pxgrid-check"
 if [[ "$FRESH_CONFIG" -eq 1 ]]; then

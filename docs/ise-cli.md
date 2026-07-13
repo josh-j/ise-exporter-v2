@@ -74,3 +74,12 @@ the same spirit as selecting properties from PowerCLI objects.
 
 The standalone scripts under `tools/curl_*` remain useful for comparing raw API
 responses with the normalized CLI output.
+
+## System-wide installation
+
+`sudo ./deploy/install.sh` installs `/usr/local/bin/ise-cli` for every local user.
+The package and interpreter are globally readable/executable, but the shared
+`/etc/ise-exporter/ise-exporter.env` and pxGrid credentials remain restricted to
+`root:ise-exporter`. An operator can either supply their own environment/`--env-file`
+or be explicitly added to the `ise-exporter` group when reuse of the service account
+configuration is intended.

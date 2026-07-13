@@ -13,6 +13,11 @@ import os
 import sys
 
 from dotenv import load_dotenv
+from rich import box
+from rich.console import Console
+from rich.pretty import Pretty
+from rich.table import Table
+from rich.text import Text
 
 from .clients.rest import ISERestClient
 from .config import Config
@@ -362,13 +367,28 @@ def render(value, output="table", select=None, stream=None):
         return
     if not rows:
         return
-    widths = {field: min(60, max(len(field), *[len(_cell(row.get(field))) for row in rows]))
-              for field in fields}
-    stream.write("  ".join(field.ljust(widths[field]) for field in fields) + "\n")
-    stream.write("  ".join("-" * widths[field] for field in fields) + "\n")
+    console = Console(file=stream, highlight=False)
+    if len(rows) == 1:
+        # A single ISE object is more readable as a PowerShell-style property list.
+        # Nested values get real indentation instead of one truncated JSON cell.
+        table = Table.grid(padding=(0, 2), expand=True)
+        table.add_column(style="bold cyan", no_wrap=True)
+        table.add_column(overflow="fold")
+        for field in fields:
+            item = rows[0].get(field)
+            rendered = (Pretty(item, expand_all=True, indent_guides=True)
+                        if isinstance(item, (dict, list)) else Text(_cell(item)))
+            table.add_row(field, rendered)
+        console.print(table)
+        return
+
+    table = Table(box=box.SIMPLE_HEAD, header_style="bold cyan", pad_edge=False,
+                  collapse_padding=True)
+    for field in fields:
+        table.add_column(field, overflow="fold")
     for row in rows:
-        stream.write("  ".join(_cell(row.get(field))[:widths[field]].ljust(widths[field])
-                               for field in fields) + "\n")
+        table.add_row(*[_cell(row.get(field)) for field in fields])
+    console.print(table)
 
 
 def main(argv=None, *, client=None, cfg=None):

@@ -1,8 +1,10 @@
 """ISERestClient.get_ers must follow nextPage.href across all pages iteratively
 (no per-page recursion that would blow the stack on large result sets)."""
 import types
+import warnings
 
 import requests
+from urllib3.exceptions import InsecureRequestWarning
 
 from ise_exporter.clients.rest import ISERestClient
 
@@ -125,3 +127,24 @@ def test_401s_trip_auth_backoff_before_more_requests():
     assert c._request(session, "https://ise/ers", api_name="x") is None
 
     assert session.calls == 2
+
+
+def test_unverified_https_warning_is_suppressed_at_request_boundary():
+    client = ISERestClient.__new__(ISERestClient)
+    client._auth_failures = 0
+    client._auth_block_until = 0.0
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+    class Session:
+        def get(self, *args, **kwargs):
+            warnings.warn("unverified test request", InsecureRequestWarning)
+            return Response()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert client._request(Session(), "https://ise.example/ers") is not None
+
+    assert not [item for item in caught if issubclass(item.category, InsecureRequestWarning)]

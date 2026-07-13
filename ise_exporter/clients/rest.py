@@ -5,12 +5,14 @@ get_ers / get_ers_total / get_pan_api / get_mnt_xml directly. Pure plumbing, no
 metric writes except the api_requests/api_errors counters."""
 import logging
 import time
+import warnings
 import xml.etree.ElementTree as ET
 
 import requests
 from requests.auth import HTTPBasicAuth
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from urllib3.exceptions import InsecureRequestWarning
 
 from ..metrics import ise_api_requests_total, ise_api_errors_total
 
@@ -57,7 +59,12 @@ class ISERestClient:
                                         http_code="401").inc()
             return None
         try:
-            r = session.get(url, params=params, timeout=timeout)
+            # ISE commonly uses an internal/self-signed certificate and these sessions
+            # intentionally set verify=False. Suppress only the matching urllib3 warning
+            # at the request boundary so CLI output stays machine-readable and quiet.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", InsecureRequestWarning)
+                r = session.get(url, params=params, timeout=timeout)
             r.raise_for_status()
             self._auth_failures = 0
             self._auth_block_until = 0.0
