@@ -175,6 +175,26 @@ def test_collects_profile_and_object_fields_from_ers_endpoint_sweep():
     assert ("get_ers", "/config/profilerprofile/p-win", None) in client.calls
 
 
+def test_custom_attribute_key_can_contain_spaces():
+    client = FakeClient()
+    original = client.get_ers
+
+    def get_ers(path, params=None, get_all=False, api_name="x"):
+        result = original(path, params, get_all, api_name)
+        if path == "/config/endpoint/e1":
+            result["ERSEndPoint"]["customAttributes"]["customAttributes"][
+                "Ops Owner"] = "Workplace Team"
+        return result
+
+    client.get_ers = get_ers
+    endpoint_attributes.collect(
+        client, _cfg(ers_endpoint_custom_attribute_keys=("Ops Owner",)))
+
+    assert _rows(metrics.ise_endpoint_custom_attribute_value, "key", "value") == {
+        ("Ops Owner", "Workplace Team"): 1.0,
+    }
+
+
 def test_mfc_manufacturer_and_os_from_ers_mfc_attributes():
     # ise_endpoints_by_manufacturer/os come from the ERS endpoint object's
     # mfcAttributes (ISE's MFC classification) — no pxGrid getEndpoints required.

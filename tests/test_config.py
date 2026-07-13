@@ -70,6 +70,11 @@ def test_csv_strips_and_drops_empty_parts(monkeypatch):
     assert _csv("X") == ("asset_tag", "ops_owner")
 
 
+def test_csv_preserves_spaces_inside_attribute_names(monkeypatch):
+    monkeypatch.setenv("X", "Ops Owner, Asset Category")
+    assert _csv("X") == ("Ops Owner", "Asset Category")
+
+
 def test_summary_excludes_password(monkeypatch):
     monkeypatch.setenv("ISE_PASS", "super-secret")
     monkeypatch.setenv("ISE_HOST", "pan1.example.mil")
@@ -85,7 +90,8 @@ def test_summary_excludes_password(monkeypatch):
 
 
 def test_env_example_is_parseable_ise33_80k_production_profile():
-    values = dotenv_values(Path(__file__).parents[1] / ".env.example", interpolate=False)
+    path = Path(__file__).parents[1] / ".env.example"
+    values = dotenv_values(path, interpolate=False)
 
     assert values["COLLECT_PXGRID_STREAM"] == "true"
     assert values["COLLECT_ERS_ENDPOINT_ATTRIBUTES"] == "true"
@@ -94,5 +100,11 @@ def test_env_example_is_parseable_ise33_80k_production_profile():
     assert values["ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL"] == "604800"
     assert values["MAX_WORKERS"] == "12"
     assert values["MAX_DETAIL_FETCHES_PER_CYCLE"] == "1000"
+    assert values["ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS"] == "Ops Owner"
     assert values["PXGRID_SESSION_TOPIC_ALL"] == "false"
     assert values["PXGRID_SUBSCRIBE_ENDPOINT_TOPIC"] == "false"
+    # systemd EnvironmentFile= does not support trailing inline comments; keeping
+    # comments on their own lines prevents them becoming part of numeric/boolean values.
+    assignments = [line for line in path.read_text().splitlines()
+                   if line.strip() and not line.lstrip().startswith("#")]
+    assert all(" #" not in line for line in assignments)
