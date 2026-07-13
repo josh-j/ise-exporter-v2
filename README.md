@@ -6,6 +6,12 @@ an optional pxGrid **stream** engine (sessions/endpoints/models via topics).
 
 Requires Python ≥ 3.10. Exposes Prometheus metrics on `:9618/metrics` by default.
 
+The package also installs `ise-cli`, a read-only Cisco ISE operator interface over
+ERS, OpenAPI, and MnT. It provides bounded inventory queries, active sessions,
+endpoint/Secure Client troubleshooting, structured table/JSON/JSONL/CSV output,
+local command schemas, and a safe GET-only escape hatch. See
+[`docs/ise-cli.md`](docs/ise-cli.md).
+
 ## Layout
 - `ise_exporter/config.py` — all env config (one dataclass)
 - `ise_exporter/metrics.py` — central metric registry (import surface)

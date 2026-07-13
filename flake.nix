@@ -10,7 +10,8 @@
         default = pkgs.mkShell {
           packages = [
             (pkgs.python312.withPackages (p: [
-              p.prometheus-client p.requests p.python-dotenv p.websocket-client p.pytest p.ruff
+              p.prometheus-client p.requests p.python-dotenv p.websocket-client
+              p.pytest p.ruff p.pip p.build p.hatchling
             ]))
           ];
         };

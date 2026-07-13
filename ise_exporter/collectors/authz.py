@@ -286,11 +286,13 @@ def collect(client, cfg, mappings, active_list=_UNSET):
             if mac in newly_fetched:
                 _observe_latency(detail, other, nad, loc, owner)
 
-            # posture: top-level MnT tag first, then the other-attr string (field name
-            # varies by ISE version) — normalize_posture handles empty -> NotApplicable.
+            # posture field names vary by ISE version. The explicit other-attribute
+            # PostureStatus is
+            # authoritative: ISE 3.3 can leave the top-level/assessment status at
+            # NotApplicable even when the agent reports Compliant.
             pstatus = normalize_posture(
-                detail.get("posture_status")
-                or other.get("PostureStatus") or other.get("PostureAssessmentStatus"))
+                other.get("PostureStatus") or detail.get("posture_status")
+                or other.get("PostureAssessmentStatus"))
             posture[(pstatus, loc, owner)].add(mac)
 
             # per-policy PostureReport + Secure Client version live in other_attr_string;
