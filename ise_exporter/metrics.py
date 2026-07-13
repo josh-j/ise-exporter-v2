@@ -97,7 +97,7 @@ ise_endpoints_by_profile_all = Gauge("ise_endpoints_by_profile_all", "Endpoints 
 ise_profiler_policies_total = Gauge("ise_profiler_policies_total", "Profiling policies defined in ISE's profiler catalog (pxGrid getProfiles)")
 ise_profiler_hierarchy_age_seconds = Gauge("ise_profiler_hierarchy_age_seconds", "Seconds since the profiler policy hierarchy was last refreshed from pxGrid")
 
-# --- ERS endpoint attribute sweep (/ers/config/endpoint/{id}/attributes) ---
+# --- ERS endpoint detail sweep (/ers/config/endpoint/{id}) ---
 ise_endpoint_attribute_cache_entries = Gauge("ise_endpoint_attribute_cache_entries", "Endpoints with cached ERS endpoint detail/profile-attribute data")
 ise_endpoint_attribute_scan_last_count = Gauge("ise_endpoint_attribute_scan_last_count", "Endpoint records fetched or refreshed by the last ERS endpoint-attribute collector run")
 ise_endpoint_attribute_fetch_errors = Gauge("ise_endpoint_attribute_fetch_errors", "Endpoint records that failed during the last ERS endpoint-attribute scan", ["stage"])

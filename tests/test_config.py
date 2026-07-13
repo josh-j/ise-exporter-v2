@@ -1,4 +1,7 @@
 import logging
+from pathlib import Path
+
+from dotenv import dotenv_values
 
 from ise_exporter.config import Config, _b, _csv, _i, _s
 
@@ -79,3 +82,17 @@ def test_summary_excludes_password(monkeypatch):
     assert "pxgrid1.example.mil" in cfg.summary()
     assert "collect_ers_endpoint_attributes=True" in cfg.summary()
     assert cfg.pxgrid_ready is True
+
+
+def test_env_example_is_parseable_ise33_80k_production_profile():
+    values = dotenv_values(Path(__file__).parents[1] / ".env.example", interpolate=False)
+
+    assert values["COLLECT_PXGRID_STREAM"] == "true"
+    assert values["COLLECT_ERS_ENDPOINT_ATTRIBUTES"] == "true"
+    assert values["COLLECT_ERS_ENDPOINT_FALLBACK"] == "false"
+    assert values["ERS_ENDPOINT_ATTRIBUTE_PAGE_SIZE"] == "1000"
+    assert values["ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL"] == "604800"
+    assert values["MAX_WORKERS"] == "12"
+    assert values["MAX_DETAIL_FETCHES_PER_CYCLE"] == "1000"
+    assert values["PXGRID_SESSION_TOPIC_ALL"] == "false"
+    assert values["PXGRID_SUBSCRIBE_ENDPOINT_TOPIC"] == "false"

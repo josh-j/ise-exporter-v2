@@ -168,18 +168,19 @@ def _authz_posture_client(other_attr_string):
 
 _OAS_POSTURE = (
     "ISEPolicySetName=Default:!:"
-    "PostureAgentVersion=Posture Agent for Windows 5.1.17.3394:!:"
-    r"PostureReport=C2CP-WIN-FIREWALL\;Passed\;(C2CR:Optional:Passed:"
-    r"Passed_Conditions[a]:Failed_Conditions[]:Skipped_Conditions[])"
+    "PostureAgentVersion=Posture Agent for Windows 5.1.18.314:!:"
+    "PostureApplicable=Yes:!:PostureAssessmentStatus=NotApplicable:!:"
+    r"PostureReport=C2CP-WIN-FIREWALL\;Passed\;(C2CR:Audit:Skipped:"
+    r"Passed_Conditions[a]:Failed_Conditions[inner_failure]:Skipped_Conditions[])"
     r"C2CP-WIN-AM\;Failed\;(C2CR-AM:Mandatory:Failed:Passed_Conditions[]:"
-    r"Failed_Conditions[x]:Skipped_Conditions[])")
+    r"Failed_Conditions[x]:Skipped_Conditions[]):!:PostureStatus=Compliant")
 
 
 def test_authz_emits_posture_report_and_secureclient_from_other_attr_when_getendpoints_empty():
     """When pxGrid getEndpoints delivered nothing, authz emits per-policy PostureReport +
     Secure Client version from the MnT session other_attr_string (the real source)."""
     from ise_exporter import metrics
-    from ise_exporter.collectors import authz
+    from ise_exporter.collectors import authz, endpoint_attributes, models
     from ise_exporter.util import clear_metric
 
     cfg = types.SimpleNamespace(collect_pxgrid_stream=False, session_detail_cache_ttl=100,
@@ -187,6 +188,11 @@ def test_authz_emits_posture_report_and_secureclient_from_other_attr_when_getend
     mappings = {"hostname": {"10.0.0.1": "sw1"}, "location": {"10.0.0.1": "SiteA"},
                 "ops_owner": {"10.0.0.1": "TeamA"}}
     metrics.ise_endpoints_pxgrid_total.set(0)          # getEndpoints empty -> authz owns
+    models._posture_report_present = False
+    models._secureclient_version_present = False
+    endpoint_attributes._posture_report_present = False
+    endpoint_attributes._secureclient_version_present = False
+    authz._cache = None
     clear_metric(metrics.ise_posture_policy_result)
     clear_metric(metrics.ise_endpoints_by_secureclient_version)
 
@@ -198,7 +204,11 @@ def test_authz_emits_posture_report_and_secureclient_from_other_attr_when_getend
     assert policies[("C2CP-WIN-AM", "Failed", "TeamA")] == 1.0
     scv = {s.labels["version"]: s.value
            for s in metrics.ise_endpoints_by_secureclient_version.collect()[0].samples}
-    assert scv == {"Windows 5.1.17.3394": 1.0}
+    assert scv == {"Windows 5.1.18.314": 1.0}
+    posture = {(s.labels["status"], s.labels["location"]): s.value
+               for s in metrics.ise_session_posture_status.collect()[0].samples}
+    # PostureStatus is authoritative when AssessmentStatus says NotApplicable.
+    assert posture[("Compliant", "SiteA")] == 1.0
 
 
 def test_authz_uses_recent_auth_status_failures():
@@ -314,25 +324,62 @@ def test_recent_auth_latency_is_observed_once_per_transaction():
     assert count == 1
 
 
-def test_authz_defers_posture_report_to_getendpoints_when_present():
-    """When getEndpoints is delivering endpoints, models.py owns the posture-policy /
-    Secure Client gauges — authz must NOT also emit them (no double-count)."""
+def test_authz_uses_other_attrs_when_getendpoints_lacks_posture_fields():
+    """Endpoint rows alone must not suppress richer MnT posture attributes."""
     from ise_exporter import metrics
-    from ise_exporter.collectors import authz
+    from ise_exporter.collectors import authz, endpoint_attributes, models
     from ise_exporter.util import clear_metric
 
     cfg = types.SimpleNamespace(collect_pxgrid_stream=False, session_detail_cache_ttl=100,
                                 max_detail_fetches_per_cycle=10, max_workers=2)
     mappings = {"hostname": {"10.0.0.1": "sw1"}, "location": {"10.0.0.1": "SiteA"},
                 "ops_owner": {"10.0.0.1": "TeamA"}}
-    metrics.ise_endpoints_pxgrid_total.set(7)          # getEndpoints present -> models owns
+    metrics.ise_endpoints_pxgrid_total.set(7)
+    models._posture_report_present = False
+    models._secureclient_version_present = False
+    endpoint_attributes._posture_report_present = False
+    endpoint_attributes._secureclient_version_present = False
+    authz._cache = None
     clear_metric(metrics.ise_posture_policy_result)
     clear_metric(metrics.ise_endpoints_by_secureclient_version)
 
     authz.collect(_authz_posture_client(_OAS_POSTURE), cfg, mappings)
 
-    assert metrics.ise_posture_policy_result.collect()[0].samples == []
-    assert metrics.ise_endpoints_by_secureclient_version.collect()[0].samples == []
+    policies = {(s.labels["policy"], s.labels["result"]): s.value
+                for s in metrics.ise_posture_policy_result.collect()[0].samples}
+    assert policies[("C2CP-WIN-FIREWALL", "Passed")] == 1.0
+    versions = {s.labels["version"]: s.value
+                for s in metrics.ise_endpoints_by_secureclient_version.collect()[0].samples}
+    assert versions == {"Windows 5.1.18.314": 1.0}
+
+
+def test_authz_posture_ownership_is_independent_per_attribute():
+    """A pxGrid agent version must not suppress an MnT PostureReport."""
+    from ise_exporter import metrics
+    from ise_exporter.collectors import authz, endpoint_attributes, models
+    from ise_exporter.util import clear_metric
+
+    cfg = types.SimpleNamespace(collect_pxgrid_stream=False, session_detail_cache_ttl=100,
+                                max_detail_fetches_per_cycle=10, max_workers=2)
+    mappings = {"hostname": {"10.0.0.1": "sw1"}, "location": {"10.0.0.1": "SiteA"},
+                "ops_owner": {"10.0.0.1": "TeamA"}}
+    models._posture_report_present = False
+    models._secureclient_version_present = True
+    endpoint_attributes._posture_report_present = False
+    endpoint_attributes._secureclient_version_present = False
+    authz._cache = None
+    clear_metric(metrics.ise_posture_policy_result)
+    clear_metric(metrics.ise_endpoints_by_secureclient_version)
+    metrics.ise_endpoints_by_secureclient_version.labels(version="pxGrid-owned").set(7)
+
+    authz.collect(_authz_posture_client(_OAS_POSTURE), cfg, mappings)
+
+    policies = {(s.labels["policy"], s.labels["result"]): s.value
+                for s in metrics.ise_posture_policy_result.collect()[0].samples}
+    versions = {s.labels["version"]: s.value
+                for s in metrics.ise_endpoints_by_secureclient_version.collect()[0].samples}
+    assert policies[("C2CP-WIN-FIREWALL", "Passed")] == 1.0
+    assert versions == {"pxGrid-owned": 7.0}
 
 
 def test_streaming_authz_emits_failed_status_without_wiping_passed():

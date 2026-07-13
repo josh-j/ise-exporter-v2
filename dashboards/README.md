@@ -86,16 +86,18 @@ IP is one of its registered `NetworkDeviceIPList` addresses.
   results below are the real signal.
 - **Per-policy pass/fail** (`ise_posture_policy_result{policy, result, ops_owner}`) —
   the "Posture Policy Results" section. Parsed from each endpoint's `PostureReport`
-  attribute, collected via the **getEndpoints REST poll** or the cached ERS endpoint
-  custom attributes (not the endpoint topic). `policy` is the ISE posture policy name (encodes the check: `…-FIREWALL`,
+  attribute. On this ISE it comes from MnT session `other_attr_string`; pxGrid
+  getEndpoints or cached ERS custom attributes are content-aware fallbacks. Merely
+  receiving pxGrid endpoint rows no longer suppresses the MnT source. `policy` is the ISE posture policy name (encodes the check: `…-FIREWALL`,
   `…-AM`, `…-DE-BITLOCKER`, `…-PM-PATCH`, …); `result` is the policy-level roll-up
   (`Passed`/`Failed`/…); requirement/condition detail is dropped (too
   high-cardinality). `ops_owner` is joined from the endpoint's live session (stream
   mode) and is `unknown` when no session matches or ERS owns the fallback.
 - **Posture agent version** (`ise_endpoints_by_secureclient_version{version}`) —
   from the endpoint's `PostureAgentVersion` / `SecureClientVersion` attribute via
-  getEndpoints or ERS endpoint custom attributes (prefix like "Posture Agent for "
-  stripped). Same source ownership as the per-policy results.
+  MnT session `other_attr_string`, getEndpoints, or ERS endpoint custom attributes
+  (prefix like "Posture Agent for " stripped). Source ownership is independent of
+  PostureReport, because ISE can expose one attribute without the other.
 - **MDM device trust** (`ise_session_mdm_status{dimension, value, ops_owner}`) —
   `dimension` ∈ registered/compliant/disk_encrypted/jailbroken/pin_locked,
   `value` ∈ true/false/unknown. **Stream mode only** (the pxGrid session object
@@ -107,9 +109,11 @@ IP is one of its registered `NetworkDeviceIPList` addresses.
 The endpoint dashboards use ERS as the baseline endpoint inventory source and
 pxGrid endpoint snapshots as optional enrichment:
 
-- ERS `/config/endpoint/{id}/attributes` for production-tested profiler attributes
-  such as `MatchedPolicy`, `EndPointSource`, `Operating System`, `Device Type`, `OUI`,
-  MDM fields, identity group/static assignment, and selected custom endpoint attributes.
+- ERS `/config/endpoint/{id}` for endpoint configuration, MFC classification,
+  identity group/static assignment, and selected custom endpoint attributes.
+- MnT `/Session/MACAddress/{mac}` `other_attr_string` for `PostureReport`,
+  `PostureAgentVersion`, `PostureApplicable`, `PostureAssessmentStatus`, and
+  `PostureStatus` observed on active sessions.
 - pxGrid `getEndpoints` for fields ERS does not expose: MFC model/manufacturer/type/OS,
   Secure Client version, and endpoint `PostureReport`.
 
@@ -140,7 +144,7 @@ profile-count collector is only used when the richer ERS attribute sweep is disa
 ## Endpoint profile hierarchy
 
 `ise-endpoint-profiles.json` shows per-profile endpoint counts from the ERS
-baseline (`/config/endpoint/{id}` plus `/attributes`) unless pxGrid `getEndpoints`
+baseline (`/config/endpoint/{id}` detail) unless pxGrid `getEndpoints`
 is actually returning endpoint enrichment. It can also join the ISE-wide policy
 *catalog* — category/parent hierarchy — from pxGrid
 `com.cisco.ise.config.profiler` `getProfiles`. The catalog rarely changes, so it's

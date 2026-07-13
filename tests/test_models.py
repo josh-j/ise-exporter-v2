@@ -15,12 +15,16 @@ def _reset_hierarchy_cache():
     models._hierarchy_checked_at = 0.0
     models._endpoint_zero_backoff_until = 0.0
     models._ers_profile_cache = {}
+    models._posture_report_present = False
+    models._secureclient_version_present = False
     yield
     models._hierarchy = {}
     models._hierarchy_fetched_at = 0.0
     models._hierarchy_checked_at = 0.0
     models._endpoint_zero_backoff_until = 0.0
     models._ers_profile_cache = {}
+    models._posture_report_present = False
+    models._secureclient_version_present = False
 
 
 def _rows(metric):
@@ -233,6 +237,24 @@ def test_secureclient_version_only_counts_endpoints_that_expose_one():
     versions = {s.labels["version"]: s.value
                 for s in metrics.ise_endpoints_by_secureclient_version.collect()[0].samples}
     assert versions == {"5.1.2.42": 1.0, "4.10.07061": 1.0}
+
+
+def test_endpoint_rows_without_posture_fields_do_not_clear_mnt_fallback_metrics():
+    metrics.ise_posture_policy_result.labels(
+        policy="MNT-POLICY", result="Passed", ops_owner="TeamA").set(2)
+    metrics.ise_endpoints_by_secureclient_version.labels(
+        version="Windows 5.1.18.314").set(2)
+
+    models.emit_endpoint_metrics([{"macAddress": "00:00:00:00:00:01"}])
+
+    policies = {(s.labels["policy"], s.labels["result"]): s.value
+                for s in metrics.ise_posture_policy_result.collect()[0].samples}
+    versions = {s.labels["version"]: s.value
+                for s in metrics.ise_endpoints_by_secureclient_version.collect()[0].samples}
+    assert policies[("MNT-POLICY", "Passed")] == 2
+    assert versions["Windows 5.1.18.314"] == 2
+    assert models.posture_report_present() is False
+    assert models.secureclient_version_present() is False
 
 
 def test_hierarchy_age_gauge_set_after_successful_refresh():

@@ -24,7 +24,11 @@ All configuration is environment variables. Start from the template:
 
 Required: `ISE_HOST` (PAN/ERS node), `ISE_MNT_HOST` (MnT node), `ISE_USER`,
 `ISE_PASS`. Everything else has a default — see `.env.example` for the full set
-and `ise_exporter/config.py` for the authoritative list. Common knobs:
+and `ise_exporter/config.py` for the authoritative list. The checked-in sample is
+tuned for maximum collection on ISE 3.3 at roughly 80,000 endpoints: pxGrid session
+streaming, ERS baseline inventory, a 1,000-endpoint hourly detail budget, 12 workers,
+and persistent cache storage. At that rate a complete ERS detail pass takes about
+80 hours and remains inside the seven-day TTL. Common knobs:
 
 | var | default | purpose |
 |-----|---------|---------|
@@ -38,7 +42,7 @@ and `ise_exporter/config.py` for the authoritative list. Common knobs:
 | `TACACS_INTERNAL_USER_MAX` | `1000` | maximum internal-user details/username-labelled series collected per slow cycle |
 | `COLLECT_PXGRID_ENDPOINTS` | `true` | optional pxGrid `getEndpoints` enrichment when ISE publishes endpoint context |
 | `COLLECT_PXGRID_STREAM` | `false` | replace sessions+endpoints polling with pxGrid topics |
-| `COLLECT_ERS_ENDPOINT_ATTRIBUTES` | `true` | slow cached sweep of ERS `/endpoint/{id}/attributes` profiler data |
+| `COLLECT_ERS_ENDPOINT_ATTRIBUTES` | `true` | slow cached sweep of ERS `/endpoint/{id}` detail data |
 | `ERS_ENDPOINT_ATTRIBUTE_PAGE_SIZE` / `ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL` | `500` / `604800` | endpoint-attribute refresh batch size and cache TTL |
 | `ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE` | `/tmp/ise-exporter-endpoint-attributes-cache.json` | local cache for multi-cycle endpoint-attribute scans |
 | `ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS` | empty | optional comma-list of custom endpoint attributes to bucket by value |
@@ -75,15 +79,13 @@ most every `PXGRID_PROFILER_HIERARCHY_TTL` seconds (default `3600`) since it
 rarely changes; a failed fetch just falls back to `category="unknown"` rather than
 breaking the per-profile counts themselves.
 
-ERS endpoint profile-attribute collection reads the production-tested rich schema at
-`GET /ers/config/endpoint/{id}/attributes`. That endpoint is per-endpoint and can
-contain hundreds of DHCP/RADIUS/CDP/LLDP/SNMP/User-Agent/MDM values, so the exporter
-does not expose raw attributes. It walks one bounded page per slow cycle, caches
+ERS endpoint detail collection reads `GET /ers/config/endpoint/{id}`. That call is
+per-endpoint, so the exporter does not expose raw attributes. It walks one bounded
+page per slow cycle, caches
 records for `ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL`, persists them to
 `ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE`, and emits low-cardinality aggregates: profiled
-policy, profiler source, profiled OS, device type, OUI, identity group, static
-assignment, certainty bucket, selected MDM states, coverage, and explicitly configured
-custom endpoint attributes. It also owns the ERS baseline endpoint total/profile
+policy, MFC manufacturer/model/OS, identity group, static assignment, coverage, and
+explicitly configured custom endpoint attributes. It also owns the ERS baseline endpoint total/profile
 gauges when pxGrid endpoint enrichment is empty. The cache contains endpoint
 metadata; store it on local disk with normal service-account permissions, not in a
 public volume.

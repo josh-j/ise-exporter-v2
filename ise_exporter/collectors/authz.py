@@ -18,7 +18,7 @@ from ..util import (clear_metric, clear_metric_where, normalize_mac,
                     normalize_location, parse_other_attr_string, normalize_posture,
                     parse_posture_report, normalize_agent_version, first_nonempty,
                     parse_step_latencies, SECURECLIENT_VERSION_KEYS, POSTURE_REPORT_KEYS)
-from . import observe, CollectorFailed, stream_active, pxgrid_endpoints_present
+from . import observe, CollectorFailed, stream_active
 from .devices import nad_labels
 
 logger = logging.getLogger(__name__)
@@ -50,9 +50,18 @@ _observed_recent_auth_ids = {}
 _MAX_OBSERVED_RECENT_AUTHS = 10000
 
 
-def _endpoint_posture_owned():
-    from .endpoint_attributes import posture_attributes_present
-    return posture_attributes_present()
+def _posture_source_owners():
+    """Return independent ownership for (PostureReport, agent version).
+
+    A populated endpoint feed is not sufficient: ISE commonly returns endpoints
+    without either posture field while exposing both in MnT other_attr_string.
+    """
+    from . import endpoint_attributes, models
+    report = (models.posture_report_present()
+              or endpoint_attributes.posture_report_present())
+    version = (models.secureclient_version_present()
+               or endpoint_attributes.secureclient_version_present())
+    return report, version
 
 
 def _detail_cache(cfg):
@@ -185,8 +194,10 @@ def collect(client, cfg, mappings, active_list=_UNSET):
                 clear_metric_where(metrics.ise_session_status_endpoints, status="failed")
             # no sessions -> no other_attr_string posture either; clear the fallback gauges
             # unless getEndpoints owns them.
-            if not pxgrid_endpoints_present() and not _endpoint_posture_owned():
+            report_owned, version_owned = _posture_source_owners()
+            if not report_owned:
                 clear_metric(metrics.ise_posture_policy_result)
+            if not version_owned:
                 clear_metric(metrics.ise_endpoints_by_secureclient_version)
             metrics.ise_session_detail_cache_size.set(cache.size())
             metrics.ise_session_warmup_progress.set(1.0)
@@ -348,18 +359,17 @@ def collect(client, cfg, mappings, active_list=_UNSET):
                 metrics.ise_session_posture_status.labels(
                     status=status, location=loc, ops_owner=owner).set(len(macs))
 
-        # Per-policy posture + Secure Client version fallback. getEndpoints (models.py) owns
-        # ise_posture_policy_result / ise_endpoints_by_secureclient_version whenever it's
-        # delivering endpoints; when it isn't (the common streaming case where getEndpoints
-        # returns 0) the same attributes are in each session's other_attr_string, so emit
-        # them from the MnT fan-out here instead. Gated on getEndpoints being empty so the
-        # two sources never double-count, and runs in BOTH poll and stream mode.
-        if not pxgrid_endpoints_present() and not _endpoint_posture_owned():
+        # Per-policy posture + Secure Client version fallback from the real MnT
+        # other_attr_string fields. Ownership is checked independently for each metric:
+        # getEndpoints often has endpoint rows but lacks one or both posture attributes.
+        report_owned, version_owned = _posture_source_owners()
+        if not report_owned:
             clear_metric(metrics.ise_posture_policy_result)
-            clear_metric(metrics.ise_endpoints_by_secureclient_version)
             for (pol, res, owner), macs in posture_policies.items():
                 metrics.ise_posture_policy_result.labels(
                     policy=pol, result=res, ops_owner=owner).set(len(macs))
+        if not version_owned:
+            clear_metric(metrics.ise_endpoints_by_secureclient_version)
             for ver, macs in scversion.items():
                 metrics.ise_endpoints_by_secureclient_version.labels(version=ver).set(len(macs))
 

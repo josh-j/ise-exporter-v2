@@ -15,7 +15,10 @@ def _reset_state():
     endpoint_attributes._profile_cache.clear()
     endpoint_attributes._next_page = 1
     endpoint_attributes._cache_loaded = False
-    endpoint_attributes._posture_attributes_present = False
+    endpoint_attributes._posture_report_present = False
+    endpoint_attributes._secureclient_version_present = False
+    models._posture_report_present = False
+    models._secureclient_version_present = False
     models._hierarchy = {}
     models._ers_profile_cache = {}
     for metric in (

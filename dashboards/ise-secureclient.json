@@ -169,7 +169,7 @@
     },
     {
       "id": 21, "type": "table", "title": "Posture Policies — Passed vs Failed",
-      "description": "Per posture policy (firewall, anti-malware, disk encryption, patch, ...), how many endpoints passed vs failed. Parsed from pxGrid getEndpoints, cached ERS endpoint custom attributes, or MnT session attributes, in that ownership order.",
+      "description": "Per posture policy (firewall, anti-malware, disk encryption, patch, ...), how many endpoints passed vs failed. Parsed from MnT session other attributes, pxGrid getEndpoints, or cached ERS custom attributes. Source ownership is content-aware, so endpoint rows without PostureReport do not suppress MnT data.",
       "gridPos": { "h": 12, "w": 12, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (policy, result) (ise_posture_policy_result)", "format": "table", "instant": true, "refId": "A" }],

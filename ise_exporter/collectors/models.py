@@ -60,6 +60,18 @@ _hierarchy_fetched_at = 0.0   # last SUCCESSFUL refresh — drives the age gauge
 _hierarchy_checked_at = 0.0   # last attempt (success or failure) — TTL-gates retries
 _endpoint_zero_backoff_until = 0.0
 _ers_profile_cache = {}       # profiler-profile id -> (name, parent_id), for the ERS fallback
+_posture_report_present = False
+_secureclient_version_present = False
+
+
+def posture_report_present():
+    """Whether the latest pxGrid endpoint snapshot contained a parseable report."""
+    return _posture_report_present
+
+
+def secureclient_version_present():
+    """Whether the latest pxGrid endpoint snapshot contained an agent version."""
+    return _secureclient_version_present
 
 
 def _ers_profile(client, profile_id):
@@ -183,12 +195,15 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
     don't care about the hierarchy). mac_owner is an optional {MAC: ops_owner} map
     (the stream projector builds it from live sessions) used to label posture by ops
     owner; endpoints with no matching session fall back to ops_owner='unknown'."""
+    global _posture_report_present, _secureclient_version_present
     if pxgrid is not None:
         _refresh_hierarchy(pxgrid, hierarchy_ttl)
     if _hierarchy_fetched_at:
         metrics.ise_profiler_hierarchy_age_seconds.set(time.time() - _hierarchy_fetched_at)
     metrics.ise_endpoints_pxgrid_total.set(len(endpoints))
     if not endpoints:
+        _posture_report_present = False
+        _secureclient_version_present = False
         # pxGrid getEndpoints returned nothing. Leave profile / posture / Secure Client
         # gauges untouched so ERS baseline and MnT other_attr_string sources can own them.
         # MFC-derived gauges have no ERS equivalent, so clear them rather than freezing
@@ -251,13 +266,21 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
         by_os[os_ or "unknown"] += 1
         by_policy[policy or "unknown"] += 1
 
+    # Source ownership is per attribute, not per endpoint feed. ISE can return a
+    # populated getEndpoints result with none of the Secure Client fields; in that
+    # case MnT other_attr_string must remain free to own these two gauges.
+    _posture_report_present = bool(posture_policies)
+    _secureclient_version_present = bool(by_scversion)
+
     for metric in (metrics.ise_endpoints_by_hardware_model, metrics.ise_endpoints_by_manufacturer,
                    metrics.ise_endpoints_by_endpoint_type, metrics.ise_endpoints_by_os,
                    metrics.ise_endpoints_by_policy, metrics.ise_endpoint_mfc_coverage,
-                   metrics.ise_endpoints_by_profile_all,
-                   metrics.ise_endpoints_by_secureclient_version,
-                   metrics.ise_posture_policy_result):
+                   metrics.ise_endpoints_by_profile_all):
         clear_metric(metric)
+    if _secureclient_version_present:
+        clear_metric(metrics.ise_endpoints_by_secureclient_version)
+    if _posture_report_present:
+        clear_metric(metrics.ise_posture_policy_result)
 
     for model, n in by_model.items():
         metrics.ise_endpoints_by_hardware_model.labels(model=model).set(n)

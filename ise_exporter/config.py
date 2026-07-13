@@ -87,8 +87,8 @@ class Config:
     collect_ers_endpoint_fallback: bool = True
     ers_endpoint_profile_max: int = 1500   # covers ISE's ~900 built-in profiles + custom
     # Slow, cached ERS endpoint profile-attribute sweep. This reads
-    # /ers/config/endpoint/{id}/attributes, which exposes profiler-learned DHCP/RADIUS/
-    # CDP/LLDP/SNMP/User-Agent/MDM fields but is per-endpoint and expensive at scale.
+    # /ers/config/endpoint/{id}, which exposes endpoint configuration, MFC fields,
+    # and custom attributes but is per-endpoint and expensive at scale.
     collect_ers_endpoint_attributes: bool = True
     ers_endpoint_attribute_page_size: int = 500
     ers_endpoint_attribute_cache_ttl: int = 604800
