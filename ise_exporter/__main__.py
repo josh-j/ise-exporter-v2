@@ -146,10 +146,15 @@ def pxgrid_check(cfg, *, check_stream=False):
 
 def _load_env():
     """Load ./.env (dev convenience) then the systemd deployment env file if present,
-    so `ise-exporter --pxgrid-check` works from any directory on a deployed host."""
-    load_dotenv()
+    so `ise-exporter --pxgrid-check` works from any directory on a deployed host.
+
+    Values are configuration data, not shell templates.  Disabling interpolation
+    preserves the entire value after the first ``=`` literally, including additional
+    equals signs and password/token text such as ``${NAME}``.
+    """
+    load_dotenv(interpolate=False)
     if os.path.isfile(DEPLOY_ENV_FILE):
-        load_dotenv(DEPLOY_ENV_FILE)
+        load_dotenv(DEPLOY_ENV_FILE, interpolate=False)
         logger.info("loaded config from %s", DEPLOY_ENV_FILE)
 
 

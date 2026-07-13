@@ -132,7 +132,7 @@ def test_pxgrid_check_stream_runs_when_streaming_is_configured(monkeypatch):
     monkeypatch.setattr(app, "pxgrid_check",
                         lambda cfg, check_stream=False: calls.append(check_stream) or 0)
     monkeypatch.setattr(app.Config, "from_env", classmethod(lambda cls: _cfg(collect_pxgrid_stream=True)))
-    monkeypatch.setattr(app, "load_dotenv", lambda: None)
+    monkeypatch.setattr(app, "load_dotenv", lambda *args, **kwargs: None)
 
     assert app.main(["--pxgrid-check"]) == 0
     assert calls == [True]
@@ -175,3 +175,24 @@ def test_load_env_reads_deployment_env_file(monkeypatch, tmp_path):
         assert os.environ.get("PXGRID_HOST") == "deployed-host.example"
     finally:
         os.environ.pop("PXGRID_HOST", None)
+
+
+def test_load_env_preserves_literal_value_after_first_equals(monkeypatch, tmp_path):
+    """Secrets and paths are data: later '=' and '${...}' must not be parsed again."""
+    env_file = tmp_path / "ise-exporter.env"
+    env_file.write_text(
+        "ISE_PASS=left=middle=right\n"
+        "PXGRID_NODE_NAME=${SHOULD_NOT_EXPAND}=node\n"
+        "PXGRID_CLIENT_KEY='key # 1=name.pem'\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(app, "DEPLOY_ENV_FILE", str(env_file))
+    monkeypatch.setenv("SHOULD_NOT_EXPAND", "expanded")
+    for key in ("ISE_PASS", "PXGRID_NODE_NAME", "PXGRID_CLIENT_KEY"):
+        monkeypatch.delenv(key, raising=False)
+
+    app._load_env()
+
+    assert os.environ["ISE_PASS"] == "left=middle=right"
+    assert os.environ["PXGRID_NODE_NAME"] == "${SHOULD_NOT_EXPAND}=node"
+    assert os.environ["PXGRID_CLIENT_KEY"] == "key # 1=name.pem"
