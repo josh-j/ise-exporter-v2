@@ -155,6 +155,24 @@ ise_tacacs_authorization_rule_hits = Gauge(
 ise_tacacs_policy_objects_total = Gauge(
     "ise_tacacs_policy_objects_total", "Configured Device Admin objects by type",
     ["object_type"])
+ise_tacacs_dataconnect_up = Gauge(
+    "ise_tacacs_dataconnect_up", "ISE Data Connect TACACS query status (1=successful)")
+ise_tacacs_account_authentication_events = Gauge(
+    "ise_tacacs_account_authentication_events",
+    "TACACS authentication events in Data Connect's last-two-days view",
+    ["username", "status", "device", "policy", "identity_store", "failure_reason"])
+ise_tacacs_account_authorization_events = Gauge(
+    "ise_tacacs_account_authorization_events",
+    "TACACS authorization events in Data Connect's last-two-days view",
+    ["username", "status", "device", "policy", "shell_profile", "command_set", "command"])
+ise_tacacs_accounting_events = Gauge(
+    "ise_tacacs_accounting_events",
+    "TACACS accounting events in Data Connect's last-two-days view",
+    ["username", "status", "device", "command"])
+ise_tacacs_account_last_seen_timestamp = Gauge(
+    "ise_tacacs_account_last_seen_timestamp",
+    "Most recent TACACS event timestamp from Data Connect",
+    ["username", "event_type"])
 
 # --- exporter self-observability ---
 ise_scrape_duration_seconds = Histogram("ise_scrape_duration_seconds", "Scrape time", buckets=[1, 5, 10, 30, 60, 120, 300])

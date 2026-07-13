@@ -81,6 +81,16 @@ class Config:
     collect_tacacs: bool = True
     tacacs_internal_user_max: int = 1000
     tacacs_unused_account_days: int = 180
+    collect_tacacs_dataconnect: bool = False
+    dataconnect_host: str = ""
+    dataconnect_port: int = 2484
+    dataconnect_service: str = "cpm10"
+    dataconnect_user: str = "dataconnect"
+    dataconnect_password: str = ""
+    dataconnect_ca_bundle: str = ""
+    dataconnect_ssl_verify: bool = True
+    dataconnect_query_timeout: int = 30
+    dataconnect_max_groups: int = 5000
     collect_pxgrid_endpoints: bool = True
     collect_pxgrid_stream: bool = False
     # Legacy ERS endpoint profiling-policy breakdown, used only when the richer
@@ -129,6 +139,11 @@ class Config:
         return bool(self.pxgrid_host and self.pxgrid_node_name
                     and self.pxgrid_client_cert and self.pxgrid_client_key)
 
+    @property
+    def dataconnect_ready(self) -> bool:
+        return bool(self.collect_tacacs_dataconnect and self.dataconnect_host
+                    and self.dataconnect_user and self.dataconnect_password)
+
     def summary(self) -> str:
         """Secret-redacted one-liner of the toggles/paths that most commonly cause
         silent misconfiguration. Log this once at startup — ise_pass is excluded."""
@@ -136,6 +151,8 @@ class Config:
                 f"collect_pxgrid_endpoints={self.collect_pxgrid_endpoints} "
                 f"collect_ers_endpoint_attributes={self.collect_ers_endpoint_attributes} "
                 f"collect_tacacs={self.collect_tacacs} "
+                f"collect_tacacs_dataconnect={self.collect_tacacs_dataconnect} "
+                f"dataconnect_ready={self.dataconnect_ready} "
                 f"pxgrid_ready={self.pxgrid_ready} pxgrid_host={self.pxgrid_host!r} "
                 f"pxgrid_node_name={self.pxgrid_node_name!r} "
                 f"pxgrid_client_cert={self.pxgrid_client_cert!r} "
@@ -172,6 +189,16 @@ class Config:
             collect_tacacs=_b("COLLECT_TACACS", True),
             tacacs_internal_user_max=_i("TACACS_INTERNAL_USER_MAX", 1000),
             tacacs_unused_account_days=_i("TACACS_UNUSED_ACCOUNT_DAYS", 180),
+            collect_tacacs_dataconnect=_b("COLLECT_TACACS_DATACONNECT", False),
+            dataconnect_host=_s("ISE_DATACONNECT_HOST", _s("ISE_MNT_HOST")),
+            dataconnect_port=_i("ISE_DATACONNECT_PORT", 2484),
+            dataconnect_service=_s("ISE_DATACONNECT_SERVICE", "cpm10"),
+            dataconnect_user=_s("ISE_DATACONNECT_USER", "dataconnect"),
+            dataconnect_password=_s("ISE_DATACONNECT_PASSWORD"),
+            dataconnect_ca_bundle=_s("ISE_DATACONNECT_CA_BUNDLE"),
+            dataconnect_ssl_verify=_b("ISE_DATACONNECT_SSL_VERIFY", True),
+            dataconnect_query_timeout=_i("ISE_DATACONNECT_QUERY_TIMEOUT", 30),
+            dataconnect_max_groups=_i("ISE_DATACONNECT_MAX_GROUPS", 5000),
             collect_pxgrid_endpoints=_b("COLLECT_PXGRID_ENDPOINTS", True),
             collect_pxgrid_stream=_b("COLLECT_PXGRID_STREAM", False),
             collect_ers_endpoint_fallback=_b("COLLECT_ERS_ENDPOINT_FALLBACK", True),

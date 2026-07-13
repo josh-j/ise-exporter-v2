@@ -32,3 +32,35 @@ The exporter API collector intentionally does not guess account usage from objec
 modification dates or deployment-wide lifetime hit counts. The TACACS dashboard
 uses object age only as a clearly labelled review hint and shows policy/rule
 counter changes over the selected Grafana range.
+
+## Exporter configuration
+
+Enable Device Administration and Data Connect in ISE, set the Data Connect
+password, then configure:
+
+```dotenv
+COLLECT_TACACS_DATACONNECT=true
+ISE_DATACONNECT_HOST=mnt1.example.mil
+ISE_DATACONNECT_PORT=2484
+ISE_DATACONNECT_SERVICE=cpm10
+ISE_DATACONNECT_USER=dataconnect
+ISE_DATACONNECT_PASSWORD=use-a-secret-store
+ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer
+ISE_DATACONNECT_SSL_VERIFY=true
+ISE_DATACONNECT_QUERY_TIMEOUT=30
+ISE_DATACONNECT_MAX_GROUPS=5000
+```
+
+The collector emits snapshot gauges for the two-day views:
+
+- `ise_tacacs_account_authentication_events` by account, status, NAD, policy,
+  identity store, and failure reason.
+- `ise_tacacs_account_authorization_events` by account, status, NAD, policy,
+  shell profile, command set, and command.
+- `ise_tacacs_accounting_events` by account, status, NAD, and command.
+- `ise_tacacs_account_last_seen_timestamp` by account and event type.
+- `ise_tacacs_dataconnect_up` for query health.
+
+These are bounded recent-evidence gauges, not monotonic lifetime counters. An
+account absent from the two-day views has no evidence in that window; that alone
+does not prove it is unused for a longer period.

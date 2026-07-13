@@ -17,6 +17,7 @@ from prometheus_client import start_http_server
 
 from .config import Config
 from .clients.rest import ISERestClient
+from .clients.dataconnect import DataConnectClient
 from .clients.pxgrid import SESSION_SERVICE, PxGridControl
 from .scheduler import PollScheduler
 from .streaming import PxGridStreamer
@@ -186,6 +187,10 @@ def main(argv=None):
     logger.info("metrics on :%d  (stream=%s)", cfg.exporter_port, cfg.collect_pxgrid_stream)
 
     client = ISERestClient(cfg)
+    dataconnect = DataConnectClient(cfg) if cfg.dataconnect_ready else None
+    if cfg.collect_tacacs_dataconnect and dataconnect is None:
+        logger.warning("Data Connect disabled: set ISE_DATACONNECT_HOST, "
+                       "ISE_DATACONNECT_USER, and ISE_DATACONNECT_PASSWORD")
     if cfg.pxgrid_ready:
         pxgrid = PxGridControl(cfg)
     else:
@@ -197,7 +202,7 @@ def main(argv=None):
                            cfg.collect_pxgrid_stream, cfg.collect_pxgrid_endpoints,
                            ", ".join(missing))
 
-    scheduler = PollScheduler(cfg, client, pxgrid=pxgrid)
+    scheduler = PollScheduler(cfg, client, pxgrid=pxgrid, dataconnect=dataconnect)
 
     if cfg.collect_pxgrid_stream and pxgrid:
         streamer = PxGridStreamer(pxgrid, scheduler.mappings, shutdown)

@@ -24,6 +24,10 @@ _METRICS = (
     metrics.ise_tacacs_authentication_rule_hits,
     metrics.ise_tacacs_authorization_rule_hits,
     metrics.ise_tacacs_policy_objects_total,
+    metrics.ise_tacacs_account_authentication_events,
+    metrics.ise_tacacs_account_authorization_events,
+    metrics.ise_tacacs_accounting_events,
+    metrics.ise_tacacs_account_last_seen_timestamp,
 )
 
 
@@ -51,7 +55,89 @@ def _hit_count(row):
         return 0
 
 
-def collect(client, cfg):
+def _label(value):
+    text = str(value or "").strip()
+    return text or "none"
+
+
+def _collect_dataconnect(dataconnect, cfg):
+    limit = max(1, int(getattr(cfg, "dataconnect_max_groups", 5000)))
+    queries = {
+        "authentication": f"""
+            SELECT username, status, device_name, authentication_policy,
+                   identity_store, failure_reason, COUNT(*) AS hits,
+                   MAX(epoch_time) AS last_seen
+            FROM tacacs_authentication_last_two_days
+            GROUP BY username, status, device_name, authentication_policy,
+                     identity_store, failure_reason
+            ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "authorization": f"""
+            SELECT username, status, device_name, authorization_policy,
+                   shell_profile, matched_command_set, command_from_device,
+                   COUNT(*) AS hits, MAX(epoch_time) AS last_seen
+            FROM tacacs_authorization_last_two_days
+            GROUP BY username, status, device_name, authorization_policy,
+                     shell_profile, matched_command_set, command_from_device
+            ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "accounting": f"""
+            SELECT username, status, device_name,
+                   TRIM(command || ' ' || command_args) AS command,
+                   COUNT(*) AS hits, MAX(epoch_time) AS last_seen
+            FROM tacacs_accounting_last_two_days
+            GROUP BY username, status, device_name,
+                     TRIM(command || ' ' || command_args)
+            ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+    }
+    rows = {kind: dataconnect.query(sql) for kind, sql in queries.items()}
+
+    last_seen = {}
+    for row in rows["authentication"]:
+        username = _label(row.get("username"))
+        metrics.ise_tacacs_account_authentication_events.labels(
+            username=username,
+            status=_label(row.get("status")),
+            device=_label(row.get("device_name")),
+            policy=_label(row.get("authentication_policy")),
+            identity_store=_label(row.get("identity_store")),
+            failure_reason=_label(row.get("failure_reason")),
+        ).set(int(row.get("hits") or 0))
+        last_seen[(username, "authentication")] = max(
+            last_seen.get((username, "authentication"), 0), int(row.get("last_seen") or 0))
+
+    for row in rows["authorization"]:
+        username = _label(row.get("username"))
+        metrics.ise_tacacs_account_authorization_events.labels(
+            username=username,
+            status=_label(row.get("status")),
+            device=_label(row.get("device_name")),
+            policy=_label(row.get("authorization_policy")),
+            shell_profile=_label(row.get("shell_profile")),
+            command_set=_label(row.get("matched_command_set")),
+            command=_label(row.get("command_from_device")),
+        ).set(int(row.get("hits") or 0))
+        last_seen[(username, "authorization")] = max(
+            last_seen.get((username, "authorization"), 0), int(row.get("last_seen") or 0))
+
+    for row in rows["accounting"]:
+        username = _label(row.get("username"))
+        metrics.ise_tacacs_accounting_events.labels(
+            username=username,
+            status=_label(row.get("status")),
+            device=_label(row.get("device_name")),
+            command=_label(row.get("command")),
+        ).set(int(row.get("hits") or 0))
+        last_seen[(username, "accounting")] = max(
+            last_seen.get((username, "accounting"), 0), int(row.get("last_seen") or 0))
+
+    for (username, event_type), timestamp in last_seen.items():
+        metrics.ise_tacacs_account_last_seen_timestamp.labels(
+            username=username, event_type=event_type).set(timestamp)
+
+
+def collect(client, cfg, dataconnect=None):
     with observe("tacacs"):
         resources = client.get_ers(
             "/config/internaluser", {"size": 100}, get_all=True,
@@ -181,3 +267,15 @@ def collect(client, cfg):
         }
         for object_type, count in object_counts.items():
             metrics.ise_tacacs_policy_objects_total.labels(object_type=object_type).set(count)
+
+        if dataconnect is not None:
+            try:
+                _collect_dataconnect(dataconnect, cfg)
+                metrics.ise_tacacs_dataconnect_up.set(1)
+            except Exception:
+                metrics.ise_tacacs_dataconnect_up.set(0)
+                raise
+            finally:
+                dataconnect.close()
+        elif getattr(cfg, "collect_tacacs_dataconnect", False):
+            metrics.ise_tacacs_dataconnect_up.set(0)

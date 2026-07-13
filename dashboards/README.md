@@ -14,7 +14,7 @@ Ten dashboards, each scoped to one part of the exporter's metric surface
 | `ise-failure-triage.json` | RADIUS failure triage (headline counts, failure-code trend + leaderboard with decoded codes, failure×location/×ops-owner heatmaps, per-ops-owner failure rate, cert/PKI stat, NAD work queue) | Same metrics as auth-troubleshooting, different framing; filters by ops-owner/location/reason-code |
 | `ise-pxgrid-health.json` | pxGrid stream connection state, event throughput, resync counts, streamed state size | Only populated when `COLLECT_PXGRID_STREAM=true`; all panels correctly show "No data" in poll mode |
 | `ise-psn-troubleshooting.json` | PSN session distribution, deployment/collector/API health, total/client authentication latency, and per-execution-step latency | PSN session attribution is MnT poll-sourced; latency samples are recorded once per newly fetched session detail |
-| `ise-tacacs.json` | Internal-user hygiene, suspected-unused review candidates, Device Admin policy/authentication/authorization hit counts, shell profiles, and command sets | ISE exposes no per-account TACACS last login; suspected-unused is limited to enabled internal users when all Device Admin policy-set hits are zero |
+| `ise-tacacs.json` | Internal-user hygiene, Device Admin policy/rule usage, and Data Connect account/device/policy/command attribution | Enable `COLLECT_TACACS_DATACONNECT` for the bounded last-two-days account evidence; object age remains a separate review hint, not last login |
 
 ## Import
 

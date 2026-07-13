@@ -12,6 +12,7 @@ def _clear_metrics():
     for metric in tacacs._METRICS:
         clear_metric(metric)
     metrics.ise_tacacs_internal_users_total.set(0)
+    metrics.ise_tacacs_dataconnect_up.set(0)
 
 
 def _rows(metric, *labels):
@@ -118,3 +119,54 @@ def test_internal_user_list_row_survives_detail_fetch_failure():
 
     assert _rows(metrics.ise_tacacs_internal_user_info, "username") == {("netadmin",): 1.0}
     assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 0.0
+
+
+def test_collects_dataconnect_account_attribution():
+    class DataConnect:
+        closed = False
+
+        def query(self, sql):
+            if "tacacs_authentication" in sql:
+                return [{
+                    "username": "netadmin", "status": "Fail", "device_name": "switch-1",
+                    "authentication_policy": "Default >> Default",
+                    "identity_store": "Internal Users", "failure_reason": "bad password",
+                    "hits": 2, "last_seen": 100,
+                }]
+            if "tacacs_authorization" in sql:
+                return [{
+                    "username": "netadmin", "status": "Pass", "device_name": "switch-1",
+                    "authorization_policy": "Admins", "shell_profile": "Privilege 15",
+                    "matched_command_set": "PermitAll", "command_from_device": "show run",
+                    "hits": 3, "last_seen": 110,
+                }]
+            return [{
+                "username": "netadmin", "status": "Pass", "device_name": "switch-1",
+                "command": "show version", "hits": 4, "last_seen": 120,
+            }]
+
+        def close(self):
+            self.closed = True
+
+    dataconnect = DataConnect()
+    tacacs.collect(Client(), types.SimpleNamespace(
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=180,
+        max_workers=2, dataconnect_max_groups=50), dataconnect=dataconnect)
+
+    assert dataconnect.closed is True
+    assert metrics.ise_tacacs_dataconnect_up._value.get() == 1
+    assert _rows(metrics.ise_tacacs_account_authentication_events,
+                 "username", "status", "device") == {
+        ("netadmin", "Fail", "switch-1"): 2.0}
+    assert _rows(metrics.ise_tacacs_account_authorization_events,
+                 "username", "command") == {
+        ("netadmin", "show run"): 3.0}
+    assert _rows(metrics.ise_tacacs_accounting_events,
+                 "username", "command") == {
+        ("netadmin", "show version"): 4.0}
+    assert _rows(metrics.ise_tacacs_account_last_seen_timestamp,
+                 "username", "event_type") == {
+        ("netadmin", "authentication"): 100.0,
+        ("netadmin", "authorization"): 110.0,
+        ("netadmin", "accounting"): 120.0,
+    }

@@ -45,6 +45,10 @@ and persistent cache storage. At that rate a complete ERS detail pass takes abou
 | `AUTH_FAILURE_THRESHOLD` / `AUTH_FAILURE_BACKOFF` | `3` / `900` | suppress API requests after repeated 401s to avoid account lockout |
 | `COLLECT_AUTHZ` | `true` | per-MAC authz/policy-set/matched-rule metrics |
 | `COLLECT_TACACS` | `true` | internal-user hygiene plus Device Admin policy/rule hit-count metrics |
+| `COLLECT_TACACS_DATACONNECT` | `false` | per-account TACACS authentication, authorization, and accounting from the MnT Data Connect two-day views |
+| `ISE_DATACONNECT_HOST` / `PORT` / `SERVICE` | MnT host / `2484` / `cpm10` | Data Connect TCPS endpoint reported by ISE |
+| `ISE_DATACONNECT_USER` / `PASSWORD` | `dataconnect` / empty | read-only Data Connect credential configured in ISE |
+| `ISE_DATACONNECT_CA_BUNDLE` / `SSL_VERIFY` | empty / `true` | Data Connect server trust and certificate verification |
 | `TACACS_INTERNAL_USER_MAX` | `1000` | maximum internal-user details/username-labelled series collected per slow cycle |
 | `COLLECT_PXGRID_ENDPOINTS` | `true` | optional pxGrid `getEndpoints` enrichment when ISE publishes endpoint context |
 | `COLLECT_PXGRID_STREAM` | `false` | replace sessions+endpoints polling with pxGrid topics |
@@ -68,6 +72,13 @@ restart or wait for the next retry. Endpoint model collection uses pxGrid
 one page of endpoints.
 If `COLLECT_PXGRID_STREAM=true` but the pxGrid creds are incomplete, the exporter
 falls back to polling sessions/endpoints rather than dropping them.
+
+Per-account TACACS attribution requires Device Administration and Data Connect to
+be enabled on the MnT node. Set `COLLECT_TACACS_DATACONNECT=true` and the
+`ISE_DATACONNECT_*` values from ISE's Data Connect details API. The exporter uses
+only Cisco's bounded `TACACS_*_LAST_TWO_DAYS` views, caps grouped series with
+`ISE_DATACONNECT_MAX_GROUPS`, and performs read-only SQL over TCPS. See
+[`docs/tacacs-account-attribution.md`](docs/tacacs-account-attribution.md).
 
 ERS endpoint collection is the baseline endpoint inventory path, especially on
 ISE 3.3 where pxGrid `getEndpoints` commonly returns zero even though ERS and

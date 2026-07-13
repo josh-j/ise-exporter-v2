@@ -16,10 +16,11 @@ MAX_CONSECUTIVE_FAILURES = 5
 
 
 class PollScheduler:
-    def __init__(self, cfg, client, pxgrid=None):
+    def __init__(self, cfg, client, pxgrid=None, dataconnect=None):
         self.cfg = cfg
         self.client = client
         self.pxgrid = pxgrid
+        self.dataconnect = dataconnect
         self.last_run = {}
         self.mappings = {"ops_owner": {}, "hostname": {}, "location": {}}
         self._streaming_state = None   # tracks stream up/down to log the fallback flip once
@@ -125,7 +126,7 @@ class PollScheduler:
             endpoint_attributes.collect(self.client, cfg)
             self.last_run["ers_endpoint_attributes"] = now
         if getattr(cfg, "collect_tacacs", True) and self._due("tacacs", now, fast, medium, slow):
-            tacacs.collect(self.client, cfg)
+            tacacs.collect(self.client, cfg, dataconnect=self.dataconnect)
             self.last_run["tacacs"] = now
 
     def loop(self, shutdown):

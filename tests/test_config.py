@@ -77,6 +77,9 @@ def test_csv_preserves_spaces_inside_attribute_names(monkeypatch):
 
 def test_summary_excludes_password(monkeypatch):
     monkeypatch.setenv("ISE_PASS", "super-secret")
+    monkeypatch.setenv("ISE_DATACONNECT_PASSWORD", "database-secret")
+    monkeypatch.setenv("COLLECT_TACACS_DATACONNECT", "true")
+    monkeypatch.setenv("ISE_MNT_HOST", "mnt1.example.mil")
     monkeypatch.setenv("ISE_HOST", "pan1.example.mil")
     monkeypatch.setenv("PXGRID_HOST", "pxgrid1.example.mil")
     monkeypatch.setenv("PXGRID_NODE_NAME", "ise-exporter")
@@ -84,9 +87,12 @@ def test_summary_excludes_password(monkeypatch):
     monkeypatch.setenv("PXGRID_CLIENT_KEY", "/certs/client.key")
     cfg = Config.from_env()
     assert "super-secret" not in cfg.summary()
+    assert "database-secret" not in cfg.summary()
     assert "pxgrid1.example.mil" in cfg.summary()
     assert "collect_ers_endpoint_attributes=True" in cfg.summary()
     assert cfg.pxgrid_ready is True
+    assert cfg.dataconnect_ready is True
+    assert cfg.dataconnect_host == "mnt1.example.mil"
 
 
 def test_env_example_is_parseable_ise33_80k_production_profile():
@@ -103,6 +109,8 @@ def test_env_example_is_parseable_ise33_80k_production_profile():
     assert values["SESSION_DETAIL_CACHE_FILE"] == \
         "/var/lib/ise-exporter/session-details-cache.json"
     assert values["ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS"] == "Ops Owner"
+    assert values["COLLECT_TACACS_DATACONNECT"] == "true"
+    assert values["ISE_DATACONNECT_MAX_GROUPS"] == "5000"
     assert values["PXGRID_SESSION_TOPIC_ALL"] == "false"
     assert values["PXGRID_SUBSCRIBE_ENDPOINT_TOPIC"] == "false"
     # systemd EnvironmentFile= does not support trailing inline comments; keeping
