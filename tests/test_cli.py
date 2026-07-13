@@ -1,6 +1,7 @@
 import json
 import io
 import types
+from datetime import datetime, timezone
 
 import pytest
 
@@ -36,8 +37,14 @@ class FakeClient:
             return [{"id": "user-1", "name": "readonly"}]
         return {"path": path, "params": params}
 
-    def get_pan_api(self, path, api_name="x", unwrap=True):
-        self.calls.append(("openapi", path, unwrap, api_name))
+    def get_pan_api(self, path, api_name="x", unwrap=True, params=None):
+        self.calls.append(("openapi", path, unwrap, api_name, params))
+        if path == "/endpoint":
+            value = str((params or {}).get("filter", "")).rsplit(".", 1)[-1]
+            if value in ("192.0.2.25", "client-25.example.test"):
+                return [{"id": "id-1", "mac": "AA:BB:CC:DD:EE:FF",
+                         "ipAddress": "192.0.2.25", "assetName": "client-25.example.test"}]
+            return []
         return [{"name": "pan-1", "roles": ["PrimaryAdmin"]}]
 
     def get_mnt_xml(self, path, api_name="x"):
@@ -47,6 +54,10 @@ class FakeClient:
                 {"calling_station_id": "AA:00", "server": "psn-1"},
                 {"calling_station_id": "BB:00", "server": "psn-2"},
             ]}
+        if path == "/Session/IPAddress/192.0.2.25":
+            return {"total": 1, "sessions": [{
+                "calling_station_id": "aa-bb-cc-dd-ee-ff",
+                "framed_ip_address": "192.0.2.25", "server": "psn-1"}]}
         if path.startswith("/AuthStatus/"):
             return {"total": 1, "sessions": [{"passed": "false", "failure_reason": "22056"}]}
         if path.startswith("/Session/MACAddress/"):
@@ -58,6 +69,32 @@ class FakeClient:
                     "PostureReport=C2CP-WIN-FIREWALL\\;Passed\\;(details)"),
             }]}
         return {"total": 0, "sessions": []}
+
+
+class FakeDataConnect:
+    def __init__(self):
+        self.calls = []
+        self.closed = False
+
+    def query(self, sql, parameters=None):
+        self.calls.append((sql, parameters or {}))
+        lowered = sql.lower()
+        if "from endpoints_data" in lowered:
+            return [{"id": "id-1", "endpoint_id": "epid:profile-1",
+                     "mac_address": "AA:BB:CC:DD:EE:FF",
+                     "endpoint_ip": "192.0.2.25", "hostname": "client-25.example.test"}]
+        if "from user_tab_columns" in lowered:
+            return [{"column_name": name} for name in (
+                "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "DEVICE_NAME",
+                "ISE_NODE", "AUTHENTICATION_METHOD", "AUTHENTICATION_PROTOCOL",
+                "POLICY_SET_NAME", "FAILED", "RESPONSE_TIME")]
+        if "from radius_authentications" in lowered:
+            return [{"username": "alice", "calling_station_id": "AA:BB:CC:DD:EE:FF",
+                     "device_name": "nad-1", "failed": 0}]
+        return []
+
+    def close(self):
+        self.closed = True
 
 
 def test_schema_is_network_and_credential_free(capsys):
@@ -162,3 +199,126 @@ def test_pretty_output_uses_table_for_multiple_objects():
     rendered = output.getvalue()
     assert "name" in rendered and "role" in rendered
     assert "pan-1" in rendered and "psn-1" in rendered
+
+
+def test_json_output_serializes_dataconnect_datetime_values():
+    output = io.StringIO()
+
+    cli.render({"timestamp": datetime(2026, 7, 13, tzinfo=timezone.utc)},
+               output="json", stream=output)
+
+    assert json.loads(output.getvalue())["timestamp"] == "2026-07-13 00:00:00+00:00"
+
+
+def test_empty_table_output_is_explicit():
+    output = io.StringIO()
+
+    cli.render([], stream=output)
+
+    assert "No results." in output.getvalue()
+
+
+@pytest.mark.parametrize("value", (
+    "aa-bb-cc-dd-ee-ff", "aabb.ccdd.eeff", "aabbccddeeff",
+    "AA BB CC DD EE FF", "AA:BB:CC:DD:EE:FF",
+))
+def test_endpoint_accepts_common_mac_formats(value, capsys):
+    client = FakeClient()
+
+    assert cli.main(["endpoint", value, "-o", "json"], client=client) == 0
+
+    assert json.loads(capsys.readouterr().out)["id"] == "id-1"
+    lookup = client.calls[0]
+    assert lookup[2]["filter"] == "mac.EQ.AA:BB:CC:DD:EE:FF"
+
+
+def test_ip_resolution_prefers_dataconnect_and_enriches_from_ers(capsys):
+    client = FakeClient()
+    dataconnect = FakeDataConnect()
+
+    assert cli.main([
+        "resolve", "192.0.2.25", "-o", "json"
+    ], client=client, dataconnect=dataconnect) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["kind"] == "ip"
+    assert result["source"] == "dataconnect+ers"
+    assert result["mac"] == "AA:BB:CC:DD:EE:FF"
+    assert result["endpoint"]["id"] == "id-1"
+    assert any("from endpoints_data" in sql.lower() for sql, _ in dataconnect.calls)
+    assert not any(call[0] == "openapi" for call in client.calls)
+
+
+def test_hostname_is_resolved_for_secure_client_via_dataconnect(capsys):
+    client = FakeClient()
+    dataconnect = FakeDataConnect()
+
+    assert cli.main([
+        "secure-client", "client-25.example.test", "-o", "json"
+    ], client=client, dataconnect=dataconnect) == 0
+
+    assert json.loads(capsys.readouterr().out)["mac"] == "AA:BB:CC:DD:EE:FF"
+    assert client.calls[-1] == (
+        "mnt", "/Session/MACAddress/AA:BB:CC:DD:EE:FF", "cli_secure_client")
+
+
+def test_session_by_ip_uses_direct_mnt_ip_route(capsys):
+    client = FakeClient()
+
+    assert cli.main(["session", "192.0.2.25", "-o", "json"], client=client) == 0
+
+    assert json.loads(capsys.readouterr().out)[0]["server"] == "psn-1"
+    assert client.calls == [("mnt", "/Session/IPAddress/192.0.2.25", "cli_session_lookup")]
+
+
+def test_dataconnect_report_is_bounded_and_filters_normalized_mac(capsys):
+    client = FakeClient()
+    dataconnect = FakeDataConnect()
+
+    assert cli.main([
+        "radius-auth", "--identifier", "aabb.ccdd.eeff", "--limit", "5", "-o", "json"
+    ], client=client, dataconnect=dataconnect) == 0
+
+    assert json.loads(capsys.readouterr().out)[0]["username"] == "alice"
+    report_sql, parameters = dataconnect.calls[-1]
+    assert "FETCH FIRST 5 ROWS ONLY" in report_sql
+    assert "CALLING_STATION_ID = :endpoint_identifier" in report_sql
+    assert parameters["endpoint_identifier"] == "AA:BB:CC:DD:EE:FF"
+
+
+def test_dataconnect_schema_is_metadata_only_and_table_is_bound(capsys):
+    dataconnect = FakeDataConnect()
+
+    assert cli.main([
+        "dataconnect-schema", "ENDPOINTS_DATA", "-o", "json"
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+
+    assert json.loads(capsys.readouterr().out)
+    sql, parameters = dataconnect.calls[-1]
+    assert "FROM user_tab_columns" in sql
+    assert parameters == {"table_name": "ENDPOINTS_DATA"}
+    assert "FROM endpoints_data" not in sql
+
+
+def test_no_subcommand_enters_repl_and_question_mark_shows_commands():
+    stdin = io.StringIO("?\nschema secure-client -o json\nquit\n")
+    stdout = io.StringIO()
+
+    assert cli.main([], stdin=stdin, stdout=stdout) == 0
+
+    rendered = stdout.getvalue()
+    assert "Cisco ISE read-only shell" in rendered
+    assert "radius-auth" in rendered
+    assert "secure-client" in rendered
+    assert '"api": "MnT XML"' in rendered
+
+
+def test_repl_recovers_from_parse_error_and_runs_next_command():
+    stdin = io.StringIO("not-a-command\nschema health -o json\nexit\n")
+    stdout = io.StringIO()
+
+    assert cli.main([], stdin=stdin, stdout=stdout) == 0
+
+    rendered = stdout.getvalue()
+    assert "invalid choice" in rendered
+    assert '"api": "ERS + MnT + optional Data Connect"' in rendered

@@ -92,6 +92,8 @@ instances.
 ```bash
 sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --dataconnect-check
 ise-cli --help
+ise-cli  # enter the interactive shell; type ? and then quit
+ise-cli dataconnect-schema ENDPOINTS_DATA --output json
 journalctl -u ise-exporter -n 100 --no-pager
 ```
 

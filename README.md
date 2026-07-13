@@ -100,9 +100,13 @@ accounting session ID's latest Start/Interim/Stop record, so correctness depends
 on NAD accounting quality.
 
 The read-only `ise-cli` and scripts under `tools/` are separate diagnostic
-surfaces. Each curl probe supports `--schema-only`, which needs no credentials
-or network. The Secure Client probe calls the same MnT diagnostic path and parser
-as the CLI; it does not participate in exporter collection.
+surfaces. Run `ise-cli` with no arguments for an interactive shell (`?` lists
+commands), or use one-shot commands in scripts. Endpoint commands accept common
+MAC formats, IP addresses, hostnames, and ERS ids; Data Connect is preferred for
+IP/hostname inventory resolution and bounded RADIUS, posture, PSN, and TACACS
+reports. Each curl probe supports `--schema-only`, which needs no credentials or
+network. The Secure Client probe calls the same MnT diagnostic path and parser as
+the CLI; it does not participate in exporter collection.
 
 Additional references:
 

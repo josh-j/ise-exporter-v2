@@ -163,11 +163,11 @@ class ISERestClient:
             return None
         return data.get("SearchResult", {}).get("total")
 
-    def get_pan_api(self, path, api_name="pan_api", unwrap=True):
+    def get_pan_api(self, path, api_name="pan_api", unwrap=True, params=None):
         """PAN OpenAPI JSON GET. Unwraps the `response` envelope by default; pass
         unwrap=False for endpoints that return a bare body (e.g. license tier-state)."""
         url = f"{self.pan_url}{path}"
-        data = self._get_json(self.session, url, api_name=api_name)
+        data = self._get_json(self.session, url, params, api_name=api_name)
         if data is None:
             return None
         return data.get("response", data) if (unwrap and isinstance(data, dict)) else data

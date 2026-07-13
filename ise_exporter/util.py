@@ -18,7 +18,21 @@ def clear_metric(metric):
 def normalize_mac(mac):
     if not mac:
         return ""
-    return mac.strip().upper().replace("-", ":")
+    text = str(mac).strip()
+    # Accept the formats operators actually paste: colon/hyphen separated,
+    # Cisco dotted, bare hexadecimal, and whitespace separated.  Preserve the
+    # old best-effort behavior for malformed values; callers that require a
+    # real address validate the normalized result separately.
+    compact = re.sub(r"[^0-9A-Fa-f]", "", text)
+    if len(compact) == 12:
+        compact = compact.upper()
+        return ":".join(compact[index:index + 2] for index in range(0, 12, 2))
+    return text.upper().replace("-", ":")
+
+
+def is_mac(value):
+    """Return whether *value* is a complete MAC address in any common format."""
+    return bool(re.fullmatch(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}", normalize_mac(value)))
 
 
 def normalize_location(loc_str):

@@ -7,9 +7,17 @@ are bounded by default so an exploratory query cannot accidentally enumerate an
 from __future__ import annotations
 
 import argparse
+import atexit
+import cmd
+import contextlib
 import csv
+import ipaddress
 import json
 import os
+from pathlib import Path
+import re
+import shlex
+import socket
 import sys
 
 from dotenv import load_dotenv
@@ -19,27 +27,45 @@ from rich.pretty import Pretty
 from rich.table import Table
 from rich.text import Text
 
+from .clients.dataconnect import DataConnectClient
 from .clients.rest import ISERestClient
 from .config import Config
-from .util import (first_nonempty, normalize_agent_version, normalize_posture,
+from .util import (first_nonempty, is_mac, normalize_agent_version, normalize_mac,
+                   normalize_posture,
                    parse_other_attr_string, parse_posture_report)
 
 
 COMMAND_SCHEMAS = {
     "health": {
-        "api": "ERS + MnT", "host_env": ["ISE_HOST", "ISE_MNT_HOST"],
-        "method": "GET", "paths": ["/ers", "/admin"],
+        "api": "ERS + MnT + optional Data Connect",
+        "host_env": ["ISE_HOST", "ISE_MNT_HOST", "ISE_DATACONNECT_HOST"],
+        "method": "GET + SELECT", "paths": ["/ers", "/admin"],
     },
     "endpoints": {
         "api": "ERS", "host_env": "ISE_HOST", "method": "GET",
         "path": "/ers/config/endpoint", "bounded_default": 100,
     },
     "endpoint": {
-        "api": "ERS + optional MnT", "host_env": ["ISE_HOST", "ISE_MNT_HOST"],
-        "method": "GET", "paths": [
+        "api": "Data Connect + ERS + optional MnT",
+        "host_env": ["ISE_HOST", "ISE_MNT_HOST", "ISE_DATACONNECT_HOST"],
+        "method": "SELECT + GET", "paths": [
             "/ers/config/endpoint?filter=mac.EQ.{identifier}",
             "/ers/config/endpoint/{id}",
             "/admin/API/mnt/Session/MACAddress/{mac}",
+        ],
+        "identifiers": ["MAC (any common format)", "IP", "hostname", "ERS id"],
+    },
+    "resolve": {
+        "api": "Data Connect + ERS + MnT",
+        "host_env": ["ISE_HOST", "ISE_MNT_HOST", "ISE_DATACONNECT_HOST"],
+        "method": "SELECT + GET", "identifiers": [
+            "MAC (any common format)", "IP", "hostname", "ERS id"],
+    },
+    "session": {
+        "api": "MnT XML + endpoint resolver", "host_env": "ISE_MNT_HOST",
+        "method": "GET", "paths": [
+            "/admin/API/mnt/Session/MACAddress/{mac}",
+            "/admin/API/mnt/Session/IPAddress/{ip}",
         ],
     },
     "sessions": {
@@ -49,10 +75,12 @@ COMMAND_SCHEMAS = {
     "auth-status": {
         "api": "MnT XML", "host_env": "ISE_MNT_HOST", "method": "GET",
         "path": "/admin/API/mnt/AuthStatus/MACAddress/{mac}/{seconds}/{limit}/All",
+        "identifiers": ["MAC (any common format)", "IP", "hostname", "ERS id"],
     },
     "secure-client": {
         "api": "MnT XML", "host_env": "ISE_MNT_HOST", "method": "GET",
         "path": "/admin/API/mnt/Session/MACAddress/{mac}",
+        "identifiers": ["MAC (any common format)", "IP", "hostname", "ERS id"],
         "fields": ["PostureAgentVersion", "PostureApplicable",
                    "PostureAssessmentStatus", "PostureReport", "PostureStatus"],
     },
@@ -72,11 +100,185 @@ COMMAND_SCHEMAS = {
         "api": "ERS", "host_env": "ISE_HOST", "method": "GET",
         "path": "/ers/config/internaluser", "bounded_default": 100,
     },
+    "identity-groups": {
+        "api": "ERS", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/ers/config/identitygroup", "bounded_default": 100,
+    },
+    "network-device-groups": {
+        "api": "ERS", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/ers/config/networkdevicegroup", "bounded_default": 100,
+    },
+    "licenses": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/api/v1/license/system/tier-state",
+    },
+    "patches": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/api/v1/patch",
+    },
+    "backup-status": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/api/v1/backup-restore/config/last-backup-status",
+    },
+    "repositories": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/api/v1/repository",
+    },
+    "network-policy-sets": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/api/v1/policy/network-access/policy-set",
+    },
+    "device-admin-policy-sets": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/api/v1/policy/device-admin/policy-set",
+    },
+    "authorization-profiles": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/api/v1/policy/network-access/authorization-profiles",
+    },
+    "tacacs-command-sets": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/api/v1/policy/device-admin/command-sets",
+    },
+    "tacacs-shell-profiles": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "path": "/api/v1/policy/device-admin/shell-profiles",
+    },
+    "certificates": {
+        "api": "OpenAPI", "host_env": "ISE_HOST", "method": "GET",
+        "paths": [
+            "/api/v1/certs/system-certificate/{hostname}",
+            "/api/v1/certs/trusted-certificate",
+        ],
+    },
+    "radius-auth": {
+        "api": "Data Connect", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "RADIUS_AUTHENTICATIONS",
+        "bounded_default": 100,
+    },
+    "endpoint-report": {
+        "api": "Data Connect", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "ENDPOINTS_DATA", "bounded_default": 100,
+    },
+    "radius-errors": {
+        "api": "Data Connect", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "RADIUS_ERRORS_VIEW", "bounded_default": 100,
+    },
+    "radius-accounting": {
+        "api": "Data Connect", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "RADIUS_ACCOUNTING", "bounded_default": 100,
+    },
+    "posture": {
+        "api": "Data Connect", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "views": [
+            "POSTURE_ASSESSMENT_BY_ENDPOINT", "POSTURE_ASSESSMENT_BY_CONDITION"],
+        "bounded_default": 100,
+    },
+    "psn-metrics": {
+        "api": "Data Connect", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "KEY_PERFORMANCE_METRICS", "bounded_default": 100,
+    },
+    "tacacs-activity": {
+        "api": "Data Connect", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "views": [
+            "TACACS_AUTHENTICATION_LAST_TWO_DAYS",
+            "TACACS_AUTHORIZATION_LAST_TWO_DAYS",
+            "TACACS_ACCOUNTING_LAST_TWO_DAYS",
+        ], "bounded_default": 100,
+    },
+    "dataconnect-schema": {
+        "api": "Data Connect metadata", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "USER_TAB_COLUMNS", "reads_event_rows": False,
+    },
     "get": {
         "api": "ERS, OpenAPI, or MnT", "method": "GET only",
         "host_env": {"ers": "ISE_HOST", "openapi": "ISE_HOST", "mnt": "ISE_MNT_HOST"},
     },
 }
+
+
+ERS_INVENTORIES = {
+    "endpoints": "/config/endpoint",
+    "nads": "/config/networkdevice",
+    "profiles": "/config/profilerprofile",
+    "tacacs-users": "/config/internaluser",
+    "identity-groups": "/config/identitygroup",
+    "network-device-groups": "/config/networkdevicegroup",
+}
+
+OPENAPI_INVENTORIES = {
+    "licenses": ("/license/system/tier-state", False),
+    "patches": ("/patch", True),
+    "backup-status": ("/backup-restore/config/last-backup-status", True),
+    "repositories": ("/repository", True),
+    "network-policy-sets": ("/policy/network-access/policy-set", True),
+    "device-admin-policy-sets": ("/policy/device-admin/policy-set", True),
+    "authorization-profiles": ("/policy/network-access/authorization-profiles", True),
+    "tacacs-command-sets": ("/policy/device-admin/command-sets", True),
+    "tacacs-shell-profiles": ("/policy/device-admin/shell-profiles", True),
+}
+
+DATACONNECT_REPORTS = {
+    "endpoint-report": {
+        "table": "ENDPOINTS_DATA",
+        "columns": (
+            "ID", "ENDPOINT_ID", "MAC_ADDRESS", "ENDPOINT_IP", "HOSTNAME", "ENDPOINT_POLICY",
+            "IDENTITY_GROUP_ID", "POSTURE_APPLICABLE", "PORTAL_USER",
+            "PROFILE_SERVER", "CREATE_TIME", "UPDATE_TIME"),
+    },
+    "radius-auth": {
+        "table": "RADIUS_AUTHENTICATIONS",
+        "columns": (
+            "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "FRAMED_IP_ADDRESS",
+            "DEVICE_NAME", "ISE_NODE", "AUTHENTICATION_METHOD",
+            "AUTHENTICATION_PROTOCOL", "POLICY_SET_NAME", "FAILED", "RESPONSE_TIME"),
+    },
+    "radius-errors": {
+        "table": "RADIUS_ERRORS_VIEW",
+        "columns": (
+            "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "FRAMED_IP_ADDRESS",
+            "NETWORK_DEVICE_NAME", "ISE_NODE", "AUTHENTICATION_METHOD",
+            "MESSAGE_CODE", "FAILURE_REASON"),
+    },
+    "radius-accounting": {
+        "table": "RADIUS_ACCOUNTING",
+        "columns": (
+            "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "FRAMED_IP_ADDRESS",
+            "DEVICE_NAME", "ISE_NODE", "ACCT_STATUS_TYPE", "ACCT_SESSION_ID",
+            "ACCT_SESSION_TIME", "AUTHORIZATION_POLICY"),
+    },
+    "posture": {
+        "table": "POSTURE_ASSESSMENT_BY_ENDPOINT",
+        "condition_table": "POSTURE_ASSESSMENT_BY_CONDITION",
+        "columns": (
+            "TIMESTAMP", "LOGGED_AT", "ENDPOINT_MAC_ADDRESS", "IP_ADDRESS",
+            "ENDPOINT_OPERATING_SYSTEM", "ENDPOINT_OS", "ISE_NODE",
+            "POSTURE_AGENT_VERSION", "POSTURE_STATUS", "POSTURE_POLICY_MATCHED",
+            "POLICY", "POLICY_STATUS", "CONDITION_NAME", "CONDITION_STATUS",
+            "FAILURE_REASON", "MESSAGE_CODE"),
+    },
+    "psn-metrics": {
+        "table": "KEY_PERFORMANCE_METRICS",
+        "columns": (
+            "LOGGED_TIME", "ISE_NODE", "RADIUS_REQUESTS_HR", "LOGGED_TO_MNT_HR",
+            "NOISE_HR", "SUPPRESSION_HR", "AVG_LOAD", "MAX_LOAD",
+            "AVG_LATENCY_PER_REQ", "AVG_TPS"),
+    },
+    "tacacs-activity": {
+        "tables": {
+            "authentication": "TACACS_AUTHENTICATION_LAST_TWO_DAYS",
+            "authorization": "TACACS_AUTHORIZATION_LAST_TWO_DAYS",
+            "accounting": "TACACS_ACCOUNTING_LAST_TWO_DAYS",
+        },
+        "columns": (
+            "TIMESTAMP", "EPOCH_TIME", "USERNAME", "STATUS", "DEVICE_NAME",
+            "AUTHENTICATION_POLICY", "AUTHORIZATION_POLICY", "IDENTITY_STORE",
+            "SHELL_PROFILE", "MATCHED_COMMAND_SET", "COMMAND_FROM_DEVICE",
+            "COMMAND", "COMMAND_ARGS", "FAILURE_REASON"),
+    },
+}
+
+DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {"dataconnect-schema"}
 
 
 class CLIError(RuntimeError):
@@ -90,21 +292,21 @@ def _add_output_args(parser):
                         help="comma-separated fields to retain")
 
 
-def build_parser():
+def build_parser(*, require_command=False):
     parser = argparse.ArgumentParser(
         prog="ise-cli",
-        description="Read-only Cisco ISE operator CLI (ERS, OpenAPI, MnT)",
+        description="Read-only Cisco ISE operator CLI (ERS, OpenAPI, Data Connect, MnT)",
     )
     parser.add_argument("--env-file", help="dotenv file to load after ./.env")
     parser.add_argument("--version", action="version", version="%(prog)s 2.0.0")
-    subs = parser.add_subparsers(dest="command", required=True)
+    subs = parser.add_subparsers(dest="command", required=require_command)
 
     def command(name, help_text):
         sub = subs.add_parser(name, help=help_text)
         _add_output_args(sub)
         return sub
 
-    command("health", "check PAN/ERS and MnT reachability")
+    command("health", "check PAN/ERS, MnT, and configured Data Connect reachability")
     command("nodes", "list deployment nodes")
 
     for name, help_text in (
@@ -112,6 +314,8 @@ def build_parser():
         ("nads", "list network access devices from ERS"),
         ("profiles", "list profiler profiles from ERS"),
         ("tacacs-users", "list internal users used by Device Administration"),
+        ("identity-groups", "list endpoint identity groups from ERS"),
+        ("network-device-groups", "list network device groups from ERS"),
     ):
         sub = command(name, help_text)
         sub.add_argument("--limit", type=int, default=100,
@@ -125,21 +329,90 @@ def build_parser():
     sub.add_argument("--limit", type=int, default=100)
     sub.add_argument("--all", action="store_true")
 
-    sub = command("endpoint", "inspect one endpoint by MAC or ERS id")
+    sub = command("endpoint", "inspect an endpoint by MAC, IP, hostname, or ERS id")
     sub.add_argument("identifier")
     sub.add_argument("--id", action="store_true", help="identifier is an ERS endpoint id")
     sub.add_argument("--include-session", action="store_true",
                      help="also query MnT Session/MACAddress")
 
-    sub = command("auth-status", "show recent MnT authentication status for a MAC")
-    sub.add_argument("mac")
+    sub = command("resolve", "resolve a MAC, IP, hostname, or ERS id")
+    sub.add_argument("identifier")
+    sub.add_argument("--id", action="store_true", help="identifier is an ERS endpoint id")
+
+    sub = command("session", "inspect an active session by MAC, IP, hostname, or ERS id")
+    sub.add_argument("identifier")
+
+    sub = command("auth-status", "show recent authentication status for an endpoint")
+    sub.add_argument("identifier")
     sub.add_argument("--seconds", type=int, default=600)
     sub.add_argument("--limit", type=int, default=20)
 
-    sub = command("secure-client", "inspect Secure Client posture attributes for a MAC")
-    sub.add_argument("mac")
+    sub = command("secure-client", "inspect Secure Client posture attributes for an endpoint")
+    sub.add_argument("identifier")
     sub.add_argument("--include-all", action="store_true",
                      help="include every parsed other_attr_string field")
+
+    for name, help_text in (
+        ("licenses", "show Smart Licensing tier state"),
+        ("patches", "show installed ISE patches"),
+        ("backup-status", "show the last configuration-backup status"),
+        ("repositories", "list configured repositories"),
+        ("network-policy-sets", "list Network Access policy sets"),
+        ("device-admin-policy-sets", "list Device Administration policy sets"),
+        ("authorization-profiles", "list Network Access authorization profiles"),
+        ("tacacs-command-sets", "list Device Administration command sets"),
+        ("tacacs-shell-profiles", "list Device Administration shell profiles"),
+    ):
+        command(name, help_text)
+
+    sub = command("certificates", "list system and trusted certificates")
+    sub.add_argument("--node", help="limit system certificates to one ISE node hostname")
+    sub.add_argument("--trusted-only", action="store_true")
+    sub.add_argument("--system-only", action="store_true")
+
+    def report(name, help_text):
+        sub = command(name, help_text)
+        sub.add_argument("--limit", type=int, default=100,
+                         help="maximum rows (default: 100)")
+        return sub
+
+    sub = report("radius-auth", "query recent RADIUS authentications from Data Connect")
+    sub.add_argument("--identifier", help="endpoint MAC, IP, hostname, or ERS id")
+    sub.add_argument("--username")
+    sub.add_argument("--nad")
+    sub.add_argument("--status")
+
+    sub = report("endpoint-report", "query endpoint inventory from Data Connect")
+    sub.add_argument("--identifier", help="endpoint MAC, IP, hostname, or ERS id")
+    sub.add_argument("--profile")
+
+    sub = report("radius-errors", "query recent RADIUS failures from Data Connect")
+    sub.add_argument("--identifier", help="endpoint MAC, IP, hostname, or ERS id")
+    sub.add_argument("--nad")
+    sub.add_argument("--message-code")
+
+    sub = report("radius-accounting", "query recent RADIUS accounting from Data Connect")
+    sub.add_argument("--identifier", help="endpoint MAC, IP, hostname, or ERS id")
+    sub.add_argument("--username")
+    sub.add_argument("--nad")
+
+    sub = report("posture", "query recent posture assessments from Data Connect")
+    sub.add_argument("--identifier", help="endpoint MAC, IP, hostname, or ERS id")
+    sub.add_argument("--status")
+    sub.add_argument("--conditions", action="store_true",
+                     help="query condition-level rather than endpoint-level assessments")
+
+    sub = report("psn-metrics", "query recent PSN key-performance metrics from Data Connect")
+    sub.add_argument("--psn")
+
+    sub = report("tacacs-activity", "query recent TACACS activity from Data Connect")
+    sub.add_argument("--username")
+    sub.add_argument("--device")
+    sub.add_argument("--event-type", choices=("authentication", "authorization", "accounting"),
+                     default="authentication")
+
+    sub = command("dataconnect-schema", "show Data Connect reporting-view columns")
+    sub.add_argument("table", nargs="?", help="optional reporting view name")
 
     sub = command("schema", "show command API routes and response contract")
     sub.add_argument("name", nargs="?", choices=tuple(COMMAND_SCHEMAS))
@@ -154,16 +427,22 @@ def build_parser():
     return parser
 
 
-def _load_config(env_file=None):
+def _load_config(env_file=None, *, require_rest=True):
     load_dotenv(interpolate=False)
     deployed = env_file or os.environ.get(
         "ISE_EXPORTER_ENV_FILE", "/etc/ise-exporter/ise-exporter.env")
     if deployed and os.path.isfile(deployed):
         load_dotenv(deployed, interpolate=False)
     cfg = Config.from_env()
-    if not cfg.ise_host or not cfg.ise_mnt_host or not cfg.ise_user or not cfg.ise_pass:
+    if (require_rest
+            and (not cfg.ise_host or not cfg.ise_mnt_host
+                 or not cfg.ise_user or not cfg.ise_pass)):
         raise CLIError("ISE_HOST, ISE_MNT_HOST, ISE_USER, and ISE_PASS are required")
     return cfg
+
+
+def _rest_ready(cfg):
+    return bool(cfg and cfg.ise_host and cfg.ise_mnt_host and cfg.ise_user and cfg.ise_pass)
 
 
 def _params(items):
@@ -198,20 +477,208 @@ def _ers_rows(client, path, *, limit=100, all_rows=False, filters=()):
     return rows if all_rows else rows[:limit]
 
 
-def _endpoint_detail(client, identifier, by_id=False):
-    endpoint_id = identifier
-    if not by_id:
-        matches = client.get_ers(
-            "/config/endpoint", {"size": 2, "filter": f"mac.EQ.{identifier}"},
-            api_name="cli_endpoint_lookup",
-        )
-        if not matches:
-            raise CLIError(f"endpoint not found for MAC {identifier}")
-        endpoint_id = matches[0].get("id")
+def _endpoint_detail_by_id(client, endpoint_id):
     raw = client.get_ers(f"/config/endpoint/{endpoint_id}", api_name="cli_endpoint_detail")
     if raw is None:
         raise CLIError(f"endpoint detail unavailable for {endpoint_id}")
     return raw.get("ERSEndPoint", raw) if isinstance(raw, dict) else raw
+
+
+def _identifier_kind(identifier, by_id=False):
+    value = str(identifier).strip()
+    if by_id or re.fullmatch(
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+            r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value):
+        return "id"
+    if is_mac(value):
+        return "mac"
+    try:
+        ipaddress.ip_address(value)
+        return "ip"
+    except ValueError:
+        return "hostname"
+
+
+def _response_rows(value):
+    if isinstance(value, list):
+        return [row for row in value if isinstance(row, dict)]
+    if not isinstance(value, dict):
+        return []
+    for key in ("items", "resources", "endpoints", "data"):
+        rows = value.get(key)
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+    return [value]
+
+
+def _field(record, *names):
+    wanted = {re.sub(r"[^a-z0-9]", "", name.lower()) for name in names}
+    for key, value in record.items():
+        normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+        if normalized in wanted and value not in (None, ""):
+            return str(value).strip()
+    return ""
+
+
+def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
+    if dataconnect is None or kind not in ("ip", "hostname"):
+        return []
+    comparison = ("endpoint_ip = :identifier" if kind == "ip"
+                  else "LOWER(hostname) = LOWER(:identifier)")
+    return dataconnect.query(f"""
+        SELECT id, endpoint_id, mac_address, endpoint_ip, hostname,
+               endpoint_policy, identity_group_id
+        FROM endpoints_data
+        WHERE {comparison}
+        ORDER BY update_time DESC NULLS LAST
+        FETCH FIRST 10 ROWS ONLY
+    """, {"identifier": identifier})
+
+
+def _session_mac(session):
+    for name in ("calling_station_id", "callingStationId", "mac_address", "mac"):
+        value = _field(session, name)
+        if is_mac(value):
+            return normalize_mac(value)
+    return ""
+
+
+def _session_matches(session, identifier, kind):
+    if kind == "ip":
+        values = (_field(session, "framed_ip_address"), _field(session, "ip_address"),
+                  _field(session, "endpoint_ip"), _field(session, "framedIpAddress"))
+        return identifier in values
+    if kind == "hostname":
+        wanted = identifier.rstrip(".").casefold()
+        values = (_field(session, "hostname"), _field(session, "host_name"),
+                  _field(session, "endpoint_name"), _field(session, "system_name"))
+        return any(value.rstrip(".").casefold() == wanted for value in values if value)
+    return False
+
+
+def _sessions_for_identifier(client, identifier, kind):
+    if kind == "mac":
+        return _mnt_sessions(
+            client, f"/Session/MACAddress/{normalize_mac(identifier)}", "cli_session_lookup")
+    if kind == "ip":
+        direct = _mnt_sessions(client, f"/Session/IPAddress/{identifier}", "cli_session_lookup")
+        if direct:
+            return direct
+    active = _mnt_sessions(client, "/Session/ActiveList", "cli_session_resolve")
+    return [session for session in active if _session_matches(session, identifier, kind)]
+
+
+def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None):
+    original = str(identifier).strip()
+    kind = _identifier_kind(original, by_id)
+    endpoint = None
+    sessions = []
+    mac = ""
+    endpoint_id = ""
+    source = ""
+    resolved_ip = ""
+    resolved_hostname = ""
+    candidates = []
+
+    if kind == "id":
+        endpoint_id = original
+        endpoint = _endpoint_detail_by_id(client, endpoint_id)
+        source = "ers"
+    elif kind == "mac":
+        mac = normalize_mac(original)
+        matches = client.get_ers(
+            "/config/endpoint", {"size": 2, "filter": f"mac.EQ.{mac}"},
+            api_name="cli_endpoint_lookup",
+        )
+        if matches:
+            endpoint_id = _field(matches[0], "id")
+            endpoint = (_endpoint_detail_by_id(client, endpoint_id)
+                        if endpoint_id else matches[0])
+            source = "ers"
+        else:
+            sessions = _sessions_for_identifier(client, mac, kind)
+            source = "mnt" if sessions else "input"
+    else:
+        try:
+            dc_candidates = _dataconnect_endpoint_candidates(dataconnect, original, kind)
+        except Exception:
+            dc_candidates = []
+        candidates = dc_candidates
+        if candidates:
+            candidate = candidates[0]
+            resolved_ip = _field(candidate, "ipAddress", "endpoint_ip")
+            resolved_hostname = _field(candidate, "assetName", "hostname")
+            # ENDPOINTS_DATA.ID is the ERS endpoint UUID. ENDPOINT_ID is ISE's
+            # separate profiling identity (usually prefixed with ``epid:``).
+            endpoint_id = str(candidate.get("id") or "")
+            mac_value = (_field(candidate, "mac", "mac_address")
+                         or _field(candidate, "name"))
+            mac = normalize_mac(mac_value) if is_mac(mac_value) else ""
+            try:
+                endpoint = (_endpoint_detail_by_id(client, endpoint_id)
+                            if endpoint_id else candidate)
+            except CLIError:
+                endpoint = candidate
+            source = "dataconnect"
+            if dc_candidates and endpoint is not candidate:
+                source = "dataconnect+ers"
+        if not mac:
+            sessions = _sessions_for_identifier(client, original, kind)
+            mac = _session_mac(sessions[0]) if sessions else ""
+        if not mac and kind == "hostname":
+            try:
+                addresses = sorted({item[4][0] for item in socket.getaddrinfo(original, None)})
+            except socket.gaierror:
+                addresses = []
+            for address in addresses:
+                ip_sessions = _sessions_for_identifier(client, address, "ip")
+                if ip_sessions:
+                    sessions = ip_sessions
+                    mac = _session_mac(ip_sessions[0])
+                    break
+        if endpoint is None and mac:
+            matches = client.get_ers(
+                "/config/endpoint", {"size": 2, "filter": f"mac.EQ.{mac}"},
+                api_name="cli_endpoint_lookup",
+            )
+            if matches:
+                endpoint_id = _field(matches[0], "id")
+                endpoint = (_endpoint_detail_by_id(client, endpoint_id)
+                            if endpoint_id else matches[0])
+                source = "mnt+ers"
+
+    if endpoint is not None:
+        endpoint_mac = _field(endpoint, "mac") or _field(endpoint, "name")
+        if not mac and is_mac(endpoint_mac):
+            mac = normalize_mac(endpoint_mac)
+        endpoint_id = endpoint_id or _field(endpoint, "id")
+    if endpoint is None and not sessions:
+        raise CLIError(f"endpoint not found for {kind} {original!r}")
+
+    return {
+        "input": original,
+        "kind": kind,
+        "source": source or ("mnt" if sessions else "unknown"),
+        "candidate_count": len(candidates) if candidates else (1 if endpoint else 0),
+        "ambiguous": len(candidates) > 1,
+        "mac": mac,
+        "ip": original if kind == "ip" else (
+            resolved_ip or _field(endpoint or {}, "ipAddress", "endpoint_ip")),
+        "hostname": original if kind == "hostname" else (
+            resolved_hostname or _field(endpoint or {}, "assetName", "hostname")),
+        "endpoint_id": endpoint_id,
+        "endpoint": endpoint,
+        "sessions": sessions,
+    }
+
+
+def _resolved_mac(client, identifier, dataconnect=None):
+    if is_mac(identifier):
+        return normalize_mac(identifier)
+    resolved = _resolve_endpoint(client, identifier, dataconnect=dataconnect)
+    if not resolved["mac"]:
+        raise CLIError(f"could not resolve {identifier!r} to a MAC address")
+    return resolved["mac"]
 
 
 def _mnt_sessions(client, path, api_name):
@@ -245,48 +712,241 @@ def _secure_client(client, mac, include_all=False):
     return result
 
 
-def _execute(args, client, cfg):
+def _dataconnect_table_columns(dataconnect, table):
+    rows = dataconnect.query("""
+        SELECT column_name, data_type
+        FROM user_tab_columns
+        WHERE table_name = :table_name
+        ORDER BY column_id
+    """, {"table_name": table})
+    return {str(row.get("column_name") or "").upper():
+            str(row.get("data_type") or "").upper()
+            for row in rows if row.get("column_name")}
+
+
+def _first_column(columns, *candidates):
+    available = set(columns)
+    return next((candidate for candidate in candidates if candidate in available), "")
+
+
+def _dataconnect_report(args, client, dataconnect):
+    if dataconnect is None:
+        raise CLIError("this command requires configured Data Connect credentials")
+    if args.limit < 1 or args.limit > 5000:
+        raise CLIError("--limit must be between 1 and 5000")
+    spec = DATACONNECT_REPORTS[args.command]
+    table = spec.get("table")
+    if args.command == "posture" and args.conditions:
+        table = spec["condition_table"]
+    elif args.command == "tacacs-activity":
+        table = spec["tables"][args.event_type]
+
+    try:
+        column_types = _dataconnect_table_columns(dataconnect, table)
+    except Exception as error:
+        raise CLIError(f"Data Connect schema lookup failed for {table}: {error}") from error
+    if not column_types:
+        raise CLIError(f"Data Connect view {table} is unavailable")
+    columns = list(column_types)
+    selected = [column for column in spec["columns"] if column in columns]
+    if not selected:
+        selected = columns[:20]
+
+    predicates = []
+    parameters = {}
+
+    identifier = getattr(args, "identifier", None)
+    if identifier:
+        kind = _identifier_kind(identifier)
+        value = str(identifier).strip()
+        if kind == "hostname":
+            matches = _dataconnect_endpoint_candidates(dataconnect, value, kind)
+            if not matches:
+                raise CLIError(f"endpoint not found for hostname {value!r}")
+            value = _field(matches[0], "mac_address", "mac")
+            kind = "mac"
+        elif kind == "id":
+            if client is None:
+                raise CLIError("ERS credentials are required to resolve an endpoint id")
+            value = _resolved_mac(client, value, dataconnect)
+            kind = "mac"
+        if kind == "mac":
+            value = normalize_mac(value)
+            column = _first_column(
+                columns, "CALLING_STATION_ID", "ENDPOINT_MAC_ADDRESS", "MAC_ADDRESS")
+        else:
+            column = _first_column(
+                columns, "FRAMED_IP_ADDRESS", "IP_ADDRESS", "ENDPOINT_IP")
+        if not column:
+            raise CLIError(f"{table} cannot filter by {kind}")
+        predicates.append(f"{column} = :endpoint_identifier")
+        parameters["endpoint_identifier"] = value
+
+    simple_filters = (
+        ("username", ("USERNAME", "USER_NAME", "IDENTITY")),
+        ("nad", ("DEVICE_NAME", "NETWORK_DEVICE_NAME", "NAS_IP_ADDRESS")),
+        ("message_code", ("MESSAGE_CODE",)),
+        ("psn", ("ISE_NODE",)),
+        ("device", ("DEVICE_NAME",)),
+        ("profile", ("ENDPOINT_POLICY",)),
+    )
+    for argument, candidates in simple_filters:
+        value = getattr(args, argument, None)
+        if value is None:
+            continue
+        column = _first_column(columns, *candidates)
+        if not column:
+            raise CLIError(f"{table} cannot filter by --{argument.replace('_', '-')}")
+        parameter = f"filter_{argument}"
+        predicates.append(f"{column} = :{parameter}")
+        parameters[parameter] = value
+
+    status = getattr(args, "status", None)
+    if status is not None:
+        status_column = _first_column(columns, "STATUS", "POSTURE_STATUS", "POLICY_STATUS")
+        if status_column:
+            predicates.append(f"LOWER({status_column}) = LOWER(:filter_status)")
+            parameters["filter_status"] = status
+        elif "FAILED" in columns and status.casefold() in ("failed", "passed"):
+            predicates.append("NVL(FAILED, 0) " + ("> 0" if status.casefold() == "failed" else "= 0"))
+        else:
+            raise CLIError(f"{table} cannot filter by --status")
+
+    timestamp_column = _first_column(columns, "TIMESTAMP", "LOGGED_AT", "LOGGED_TIME")
+    if timestamp_column:
+        predicates.append(f"{timestamp_column} >= SYSTIMESTAMP - INTERVAL '2' DAY")
+    order_column = timestamp_column or _first_column(columns, "EPOCH_TIME")
+    where = " WHERE " + " AND ".join(predicates) if predicates else ""
+    order = f" ORDER BY {order_column} DESC" if order_column else ""
+    select_expressions = [
+        (f"TO_CHAR({column}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF TZH:TZM') AS {column}"
+         if "TIME ZONE" in column_types[column] else column)
+        for column in selected
+    ]
+    sql = (f"SELECT {', '.join(select_expressions)} FROM {table}{where}{order} "
+           f"FETCH FIRST {args.limit} ROWS ONLY")
+    try:
+        return dataconnect.query(sql, parameters)
+    except Exception as error:
+        raise CLIError(f"Data Connect query failed for {table}: {error}") from error
+
+
+def _dataconnect_health(dataconnect):
+    if dataconnect is None:
+        return None
+    try:
+        return bool(dataconnect.query("SELECT COUNT(*) AS view_count FROM user_views"))
+    except Exception:
+        return False
+
+
+def _dataconnect_schema(dataconnect, table=None):
+    if dataconnect is None:
+        raise CLIError("this command requires configured Data Connect credentials")
+    parameters = {}
+    predicate = ""
+    if table:
+        normalized = table.strip().upper()
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", normalized):
+            raise CLIError("Data Connect table must contain only letters, numbers, and underscores")
+        predicate = " WHERE table_name = :table_name"
+        parameters["table_name"] = normalized
+    try:
+        return dataconnect.query(f"""
+            SELECT table_name, column_id, column_name, data_type, data_length, nullable
+            FROM user_tab_columns{predicate}
+            ORDER BY table_name, column_id
+        """, parameters)
+    except Exception as error:
+        raise CLIError(f"Data Connect schema query failed: {error}") from error
+
+
+def _execute(args, client, cfg, dataconnect=None):
     command = args.command
     if command == "health":
         health = client.health_check()
-        return [
+        result = [
             {"service": "PAN/ERS", "host": cfg.ise_host, "reachable": health["pan"]},
             {"service": "MnT", "host": cfg.ise_mnt_host, "reachable": health["mnt"]},
         ]
+        dataconnect_reachable = _dataconnect_health(dataconnect)
+        if dataconnect_reachable is not None:
+            result.append({"service": "Data Connect", "host": cfg.dataconnect_host,
+                           "reachable": dataconnect_reachable})
+        return result
     if command == "nodes":
         result = client.get_pan_api("/deployment/node", api_name="cli_nodes")
         if result is None:
             raise CLIError("ISE returned no deployment-node response")
         return result
-    inventory_paths = {
-        "endpoints": "/config/endpoint",
-        "nads": "/config/networkdevice",
-        "profiles": "/config/profilerprofile",
-        "tacacs-users": "/config/internaluser",
-    }
-    if command in inventory_paths:
-        return _ers_rows(client, inventory_paths[command], limit=args.limit,
+    if command in ERS_INVENTORIES:
+        return _ers_rows(client, ERS_INVENTORIES[command], limit=args.limit,
                          all_rows=args.all, filters=args.filter)
+    if command in OPENAPI_INVENTORIES:
+        path, unwrap = OPENAPI_INVENTORIES[command]
+        result = client.get_pan_api(path, api_name=f"cli_{command}", unwrap=unwrap)
+        if result is None:
+            raise CLIError(f"ISE returned no response for {command}")
+        return result
+    if command in DATACONNECT_REPORTS:
+        return _dataconnect_report(args, client, dataconnect)
+    if command == "dataconnect-schema":
+        return _dataconnect_schema(dataconnect, args.table)
     if command == "sessions":
         rows = _mnt_sessions(client, "/Session/ActiveList", "cli_sessions")
         return rows if args.all else rows[:args.limit]
     if command == "endpoint":
-        detail = _endpoint_detail(client, args.identifier, args.id)
+        resolved = _resolve_endpoint(
+            client, args.identifier, args.id, dataconnect=dataconnect)
+        detail = resolved["endpoint"]
+        if detail is None:
+            raise CLIError(f"endpoint detail unavailable for {args.identifier!r}")
         if args.include_session:
-            mac = detail.get("mac") or detail.get("name") or args.identifier
             detail = dict(detail)
-            detail["mnt_sessions"] = _mnt_sessions(
-                client, f"/Session/MACAddress/{mac}", "cli_endpoint_session")
+            mac = resolved["mac"]
+            detail["mnt_sessions"] = (resolved["sessions"] or _mnt_sessions(
+                client, f"/Session/MACAddress/{mac}", "cli_endpoint_session")) if mac else []
         return detail
+    if command == "resolve":
+        return _resolve_endpoint(client, args.identifier, args.id, dataconnect=dataconnect)
+    if command == "session":
+        kind = _identifier_kind(args.identifier)
+        if kind in ("mac", "ip"):
+            return _sessions_for_identifier(client, args.identifier, kind)
+        mac = _resolved_mac(client, args.identifier, dataconnect)
+        return _mnt_sessions(client, f"/Session/MACAddress/{mac}", "cli_session")
     if command == "auth-status":
         if args.seconds < 1 or args.limit < 1:
             raise CLIError("--seconds and --limit must be at least 1")
+        mac = _resolved_mac(client, args.identifier, dataconnect)
         return _mnt_sessions(
-            client, f"/AuthStatus/MACAddress/{args.mac}/{args.seconds}/{args.limit}/All",
+            client, f"/AuthStatus/MACAddress/{mac}/{args.seconds}/{args.limit}/All",
             "cli_auth_status",
         )
     if command == "secure-client":
-        return _secure_client(client, args.mac, args.include_all)
+        mac = _resolved_mac(client, args.identifier, dataconnect)
+        return _secure_client(client, mac, args.include_all)
+    if command == "certificates":
+        if args.trusted_only and args.system_only:
+            raise CLIError("--trusted-only and --system-only are mutually exclusive")
+        rows = []
+        if not args.trusted_only:
+            nodes = ([{"hostname": args.node}] if args.node else client.get_pan_api(
+                "/deployment/node", api_name="cli_certificate_nodes")) or []
+            for node in _response_rows(nodes):
+                hostname = _field(node, "hostname")
+                if not hostname:
+                    continue
+                certificates = client.get_pan_api(
+                    f"/certs/system-certificate/{hostname}", api_name="cli_system_certificates")
+                for certificate in _response_rows(certificates):
+                    rows.append({"store": "system", "hostname": hostname, **certificate})
+        if not args.system_only:
+            trusted = client.get_pan_api(
+                "/certs/trusted-certificate", api_name="cli_trusted_certificates")
+            rows.extend({"store": "trusted", "hostname": "trust_store", **certificate}
+                        for certificate in _response_rows(trusted))
+        return rows
     if command == "schema":
         return COMMAND_SCHEMAS if args.name is None else COMMAND_SCHEMAS[args.name]
     if command == "get":
@@ -297,10 +957,8 @@ def _execute(args, client, cfg):
             result = client.get_ers(args.path, params or None, get_all=args.all,
                                     api_name="cli_get_ers")
         elif args.family == "openapi":
-            if params:
-                raise CLIError("OpenAPI --param is not supported by the current transport")
             result = client.get_pan_api(args.path, api_name="cli_get_openapi",
-                                        unwrap=not args.no_unwrap)
+                                        unwrap=not args.no_unwrap, params=params or None)
         else:
             if params or args.all or args.no_unwrap:
                 raise CLIError("MnT get does not accept --param, --all, or --no-unwrap")
@@ -334,7 +992,7 @@ def _cell(value):
     if value is None:
         return ""
     if isinstance(value, (dict, list)):
-        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
     return str(value)
 
 
@@ -351,13 +1009,14 @@ def render(value, output="table", select=None, stream=None):
     stream = stream or sys.stdout
     value = _project(value, select)
     if output == "json":
-        json.dump(value, stream, indent=2, sort_keys=True)
+        json.dump(value, stream, indent=2, sort_keys=True, default=str)
         stream.write("\n")
         return
     rows = _records(value)
     if output == "jsonl":
         for row in rows:
-            stream.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
+            stream.write(json.dumps(
+                row, sort_keys=True, separators=(",", ":"), default=str) + "\n")
         return
     fields = _fields(rows)
     if output == "csv":
@@ -366,6 +1025,7 @@ def render(value, output="table", select=None, stream=None):
         writer.writerows({key: _cell(value) for key, value in row.items()} for row in rows)
         return
     if not rows:
+        Console(file=stream, highlight=False).print("[dim]No results.[/dim]")
         return
     console = Console(file=stream, highlight=False)
     if len(rows) == 1:
@@ -391,20 +1051,148 @@ def render(value, output="table", select=None, stream=None):
     console.print(table)
 
 
-def main(argv=None, *, client=None, cfg=None):
+def _subparser(parser, name):
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return action.choices.get(name)
+    return None
+
+
+class ISEShell(cmd.Cmd):
+    intro = "Cisco ISE read-only shell. Type ? for commands, help COMMAND for details."
+    prompt = "ise> "
+
+    def __init__(self, *, env_file=None, client=None, cfg=None, dataconnect=None,
+                 stdin=None, stdout=None):
+        super().__init__(stdin=stdin, stdout=stdout)
+        self.use_rawinput = stdin is None
+        self.env_file = env_file
+        self.client = client
+        self.cfg = cfg or getattr(client, "cfg", None)
+        self.dataconnect = dataconnect
+        self.parser = build_parser(require_command=True)
+        if self.use_rawinput:
+            self._enable_history()
+
+    def _enable_history(self):
+        try:
+            import readline
+            history = Path(os.environ.get(
+                "ISE_CLI_HISTORY", Path.home() / ".local/state/ise-cli/history"))
+            history.parent.mkdir(parents=True, exist_ok=True)
+            if history.exists():
+                readline.read_history_file(history)
+            readline.set_history_length(1000)
+            atexit.register(readline.write_history_file, history)
+        except (ImportError, OSError):
+            pass
+
+    def _runtime(self, command):
+        if command == "schema":
+            return
+        dataconnect_only = command in DATACONNECT_COMMANDS
+        if self.cfg is None:
+            self.cfg = _load_config(self.env_file, require_rest=not dataconnect_only)
+        if self.client is None and _rest_ready(self.cfg):
+            self.client = ISERestClient(self.cfg)
+        if self.client is None and not dataconnect_only:
+            raise CLIError("ISE_HOST, ISE_MNT_HOST, ISE_USER, and ISE_PASS are required")
+        if self.cfg is None:
+            self.cfg = getattr(self.client, "cfg", None)
+        if (self.dataconnect is None and self.cfg is not None
+                and getattr(self.cfg, "dataconnect_ready", False)):
+            self.dataconnect = DataConnectClient(self.cfg)
+
+    def default(self, line):
+        try:
+            words = shlex.split(line)
+        except ValueError as error:
+            self.stdout.write(f"parse error: {error}\n")
+            return False
+        try:
+            with contextlib.redirect_stdout(self.stdout), contextlib.redirect_stderr(self.stdout):
+                args = self.parser.parse_args(words)
+        except SystemExit:
+            return False
+        try:
+            self._runtime(args.command)
+            result = _execute(args, self.client, self.cfg, self.dataconnect)
+            render(result, args.output, args.select, stream=self.stdout)
+        except CLIError as error:
+            self.stdout.write(f"error: {error}\n")
+        except KeyboardInterrupt:
+            self.stdout.write("\ninterrupted\n")
+        except Exception as error:
+            self.stdout.write(f"error: {error}\n")
+        return False
+
+    def do_help(self, argument):
+        """Show available commands or detailed help for one command."""
+        name = argument.strip()
+        if name:
+            parser = _subparser(self.parser, name)
+            if parser is None:
+                self.stdout.write(f"unknown command: {name}\n")
+            else:
+                self.stdout.write(parser.format_help())
+            return
+        self.stdout.write(self.parser.format_help())
+        self.stdout.write("REPL commands: help, ?, exit, quit\n")
+
+    def do_exit(self, _argument):
+        """Exit the ISE shell."""
+        return True
+
+    def do_quit(self, argument):
+        """Exit the ISE shell."""
+        return self.do_exit(argument)
+
+    def do_EOF(self, argument):
+        self.stdout.write("\n")
+        return self.do_exit(argument)
+
+    def emptyline(self):
+        return False
+
+    def completenames(self, text, *_ignored):
+        names = sorted((*COMMAND_SCHEMAS, "help", "exit", "quit"))
+        return [name + " " for name in names if name.startswith(text)]
+
+    def close(self):
+        if self.dataconnect is not None:
+            self.dataconnect.close()
+
+
+def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdout=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command is None:
+        shell = ISEShell(env_file=args.env_file, client=client, cfg=cfg,
+                         dataconnect=dataconnect, stdin=stdin, stdout=stdout)
+        try:
+            shell.cmdloop()
+            return 0
+        finally:
+            shell.close()
     try:
         if client is None and args.command != "schema":
-            cfg = _load_config(args.env_file)
-            client = ISERestClient(cfg)
+            dataconnect_only = args.command in DATACONNECT_COMMANDS
+            cfg = _load_config(args.env_file, require_rest=not dataconnect_only)
+            if _rest_ready(cfg):
+                client = ISERestClient(cfg)
         elif cfg is None:
             cfg = getattr(client, "cfg", None)
-        result = _execute(args, client, cfg)
-        render(result, args.output, args.select)
+        if (dataconnect is None and cfg is not None
+                and getattr(cfg, "dataconnect_ready", False)):
+            dataconnect = DataConnectClient(cfg)
+        result = _execute(args, client, cfg, dataconnect)
+        render(result, args.output, args.select, stream=stdout)
         return 0
     except CLIError as error:
         parser.error(str(error))
+    finally:
+        if dataconnect is not None:
+            dataconnect.close()
     return 2
 
 

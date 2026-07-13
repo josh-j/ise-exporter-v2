@@ -66,6 +66,27 @@ def test_api_families_route_to_their_configured_hosts():
     assert result["sessions"][0]["other_attr_string"] == "PostureStatus=Compliant"
 
 
+def test_openapi_get_passes_query_parameters():
+    client = ISERestClient.__new__(ISERestClient)
+    client.pan_url = "https://ise.example/api/v1"
+    client.session = object()
+    seen = []
+
+    def fake_json(session, url, params=None, api_name="x"):
+        seen.append((session, url, params, api_name))
+        return {"response": []}
+
+    client._get_json = fake_json
+    result = client.get_pan_api(
+        "/endpoint", params={"filter": "ipAddress.EQ.192.0.2.25"},
+        api_name="endpoint_lookup")
+
+    assert result == []
+    assert seen == [(
+        client.session, "https://ise.example/api/v1/endpoint",
+        {"filter": "ipAddress.EQ.192.0.2.25"}, "endpoint_lookup")]
+
+
 def test_get_ers_paginates_iteratively():
     c = ISERestClient.__new__(ISERestClient)
     c.ers_url = "https://h:9060/ers"

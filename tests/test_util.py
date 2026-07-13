@@ -7,6 +7,9 @@ from ise_exporter.util import (normalize_mac, normalize_location,
 
 def test_normalize_mac():
     assert normalize_mac("aa-bb-cc-00-00-01") == "AA:BB:CC:00:00:01"
+    assert normalize_mac("aabb.cc00.0001") == "AA:BB:CC:00:00:01"
+    assert normalize_mac("aabbcc000001") == "AA:BB:CC:00:00:01"
+    assert normalize_mac("aa bb cc 00 00 01") == "AA:BB:CC:00:00:01"
     assert normalize_mac("") == ""
 
 

@@ -91,6 +91,12 @@ and the curl probes as an explicit, read-only troubleshooting surface for an
 operator inspecting a particular session, authentication, or Secure Client
 record.
 
+The CLI also exposes bounded, curated Data Connect reports and uses
+`ENDPOINTS_DATA` as its preferred IP/hostname resolver. Those queries are
+operator-initiated and do not change metric ownership: REST/OpenAPI still owns
+configuration detail, Data Connect owns reporting, and MnT remains a live
+diagnostic fallback.
+
 ## One-owner dataset matrix
 
 | Dataset | Sole metric owner | Interface | Runtime cadence |
