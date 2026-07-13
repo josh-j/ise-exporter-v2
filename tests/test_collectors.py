@@ -2,6 +2,7 @@
 as a failure (feeding the scheduler's MAX_CONSECUTIVE_FAILURES gating) and must NOT
 bump last_successful_scrape; a real success resets the count."""
 import types
+from ipaddress import ip_network
 
 from ise_exporter import collectors
 from ise_exporter.collectors import sessions
@@ -90,6 +91,38 @@ def test_sessions_falls_back_to_full_poll_when_stream_down():
         nas_hostname="sw1", location="SiteA")._value.get() == 2
 
 
+def test_sessions_resolves_nad_subnet_mappings():
+    """Lab NADs can be registered as subnets; session source IPs should still
+    inherit the NAD hostname/location/ops-owner labels."""
+    from ise_exporter import metrics
+    from ise_exporter.util import clear_metric
+
+    cfg = types.SimpleNamespace(collect_pxgrid_stream=False)
+    mappings = {
+        "hostname": {"10.83.0.0": "adlab-workstations"},
+        "location": {"10.83.0.0": "All Locations"},
+        "ops_owner": {"10.83.0.0": "AD Lab"},
+        "networks": [(ip_network("10.83.0.0/24"), "adlab-workstations",
+                      "All Locations", "AD Lab")],
+    }
+
+    class Client:
+        def get_mnt_xml(self, path, api_name="x"):
+            return {"total": 1, "sessions": [
+                {"nas_ip_address": "10.83.0.161", "server": "psn-a"},
+            ]}
+
+    clear_metric(metrics.ise_radius_sessions_by_nad)
+    clear_metric(metrics.ise_radius_sessions_by_ops_owner)
+    metrics.ise_pxgrid_connected.set(0)
+
+    sessions.collect(Client(), cfg, mappings)
+
+    assert metrics.ise_radius_sessions_by_nad.labels(
+        nas_hostname="adlab-workstations", location="All Locations")._value.get() == 1
+    assert metrics.ise_radius_sessions_by_ops_owner.labels(ops_owner="AD Lab")._value.get() == 1
+
+
 def test_poll_authz_emits_posture_status():
     """In poll mode authz derives posture compliance from session detail
     (posture_status / other_attr_string) onto ise_session_posture_status."""
@@ -166,6 +199,90 @@ def test_authz_emits_posture_report_and_secureclient_from_other_attr_when_getend
     scv = {s.labels["version"]: s.value
            for s in metrics.ise_endpoints_by_secureclient_version.collect()[0].samples}
     assert scv == {"Windows 5.1.17.3394": 1.0}
+
+
+def test_authz_uses_recent_auth_status_failures():
+    """Access-Reject records live in MnT AuthStatus, not necessarily in active
+    Session/MACAddress detail. The failure gauges should include those records."""
+    from ise_exporter import metrics
+    from ise_exporter.collectors import authz
+    from ise_exporter.util import clear_metric
+
+    cfg = types.SimpleNamespace(collect_pxgrid_stream=False, session_detail_cache_ttl=100,
+                                max_detail_fetches_per_cycle=10, max_workers=2)
+    mappings = {"hostname": {"10.0.0.0": "lab-nad"}, "location": {"10.0.0.0": "Lab"},
+                "ops_owner": {"10.0.0.0": "AD Lab"},
+                "networks": [(ip_network("10.0.0.0/24"), "lab-nad", "Lab", "AD Lab")]}
+
+    class Client:
+        def get_mnt_xml(self, path, api_name="x"):
+            if path == "/Session/ActiveList":
+                return {"total": 1, "sessions": [{"calling_station_id": "aa:bb:cc:00:00:44",
+                                                  "nas_ip_address": "10.0.0.44"}]}
+            if path == "/Session/MACAddress/AA:BB:CC:00:00:44":
+                return {"total": 1, "sessions": [{
+                    "passed": "true", "failed": "false", "nas_ip_address": "10.0.0.44",
+                    "authentication_method": "dot1x",
+                }]}
+            if path == "/AuthStatus/MACAddress/AA:BB:CC:00:00:44/600/20/All":
+                return {"total": 1, "sessions": [{
+                    "passed": "false", "failed": "true", "nas_ip_address": "10.0.0.44",
+                    "network_device_name": "lab-nad", "authentication_method": "dot1x",
+                    "failure_reason": "24408 User authentication failed",
+                }]}
+            return {"total": 0, "sessions": []}
+
+    clear_metric(metrics.ise_session_failure_reasons)
+    clear_metric(metrics.ise_session_status_endpoints)
+    authz._cache = None
+
+    authz.collect(Client(), cfg, mappings)
+
+    failures = {(s.labels["reason_code"], s.labels["ops_owner"]): s.value
+                for s in metrics.ise_session_failure_reasons.collect()[0].samples}
+    assert failures[("24408", "AD Lab")] == 1.0
+    assert metrics.ise_session_status_endpoints.labels(
+        nad_hostname="lab-nad", location="Lab", ops_owner="AD Lab", status="failed"
+    )._value.get() == 1
+
+
+def test_authz_scans_ers_endpoint_macs_for_recent_failures():
+    """Recent rejects can be for endpoint MACs that are no longer active sessions;
+    bounded ERS endpoint scanning keeps failure triage populated."""
+    from ise_exporter import metrics
+    from ise_exporter.collectors import authz
+    from ise_exporter.util import clear_metric
+
+    cfg = types.SimpleNamespace(collect_pxgrid_stream=False, session_detail_cache_ttl=100,
+                                max_detail_fetches_per_cycle=10, max_workers=2)
+    mappings = {"hostname": {"10.0.0.0": "lab-nad"}, "location": {"10.0.0.0": "Lab"},
+                "ops_owner": {"10.0.0.0": "AD Lab"},
+                "networks": [(ip_network("10.0.0.0/24"), "lab-nad", "Lab", "AD Lab")]}
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            return [{"name": "AA:BB:CC:00:00:55"}] if path == "/config/endpoint" else []
+
+        def get_mnt_xml(self, path, api_name="x"):
+            if path == "/Session/ActiveList":
+                return {"total": 0, "sessions": []}
+            if path == "/AuthStatus/MACAddress/AA:BB:CC:00:00:55/600/20/All":
+                return {"total": 1, "sessions": [{
+                    "passed": "false", "failed": "true", "nas_ip_address": "10.0.0.55",
+                    "network_device_name": "lab-nad", "authentication_method": "dot1x",
+                    "failure_reason": "24408 User authentication failed",
+                }]}
+            return {"total": 0, "sessions": []}
+
+    clear_metric(metrics.ise_session_failure_reasons)
+    clear_metric(metrics.ise_session_status_endpoints)
+    authz._cache = None
+
+    authz.collect(Client(), cfg, mappings)
+
+    failures = {(s.labels["reason_code"], s.labels["ops_owner"]): s.value
+                for s in metrics.ise_session_failure_reasons.collect()[0].samples}
+    assert failures[("24408", "AD Lab")] == 1.0
 
 
 def test_authz_defers_posture_report_to_getendpoints_when_present():

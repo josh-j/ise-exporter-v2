@@ -4,6 +4,7 @@ hierarchy, and refreshes the shared `mappings` dict (keyed by NAD IP) that
 sessions / authz / streaming join against for their labels."""
 import logging
 from collections import defaultdict
+from ipaddress import ip_address, ip_network
 
 from .. import metrics
 from ..util import clear_metric
@@ -49,6 +50,23 @@ def _classify(det):
     return name, ip, device_type, location, ops_owner
 
 
+def _nad_networks(det, name, location, ops_owner):
+    networks = []
+    for entry in det.get("NetworkDeviceIPList", []):
+        raw_ip = entry.get("ipaddress", entry.get("ipAddress"))
+        if not raw_ip:
+            continue
+        mask = entry.get("mask", 32)
+        try:
+            network = ip_network(f"{raw_ip}/{mask}", strict=False)
+        except (TypeError, ValueError):
+            logger.warning("Devices: ignoring invalid NAD IP entry %r/%r for %s",
+                           raw_ip, mask, name)
+            continue
+        networks.append((network, name, location, ops_owner))
+    return networks
+
+
 def collect(client, cfg, mappings):
     with observe("devices"):
         devices = client.get_ers("/config/networkdevice", {"size": 100},
@@ -61,7 +79,7 @@ def collect(client, cfg, mappings):
             return
 
         cache = _device_cache(cfg)
-        ops_map, host_map, loc_map = {}, {}, {}
+        ops_map, host_map, loc_map, network_map = {}, {}, {}, []
         loc_counts = defaultdict(int)
         ops_counts = defaultdict(int)
         type_counts = defaultdict(int)
@@ -82,6 +100,7 @@ def collect(client, cfg, mappings):
             ops_map[ip] = ops_owner
             host_map[ip] = name
             loc_map[ip] = location
+            network_map.extend(_nad_networks(det, name, location, ops_owner))
             loc_counts[location] += 1
             ops_counts[ops_owner] += 1
             type_counts[device_type] += 1
@@ -92,6 +111,7 @@ def collect(client, cfg, mappings):
         mappings["ops_owner"] = ops_map
         mappings["hostname"] = host_map
         mappings["location"] = loc_map
+        mappings["networks"] = network_map
 
         clear_metric(metrics.ise_network_devices_by_location)
         clear_metric(metrics.ise_network_devices_by_ops_owner)
@@ -108,7 +128,24 @@ def collect(client, cfg, mappings):
 def nad_labels(mappings, nas_ip, name_hint=None, loc_hint=None):
     """(hostname, location, ops_owner) for a NAD IP, honoring per-session hints
     when the session payload carries its own device name / location."""
-    hostname = name_hint or mappings["hostname"].get(nas_ip, nas_ip or "unknown")
-    location = loc_hint or mappings["location"].get(nas_ip, "Unknown")
-    ops_owner = mappings["ops_owner"].get(nas_ip, "unknown")
+    hostname = name_hint or mappings["hostname"].get(nas_ip)
+    location = loc_hint or mappings["location"].get(nas_ip)
+    ops_owner = mappings["ops_owner"].get(nas_ip)
+
+    if ops_owner is None:
+        try:
+            addr = ip_address(nas_ip)
+        except (TypeError, ValueError):
+            addr = None
+        if addr is not None:
+            for network, net_name, net_location, net_owner in mappings.get("networks", []):
+                if addr in network:
+                    hostname = hostname or net_name
+                    location = location or net_location
+                    ops_owner = net_owner
+                    break
+
+    hostname = hostname or nas_ip or "unknown"
+    location = location or "Unknown"
+    ops_owner = ops_owner or "unknown"
     return hostname, location, ops_owner

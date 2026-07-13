@@ -81,6 +81,16 @@ ise_endpoints_by_profile_all = Gauge("ise_endpoints_by_profile_all", "Endpoints 
 ise_profiler_policies_total = Gauge("ise_profiler_policies_total", "Profiling policies defined in ISE's profiler catalog (pxGrid getProfiles)")
 ise_profiler_hierarchy_age_seconds = Gauge("ise_profiler_hierarchy_age_seconds", "Seconds since the profiler policy hierarchy was last refreshed from pxGrid")
 
+# --- ERS endpoint attribute sweep (/ers/config/endpoint/{id}/attributes) ---
+ise_endpoint_attribute_cache_entries = Gauge("ise_endpoint_attribute_cache_entries", "Endpoints with cached ERS endpoint detail/profile-attribute data")
+ise_endpoint_attribute_scan_last_count = Gauge("ise_endpoint_attribute_scan_last_count", "Endpoint records fetched or refreshed by the last ERS endpoint-attribute collector run")
+ise_endpoint_attribute_fetch_errors = Gauge("ise_endpoint_attribute_fetch_errors", "Endpoint records that failed during the last ERS endpoint-attribute scan", ["stage"])
+ise_endpoint_attribute_coverage = Gauge("ise_endpoint_attribute_coverage", "Fraction of cached endpoints with a selected ERS endpoint attribute", ["attribute"])
+ise_endpoints_by_profiled_policy = Gauge("ise_endpoints_by_profiled_policy", "Cached endpoints per profiler policy from the ERS endpoint object (profileId)", ["policy"])
+ise_endpoints_by_identity_group = Gauge("ise_endpoints_by_identity_group", "Cached endpoints per endpoint identity group from ERS endpoint detail", ["group"])
+ise_endpoint_static_assignment = Gauge("ise_endpoint_static_assignment", "Cached endpoints by static assignment flag from ERS endpoint detail", ["assignment", "value"])
+ise_endpoint_custom_attribute_value = Gauge("ise_endpoint_custom_attribute_value", "Cached endpoints by configured custom endpoint attribute key/value", ["key", "value"])
+
 # --- certs / license / backup / patch (slow tier) ---
 ise_certificate_expiry_days = Gauge("ise_certificate_expiry_days", "Days until cert expires", ["hostname", "cert_name", "cert_type", "usage"])
 ise_certificates_expiring_soon = Gauge("ise_certificates_expiring_soon", "Certs expiring within threshold", ["threshold_days"])

@@ -13,13 +13,17 @@ from collections import defaultdict
 from .. import metrics
 from ..util import clear_metric
 from . import observe, CollectorFailed, stream_active
+from .devices import nad_labels
 
 logger = logging.getLogger(__name__)
+_UNSET = object()
 
 
-def collect(client, cfg, mappings):
+def collect(client, cfg, mappings, active_list=_UNSET):
     with observe("sessions"):
-        result = client.get_mnt_xml("/Session/ActiveList", api_name="mnt_sessions")
+        result = active_list
+        if result is _UNSET:
+            result = client.get_mnt_xml("/Session/ActiveList", api_name="mnt_sessions")
         if result is None:
             raise CollectorFailed("no ActiveList response")
         total = result.get("total", 0)
@@ -49,25 +53,31 @@ def collect(client, cfg, mappings):
         nad_counts = defaultdict(int)
         ops_counts = defaultdict(int)
         host_map = mappings["hostname"]
-        loc_map = mappings["location"]
         ops_map = mappings["ops_owner"]
 
         for s in sessions:
             nas_ip = s.get("nas_ip_address", "unknown")
-            nad_counts[nas_ip] += 1
-            owner = ops_map.get(nas_ip, "unknown")
+            hostname, location, owner = nad_labels(mappings, nas_ip)
+            nad_counts[(hostname, location)] += 1
             if owner != "unknown":
                 ops_counts[owner] += 1
 
         # union of known NADs and NADs seen in sessions -> zero-fill known ones
-        for ip in set(host_map) | set(nad_counts):
-            hostname = host_map.get(ip, ip)
-            location = loc_map.get(ip, "Unknown")
+        known_nads = {
+            (hostname, nad_labels(mappings, ip)[1])
+            for ip, hostname in host_map.items()
+        }
+        for hostname, location in known_nads | set(nad_counts):
+            count = nad_counts.get((hostname, location), 0)
             metrics.ise_radius_sessions_by_nad.labels(
-                nas_hostname=hostname, location=location).set(nad_counts.get(ip, 0))
+                nas_hostname=hostname, location=location).set(count)
         # zero-fill every known ops owner too (like by_nad above), so an owner dropping to
         # zero sessions reports 0 rather than vanishing from the series.
         known_owners = {o for o in ops_map.values() if o != "unknown"}
+        known_owners |= {
+            owner for _, _, _, owner in mappings.get("networks", [])
+            if owner != "unknown"
+        }
         for owner in known_owners | set(ops_counts):
             metrics.ise_radius_sessions_by_ops_owner.labels(
                 ops_owner=owner).set(ops_counts.get(owner, 0))

@@ -50,11 +50,11 @@ def stream_active(cfg):
 
 def pxgrid_endpoints_present():
     """True when pxGrid getEndpoints last delivered endpoints (ise_endpoints_pxgrid_total
-    > 0) — i.e. models.py owns the endpoint model / posture-policy / Secure Client version
-    gauges. Fallback sources defer to getEndpoints and only emit when this is False: the
-    ERS profile breakdown (ers_endpoints.py) and the MnT session other_attr_string posture
-    + Secure Client version (authz.py). Gating on this keeps the two sources from
-    double-counting the same gauges."""
+    > 0) — i.e. models.py owns pxGrid endpoint enrichment gauges. ERS remains the
+    endpoint inventory baseline on ISE 3.3, but shared MFC/profile gauges must not be
+    double-cleared when pxGrid is actively enriching them. MnT session
+    other_attr_string posture + Secure Client version also defers while getEndpoints
+    is delivering the same fields."""
     try:
         return metrics.ise_endpoints_pxgrid_total._value.get() > 0
     except Exception:
@@ -76,4 +76,6 @@ def observe(name):
         logger.error("%s collection error: %s", name, e)
         _record_failure(name, "exception")
     finally:
-        metrics.ise_collector_duration_seconds.labels(collector=name).set(time.time() - start)
+        duration = time.time() - start
+        metrics.ise_collector_duration_seconds.labels(collector=name).set(duration)
+        metrics.ise_scrape_duration_seconds.observe(duration)

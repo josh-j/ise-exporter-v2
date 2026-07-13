@@ -58,15 +58,82 @@ def _ep_attr(ep, *keys):
 _hierarchy = {}
 _hierarchy_fetched_at = 0.0   # last SUCCESSFUL refresh — drives the age gauge
 _hierarchy_checked_at = 0.0   # last attempt (success or failure) — TTL-gates retries
+_endpoint_zero_backoff_until = 0.0
+_ers_profile_cache = {}       # profiler-profile id -> (name, parent_id), for the ERS fallback
+
+
+def _ers_profile(client, profile_id):
+    """Cached ERS /config/profilerprofile/{id} lookup -> (name, parent_id)."""
+    if profile_id not in _ers_profile_cache:
+        raw = client.get_ers(f"/config/profilerprofile/{profile_id}",
+                             api_name="ers_profiler_hierarchy")
+        pp = raw.get("ProfilerProfile", {}) if isinstance(raw, dict) else {}
+        _ers_profile_cache[profile_id] = (pp.get("name") or "", pp.get("parentId") or "")
+    return _ers_profile_cache[profile_id]
+
+
+def resolve_hierarchy_from_ers(client, ids_by_name):
+    """Fallback for when pxGrid getProfiles isn't available (REST/ERS-only runs, e.g.
+    ISE 3.3 with no pxGrid): rebuild each leaf profile's (category, parent) by walking
+    the ERS /config/profilerprofile parentId chain — the same category/parent shape
+    getProfiles' colon-joined fullName gives. Per-id GETs are cached, so only the
+    profiles endpoints actually use plus their ancestors are fetched (not the full
+    ~900-policy catalog). Leaves already known from a pxGrid fetch are left untouched.
+
+    ids_by_name: {leaf policy name -> that endpoint's profileId}."""
+    added = False
+    for name, profile_id in ids_by_name.items():
+        if not profile_id or name in _hierarchy:
+            continue
+        chain, cur, seen = [], profile_id, set()
+        while cur and cur not in seen:      # guard against a cyclic parentId
+            seen.add(cur)
+            pname, parent = _ers_profile(client, cur)
+            if not pname:
+                break
+            chain.append(pname)             # leaf-first: [leaf, ..., root]
+            cur = parent
+        if chain:
+            _hierarchy[name] = (chain[-1], chain[1] if len(chain) > 1 else "")
+            added = True
+    if added:
+        metrics.ise_profiler_policies_total.set(len(_hierarchy))
+    return added
+
+
+def pxgrid_endpoint_poll_due(cfg, now=None):
+    """True when it is worth probing pxGrid getEndpoints.
+
+    ISE 3.3 commonly returns a valid-but-empty endpoint directory forever. Treat
+    that as an expected capability gap and retry on a slower cadence, while still
+    allowing newer ISE versions/config changes to be discovered automatically."""
+    now = time.time() if now is None else now
+    return now >= _endpoint_zero_backoff_until
+
+
+def record_pxgrid_endpoint_result(count, cfg):
+    global _endpoint_zero_backoff_until
+    if count:
+        _endpoint_zero_backoff_until = 0.0
+        return
+    backoff = max(0, getattr(cfg, "pxgrid_endpoint_zero_backoff", 3600))
+    _endpoint_zero_backoff_until = time.time() + backoff if backoff else 0.0
 
 
 def collect(pxgrid, cfg):
+    if not pxgrid_endpoint_poll_due(cfg):
+        metrics.ise_endpoints_pxgrid_total.set(0)
+        logger.info("pxGrid getEndpoints: empty endpoint feed backoff active; "
+                    "using ERS endpoint baseline")
+        return
     try:
         endpoints = pxgrid.get_endpoints(timeout=cfg.pxgrid_query_timeout)
     except Exception as e:
         logger.warning("pxGrid getEndpoints failed: %s", e)
         return
+    record_pxgrid_endpoint_result(len(endpoints), cfg)
     if not endpoints:
+        metrics.ise_endpoints_pxgrid_total.set(0)
         return
     emit_endpoint_metrics(endpoints, pxgrid=pxgrid, hierarchy_ttl=cfg.profiler_hierarchy_ttl)
 
@@ -122,12 +189,10 @@ def emit_endpoint_metrics(endpoints, pxgrid=None, hierarchy_ttl=3600, mac_owner=
         metrics.ise_profiler_hierarchy_age_seconds.set(time.time() - _hierarchy_fetched_at)
     metrics.ise_endpoints_pxgrid_total.set(len(endpoints))
     if not endpoints:
-        # pxGrid getEndpoints returned nothing. Leave the profile / posture / Secure Client
-        # gauges untouched so their fallbacks can own them (ers_endpoints.py for the profile
-        # breakdown, authz.py's other_attr_string for posture + Secure Client version) —
-        # clearing those here would wipe the fallback's values on every 30s tick. But the
-        # MFC-derived gauges below have NO fallback source, so clear them rather than freezing
-        # them at stale values from when getEndpoints last delivered.
+        # pxGrid getEndpoints returned nothing. Leave profile / posture / Secure Client
+        # gauges untouched so ERS baseline and MnT other_attr_string sources can own them.
+        # MFC-derived gauges have no ERS equivalent, so clear them rather than freezing
+        # stale enrichment values from when getEndpoints last delivered.
         for metric in (metrics.ise_endpoints_by_hardware_model,
                        metrics.ise_endpoints_by_manufacturer,
                        metrics.ise_endpoints_by_endpoint_type,

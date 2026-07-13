@@ -220,10 +220,10 @@ class PxGridStreamer:
         logger.info("pxGrid bootstrap(%s): %d sessions, %d endpoints",
                     reason, len(self.sessions), len(self.endpoints))
         if snap_sessions and snap_endpoints is not None and not snap_endpoints:
-            logger.warning("pxGrid bootstrap: got %d sessions but 0 endpoints — check the pxGrid "
-                           "Group scope includes com.cisco.ise.endpoint, and that ISE's endpoint "
-                           "database actually has entries (Context Visibility > Endpoints)",
-                           len(snap_sessions))
+            logger.info("pxGrid bootstrap: got %d sessions but 0 endpoints. This is expected "
+                        "on ISE 3.3; endpoint inventory/profiler metrics come from ERS, "
+                        "and pxGrid endpoint snapshots remain optional enrichment.",
+                        len(snap_sessions))
 
     def _snapshot(self, service, method, key):
         """Returns the snapshot list, [] for a genuinely-empty result, or None when the
@@ -240,18 +240,27 @@ class PxGridStreamer:
         return self._snapshot(SESSION_SERVICE, "getSessions", "sessions")
 
     def _snapshot_endpoints(self):
+        if not models.pxgrid_endpoint_poll_due(self.cfg):
+            metrics.ise_endpoints_pxgrid_total.set(0)
+            logger.info("getEndpoints snapshot skipped: empty endpoint feed backoff active; "
+                        "using ERS endpoint baseline")
+            return []
         try:
-            return self.ctl.get_endpoints(timeout=self.cfg.pxgrid_query_timeout)
+            endpoints = self.ctl.get_endpoints(timeout=self.cfg.pxgrid_query_timeout)
         except Exception as e:
             logger.warning("getEndpoints snapshot failed: %s", e)
             return None
+        models.record_pxgrid_endpoint_result(len(endpoints), self.cfg)
+        if not endpoints:
+            metrics.ise_endpoints_pxgrid_total.set(0)
+        return endpoints
 
     def _refresh_endpoints(self):
         """Refresh just the endpoint snapshot via getEndpoints — endpoint attributes
         (models/profiles/posture) come from this REST poll, not the endpoint topic.
         Keeps last-known state on an empty/failed read rather than wiping to zero."""
         snap = self._snapshot_endpoints()
-        if not snap:
+        if snap is None:
             return
         with self.lock:
             self.endpoints = {_endpoint_key(e): e for e in snap if _endpoint_key(e)}

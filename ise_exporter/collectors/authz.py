@@ -21,6 +21,7 @@ from . import observe, CollectorFailed, stream_active, pxgrid_endpoints_present
 from .devices import nad_labels
 
 logger = logging.getLogger(__name__)
+_UNSET = object()
 
 # SECURECLIENT_VERSION_KEYS / POSTURE_REPORT_KEYS (shared with models.py, defined in util)
 # are pulled from a session's other_attr_string and emitted onto ise_posture_policy_result /
@@ -65,6 +66,35 @@ def _fetch_detail(client, cache, mac):
     return detail
 
 
+def _fetch_recent_auth_status(client, mac):
+    """Fetch recent Live Log auth status for a MAC. Session/MACAddress is tied to
+    live accounting sessions and can miss Access-Reject records; AuthStatus carries
+    the recent reject details that failure triage panels need."""
+    return client.get_mnt_xml(f"/AuthStatus/MACAddress/{mac}/600/20/All",
+                              api_name="mnt_auth_status")
+
+
+def _recent_auth_status_macs(client, cfg, active_macs):
+    limit = min(getattr(cfg, "recent_auth_status_max", 25),
+                getattr(cfg, "max_detail_fetches_per_cycle", 2000))
+    macs = list(active_macs)
+    seen = set(macs)
+    if len(macs) >= limit:
+        return macs[:limit]
+    if not hasattr(client, "get_ers"):
+        return macs
+    endpoints = client.get_ers("/config/endpoint", {"size": 100}, get_all=True,
+                               api_name="ers_endpoint_recent_auth_status") or []
+    for ep in endpoints:
+        mac = normalize_mac(ep.get("name", ""))
+        if mac and mac not in seen:
+            macs.append(mac)
+            seen.add(mac)
+        if len(macs) >= limit:
+            break
+    return macs
+
+
 def _emit_unique(metric, accumulator, first_label):
     """Emit distinct-MAC counts for a `{(first, nad, loc, owner): {mac}}` accumulator
     onto a gauge whose first label is `first_label` and rest are the NAD label set."""
@@ -73,9 +103,11 @@ def _emit_unique(metric, accumulator, first_label):
                          "location": loc, "ops_owner": owner}).set(len(macs))
 
 
-def collect(client, cfg, mappings):
+def collect(client, cfg, mappings, active_list=_UNSET):
     with observe("authz"):
-        result = client.get_mnt_xml("/Session/ActiveList", api_name="mnt_sessions")
+        result = active_list
+        if result is _UNSET:
+            result = client.get_mnt_xml("/Session/ActiveList", api_name="mnt_sessions")
         if result is None:
             raise CollectorFailed("no ActiveList response")
         cache = _detail_cache(cfg)
@@ -89,8 +121,9 @@ def collect(client, cfg, mappings):
             mac = normalize_mac(s.get("calling_station_id", ""))
             if mac:
                 active_macs.add(mac)
+        recent_status_macs = _recent_auth_status_macs(client, cfg, active_macs)
 
-        if not active_macs:
+        if not active_macs and not recent_status_macs:
             cache.cleanup(active_macs)   # no active sessions -> drop all cached detail
             for m in owned:
                 clear_metric(m)
@@ -128,7 +161,7 @@ def collect(client, cfg, mappings):
 
         newly_fetched = set()   # observe latency once per fresh fetch, not per scrape cycle
         if to_fetch:
-            with ThreadPoolExecutor(max_workers=cfg.max_workers) as pool:
+            with ThreadPoolExecutor(max_workers=max(1, cfg.max_workers)) as pool:
                 for mac, detail in zip(to_fetch, pool.map(
                         lambda m: _fetch_detail(client, cache, m), to_fetch)):
                     if detail is not None:
@@ -210,6 +243,27 @@ def collect(client, cfg, mappings):
             scver = normalize_agent_version(first_nonempty(other, *SECURECLIENT_VERSION_KEYS))
             if scver:
                 scversion[scver].add(mac)
+
+        for mac in recent_status_macs:
+            status = _fetch_recent_auth_status(client, mac)
+            for detail in (status or {}).get("sessions", []):
+                if detail.get("failed", "").lower() != "true":
+                    continue
+                nas_ip = detail.get("nas_ip_address", "")
+                name_hint = detail.get("network_device_name")
+                loc_hint = (normalize_location(detail["location"])
+                            if detail.get("location") else None)
+                nad, loc, owner = nad_labels(
+                    mappings, nas_ip, name_hint=name_hint, loc_hint=loc_hint)
+                key = (nad, loc, owner)
+                failed[key].add(mac)
+                reason = detail.get("failure_reason", "")
+                code = reason.split(" ", 1)[0] if reason else "unknown"
+                if code and code != "unknown":
+                    reasons[(code,) + key].add(mac)
+                method = detail.get("authentication_method", "")
+                if method:
+                    methods[(method,) + key].add(mac)
 
         for m in owned:
             clear_metric(m)

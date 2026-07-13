@@ -8,7 +8,8 @@ import logging
 from . import metrics
 from . import collectors
 from .collectors import (sessions, authz, devices, endpoints, deployment,
-                         certificates, licensing, backup, patches, models, ers_endpoints)
+                         certificates, licensing, backup, patches, models, ers_endpoints,
+                         endpoint_attributes)
 
 logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
@@ -56,7 +57,7 @@ class PollScheduler:
         fast = {"sessions", "endpoints"}
         medium = {"devices", "deployment", "authz"}
         slow = {"certificates", "licensing", "backup", "patches", "pxgrid_endpoints",
-                "ers_endpoint_profiles"}
+                "ers_endpoint_profiles", "ers_endpoint_attributes"}
         # "streaming" is now the LIVE state, not just config: true only while the pxGrid
         # stream is actually connected. When it drops, this flips to false and the full
         # session/authz/endpoint poll runs as a fallback until the stream recovers.
@@ -74,18 +75,26 @@ class PollScheduler:
         if self._due("devices", now, fast, medium, slow):
             devices.collect(self.client, cfg, self.mappings)
             self.last_run["devices"] = now
+        sessions_due = self._due("sessions", now, fast, medium, slow)
+        authz_due = cfg.collect_authz and self._due("authz", now, fast, medium, slow)
+        active_list = None
+        active_list_prefetched = False
+        if sessions_due and authz_due and hasattr(self.client, "get_mnt_xml"):
+            active_list = self.client.get_mnt_xml("/Session/ActiveList", api_name="mnt_sessions")
+            active_list_prefetched = True
+        active_list_kw = {"active_list": active_list} if active_list_prefetched else {}
         # sessions runs in BOTH modes: in stream mode it self-limits to the per-PSN
         # gauge (ise_radius_sessions_by_psn), which the pxGrid session topic can't feed.
-        if self._due("sessions", now, fast, medium, slow):
-            sessions.collect(self.client, cfg, self.mappings)
+        if sessions_due:
+            sessions.collect(self.client, cfg, self.mappings, **active_list_kw)
             self.last_run["sessions"] = now
         if self._due("endpoints", now, fast, medium, slow):
             endpoints.collect(self.client, cfg, self.mappings)
             self.last_run["endpoints"] = now
         # authz runs in BOTH modes: in stream mode it emits only the failure-reason /
         # matched-rule / policy-set signals the session topic can't carry (it self-limits)
-        if cfg.collect_authz and self._due("authz", now, fast, medium, slow):
-            authz.collect(self.client, cfg, self.mappings)
+        if authz_due:
+            authz.collect(self.client, cfg, self.mappings, **active_list_kw)
             self.last_run["authz"] = now
         if cfg.collect_certificates and self._due("certificates", now, fast, medium, slow):
             certificates.collect(self.client, cfg, self.mappings)
@@ -104,12 +113,17 @@ class PollScheduler:
                 and self._due("pxgrid_endpoints", now, fast, medium, slow):
             models.collect(self.pxgrid, cfg)
             self.last_run["pxgrid_endpoints"] = now
-        # ERS fallback for the endpoint profile breakdown — self-skips unless pxGrid
-        # getEndpoints came back empty (ise_endpoints_pxgrid_total == 0).
-        if cfg.collect_ers_endpoint_fallback \
+        # Legacy ERS profile-count fallback. When the richer ERS endpoint-attribute
+        # sweep is enabled it owns the ERS baseline endpoint/profile gauges, avoiding
+        # duplicate /config/endpoint and endpoint-detail fan-out on ISE 3.3.
+        if cfg.collect_ers_endpoint_fallback and not cfg.collect_ers_endpoint_attributes \
                 and self._due("ers_endpoint_profiles", now, fast, medium, slow):
             ers_endpoints.collect(self.client, cfg)
             self.last_run["ers_endpoint_profiles"] = now
+        if cfg.collect_ers_endpoint_attributes \
+                and self._due("ers_endpoint_attributes", now, fast, medium, slow):
+            endpoint_attributes.collect(self.client, cfg)
+            self.last_run["ers_endpoint_attributes"] = now
 
     def loop(self, shutdown):
         nxt = time.time()

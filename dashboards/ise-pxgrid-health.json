@@ -28,11 +28,11 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
         "hide": 0,
         "label": "Prometheus",
         "name": "DS_PROMETHEUS",
-        "options": [],
+        "options": [{ "selected": true, "text": "Prometheus", "value": "prometheus" }],
         "query": "prometheus",
         "refresh": 1,
         "regex": "",
@@ -83,7 +83,7 @@
       "id": 4, "type": "stat", "title": "Resyncs (last 1h)",
       "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(increase(ise_pxgrid_resync_total[1h]))", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(increase(ise_pxgrid_resync_total[1h])) or vector(0)", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 5 }] } },
         "overrides": []
@@ -94,7 +94,7 @@
       "id": 5, "type": "timeseries", "title": "Streamed State Size",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_pxgrid_state_size", "legendFormat": "{{topic}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_pxgrid_state_size or vector(0)", "legendFormat": "{{topic}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
     },
@@ -102,7 +102,7 @@
       "id": 6, "type": "timeseries", "title": "Topic Event Rate",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_pxgrid_events_total[5m])) by (topic, phase)", "legendFormat": "{{topic}} / {{phase}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(ise_pxgrid_events_total[5m])) by (topic, phase) or vector(0)", "legendFormat": "{{topic}} / {{phase}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi" } }
     },
@@ -110,7 +110,7 @@
       "id": 7, "type": "timeseries", "title": "Resync Events (15m windows)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(ise_pxgrid_resync_total[15m])", "legendFormat": "{{reason}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(ise_pxgrid_resync_total[15m]) or vector(0)", "legendFormat": "{{reason}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 60, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } }
     },
@@ -118,7 +118,7 @@
       "id": 8, "type": "table", "title": "Resync Totals by Reason (24h)",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(ise_pxgrid_resync_total[24h])", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(ise_pxgrid_resync_total[24h]) or vector(0)", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
       "options": { "showHeader": true },
       "transformations": [

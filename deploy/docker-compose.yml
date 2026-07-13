@@ -14,8 +14,11 @@ services:
     # in .env at the in-container paths (e.g. /certs/client.cer).
     volumes:
       - ./certs:/certs:ro
+      - ise-exporter-cache:/var/lib/ise-exporter
+    environment:
+      ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE: /var/lib/ise-exporter/endpoint-attributes-cache.json
     restart: unless-stopped
-    # the exporter writes nothing to disk; lock the container down
+    # the exporter writes only its bounded endpoint-attribute cache under /var/lib/ise-exporter
     read_only: true
     tmpfs:
       - /tmp
@@ -27,3 +30,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+volumes:
+  ise-exporter-cache:

@@ -2,6 +2,8 @@
 (no per-page recursion that would blow the stack on large result sets)."""
 import types
 
+import requests
+
 from ise_exporter.clients.rest import ISERestClient
 
 
@@ -20,6 +22,7 @@ def test_sessions_disable_trust_env_so_verify_false_sticks():
 class _Resp:
     def __init__(self, data):
         self._data = data
+        self.content = data if isinstance(data, bytes) else b""
 
     def json(self):
         return self._data
@@ -57,3 +60,32 @@ def test_get_ers_single_page_when_not_get_all():
         {"SearchResult": {"resources": [{"id": "1"}], "nextPage": {"href": "x/ers/more"}}})
     res = c.get_ers("/config/networkdevice")
     assert [r["id"] for r in res] == ["1"]
+
+
+def test_401s_trip_auth_backoff_before_more_requests():
+    cfg = types.SimpleNamespace(auth_failure_threshold=2, auth_failure_backoff=60)
+    c = ISERestClient.__new__(ISERestClient)
+    c.cfg = cfg
+    c._auth_failures = 0
+    c._auth_block_until = 0.0
+
+    class Resp:
+        status_code = 401
+        text = ""
+
+        def raise_for_status(self):
+            raise requests.exceptions.HTTPError(response=self)
+
+    class Session:
+        calls = 0
+
+        def get(self, *a, **k):
+            self.calls += 1
+            return Resp()
+
+    session = Session()
+    assert c._request(session, "https://ise/ers", api_name="x") is None
+    assert c._request(session, "https://ise/ers", api_name="x") is None
+    assert c._request(session, "https://ise/ers", api_name="x") is None
+
+    assert session.calls == 2

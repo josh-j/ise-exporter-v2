@@ -7,10 +7,13 @@ Wants=network-online.target
 Type=simple
 User=ise-exporter
 Group=ise-exporter
+Environment=ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE=/var/lib/ise-exporter/endpoint-attributes-cache.json
 EnvironmentFile=/etc/ise-exporter/ise-exporter.env
 ExecStart=/opt/ise-exporter/.venv/bin/ise-exporter
 Restart=on-failure
 RestartSec=10
+StateDirectory=ise-exporter
+StateDirectoryMode=0750
 # hardening (pxGrid key is read-only to this unit)
 NoNewPrivileges=true
 ProtectSystem=strict

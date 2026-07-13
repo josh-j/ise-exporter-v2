@@ -1,5 +1,9 @@
-"""ERS fallback for the endpoint profiling-policy breakdown, used ONLY when pxGrid
-getEndpoints returns nothing (ISE not publishing endpoints to pxGrid).
+"""Legacy ERS fallback for endpoint profiling-policy counts.
+
+The richer endpoint_attributes.py collector is the normal ERS baseline path,
+especially for ISE 3.3 where pxGrid getEndpoints is expected to be empty. This
+collector remains for deployments that explicitly disable the richer per-endpoint
+attribute sweep but still want coarse profile counts from ERS.
 
 Counts endpoints per profiling policy through the ERS API, picking the cheaper of two
 paths from cheap `size=1` totals (enumerating ISE's ~900-profile catalog is slow —
@@ -14,9 +18,10 @@ paths from cheap `size=1` totals (enumerating ISE's ~900-profile catalog is slow
 Reuses the cached pxGrid getProfiles hierarchy (collectors/models._hierarchy) for
 category/parent when available.
 
-Cannot recover the MFC hardware-model / OS / manufacturer breakdown or Secure Client
-posture — ERS doesn't expose those attributes — so those gauges stay empty until pxGrid
-endpoint publishing works."""
+Cannot recover the pxGrid MFC hardware-model / OS / manufacturer breakdown or Secure
+Client posture from this cheap profile-count path. While in fallback mode this collector emits explicit
+``unknown`` buckets and 0 coverage for the MFC dimensions, so lab dashboards show the
+absence of pxGrid endpoint attributes rather than blank panels."""
 import logging
 import time
 from collections import defaultdict
@@ -45,6 +50,7 @@ def collect(client, cfg):
             metrics.ise_endpoints_total.set(total)
         clear_metric(metrics.ise_endpoints_by_policy)
         clear_metric(metrics.ise_endpoints_by_profile_all)
+        _emit_unknown_mfc(int(total or 0))
         if not total:
             return
 
@@ -62,8 +68,26 @@ def collect(client, cfg):
             metrics.ise_endpoints_by_profile_all.labels(
                 category=category, parent=parent, profile=name).set(n)
         logger.info("ERS endpoint fallback (%s): %s endpoints, %d profiles with endpoints "
-                    "(pxGrid getEndpoints was empty; models/posture stay pxGrid-only)",
+                    "(pxGrid getEndpoints was empty; MFC attrs emitted as unknown; "
+                    "models/posture stay pxGrid-only)",
                     mode, total, len(counts))
+
+
+def _emit_unknown_mfc(total):
+    for metric in (metrics.ise_endpoints_by_hardware_model,
+                   metrics.ise_endpoints_by_manufacturer,
+                   metrics.ise_endpoints_by_endpoint_type,
+                   metrics.ise_endpoints_by_os,
+                   metrics.ise_endpoint_mfc_coverage):
+        clear_metric(metric)
+    if not total:
+        return
+    metrics.ise_endpoints_by_hardware_model.labels(model="unknown").set(total)
+    metrics.ise_endpoints_by_manufacturer.labels(manufacturer="unknown").set(total)
+    metrics.ise_endpoints_by_endpoint_type.labels(endpoint_type="unknown").set(total)
+    metrics.ise_endpoints_by_os.labels(os="unknown").set(total)
+    for attr in ("model", "manufacturer", "endpoint_type", "os"):
+        metrics.ise_endpoint_mfc_coverage.labels(attribute=attr).set(0)
 
 
 def _resolve_name(client, pid):

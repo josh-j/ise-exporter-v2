@@ -29,11 +29,11 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
         "hide": 0,
         "label": "Prometheus",
         "name": "DS_PROMETHEUS",
-        "options": [],
+        "options": [{ "selected": true, "text": "Prometheus", "value": "prometheus" }],
         "query": "prometheus",
         "refresh": 1,
         "regex": "",
@@ -194,7 +194,7 @@
       "id": 15, "type": "timeseries", "title": "Scrape Duration (p95)",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_scrape_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_scrape_duration_seconds_bucket[5m])) by (le)) or vector(0)", "legendFormat": "p95", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
     },
@@ -217,7 +217,7 @@
       "id": 17, "type": "table", "title": "Consecutive Failures",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_consecutive_failures > 0", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_consecutive_failures", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
         "thresholds": { "mode": "absolute", "steps": [{ "color": "yellow", "value": null }, { "color": "red", "value": 5 }] } }, "overrides": [] },
       "options": { "showHeader": true },

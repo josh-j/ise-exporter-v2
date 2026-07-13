@@ -13,6 +13,7 @@ def _cfg(**over):
     base = dict(collect_pxgrid_stream=True, collect_authz=True, collect_certificates=False,
                 collect_licensing=False, collect_backup_status=False, collect_patches=False,
                 collect_pxgrid_endpoints=False, collect_ers_endpoint_fallback=False,
+                collect_ers_endpoint_attributes=False,
                 fast_interval=60, medium_interval=300, slow_interval=3600)
     base.update(over)
     return types.SimpleNamespace(**base)
@@ -57,6 +58,34 @@ def test_stream_down_falls_back_to_full_poll(monkeypatch):
     assert "models" in ran
 
 
+def test_sessions_and_authz_share_active_list_when_both_due(monkeypatch):
+    seen = []
+
+    class Client:
+        calls = 0
+
+        def get_mnt_xml(self, path, api_name="x"):
+            self.calls += 1
+            assert path == "/Session/ActiveList"
+            return {"total": 0, "sessions": []}
+
+    client = Client()
+    for name in ("deployment", "devices", "endpoints"):
+        monkeypatch.setattr(getattr(S, name), "collect", lambda *a, **k: None)
+    monkeypatch.setattr(S.sessions, "collect",
+                        lambda *a, active_list=None, **k: seen.append(("sessions", active_list)))
+    monkeypatch.setattr(S.authz, "collect",
+                        lambda *a, active_list=None, **k: seen.append(("authz", active_list)))
+
+    PollScheduler(_cfg(collect_authz=True), client=client, pxgrid=None).run_cycle()
+
+    assert client.calls == 1
+    assert seen == [
+        ("sessions", {"total": 0, "sessions": []}),
+        ("authz", {"total": 0, "sessions": []}),
+    ]
+
+
 def test_ers_endpoint_fallback_runs_when_enabled(monkeypatch):
     ran = []
     for name in ("deployment", "devices", "sessions", "endpoints", "authz", "models",
@@ -67,6 +96,32 @@ def test_ers_endpoint_fallback_runs_when_enabled(monkeypatch):
     PollScheduler(_cfg(collect_ers_endpoint_fallback=True), client=None,
                   pxgrid=object()).run_cycle()
     assert "ers_endpoints" in ran
+
+
+def test_ers_endpoint_attributes_runs_when_enabled(monkeypatch):
+    ran = []
+    for name in ("deployment", "devices", "sessions", "endpoints", "authz", "models",
+                 "ers_endpoints", "endpoint_attributes"):
+        monkeypatch.setattr(getattr(S, name), "collect",
+                            (lambda n: (lambda *a, **k: ran.append(n)))(name))
+
+    PollScheduler(_cfg(collect_ers_endpoint_attributes=True), client=None,
+                  pxgrid=object()).run_cycle()
+    assert "endpoint_attributes" in ran
+
+
+def test_ers_profile_fallback_skips_when_endpoint_attributes_enabled(monkeypatch):
+    ran = []
+    for name in ("deployment", "devices", "sessions", "endpoints", "authz", "models",
+                 "ers_endpoints", "endpoint_attributes"):
+        monkeypatch.setattr(getattr(S, name), "collect",
+                            (lambda n: (lambda *a, **k: ran.append(n)))(name))
+
+    PollScheduler(_cfg(collect_ers_endpoint_fallback=True,
+                       collect_ers_endpoint_attributes=True), client=None,
+                  pxgrid=object()).run_cycle()
+    assert "endpoint_attributes" in ran
+    assert "ers_endpoints" not in ran
 
 
 def test_logs_poll_fallback_reason_when_stream_requested_but_pxgrid_missing(caplog):

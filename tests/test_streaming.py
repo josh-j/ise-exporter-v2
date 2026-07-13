@@ -11,7 +11,15 @@ import types
 import pytest
 
 import ise_exporter.streaming as streaming
+from ise_exporter.collectors import models
 from ise_exporter.streaming import PxGridStreamer, _classify_stream_error
+
+
+@pytest.fixture(autouse=True)
+def _reset_pxgrid_endpoint_backoff():
+    models._endpoint_zero_backoff_until = 0.0
+    yield
+    models._endpoint_zero_backoff_until = 0.0
 
 
 def _cfg():
@@ -19,6 +27,7 @@ def _cfg():
         pxgrid_query_timeout=5, project_interval=30, resync_interval=3600,
         watchdog_timeout=90, reconnect_max_backoff=60, profiler_hierarchy_ttl=3600,
         pxgrid_client_cert="", pxgrid_client_key="", pxgrid_ca_bundle="",
+        pxgrid_endpoint_zero_backoff=3600,
     )
 
 
@@ -221,7 +230,7 @@ def test_bootstrap_warns_when_sessions_present_but_endpoints_empty(caplog):
     streamer = PxGridStreamer(Control(), {"hostname": {}, "location": {}, "ops_owner": {}},
                               threading.Event())
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         streamer._bootstrap("test")
 
     assert any("0 endpoints" in r.message for r in caplog.records)

@@ -31,11 +31,11 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
         "hide": 0,
         "label": "Prometheus",
         "name": "DS_PROMETHEUS",
-        "options": [],
+        "options": [{ "selected": true, "text": "Prometheus", "value": "prometheus" }],
         "query": "prometheus",
         "refresh": 1,
         "regex": "",
@@ -366,7 +366,7 @@
       "description": "95th-percentile RADIUS auth transaction latency (ISE TotalAuthenLatency) over $__rate_interval within the ops-owner/location scope. Combined authC+authZ policy pass — ISE exposes no separate authorization-latency figure. Excludes supplicant EAP round-trips (ClientLatency), so this is server-side processing time.",
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 64 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}) by (le))", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "orange", "value": 3 }, { "color": "red", "value": 5 }] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "value", "colorMode": "background", "graphMode": "area", "justifyMode": "auto" }
     },
@@ -376,9 +376,9 @@
       "gridPos": { "h": 6, "w": 18, "x": 6, "y": 64 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "p50", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "p95", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "p99", "refId": "C" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}) by (le))", "legendFormat": "p95", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}) by (le))", "legendFormat": "p99", "refId": "C" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": true, "showPoints": "never" } },
@@ -395,7 +395,7 @@
       "description": "Per-NAD p95 within scope — pins a slow subset to specific switches/WLCs or a PSN reachable from them with high RTT.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 70 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le, nad_hostname)))", "legendFormat": "{{nad_hostname}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.95, sum(ise_radius_auth_latency_seconds_bucket{ops_owner=~\"$ops_owner\", location=~\"$location\"}) by (le, nad_hostname)))", "legendFormat": "{{nad_hostname}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5, "spanNulls": true, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"], "sortBy": "Last *", "sortDesc": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
@@ -405,8 +405,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 70 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "Passed", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(rate(ise_radius_auth_latency_seconds_bucket{status=\"failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}[$__rate_interval])) by (le))", "legendFormat": "Failed", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(ise_radius_auth_latency_seconds_bucket{status=\"passed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}) by (le))", "legendFormat": "Passed", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum(ise_radius_auth_latency_seconds_bucket{status=\"failed\", ops_owner=~\"$ops_owner\", location=~\"$location\"}) by (le)) or vector(0)", "legendFormat": "Failed", "refId": "B" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": true, "showPoints": "never" } },

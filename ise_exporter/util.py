@@ -95,8 +95,11 @@ def normalize_posture(value):
 
 def normalize_bool_label(value):
     """Coerce an ISE boolean-ish attribute (mdmCompliant, mdmRegistered, ...) to a
-    stable 'true' | 'false' | 'unknown' label."""
-    v = (value or "").strip().lower()
+    stable 'true' | 'false' | 'unknown' label. ISE JSON returns real booleans for
+    some fields (e.g. staticProfileAssignment), so handle bool before string ops."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    v = str(value or "").strip().lower()
     if v in ("true", "yes", "1", "compliant", "registered", "enabled"):
         return "true"
     if v in ("false", "no", "0", "noncompliant", "unregistered", "disabled"):

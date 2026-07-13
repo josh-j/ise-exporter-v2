@@ -1168,7 +1168,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (method) (\n  ise_session_auth_methods{ops_owner=~\"$ops_owner\", location=~\"$location\"}\n  * on(nad_hostname) group_left\n  (\n    (sum by (nad_hostname) (ise_session_failure_reasons{ops_owner=~\"$ops_owner\", location=~\"$location\"}) > 0)\n  )\n)",
+          "expr": "sum by (method) (\n  ise_session_auth_methods{ops_owner=~\"$ops_owner\", location=~\"$location\"}\n  * on(nad_hostname)\n  (\n    (sum by (nad_hostname) (ise_session_failure_reasons{ops_owner=~\"$ops_owner\", location=~\"$location\"}) > 0)\n  )\n)",
           "legendFormat": "{{method}}",
           "refId": "A"
         }
@@ -1457,11 +1457,11 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
         "hide": 0,
         "label": "Prometheus",
         "name": "DS_PROMETHEUS",
-        "options": [],
+        "options": [{ "selected": true, "text": "Prometheus", "value": "prometheus" }],
         "query": "prometheus",
         "refresh": 1,
         "regex": "",

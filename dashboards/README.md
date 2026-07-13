@@ -7,9 +7,9 @@ Eight dashboards, each scoped to one part of the exporter's metric surface
 |------|--------|-------|
 | `ise-overview.json` | Deployment health, node status, scrape/API error rates, collector health, certs, licensing, backup, patch level | Start here — the one to put on a wallboard/alert off of |
 | `ise-sessions-auth.json` | Active sessions by NAD/ops-owner, session status, failure reasons, auth methods, authz profiles/rules/policy sets | Populated by poll mode (MnT) or pxGrid streaming, whichever is active — see below. "Sessions by PSN" is poll-mode only |
-| `ise-endpoints-devices.json` | Endpoint profiling (model/manufacturer/OS/policy breakdown, MFC coverage) and network device inventory | Model/manufacturer/OS panels require `COLLECT_PXGRID_ENDPOINTS=true` (default) |
-| `ise-endpoint-profiles.json` | Endpoints broken down by ISE's profiler policy hierarchy — category/parent/profile, filterable table, catalog size, cache freshness | Requires `COLLECT_PXGRID_ENDPOINTS=true` (default) — see below |
-| `ise-secureclient.json` | Posture compliance % and Passed/Failed/Pending by ops-owner; per-policy pass/fail (which posture check failed); MDM device trust; posture agent version | Overall status is session-sourced; per-policy + agent version come from getEndpoints endpoint attributes; MDM is stream-only — see below |
+| `ise-endpoints-devices.json` | Endpoint profiling (ERS profiler-source/OS/type/group attributes plus optional pxGrid MFC model/manufacturer enrichment) and network device inventory | ERS profiler attributes use the slow cached `COLLECT_ERS_ENDPOINT_ATTRIBUTES` baseline sweep |
+| `ise-endpoint-profiles.json` | Endpoints broken down by ISE's profiler policy hierarchy — category/parent/profile, filterable table, catalog size, cache freshness | ERS endpoint attributes are the baseline; pxGrid getEndpoints can enrich when it is non-empty |
+| `ise-secureclient.json` | Posture compliance % and Passed/Failed/Pending by ops-owner; per-policy pass/fail (which posture check failed); MDM device trust; posture agent version | Overall status is session-sourced; per-policy + agent version come from getEndpoints when available; MDM is stream-only — see below |
 | `ise-auth-troubleshooting.json` | AuthC+AuthZ triage workflow: pass rate, failure reasons (decoded), auth methods, the authz pipeline (policy set → matched rule → assigned profile), failure heatmaps by site/owner, and a per-NAD work queue | Failure data is authz-sourced (watch "Authz Cache Warmup"); filters by ops-owner/location/reason-code |
 | `ise-failure-triage.json` | RADIUS failure triage (headline counts, failure-code trend + leaderboard with decoded codes, failure×location/×ops-owner heatmaps, per-ops-owner failure rate, cert/PKI stat, NAD work queue) | Same metrics as auth-troubleshooting, different framing; filters by ops-owner/location/reason-code |
 | `ise-pxgrid-health.json` | pxGrid stream connection state, event throughput, resync counts, streamed state size | Only populated when `COLLECT_PXGRID_STREAM=true`; all panels correctly show "No data" in poll mode |
@@ -101,49 +101,51 @@ IP is one of its registered `NetworkDeviceIPList` addresses.
   carries the `mdm*` fields; MnT ActiveList doesn't). Emitted only for
   MDM-managed sessions, so non-enrolled endpoints don't flood it.
 
-## Endpoint dashboards show "No data"
+## Endpoint Data Sources
 
-Both `ise-endpoint-profiles.json` and the endpoint (model/OS/manufacturer) panels
-on `ise-endpoints-devices.json` are driven by pxGrid `getEndpoints` + the endpoint
-topic. If they're empty while the **network-device** panels (ERS-sourced) and the
-profiler *catalog* still populate, the endpoint feed is returning **0 endpoints**.
-Check the "Endpoints Profiled (pxGrid)" stat — if it's 0, so is everything
-downstream. Run `ise-exporter --pxgrid-check` — it prints `getEndpoints … endpoints=N`;
-`N=0` confirms it.
+The endpoint dashboards use ERS as the baseline endpoint inventory source and
+pxGrid endpoint snapshots as optional enrichment:
 
-The usual cause is **ISE not publishing endpoints to pxGrid**, which gates *both*
-`getEndpoints` and the `/topic/com.cisco.ise.endpoint` subscription (so you'll see
-sessions/profiler working but endpoints not). Enable it at **Administration > System
-> Profiling**: turn on **Profiler Forwarder Persistence Queue** *and* **Custom
-Attribute for Profiling Enforcement** (both required; names vary slightly by patch).
-Note the pxGrid endpoint directory is **change-driven** — it publishes endpoints as
-they re-authenticate/change after you enable this, so `getEndpoints` can read 0 for a
-while before it backfills.
+- ERS `/config/endpoint/{id}/attributes` for production-tested profiler attributes
+  such as `MatchedPolicy`, `EndPointSource`, `Operating System`, `Device Type`, `OUI`,
+  MDM fields, identity group/static assignment, and selected custom endpoint attributes.
+- pxGrid `getEndpoints` for fields ERS does not expose: MFC model/manufacturer/type/OS,
+  Secure Client version, and endpoint `PostureReport`.
 
-**ERS fallback.** While `getEndpoints` is empty, the exporter falls back to the ERS
-API (`COLLECT_ERS_ENDPOINT_FALLBACK=true`, default on) to count endpoints per
-profiling policy — enough to light up `ise-endpoint-profiles.json` and the "Profiling
-Policy" panel independent of pxGrid. It does **not** recover the hardware
-model/OS/manufacturer breakdown or Secure Client posture (ERS doesn't expose those
-attributes), so those stay empty until pxGrid endpoint publishing works. The fallback
-self-skips the moment `getEndpoints` starts returning endpoints.
-Also confirm the pxGrid client's group grants the **EndpointService**
-(`com.cisco.ise.endpoint`) and the pubsub `subscribe /topic/com.cisco.ise.endpoint`
-policy. The endpoint topic is change-driven (events only fire when a non-timestamp
-endpoint attribute changes), so the bulk baseline still comes from `getEndpoints`.
-(The profiler dashboard's `Category` variable pins `allValue: .*`, so once endpoints
-flow the "All" selection can't get stuck empty.)
+On ISE 3.3, pxGrid `getEndpoints` commonly returns **0 endpoints** even when ERS
+and Context Visibility have endpoint records. That is expected. The exporter keeps
+ERS-backed endpoint/profile panels populated from `COLLECT_ERS_ENDPOINT_ATTRIBUTES`
+and backs off pxGrid endpoint probes for `PXGRID_ENDPOINT_ZERO_BACKOFF` seconds after
+an empty result. If you later upgrade to a release/config where `getEndpoints` starts
+returning endpoints, the pxGrid MFC/Secure Client panels will begin populating
+automatically.
+
+`COLLECT_ERS_ENDPOINT_ATTRIBUTES=true` walks the rich per-endpoint profile-attribute
+schema slowly, owns the ERS baseline endpoint/profile gauges while pxGrid endpoint
+snapshots are empty, and fills the ERS profiler-attribute row on
+`ise-endpoints-devices.json`. It intentionally avoids raw high-cardinality
+attributes; use `ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS` for specific custom endpoint
+attributes worth bucketing. The sweep persists its multi-cycle cache to
+`ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE` so a restart does not lose progress.
+
+If pxGrid-only panels remain empty on ISE 3.4/3.5, run `ise-exporter --pxgrid-check`
+and check `getEndpoints … endpoints=N`. Also confirm the pxGrid client's group grants
+the **EndpointService** (`com.cisco.ise.endpoint`) and the pubsub
+`subscribe /topic/com.cisco.ise.endpoint` policy. The endpoint topic is change-driven
+(events only fire when a non-timestamp endpoint attribute changes), so the bulk
+snapshot still comes from `getEndpoints`. The legacy `COLLECT_ERS_ENDPOINT_FALLBACK`
+profile-count collector is only used when the richer ERS attribute sweep is disabled.
 
 ## Endpoint profile hierarchy
 
-`ise-endpoint-profiles.json` joins two separate pxGrid calls: the per-endpoint
-profile counts from `getEndpoints` (same data `ise-endpoints-devices.json`'s
-"Profiling Policy" panel uses, via `ise_endpoints_by_policy`) and the ISE-wide
-policy *catalog* — category/parent hierarchy — from a second pxGrid service,
-`com.cisco.ise.config.profiler`'s `getProfiles`. The catalog rarely changes,
-so it's cached and refreshed at most every `PXGRID_PROFILER_HIERARCHY_TTL`
-seconds (default 3600) regardless of poll/stream mode — see "Hierarchy Cache
-Age" on the dashboard.
+`ise-endpoint-profiles.json` shows per-profile endpoint counts from the ERS
+baseline (`/config/endpoint/{id}` plus `/attributes`) unless pxGrid `getEndpoints`
+is actually returning endpoint enrichment. It can also join the ISE-wide policy
+*catalog* — category/parent hierarchy — from pxGrid
+`com.cisco.ise.config.profiler` `getProfiles`. The catalog rarely changes, so it's
+cached and refreshed at most every `PXGRID_PROFILER_HIERARCHY_TTL` seconds
+(default 3600) regardless of poll/stream mode — see "Hierarchy Cache Age" on the
+dashboard.
 
 If your pxGrid client is scoped to a pxGrid Group that doesn't include the
 profiler config service (see the "Approve the client" step in the main

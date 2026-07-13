@@ -29,11 +29,11 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
         "hide": 0,
         "label": "Prometheus",
         "name": "DS_PROMETHEUS",
-        "options": [],
+        "options": [{ "selected": true, "text": "Prometheus", "value": "prometheus" }],
         "query": "prometheus",
         "refresh": 1,
         "regex": "",
@@ -86,7 +86,8 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
     },
     {
-      "id": 2, "type": "stat", "title": "Endpoints Profiled (pxGrid)",
+      "id": 2, "type": "stat", "title": "pxGrid Enriched Endpoints",
+      "description": "Endpoints returned by pxGrid getEndpoints. 0 is expected on ISE 3.3; ERS still provides the baseline profile counts.",
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_endpoints_pxgrid_total", "refId": "A" }],

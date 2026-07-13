@@ -29,11 +29,11 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "selected": true, "text": "Prometheus", "value": "prometheus" },
         "hide": 0,
         "label": "Prometheus",
         "name": "DS_PROMETHEUS",
-        "options": [],
+        "options": [{ "selected": true, "text": "Prometheus", "value": "prometheus" }],
         "query": "prometheus",
         "refresh": 1,
         "regex": "",
@@ -58,7 +58,7 @@
       "description": "Compliant / (Compliant + NonCompliant) across active sessions, from the session postureStatus. Ignores NotApplicable and Pending. Note: if most sessions report postureStatus=NotApplicable, use the 'Posture Policy Results' section below (parsed from PostureReport) for the real per-check pass/fail.",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "100 * sum(ise_session_posture_status{status=\"Compliant\"}) / clamp_min(sum(ise_session_posture_status{status=~\"Compliant|NonCompliant\"}), 1)", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "100 * (sum(ise_session_posture_status{status=\"Compliant\"}) or vector(0)) / clamp_min((sum(ise_session_posture_status{status=~\"Compliant|NonCompliant\"}) or vector(0)), 1)", "refId": "A" }],
       "fieldConfig": {
         "defaults": { "unit": "percent", "min": 0, "max": 100,
           "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 80 }, { "color": "green", "value": 95 }] } },
@@ -70,7 +70,7 @@
       "id": 3, "type": "stat", "title": "Failed Posture (Non-Compliant)",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"NonCompliant\"})", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"NonCompliant\"}) or vector(0)", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area", "justifyMode": "auto" }
     },
@@ -78,7 +78,7 @@
       "id": 4, "type": "stat", "title": "Pending Posture",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"Pending\"})", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"Pending\"}) or vector(0)", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }, { "color": "yellow", "value": 1 }] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "area", "justifyMode": "auto" }
     },
@@ -87,7 +87,7 @@
       "description": "Endpoints with a Compliant or NonCompliant verdict (i.e. a posture assessment actually ran).",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=~\"Compliant|NonCompliant\"})", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=~\"Compliant|NonCompliant\"}) or vector(0)", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
     },
@@ -111,9 +111,9 @@
       "gridPos": { "h": 8, "w": 16, "x": 8, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"Compliant\"})", "legendFormat": "Passed (Compliant)", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"NonCompliant\"})", "legendFormat": "Failed (NonCompliant)", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"Pending\"})", "legendFormat": "Pending", "refId": "C" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"Compliant\"}) or vector(0)", "legendFormat": "Passed (Compliant)", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"NonCompliant\"}) or vector(0)", "legendFormat": "Failed (NonCompliant)", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_posture_status{status=\"Pending\"}) or vector(0)", "legendFormat": "Pending", "refId": "C" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 25, "spanNulls": false, "showPoints": "never", "stacking": { "mode": "none", "group": "A" } } },
@@ -129,7 +129,7 @@
       "id": 8, "type": "bargauge", "title": "Failed Posture by Ops Owner",
       "gridPos": { "h": 8, "w": 6, "x": 0, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (ops_owner) (ise_session_posture_status{status=\"NonCompliant\"})", "legendFormat": "{{ops_owner}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (ops_owner) (ise_session_posture_status{status=\"NonCompliant\"}) or (sum by (ops_owner) (ise_radius_sessions_by_ops_owner) * 0)", "legendFormat": "{{ops_owner}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },
@@ -138,7 +138,7 @@
       "description": "Endpoints stuck in posture Pending (assessment started but no Compliant/NonCompliant verdict yet), grouped by ops owner — where to chase agent/redirect problems.",
       "gridPos": { "h": 8, "w": 6, "x": 6, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (ops_owner) (ise_session_posture_status{status=\"Pending\"})", "legendFormat": "{{ops_owner}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (ops_owner) (ise_session_posture_status{status=\"Pending\"}) or (sum by (ops_owner) (ise_radius_sessions_by_ops_owner) * 0)", "legendFormat": "{{ops_owner}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },
@@ -147,7 +147,7 @@
       "description": "Per ops owner, endpoints that passed (Compliant) vs failed (NonCompliant) overall posture. Excludes NotApplicable/Pending.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (ops_owner, status) (ise_session_posture_status{status=~\"Compliant|NonCompliant\"})", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (ops_owner, status) (ise_session_posture_status{status=~\"Compliant|NonCompliant\"}) or vector(0)", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "filterable": true } },
         "overrides": [
@@ -169,10 +169,10 @@
     },
     {
       "id": 21, "type": "table", "title": "Posture Policies — Passed vs Failed",
-      "description": "Per posture policy (the individual checks: firewall, anti-malware, disk encryption, patch, ...), how many endpoints passed vs failed. Parsed from the PostureReport attribute — from pxGrid getEndpoints when it's publishing, otherwise from the MnT session other_attr_string fallback when getEndpoints returns 0. Empty only when no active session carries a PostureReport (e.g. no posture policy assigned).",
+      "description": "Per posture policy (the individual checks: firewall, anti-malware, disk encryption, patch, ...), how many endpoints passed vs failed. Parsed from pxGrid getEndpoints when available, otherwise from MnT session other_attr_string when getEndpoints is empty. Empty only when no active session or endpoint carries a PostureReport.",
       "gridPos": { "h": 12, "w": 12, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (policy, result) (ise_posture_policy_result)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (policy, result) (ise_posture_policy_result) or vector(0)", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "filterable": true } },
         "overrides": [
@@ -194,7 +194,7 @@
       "description": "Posture policies with the most endpoints failing them — which specific checks (firewall, anti-malware, BitLocker, patch, ...) are driving non-compliance. From PostureReport.",
       "gridPos": { "h": 12, "w": 12, "x": 12, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, sum by (policy) (ise_posture_policy_result{result=\"Failed\"}))", "legendFormat": "{{policy}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, sum by (policy) (ise_posture_policy_result{result=\"Failed\"})) or vector(0)", "legendFormat": "{{policy}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },
@@ -207,7 +207,7 @@
       "description": "MDM-managed endpoints by enrollment state. Sourced from the pxGrid session object's mdm* fields — populated in stream mode only; empty under poll mode (MnT ActiveList doesn't carry MDM).",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 35 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (value) (ise_session_mdm_status{dimension=\"registered\"})", "legendFormat": "{{value}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (value) (ise_session_mdm_status{dimension=\"registered\"}) or vector(0)", "legendFormat": "{{value}}", "refId": "A" }],
       "fieldConfig": {
         "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
         "overrides": [
@@ -221,7 +221,7 @@
       "id": 12, "type": "bargauge", "title": "MDM Compliance",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 35 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (value) (ise_session_mdm_status{dimension=\"compliant\"})", "legendFormat": "{{value}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum by (value) (ise_session_mdm_status{dimension=\"compliant\"}) or vector(0)", "legendFormat": "{{value}}", "refId": "A" }],
       "fieldConfig": {
         "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
         "overrides": [
@@ -237,9 +237,9 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 35 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_mdm_status{dimension=\"jailbroken\", value=\"true\"})", "legendFormat": "Jailbroken", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_mdm_status{dimension=\"disk_encrypted\", value=\"false\"})", "legendFormat": "Disk not encrypted", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_mdm_status{dimension=\"pin_locked\", value=\"false\"})", "legendFormat": "No PIN lock", "refId": "C" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_mdm_status{dimension=\"jailbroken\", value=\"true\"}) or vector(0)", "legendFormat": "Jailbroken", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_mdm_status{dimension=\"disk_encrypted\", value=\"false\"}) or vector(0)", "legendFormat": "Disk not encrypted", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(ise_session_mdm_status{dimension=\"pin_locked\", value=\"false\"}) or vector(0)", "legendFormat": "No PIN lock", "refId": "C" }
       ],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
@@ -250,10 +250,10 @@
     },
     {
       "id": 15, "type": "bargauge", "title": "Secure Client / Posture Agent Version (top 15)",
-      "description": "Endpoints by posture-agent / Secure Client version. From the getEndpoints PostureAgentVersion / SecureClientVersion attribute when publishing, otherwise from the MnT session other_attr_string fallback (SecureClientVersion / AnyConnectVersion / PostureAgentVersion) when getEndpoints returns 0. Empty only if no session or endpoint exposes a version attribute.",
+      "description": "Endpoints by posture-agent / Secure Client version. From pxGrid getEndpoints when available, otherwise from MnT session other_attr_string (SecureClientVersion / AnyConnectVersion / PostureAgentVersion) when getEndpoints is empty. Empty only if no session or endpoint exposes a version attribute.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_secureclient_version)", "legendFormat": "{{version}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(15, ise_endpoints_by_secureclient_version) or vector(0)", "legendFormat": "{{version}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },

@@ -72,6 +72,12 @@ def test_ers_fallback_counts_per_profile_when_endpoints_outnumber_profiles():
     assert _by(metrics.ise_endpoints_by_policy, "policy") == {
         "Microsoft-Workstation": 120.0, "Apple-iPhone": 30.0}
     assert metrics.ise_endpoints_total._value.get() == 150
+    assert _by(metrics.ise_endpoints_by_hardware_model, "model") == {"unknown": 150.0}
+    assert _by(metrics.ise_endpoints_by_manufacturer, "manufacturer") == {"unknown": 150.0}
+    assert _by(metrics.ise_endpoints_by_endpoint_type, "endpoint_type") == {"unknown": 150.0}
+    assert _by(metrics.ise_endpoints_by_os, "os") == {"unknown": 150.0}
+    assert _by(metrics.ise_endpoint_mfc_coverage, "attribute") == {
+        "model": 0.0, "manufacturer": 0.0, "endpoint_type": 0.0, "os": 0.0}
 
 
 def test_ers_fallback_joins_getprofiles_hierarchy_when_cached():

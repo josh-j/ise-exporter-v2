@@ -6,3 +6,4 @@ certs/
 *.cer
 *.key
 dist/
+deploy/test-monitoring/data/

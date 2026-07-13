@@ -114,9 +114,10 @@ def pxgrid_check(cfg, *, check_stream=False):
                                    "Send the attribute-key lines above so the collector can be pointed "
                                    "at the right attribute name.")
             else:
-                logger.warning("pxGrid check: getEndpoints returned 0 — endpoint model / "
-                               "profile / posture-attribute metrics will be empty until ISE "
-                               "publishes endpoint context to pxGrid (see the warning above)")
+                logger.warning("pxGrid check: getEndpoints returned 0. This is expected on "
+                               "ISE 3.3; ERS remains the baseline endpoint/profile source, "
+                               "and pxGrid endpoint snapshots only enrich MFC/Secure Client "
+                               "fields when ISE publishes them.")
             logger.info("pxGrid check: getProfiles ok profiles=%d", len(profiles))
         except Exception as e:
             logger.error("pxGrid check: endpoint/profiler probe FAILED: %s", e)

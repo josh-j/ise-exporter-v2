@@ -1,6 +1,6 @@
 import logging
 
-from ise_exporter.config import Config, _b, _i, _s
+from ise_exporter.config import Config, _b, _csv, _i, _s
 
 
 def test_b_accepts_true_false_case_insensitive(monkeypatch):
@@ -62,6 +62,11 @@ def test_s_default_when_unset(monkeypatch):
     assert _s("X", "fallback") == "fallback"
 
 
+def test_csv_strips_and_drops_empty_parts(monkeypatch):
+    monkeypatch.setenv("X", " asset_tag, ,ops_owner ")
+    assert _csv("X") == ("asset_tag", "ops_owner")
+
+
 def test_summary_excludes_password(monkeypatch):
     monkeypatch.setenv("ISE_PASS", "super-secret")
     monkeypatch.setenv("ISE_HOST", "pan1.example.mil")
@@ -72,4 +77,5 @@ def test_summary_excludes_password(monkeypatch):
     cfg = Config.from_env()
     assert "super-secret" not in cfg.summary()
     assert "pxgrid1.example.mil" in cfg.summary()
+    assert "collect_ers_endpoint_attributes=True" in cfg.summary()
     assert cfg.pxgrid_ready is True

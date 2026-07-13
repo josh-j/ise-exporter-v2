@@ -56,6 +56,10 @@ def test_normalize_bool_label():
     assert normalize_bool_label("Unregistered") == "false"
     assert normalize_bool_label("") == "unknown"
     assert normalize_bool_label(None) == "unknown"
+    # ISE JSON returns real booleans for fields like staticProfileAssignment;
+    # these must not raise (bool has no .strip()) and must map correctly.
+    assert normalize_bool_label(True) == "true"
+    assert normalize_bool_label(False) == "false"
 
 
 # a trimmed multi-policy PostureReport in ISE's real format (escaped '\;' separators,

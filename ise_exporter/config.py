@@ -44,6 +44,13 @@ def _b(v, d):
     return d
 
 
+def _csv(v, d=()):
+    raw = _s(v, None)
+    if raw is None:
+        return tuple(d)
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
 @dataclass(frozen=True)
 class Config:
     log_level: str = "INFO"
@@ -58,9 +65,12 @@ class Config:
     medium_interval: int = 300
     slow_interval: int = 3600
     max_workers: int = 10
+    auth_failure_backoff: int = 900
+    auth_failure_threshold: int = 3
     device_cache_ttl: int = 10800
     session_detail_cache_ttl: int = 86400
     max_detail_fetches_per_cycle: int = 2000
+    recent_auth_status_max: int = 25
     collect_device_details: bool = True
     collect_certificates: bool = True
     collect_licensing: bool = True
@@ -69,12 +79,20 @@ class Config:
     collect_authz: bool = True
     collect_pxgrid_endpoints: bool = True
     collect_pxgrid_stream: bool = False
-    # ERS fallback for the endpoint profiling-policy breakdown, used ONLY when pxGrid
-    # getEndpoints returns nothing (ISE not publishing endpoints to pxGrid). Counts
-    # endpoints per profile via ERS filter queries, capped at ers_endpoint_profile_max
-    # profiles. Cannot recover MFC model/OS or posture (ERS lacks those attributes).
+    # Legacy ERS endpoint profiling-policy breakdown, used only when the richer
+    # per-endpoint ERS attribute sweep below is disabled. ISE 3.3 normally uses
+    # the richer sweep as its endpoint inventory baseline.
     collect_ers_endpoint_fallback: bool = True
     ers_endpoint_profile_max: int = 1500   # covers ISE's ~900 built-in profiles + custom
+    # Slow, cached ERS endpoint profile-attribute sweep. This reads
+    # /ers/config/endpoint/{id}/attributes, which exposes profiler-learned DHCP/RADIUS/
+    # CDP/LLDP/SNMP/User-Agent/MDM fields but is per-endpoint and expensive at scale.
+    collect_ers_endpoint_attributes: bool = True
+    ers_endpoint_attribute_page_size: int = 500
+    ers_endpoint_attribute_cache_ttl: int = 604800
+    ers_endpoint_attribute_cache_file: str = "/tmp/ise-exporter-endpoint-attributes-cache.json"
+    ers_endpoint_attribute_value_max_len: int = 80
+    ers_endpoint_custom_attribute_keys: tuple[str, ...] = ()
     pxgrid_host: str = ""
     pxgrid_port: int = 8910
     pxgrid_node_name: str = ""
@@ -83,17 +101,17 @@ class Config:
     pxgrid_ca_bundle: str = ""
     pxgrid_min_count: int = 1
     pxgrid_query_timeout: int = 120
+    pxgrid_endpoint_zero_backoff: int = 3600
     # Prefer the base session topic (/topic/com.cisco.ise.session) by default — it's
     # available on every ISE and authorized for any client granted the session service.
     # sessionTopicAll (/…​.session.all) only exists on 3.3p2/3.4+ and needs the client's
     # pxGrid group to be authorized for it; opt in with PXGRID_SESSION_TOPIC_ALL=true.
     pxgrid_session_topic_all: bool = False
-    # Endpoint attributes (models/profiles/posture) come from the getEndpoints REST poll,
-    # NOT the pxGrid endpoint topic, by default. The topic needs extra ISE publishing +
-    # pubsub-subscribe policy and its SUBSCRIBE can drop the whole stream; the REST poll
-    # is a simple cacheable snapshot. Opt into the live topic with
-    # PXGRID_SUBSCRIBE_ENDPOINT_TOPIC=true. Endpoint state refreshes on this interval
-    # (and at every reconnect/resync).
+    # pxGrid endpoint enrichment comes from the getEndpoints REST poll, NOT the
+    # pxGrid endpoint topic, by default. On ISE 3.3 this REST poll commonly returns
+    # zero forever, so ERS remains the baseline and getEndpoints is retried on a
+    # slower zero-result backoff. Opt into the live topic with
+    # PXGRID_SUBSCRIBE_ENDPOINT_TOPIC=true when the pxGrid group/policy supports it.
     pxgrid_subscribe_endpoint_topic: bool = False
     pxgrid_endpoint_refresh_interval: int = 900
     profiler_hierarchy_ttl: int = 3600
@@ -112,6 +130,7 @@ class Config:
         silent misconfiguration. Log this once at startup — ise_pass is excluded."""
         return (f"collect_pxgrid_stream={self.collect_pxgrid_stream} "
                 f"collect_pxgrid_endpoints={self.collect_pxgrid_endpoints} "
+                f"collect_ers_endpoint_attributes={self.collect_ers_endpoint_attributes} "
                 f"pxgrid_ready={self.pxgrid_ready} pxgrid_host={self.pxgrid_host!r} "
                 f"pxgrid_node_name={self.pxgrid_node_name!r} "
                 f"pxgrid_client_cert={self.pxgrid_client_cert!r} "
@@ -130,9 +149,12 @@ class Config:
             scrape_interval=_i("SCRAPE_INTERVAL", 120), fast_interval=_i("FAST_INTERVAL", 60),
             medium_interval=_i("MEDIUM_INTERVAL", 300), slow_interval=_i("SLOW_INTERVAL", 3600),
             max_workers=_i("MAX_WORKERS", 10),
+            auth_failure_backoff=_i("AUTH_FAILURE_BACKOFF", 900),
+            auth_failure_threshold=_i("AUTH_FAILURE_THRESHOLD", 3),
             device_cache_ttl=_i("DEVICE_CACHE_TTL", 10800),
             session_detail_cache_ttl=_i("SESSION_DETAIL_CACHE_TTL", 86400),
             max_detail_fetches_per_cycle=_i("MAX_DETAIL_FETCHES_PER_CYCLE", 2000),
+            recent_auth_status_max=_i("RECENT_AUTH_STATUS_MAX", 25),
             collect_device_details=_b("COLLECT_DEVICE_DETAILS", True),
             collect_certificates=_b("COLLECT_CERTIFICATES", True),
             collect_licensing=_b("COLLECT_LICENSING", True),
@@ -143,6 +165,14 @@ class Config:
             collect_pxgrid_stream=_b("COLLECT_PXGRID_STREAM", False),
             collect_ers_endpoint_fallback=_b("COLLECT_ERS_ENDPOINT_FALLBACK", True),
             ers_endpoint_profile_max=_i("ERS_ENDPOINT_PROFILE_MAX", 1500),
+            collect_ers_endpoint_attributes=_b("COLLECT_ERS_ENDPOINT_ATTRIBUTES", True),
+            ers_endpoint_attribute_page_size=_i("ERS_ENDPOINT_ATTRIBUTE_PAGE_SIZE", 500),
+            ers_endpoint_attribute_cache_ttl=_i("ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL", 604800),
+            ers_endpoint_attribute_cache_file=_s(
+                "ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE",
+                "/tmp/ise-exporter-endpoint-attributes-cache.json"),
+            ers_endpoint_attribute_value_max_len=_i("ERS_ENDPOINT_ATTRIBUTE_VALUE_MAX_LEN", 80),
+            ers_endpoint_custom_attribute_keys=_csv("ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS"),
             pxgrid_host=_s("PXGRID_HOST"), pxgrid_port=_i("PXGRID_PORT", 8910),
             pxgrid_node_name=_s("PXGRID_NODE_NAME"),
             pxgrid_client_cert=_s("PXGRID_CLIENT_CERT"),
@@ -150,6 +180,7 @@ class Config:
             pxgrid_ca_bundle=_s("PXGRID_CA_BUNDLE"),
             pxgrid_min_count=_i("PXGRID_MIN_COUNT", 1),
             pxgrid_query_timeout=_i("PXGRID_QUERY_TIMEOUT", 120),
+            pxgrid_endpoint_zero_backoff=_i("PXGRID_ENDPOINT_ZERO_BACKOFF", 3600),
             pxgrid_session_topic_all=_b("PXGRID_SESSION_TOPIC_ALL", False),
             pxgrid_subscribe_endpoint_topic=_b("PXGRID_SUBSCRIBE_ENDPOINT_TOPIC", False),
             pxgrid_endpoint_refresh_interval=_i("PXGRID_ENDPOINT_REFRESH_INTERVAL", 900),

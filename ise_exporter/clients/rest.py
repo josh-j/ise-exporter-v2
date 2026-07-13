@@ -4,6 +4,7 @@ get_network_devices, ...) collapse into the collectors, which now call the gener
 get_ers / get_ers_total / get_pan_api / get_mnt_xml directly. Pure plumbing, no
 metric writes except the api_requests/api_errors counters."""
 import logging
+import time
 import xml.etree.ElementTree as ET
 
 import requests
@@ -31,6 +32,8 @@ class ISERestClient:
         self.auth = HTTPBasicAuth(cfg.ise_user, cfg.ise_pass)
         self.session = self._mk("application/json")
         self.mnt_session = self._mk("application/xml")
+        self._auth_failures = 0
+        self._auth_block_until = 0.0
 
     def _mk(self, content_type):
         s = requests.Session()
@@ -47,9 +50,17 @@ class ISERestClient:
         return s
 
     def _request(self, session, url, params=None, timeout=30, api_name="unknown"):
+        now = time.time()
+        if self._auth_block_until and now < self._auth_block_until:
+            ise_api_requests_total.labels(api=api_name, status="auth_blocked").inc()
+            ise_api_errors_total.labels(api=api_name, error_type="auth_blocked",
+                                        http_code="401").inc()
+            return None
         try:
             r = session.get(url, params=params, timeout=timeout)
             r.raise_for_status()
+            self._auth_failures = 0
+            self._auth_block_until = 0.0
             ise_api_requests_total.labels(api=api_name, status="success").inc()
             return r
         except requests.exceptions.Timeout:
@@ -70,6 +81,8 @@ class ISERestClient:
                 except Exception:
                     snippet = ""
                 logger.warning("HTTP %s for %s  body: %s", status, url, snippet)
+                if status == 401:
+                    self._record_auth_failure()
             else:
                 status = "no_response"
                 logger.warning("HTTP error with no response for %s: %s", url, e)
@@ -81,6 +94,18 @@ class ISERestClient:
             ise_api_requests_total.labels(api=api_name, status="error").inc()
             ise_api_errors_total.labels(api=api_name, error_type="unknown", http_code="0").inc()
             return None
+
+    def _record_auth_failure(self):
+        self._auth_failures += 1
+        threshold = max(1, getattr(self.cfg, "auth_failure_threshold", 3))
+        if self._auth_failures < threshold:
+            return
+        backoff = max(0, getattr(self.cfg, "auth_failure_backoff", 900))
+        if not backoff:
+            return
+        self._auth_block_until = time.time() + backoff
+        logger.error("ISE API authentication failed %d times; suppressing further API requests "
+                     "for %ds to avoid account lockout", self._auth_failures, backoff)
 
     def _get_json(self, session, url, params=None, api_name="unknown"):
         """GET + JSON-decode, returning the parsed body or None on request/parse failure.
@@ -165,6 +190,12 @@ class ISERestClient:
                 total = len(active)
             sessions = [{_strip_ns(c.tag): (c.text or "").strip() for c in item} for item in active]
             return {"total": total, "sessions": sessions}
+
+        auth_status = root.findall(".//authStatusElements")
+        if auth_status:
+            sessions = [{_strip_ns(c.tag): (c.text or "").strip() for c in item}
+                        for item in auth_status]
+            return {"total": len(sessions), "sessions": sessions}
 
         detail = {}
         for c in root:

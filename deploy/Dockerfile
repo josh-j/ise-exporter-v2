@@ -13,9 +13,10 @@ LABEL org.opencontainers.image.title="ise-exporter" \
 WORKDIR /app
 COPY --from=build /dist/*.whl /tmp/
 RUN pip install --no-cache-dir /tmp/*.whl && rm -f /tmp/*.whl
+RUN install -d -o 65534 -g 65534 -m 750 /var/lib/ise-exporter
 
 EXPOSE 9618
-# run as nobody:nogroup — the exporter needs no filesystem writes
+# run as nobody:nogroup; only /var/lib/ise-exporter is writable for the endpoint cache
 USER 65534:65534
 
 # honors EXPORTER_PORT; hits the metrics endpoint to confirm the server is up

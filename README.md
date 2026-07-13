@@ -14,6 +14,7 @@ Requires Python ≥ 3.10. Exposes Prometheus metrics on `:9618/metrics` by defau
 - `ise_exporter/scheduler.py` — poll engine (interval tiers, failure gating)
 - `ise_exporter/streaming.py` — pxGrid stream engine (subscribe→snapshot→drain→live)
 - `dashboards/` — Grafana JSON
+- `docs/api-schemas/` — captured Cisco ISE 3.3 Patch 11 OpenAPI schemas
 - `deploy/` — Dockerfile, docker-compose, systemd unit, `install.sh` (idempotent install/upgrade)
 
 ## Configure
@@ -30,10 +31,16 @@ and `ise_exporter/config.py` for the authoritative list. Common knobs:
 | `EXPORTER_PORT` | `9618` | metrics listen port |
 | `SCRAPE_INTERVAL` | `120` | base poll loop period (s) |
 | `FAST_INTERVAL` / `MEDIUM_INTERVAL` / `SLOW_INTERVAL` | `60` / `300` / `3600` | per-tier collector cadence (s) |
-| `MAX_WORKERS` | `10` | concurrency for the per-MAC authz fan-out |
+| `MAX_WORKERS` | `10` | concurrency for per-MAC authz and ERS endpoint-attribute fan-out |
+| `AUTH_FAILURE_THRESHOLD` / `AUTH_FAILURE_BACKOFF` | `3` / `900` | suppress API requests after repeated 401s to avoid account lockout |
 | `COLLECT_AUTHZ` | `true` | per-MAC authz/policy-set/matched-rule metrics |
-| `COLLECT_PXGRID_ENDPOINTS` | `true` | bulk pxGrid `getEndpoints` model breakdown |
+| `COLLECT_PXGRID_ENDPOINTS` | `true` | optional pxGrid `getEndpoints` enrichment when ISE publishes endpoint context |
 | `COLLECT_PXGRID_STREAM` | `false` | replace sessions+endpoints polling with pxGrid topics |
+| `COLLECT_ERS_ENDPOINT_ATTRIBUTES` | `true` | slow cached sweep of ERS `/endpoint/{id}/attributes` profiler data |
+| `ERS_ENDPOINT_ATTRIBUTE_PAGE_SIZE` / `ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL` | `500` / `604800` | endpoint-attribute refresh batch size and cache TTL |
+| `ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE` | `/tmp/ise-exporter-endpoint-attributes-cache.json` | local cache for multi-cycle endpoint-attribute scans |
+| `ERS_ENDPOINT_CUSTOM_ATTRIBUTE_KEYS` | empty | optional comma-list of custom endpoint attributes to bucket by value |
+| `PXGRID_ENDPOINT_ZERO_BACKOFF` | `3600` | retry cadence after pxGrid `getEndpoints` returns zero endpoints |
 | `PXGRID_HOST` / `PXGRID_NODE_NAME` | — | pxGrid controller + registered consumer name |
 | `PXGRID_CLIENT_CERT` / `PXGRID_CLIENT_KEY` / `PXGRID_CA_BUNDLE` | — | pxGrid mTLS material (key must be an unencrypted PEM) |
 | `PXGRID_PROFILER_HIERARCHY_TTL` | `3600` | how often to re-fetch the profiler category/parent catalog (seconds) |
@@ -49,15 +56,35 @@ one page of endpoints.
 If `COLLECT_PXGRID_STREAM=true` but the pxGrid creds are incomplete, the exporter
 falls back to polling sessions/endpoints rather than dropping them.
 
+ERS endpoint collection is the baseline endpoint inventory path, especially on
+ISE 3.3 where pxGrid `getEndpoints` commonly returns zero even though ERS and
+Context Visibility have endpoint records. pxGrid `getEndpoints` is treated as
+optional enrichment: when it returns endpoints, it can add MFC hardware model,
+manufacturer, endpoint type/OS, Secure Client version, and PostureReport fields
+that ERS does not provide. After an empty `getEndpoints` result, the exporter
+backs off for `PXGRID_ENDPOINT_ZERO_BACKOFF` seconds before probing it again.
+
 Endpoint model collection also joins ISE's profiler *policy catalog* (category/
 parent hierarchy from Policy > Profiling, via the `com.cisco.ise.config.profiler`
-pxGrid service's `getProfiles`) onto the per-profile endpoint counts, emitting
-`ise_endpoints_by_profile_all{category,parent,profile}` — see
+pxGrid service's `getProfiles`) onto per-profile endpoint counts when available,
+emitting `ise_endpoints_by_profile_all{category,parent,profile}` — see
 `dashboards/ise-endpoint-profiles.json`. The catalog is cached and re-fetched at
 most every `PXGRID_PROFILER_HIERARCHY_TTL` seconds (default `3600`) since it
-rarely changes; a failed fetch (e.g. a pxGrid Group not scoped to that service)
-just falls back to `category="unknown"` rather than breaking the per-profile
-counts themselves.
+rarely changes; a failed fetch just falls back to `category="unknown"` rather than
+breaking the per-profile counts themselves.
+
+ERS endpoint profile-attribute collection reads the production-tested rich schema at
+`GET /ers/config/endpoint/{id}/attributes`. That endpoint is per-endpoint and can
+contain hundreds of DHCP/RADIUS/CDP/LLDP/SNMP/User-Agent/MDM values, so the exporter
+does not expose raw attributes. It walks one bounded page per slow cycle, caches
+records for `ERS_ENDPOINT_ATTRIBUTE_CACHE_TTL`, persists them to
+`ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE`, and emits low-cardinality aggregates: profiled
+policy, profiler source, profiled OS, device type, OUI, identity group, static
+assignment, certainty bucket, selected MDM states, coverage, and explicitly configured
+custom endpoint attributes. It also owns the ERS baseline endpoint total/profile
+gauges when pxGrid endpoint enrichment is empty. The cache contains endpoint
+metadata; store it on local disk with normal service-account permissions, not in a
+public volume.
 
 ## pxGrid setup (ISE side)
 
@@ -185,6 +212,8 @@ Running it as your own login from a random directory is what produces
     # run
     docker run --rm -p 9618:9618 --env-file .env \
       -v "$PWD/deploy/certs:/certs:ro" \
+      -v ise-exporter-cache:/var/lib/ise-exporter \
+      -e ERS_ENDPOINT_ATTRIBUTE_CACHE_FILE=/var/lib/ise-exporter/endpoint-attributes-cache.json \
       ise-exporter:2.0.0
 
 Lean multi-stage build (no build tools in the runtime image), runs as
@@ -198,8 +227,9 @@ Lean multi-stage build (no build tools in the runtime image), runs as
     docker compose logs -f
 
 The compose service is `read_only` with a tmpfs `/tmp` and `no-new-privileges`,
-since the exporter writes nothing to disk. Change `EXPORTER_PORT` in `.env`?
-Update the `ports:` mapping in `docker-compose.yml` to match.
+with a named volume mounted only at `/var/lib/ise-exporter` for the bounded ERS
+endpoint-attribute cache. Change `EXPORTER_PORT` in `.env`? Update the `ports:`
+mapping in `docker-compose.yml` to match.
 
 ### systemd
 
@@ -231,7 +261,9 @@ Or run it against a checkout elsewhere: `sudo ./deploy/install.sh /path/to/check
 
 The unit is hardened (`ProtectSystem=strict`, `NoNewPrivileges`, `PrivateTmp`,
 `ReadOnlyPaths=/etc/ise-exporter`) — appropriate since that env file holds
-`ISE_PASS` in plaintext. `root:ise-exporter, 0640` rather than root-only:
+`ISE_PASS` in plaintext. Its only writable persistent path is the systemd
+`StateDirectory=ise-exporter` at `/var/lib/ise-exporter`, used for the ERS
+endpoint-attribute cache. `root:ise-exporter, 0640` rather than root-only:
 systemd's `EnvironmentFile=` is read by the manager (root) before it drops to
 `User=ise-exporter`, so root-only would work for the service itself, but
 group-read also lets you run diagnostics as the service account (e.g.
@@ -262,7 +294,9 @@ first needs it.
 ## Plane ownership
 | plane | source | notes |
 |-------|--------|-------|
-| sessions / authz(passed) / models | stream (or poll fallback) | |
+| sessions / authz(passed) | stream (or MnT poll fallback) | |
+| endpoint inventory / profile attributes | ERS poll | baseline path; expected to work on ISE 3.3 |
+| endpoint MFC / Secure Client enrichment | pxGrid getEndpoints | optional; often empty on ISE 3.3 |
 | failed auth / policy-set / matched-rule | MnT poll | not on session topic; runs in both modes |
 | NAD inventory | ERS poll | label join for streamed sessions |
 | nodes / certs / license / backup / patch | PAN OpenAPI poll | no pxGrid equivalent |
