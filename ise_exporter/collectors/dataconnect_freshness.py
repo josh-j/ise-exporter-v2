@@ -1,9 +1,9 @@
-"""Reporting-view row coverage and source-event freshness.
+"""Low-pressure reporting-view presence and source-event freshness.
 
 Collector success timestamps prove that a query completed; they do not prove that
 ISE is still inserting current rows.  This collector publishes the event-time
-boundary of every timestamped Data Connect view so operators can distinguish an
-empty, stale, and genuinely current reporting plane.
+newest event of every timestamped Data Connect view so operators can distinguish
+an empty, stale, and genuinely current reporting plane without exact row counts.
 """
 from __future__ import annotations
 
@@ -14,13 +14,11 @@ from ..dataconnect_schema import VIEW_CONTRACTS
 from ..snapshots import replace_metric_snapshot
 from ..util import parse_ise_date
 from . import observe
-from .dataconnect_common import integer
 
 
 _METRICS = (
-    metrics.ise_dataconnect_view_rows,
+    metrics.ise_dataconnect_view_has_rows,
     metrics.ise_dataconnect_view_newest_event_timestamp,
-    metrics.ise_dataconnect_view_oldest_event_timestamp,
 )
 
 
@@ -48,7 +46,7 @@ def _timestamped_views():
 
 
 def collect(dataconnect, cfg):
-    """Atomically replace two-day row counts and event-time boundaries."""
+    """Atomically replace low-pressure row-presence and newest-event probes."""
     del cfg
     with observe("dataconnect_freshness"):
         rows = []
@@ -60,18 +58,16 @@ def collect(dataconnect, cfg):
             predicate = ("" if view.startswith("TACACS_") else
                          f"WHERE {column} >= SYSTIMESTAMP - INTERVAL '2' DAY")
             result = dataconnect.query(f"""
-                SELECT COUNT(*) AS rows_in_window,
-                       MIN({column}) AS oldest_event,
-                       MAX({column}) AS newest_event
+                SELECT {column} AS newest_event
                 FROM {view}
                 {predicate}
+                ORDER BY {column} DESC FETCH FIRST 1 ROWS ONLY
             """)
             row = result[0] if result else {}
             rows.append({
                 "view": view.lower(),
                 "domain": contract.domain,
-                "count": integer(row.get("rows_in_window")),
-                "oldest": _timestamp(row.get("oldest_event")),
+                "has_rows": int(bool(result)),
                 "newest": _timestamp(row.get("newest_event")),
             })
 
@@ -80,10 +76,8 @@ def collect(dataconnect, cfg):
             labels = {"view": row["view"], "domain": row["domain"]}
             writers.extend((
                 lambda row=row, labels=labels:
-                    metrics.ise_dataconnect_view_rows.labels(**labels).set(row["count"]),
-                lambda row=row, labels=labels:
-                    metrics.ise_dataconnect_view_oldest_event_timestamp.labels(
-                        **labels).set(row["oldest"]),
+                    metrics.ise_dataconnect_view_has_rows.labels(
+                        **labels).set(row["has_rows"]),
                 lambda row=row, labels=labels:
                     metrics.ise_dataconnect_view_newest_event_timestamp.labels(
                         **labels).set(row["newest"]),

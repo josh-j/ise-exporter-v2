@@ -21,7 +21,7 @@
   "tags": ["cisco", "ise", "data-quality", "dataconnect"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "editable": true,
   "graphTooltip": 1,
@@ -59,10 +59,10 @@
       "id": 3,
       "type": "stat",
       "title": "Empty Reporting Views",
-      "description": "Timestamped Data Connect views with no rows in the bounded two-day reporting window.",
+      "description": "Timestamped Data Connect views with no rows in the bounded two-day reporting window. Presence uses a one-row newest-event probe rather than an exact full-window count.",
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
       "targets": [{
-        "expr": "count(ise_dataconnect_view_rows == 0) and on() (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)",
+        "expr": "count(ise_dataconnect_view_has_rows == 0) and on() (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)",
         "instant": true,
         "refId": "A",
         "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
@@ -104,12 +104,11 @@
       "id": 6,
       "type": "table",
       "title": "Data Connect Source-Event Freshness",
-      "description": "Row count and event-time bounds inside each view's two-day window. Source age can increase while collection itself remains healthy.",
+      "description": "Row presence and newest event inside each view's two-day window. Each source probe returns at most one row; exact counts and oldest-row scans are intentionally omitted to protect MnT.",
       "gridPos": {"h": 12, "w": 24, "x": 0, "y": 15},
       "targets": [
-        {"expr": "ise_dataconnect_view_rows", "format": "table", "instant": true, "refId": "Rows", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "time() - (ise_dataconnect_view_newest_event_timestamp > 0)", "format": "table", "instant": true, "refId": "Newest event age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "(ise_dataconnect_view_newest_event_timestamp - ise_dataconnect_view_oldest_event_timestamp) and on(domain,view) (ise_dataconnect_view_rows > 0)", "format": "table", "instant": true, "refId": "Window span", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "ise_dataconnect_view_has_rows", "format": "table", "instant": true, "refId": "Has rows", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "time() - (ise_dataconnect_view_newest_event_timestamp > 0)", "format": "table", "instant": true, "refId": "Newest event age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
       "options": {"showHeader": true}

@@ -361,19 +361,14 @@ ise_dataconnect_endpoint_topk_truncated = Gauge(
     "Whether an endpoint dimensional breakdown was truncated by its top-K limit",
     ["breakdown"])
 
-ise_dataconnect_view_rows = Gauge(
-    "ise_dataconnect_view_rows",
-    "Rows currently visible in each bounded Data Connect reporting view",
+ise_dataconnect_view_has_rows = Gauge(
+    "ise_dataconnect_view_has_rows",
+    "Whether each bounded Data Connect reporting view contains at least one row",
     ["view", "domain"])
 ise_dataconnect_view_newest_event_timestamp = Gauge(
     "ise_dataconnect_view_newest_event_timestamp",
     "Newest source-event timestamp visible in each Data Connect reporting view",
     ["view", "domain"])
-ise_dataconnect_view_oldest_event_timestamp = Gauge(
-    "ise_dataconnect_view_oldest_event_timestamp",
-    "Oldest source-event timestamp visible in each Data Connect reporting view",
-    ["view", "domain"])
-
 ise_dataconnect_psn_radius_requests_per_hour = Gauge(
     "ise_dataconnect_psn_radius_requests_per_hour", "RADIUS requests per hour by ISE node",
     ["node"])

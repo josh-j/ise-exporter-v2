@@ -28,14 +28,12 @@ class DataConnect:
         self.sql.append(sql)
         if "RADIUS_AUTHENTICATIONS" in sql:
             return [{
-                "rows_in_window": 162,
-                "oldest_event": datetime(2026, 7, 13, tzinfo=timezone.utc),
                 "newest_event": datetime(2026, 7, 14, 4, 30, tzinfo=timezone.utc),
             }]
         return []
 
 
-def test_collects_row_coverage_and_event_time_boundaries_for_every_timestamped_view():
+def test_collects_bounded_presence_and_newest_event_for_every_timestamped_view():
     client = DataConnect()
     dataconnect_freshness.collect(client, types.SimpleNamespace())
 
@@ -48,14 +46,16 @@ def test_collects_row_coverage_and_event_time_boundaries_for_every_timestamped_v
                for sql in tacacs_sql)
     assert all("INTERVAL '2' DAY" in sql
                for sql in client.sql if "TACACS_" not in sql)
+    assert all("COUNT(" not in sql and "MIN(" not in sql and "MAX(" not in sql
+               for sql in client.sql)
+    assert all("FETCH FIRST 1 ROWS ONLY" in sql for sql in client.sql)
 
-    rows = _rows(metrics.ise_dataconnect_view_rows)
+    rows = _rows(metrics.ise_dataconnect_view_has_rows)
     assert set(rows) == {(view, domain) for view, domain in timestamped.items()}
-    assert rows[("radius_authentications", "radius_auth")] == 162
+    assert rows[("radius_authentications", "radius_auth")] == 1
+    assert rows[("radius_accounting", "radius_accounting")] == 0
     assert _rows(metrics.ise_dataconnect_view_newest_event_timestamp)[
         ("radius_authentications", "radius_auth")] == pytest.approx(1784003400)
-    assert _rows(metrics.ise_dataconnect_view_oldest_event_timestamp)[
-        ("radius_authentications", "radius_auth")] == pytest.approx(1783900800)
 
 
 @pytest.mark.parametrize(("value", "expected"), [

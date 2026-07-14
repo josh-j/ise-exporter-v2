@@ -317,9 +317,8 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_dataset_fresh",
         "ise_dataset_last_attempt_timestamp",
         "ise_dataset_last_success_timestamp",
-        "ise_dataconnect_view_rows",
+        "ise_dataconnect_view_has_rows",
         "ise_dataconnect_view_newest_event_timestamp",
-        "ise_dataconnect_view_oldest_event_timestamp",
         "ise_mnt_active_posture_detail_coverage_ratio",
         "ise_mnt_active_posture_detail_truncated",
         "ise_mnt_active_posture_field_coverage_ratio",
@@ -339,7 +338,8 @@ def test_data_quality_dashboard_does_not_render_empty_views_as_epoch_old():
 
     assert "ise_dataconnect_view_newest_event_timestamp > 0" in expressions[
         "Newest event age"]
-    assert "ise_dataconnect_view_rows > 0" in expressions["Window span"]
+    assert "ise_dataconnect_view_has_rows" in expressions["Has rows"]
+    assert "Window span" not in expressions
 
 
 def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
