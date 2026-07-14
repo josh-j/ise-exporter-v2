@@ -34,6 +34,12 @@ def test_parse_step_latencies_ignores_invalid_values_and_positions():
     assert parse_step_latencies("11001,15049", "0=1;1=-2;2=nan;3=4;x=5") == []
 
 
+def test_parse_step_latencies_normalizes_and_bounds_step_code_labels():
+    assert parse_step_latencies(
+        "00001,99999,100000,not-a-code", "1=1;2=2;3=3;4=4") == [
+            ("1", 0.001), ("99999", 0.002)]
+
+
 def test_first_nonempty_oui_fallback():
     a = {"mfcInfoHardwareManufacturer": "", "oui": "Xerox Corp"}
     assert first_nonempty(a, "mfcInfoHardwareManufacturer", "oui") == "Xerox Corp"

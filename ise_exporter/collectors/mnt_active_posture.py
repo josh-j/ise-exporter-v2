@@ -20,6 +20,7 @@ from .. import metrics
 from ..snapshots import replace_metric_snapshot
 from ..state import StateStore
 from ..util import (
+    MAX_ISE_STEP_CODE,
     SECURECLIENT_VERSION_KEYS,
     first_nonempty,
     is_mac,
@@ -32,6 +33,9 @@ from ..util import (
     parse_step_latencies,
 )
 from . import CollectorFailed, observe
+
+
+MAX_STEP_CODES = 256
 
 
 _FIELDS = (
@@ -130,7 +134,7 @@ def _step_samples(execution_steps, step_latency):
         seconds = _milliseconds(raw_ms)
         # Step positions are labels, so impose a tight numeric domain rather
         # than accepting arbitrary OTHER_ATTR_STRING text as cardinality.
-        if 1 <= number <= 10_000 and seconds is not None:
+        if 1 <= number <= MAX_ISE_STEP_CODE and seconds is not None:
             samples.append((str(number), seconds))
     return samples
 
@@ -324,6 +328,11 @@ def _aggregate(details):
             coverage["total_authentication_latency"] += 1
             total_latency.append(auth_latency)
 
+    # A malformed endpoint population must not manufacture an unbounded label
+    # domain. Prefer the most-observed legitimate ISE step codes and use numeric
+    # ordering as a deterministic tie-breaker.
+    steps = dict(sorted(
+        steps.items(), key=lambda item: (-len(item[1]), int(item[0])))[:MAX_STEP_CODES])
     return statuses, applicable, assessments, agents, policies, coverage, steps, total_latency
 
 

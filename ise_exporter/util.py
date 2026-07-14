@@ -6,6 +6,7 @@ import math
 import re
 
 logger = logging.getLogger(__name__)
+MAX_ISE_STEP_CODE = 99_999
 
 
 def clear_metric(metric):
@@ -79,9 +80,11 @@ def parse_step_latencies(execution_steps, step_latency):
             milliseconds = float(raw_ms.strip())
         except (TypeError, ValueError):
             continue
-        if (0 <= index < len(codes) and codes[index].isdigit()
-                and milliseconds >= 0 and math.isfinite(milliseconds)):
-            result.append((codes[index], milliseconds / 1000.0))
+        if 0 <= index < len(codes) and codes[index].isdigit():
+            code = int(codes[index])
+            if (1 <= code <= MAX_ISE_STEP_CODE
+                    and milliseconds >= 0 and math.isfinite(milliseconds)):
+                result.append((str(code), milliseconds / 1000.0))
     return result
 
 

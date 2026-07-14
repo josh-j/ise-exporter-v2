@@ -144,6 +144,20 @@ def test_collects_bounded_posture_and_latency_without_identity_labels():
     assert not {"mac", "endpoint", "username", "Ops Owner"} & label_names
 
 
+def test_unmapped_latency_accepts_real_five_digit_ise_step_codes():
+    assert mnt_active_posture._step_samples("", "11001=17;15049=2;100000=3") == [
+        ("11001", 0.017), ("15049", 0.002)]
+
+
+def test_latency_aggregate_caps_distinct_step_label_domain():
+    details = [{"step_latency": f"{code}=1"} for code in range(1, 301)]
+
+    steps = mnt_active_posture._aggregate(details)[6]
+
+    assert len(steps) == mnt_active_posture.MAX_STEP_CODES
+    assert set(steps) == {str(code) for code in range(1, 257)}
+
+
 def test_bound_is_explicit_and_failed_full_sample_preserves_previous_snapshot():
     client = MnT()
     mnt_active_posture.collect(client, _cfg(mnt_active_posture_max_sessions=1))

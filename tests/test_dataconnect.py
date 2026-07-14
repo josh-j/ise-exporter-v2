@@ -24,6 +24,9 @@ class Cursor:
         return [("netadmin", 3)]
 
     def fetchmany(self, size):
+        if getattr(self, "returned", False):
+            return []
+        self.returned = True
         return self.fetchall()[:size]
 
 
@@ -409,3 +412,76 @@ def test_query_refuses_to_materialize_more_than_hard_result_ceiling(monkeypatch)
 
     assert connection.closed is True
     assert counter._value.get() == before + 1
+
+
+def test_query_rejects_oversized_lob_before_reading_it(monkeypatch):
+    class OversizedLob:
+        read_called = False
+
+        def size(self):
+            return dataconnect.MAX_FIELD_BYTES + 1
+
+        def read(self):
+            self.read_called = True
+            return "should not be read"
+
+    lob = OversizedLob()
+
+    class LobCursor(Cursor):
+        description = [types.SimpleNamespace(name="CUSTOM_ATTRIBUTES")]
+
+        def fetchmany(self, size):
+            del size
+            if getattr(self, "returned", False):
+                return []
+            self.returned = True
+            return [(lob,)]
+
+    class LobConnection(Connection):
+        def cursor(self):
+            return LobCursor()
+
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: LobConnection())
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    with pytest.raises(RuntimeError, match="field exceeded"):
+        dataconnect.DataConnectClient(cfg).query("SELECT custom_attributes FROM endpoints_data")
+
+    assert lob.read_called is False
+
+
+def test_query_caps_total_materialized_result_bytes(monkeypatch):
+    monkeypatch.setattr(dataconnect, "MAX_RESULT_BYTES", 20)
+
+    class PayloadCursor(Cursor):
+        description = [types.SimpleNamespace(name="VALUE")]
+
+        def fetchmany(self, size):
+            del size
+            if getattr(self, "returned", False):
+                return []
+            self.returned = True
+            return [("a" * 20,)]
+
+    class PayloadConnection(Connection):
+        def cursor(self):
+            return PayloadCursor()
+
+    monkeypatch.setattr(
+        dataconnect.oracledb, "connect", lambda **kwargs: PayloadConnection())
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    with pytest.raises(RuntimeError, match="20-byte safety ceiling"):
+        dataconnect.DataConnectClient(cfg).query("SELECT value FROM endpoints_data")

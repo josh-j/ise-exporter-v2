@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 # than any scheduled top-K result. Even if a SQL/view contract regresses, the
 # exporter will not materialize an unbounded slice of the MnT database.
 MAX_RESULT_ROWS = 5000
+FETCH_BATCH_ROWS = 100
+MAX_FIELD_BYTES = 1024 * 1024
+MAX_RESULT_BYTES = 64 * 1024 * 1024
 
 
 _QUERY_VIEWS = (
@@ -60,16 +63,42 @@ def _query_view(sql):
 def _materialize(value):
     """Convert Oracle LOB/binary values into deterministic CLI-safe data."""
     if hasattr(value, "read") and callable(value.read):
+        size = getattr(value, "size", None)
+        if callable(size) and int(size()) > MAX_FIELD_BYTES:
+            raise RuntimeError(
+                f"Data Connect field exceeded the hard {MAX_FIELD_BYTES}-byte safety ceiling")
         value = value.read()
     if isinstance(value, memoryview):
         value = value.tobytes()
     if isinstance(value, bytes):
+        if len(value) > MAX_FIELD_BYTES:
+            raise RuntimeError(
+                f"Data Connect field exceeded the hard {MAX_FIELD_BYTES}-byte safety ceiling")
         return "base64:" + base64.b64encode(value).decode("ascii")
+    if isinstance(value, str) and len(value.encode("utf-8")) > MAX_FIELD_BYTES:
+        raise RuntimeError(
+            f"Data Connect field exceeded the hard {MAX_FIELD_BYTES}-byte safety ceiling")
     if isinstance(value, list):
         return [_materialize(item) for item in value]
     if isinstance(value, dict):
         return {key: _materialize(item) for key, item in value.items()}
     return value
+
+
+def _materialized_size(value):
+    """Approximate retained result bytes after deterministic materialization."""
+    if value is None:
+        return 0
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return len(value)
+    if isinstance(value, dict):
+        return sum(_materialized_size(key) + _materialized_size(item)
+                   for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return sum(_materialized_size(item) for item in value)
+    return 8
 
 
 def _retryable_disconnect(error):
@@ -227,13 +256,25 @@ class DataConnectClient:
                     with self.connect().cursor() as cursor:
                         cursor.execute(sql, parameters or {})
                         columns = [column.name.lower() for column in cursor.description]
-                        fetched = cursor.fetchmany(MAX_RESULT_ROWS + 1)
-                        if len(fetched) > MAX_RESULT_ROWS:
-                            raise RuntimeError(
-                                f"Data Connect result exceeded the hard "
-                                f"{MAX_RESULT_ROWS}-row safety ceiling")
-                        rows = [dict(zip(columns, (_materialize(value) for value in row)))
-                                for row in fetched]
+                        rows = []
+                        result_bytes = 0
+                        while True:
+                            batch = cursor.fetchmany(FETCH_BATCH_ROWS)
+                            if not batch:
+                                break
+                            for raw_row in batch:
+                                if len(rows) >= MAX_RESULT_ROWS:
+                                    raise RuntimeError(
+                                        f"Data Connect result exceeded the hard "
+                                        f"{MAX_RESULT_ROWS}-row safety ceiling")
+                                row = dict(zip(
+                                    columns, (_materialize(value) for value in raw_row)))
+                                result_bytes += _materialized_size(row)
+                                if result_bytes > MAX_RESULT_BYTES:
+                                    raise RuntimeError(
+                                        f"Data Connect result exceeded the hard "
+                                        f"{MAX_RESULT_BYTES}-byte safety ceiling")
+                                rows.append(row)
                     result = "success"
                     metrics.ise_dataconnect_query_rows.labels(view=view).set(len(rows))
                     return rows

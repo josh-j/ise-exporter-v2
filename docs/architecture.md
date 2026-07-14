@@ -91,8 +91,10 @@ endpoints use one sequential connection, two-second statement pacing, a 0.5%
 adaptive query-duty-cycle ceiling, 15-second statement timeouts, and independent
 30-minute to 24-hour domain cadences. The client enforces two seconds and 0.5%
 as hard safety limits and refuses to materialize more than 5,000 rows from any
-statement, even when a CLI caller or alternate configuration object requests a
-more aggressive value; grouped output is likewise capped at 1,000 series per breakdown. Summary
+statement. Results are streamed in 100-row batches, with 1 MiB per-field and
+64 MiB per-query retained-payload ceilings, even when a CLI caller or alternate
+configuration object requests a more aggressive value; grouped output is likewise
+capped at 1,000 series per breakdown. Summary
 and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate event scan. Exact
 RADIUS volume, failure totals, and distinct endpoint/user counts come from Cisco's
@@ -161,7 +163,9 @@ MnT XML owns only a current, bounded active-session dataset:
 - ActiveList session and unique endpoint candidate counts;
 - posture status, applicability, assessment state, OS, and Secure Client version;
 - posture policy passed/failed aggregates parsed from `PostureReport`; and
-- numeric authentication-step and total-authentication latency aggregates.
+- numeric authentication-step and total-authentication latency aggregates. Step
+  identifiers are normalized to ISE's five-digit numeric domain and publication
+  is capped at the 256 most-sampled codes per snapshot.
 
 The collector avoids ActiveList entirely when ActiveCount is zero and marks the
 dataset unavailable without downloading the list when ActiveCount exceeds
