@@ -504,6 +504,83 @@
           }
         }
       ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Internal-User Detail Coverage",
+      "description": "Fraction of the bounded internal-user inventory backed by restart-persistent ERS detail. Hygiene panels are incomplete while this is below 100%.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 43
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_internal_user_detail_coverage and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Detail Refresh Deferred",
+      "description": "Missing or stale internal-user details waiting behind the production-safe per-cycle ERS request budget.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 43
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_internal_user_detail_refresh_deferred and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Detail Refresh Failures",
+      "description": "ERS internal-user detail requests that failed in the latest configuration cycle. Cached rows remain available.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 43
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_internal_user_detail_refresh_failures and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
     }
   ],
   "refresh": "1m",

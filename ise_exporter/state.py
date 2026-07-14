@@ -1,9 +1,9 @@
 """Small durable SQLite state store for load-reducing collector caches.
 
-The database is exporter-private and may contain endpoint/session material copied
-from MnT responses.  Callers must place it in a service-owned, non-world-readable
-state directory.  SQLite is part of the Python standard library, which keeps the
-Ubuntu Noble installation free of additional database dependencies.
+The database is exporter-private and may contain bounded endpoint/session or
+internal-account material copied from ISE responses. Callers must place it in a
+service-owned, non-world-readable state directory. SQLite is part of the Python
+standard library, which keeps Ubuntu Noble free of extra database dependencies.
 """
 from __future__ import annotations
 
@@ -38,6 +38,14 @@ class StateStore:
             CREATE TABLE IF NOT EXISTS exporter_state (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            )
+        """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS tacacs_internal_user_cache (
+                user_id TEXT PRIMARY KEY,
+                detail_json TEXT NOT NULL,
+                updated_at REAL NOT NULL,
+                last_seen REAL NOT NULL
             )
         """)
         # Versions before the reporting/active split cached RADIUS aggregate
@@ -114,6 +122,68 @@ class StateStore:
     def posture_count(self):
         return int(self.db.execute(
             "SELECT COUNT(*) FROM mnt_posture_cache").fetchone()[0])
+
+    def tacacs_user_entries(self, user_ids):
+        """Return cached internal-user details for the bounded active inventory."""
+        user_ids = tuple(dict.fromkeys(str(value) for value in user_ids if value))
+        if not user_ids:
+            return {}
+        rows = {}
+        for offset in range(0, len(user_ids), 500):
+            chunk = user_ids[offset:offset + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in self.db.execute(
+                    f"SELECT * FROM tacacs_internal_user_cache "
+                    f"WHERE user_id IN ({placeholders})", chunk):
+                try:
+                    detail = json.loads(row["detail_json"])
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(detail, dict):
+                    rows[row["user_id"]] = {
+                        "detail": detail,
+                        "updated_at": float(row["updated_at"]),
+                    }
+        return rows
+
+    def put_tacacs_user(self, user_id, detail, now=None):
+        now = time.time() if now is None else float(now)
+        self.db.execute("""
+            INSERT INTO tacacs_internal_user_cache
+                (user_id, detail_json, updated_at, last_seen)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                detail_json=excluded.detail_json,
+                updated_at=excluded.updated_at,
+                last_seen=excluded.last_seen
+        """, (str(user_id), json.dumps(detail, separators=(",", ":")), now, now))
+
+    def finish_tacacs_user_cycle(self, active_ids, now=None):
+        """Mark active cache rows and prune accounts removed from ISE."""
+        now = time.time() if now is None else float(now)
+        active_ids = tuple(dict.fromkeys(str(value) for value in active_ids if value))
+        if active_ids:
+            for offset in range(0, len(active_ids), 500):
+                chunk = active_ids[offset:offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                self.db.execute(
+                    f"UPDATE tacacs_internal_user_cache SET last_seen=? "
+                    f"WHERE user_id IN ({placeholders})", (now, *chunk))
+            if len(active_ids) <= 500:
+                placeholders = ",".join("?" for _ in active_ids)
+                self.db.execute(
+                    f"DELETE FROM tacacs_internal_user_cache "
+                    f"WHERE user_id NOT IN ({placeholders})", active_ids)
+            else:
+                self.db.execute(
+                    "DELETE FROM tacacs_internal_user_cache WHERE last_seen < ?", (now,))
+        else:
+            self.db.execute("DELETE FROM tacacs_internal_user_cache")
+        self.db.commit()
+
+    def tacacs_user_count(self):
+        return int(self.db.execute(
+            "SELECT COUNT(*) FROM tacacs_internal_user_cache").fetchone()[0])
 
     def get_value(self, key, default=None):
         row = self.db.execute(

@@ -4,7 +4,6 @@ ERS/OpenAPI owns configuration inventory. Data Connect owns per-account activity
 Cumulative policy hit counters are intentionally not exported because lifetime
 totals look like current traffic and cannot provide account attribution.
 """
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
 import logging
@@ -20,6 +19,10 @@ from .dataconnect_common import event_window_hours, replace_snapshot
 _CONFIG_METRICS = (
     metrics.ise_tacacs_internal_users_total,
     metrics.ise_tacacs_internal_user_detail_coverage,
+    metrics.ise_tacacs_internal_user_detail_cache_entries,
+    metrics.ise_tacacs_internal_user_detail_refresh_requests,
+    metrics.ise_tacacs_internal_user_detail_refresh_failures,
+    metrics.ise_tacacs_internal_user_detail_refresh_deferred,
     metrics.ise_tacacs_internal_user_info,
     metrics.ise_tacacs_internal_user_created_timestamp,
     metrics.ise_tacacs_internal_user_modified_timestamp,
@@ -31,6 +34,10 @@ _CONFIG_METRICS = (
 
 _INTERNAL_USERS_STATE = "tacacs.internal_users"
 _INTERNAL_LAST_SEEN_STATE = "tacacs.internal_last_seen"
+_INTERNAL_USER_DETAIL_FIELDS = (
+    "id", "name", "enabled", "passwordNeverExpires", "changePassword",
+    "passwordIDStore", "dateCreated", "dateModified",
+)
 _EVENT_TYPES = ("authentication", "authorization", "accounting")
 logger = logging.getLogger(__name__)
 
@@ -297,25 +304,79 @@ def collect_config(client, cfg):
             raise CollectorFailed("TACACS internal-user inventory request failed")
         if not isinstance(policy_sets, list):
             raise CollectorFailed("Device Admin policy-set request failed")
-        limit = max(0, getattr(cfg, "tacacs_internal_user_max", 1000))
+        limit = max(1, min(1000, int(getattr(cfg, "tacacs_internal_user_max", 1000))))
         selected = resources[:limit] if limit else []
+        now = time.time()
+        refresh_ttl = max(
+            86400, int(getattr(cfg, "tacacs_internal_user_detail_ttl", 604800)))
+        refresh_limit = max(1, min(250, int(getattr(
+            cfg, "tacacs_internal_user_detail_max_requests", 100))))
+        request_interval = max(0, int(getattr(
+            cfg, "tacacs_internal_user_detail_request_interval_ms", 0))) / 1000
+        selected_by_id = {
+            str(resource["id"]): resource for resource in selected
+            if isinstance(resource, dict) and resource.get("id")
+        }
+        store = StateStore(_state_path(cfg))
+        try:
+            cached = store.tacacs_user_entries(selected_by_id)
+            refresh_candidates = sorted(
+                selected_by_id,
+                key=lambda user_id: (
+                    user_id in cached,
+                    cached.get(user_id, {}).get("updated_at", 0),
+                    user_id,
+                ),
+            )
+            refresh_candidates = [
+                user_id for user_id in refresh_candidates
+                if user_id not in cached
+                or cached[user_id]["updated_at"] <= now - refresh_ttl
+            ]
+            refresh_ids = refresh_candidates[:refresh_limit]
+            refresh_failures = 0
+            refresh_requests = 0
+            for user_id in refresh_ids:
+                if refresh_requests and request_interval:
+                    time.sleep(request_interval)
+                refresh_requests += 1
+                try:
+                    result = client.get_ers(
+                        f"/config/internaluser/{user_id}",
+                        api_name="ers_tacacs_internal_user_detail")
+                except Exception as exc:
+                    result = None
+                    logger.warning("internal-user detail refresh raised for %s: %s",
+                                   user_id, exc)
+                detail = result.get("InternalUser") if isinstance(result, dict) else None
+                if not isinstance(detail, dict):
+                    refresh_failures += 1
+                    logger.warning(
+                        "internal-user detail refresh failed for %s; retaining cached value",
+                        user_id)
+                    if refresh_failures >= 3:
+                        logger.warning(
+                            "stopping internal-user detail refresh after three failures")
+                        break
+                    continue
+                detail = {field: detail[field] for field in _INTERNAL_USER_DETAIL_FIELDS
+                          if field in detail}
+                store.put_tacacs_user(user_id, detail, now)
+                cached[user_id] = {"detail": detail, "updated_at": now}
+            store.finish_tacacs_user_cycle(selected_by_id, now)
+            cache_entries = store.tacacs_user_count()
+        finally:
+            store.close()
 
-        def fetch(resource):
-            user_id = resource.get("id") if isinstance(resource, dict) else None
-            if not user_id:
-                raise CollectorFailed("internal-user inventory row has no id")
-            result = client.get_ers(
-                f"/config/internaluser/{user_id}", api_name="ers_tacacs_internal_user_detail")
-            detail = (result.get("InternalUser") if isinstance(result, dict) else None)
-            if not isinstance(detail, dict):
-                raise CollectorFailed(f"internal-user detail request failed for {user_id}")
-            merged = dict(resource) if isinstance(resource, dict) else {}
-            merged.update(detail)
-            merged["_detail_fetched"] = True
-            return merged or None
-
-        with ThreadPoolExecutor(max_workers=max(1, getattr(cfg, "max_workers", 10))) as pool:
-            users = [user for user in pool.map(fetch, selected) if isinstance(user, dict)]
+        users = []
+        for user_id, resource in selected_by_id.items():
+            entry = cached.get(user_id)
+            if not entry:
+                continue
+            merged = dict(resource)
+            merged.update(entry["detail"])
+            users.append(merged)
+        refresh_deferred = max(0, len(refresh_candidates) - refresh_requests)
 
         auth_rows = []
         authz_rows = []
@@ -344,10 +405,13 @@ def collect_config(client, cfg):
         if not isinstance(command_sets, list) or not isinstance(shell_profiles, list):
             raise CollectorFailed("Device Admin object inventory request failed")
 
-        detail_count = sum(user.get("_detail_fetched") is True for user in users)
+        detail_count = len(users)
         review_days = max(1, getattr(cfg, "tacacs_unused_account_days", 180))
         cutoff = datetime.now(timezone.utc).timestamp() - review_days * 86400
-        usernames = [str(user.get("name") or "unknown") for user in users]
+        usernames = [
+            str(resource.get("name")) for resource in selected
+            if isinstance(resource, dict) and resource.get("name")
+        ]
         try:
             internal_last_seen = _sync_internal_user_state(cfg, usernames)
         except Exception as exc:
@@ -365,6 +429,10 @@ def collect_config(client, cfg):
             metrics.ise_tacacs_internal_users_total.set(len(resources))
             metrics.ise_tacacs_internal_user_detail_coverage.set(
                 detail_count / len(selected) if selected else 1.0)
+            metrics.ise_tacacs_internal_user_detail_cache_entries.set(cache_entries)
+            metrics.ise_tacacs_internal_user_detail_refresh_requests.set(refresh_requests)
+            metrics.ise_tacacs_internal_user_detail_refresh_failures.set(refresh_failures)
+            metrics.ise_tacacs_internal_user_detail_refresh_deferred.set(refresh_deferred)
             metrics.ise_tacacs_unused_account_review_seconds.set(review_days * 86400)
             for user in users:
                 username = str(user.get("name") or "unknown")

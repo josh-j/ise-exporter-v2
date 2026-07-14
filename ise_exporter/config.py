@@ -116,6 +116,9 @@ class Config:
     mnt_active_posture_refresh_ttl: int = 3600
     mnt_active_posture_request_interval_ms: int = 500
     tacacs_internal_user_max: int = 1000
+    tacacs_internal_user_detail_max_requests: int = 100
+    tacacs_internal_user_detail_ttl: int = 604800
+    tacacs_internal_user_detail_request_interval_ms: int = 250
     tacacs_unused_account_days: int = 180
     dataconnect_host: str = ""
     dataconnect_port: int = 2484
@@ -202,7 +205,14 @@ class Config:
                 "MNT_ACTIVE_POSTURE_REFRESH_TTL", 3600, 900),
             mnt_active_posture_request_interval_ms=_bounded_i(
                 "MNT_ACTIVE_POSTURE_REQUEST_INTERVAL_MS", 500, 250),
-            tacacs_internal_user_max=_i("TACACS_INTERNAL_USER_MAX", 1000),
+            tacacs_internal_user_max=_bounded_i(
+                "TACACS_INTERNAL_USER_MAX", 1000, 1, 1000),
+            tacacs_internal_user_detail_max_requests=_bounded_i(
+                "TACACS_INTERNAL_USER_DETAIL_MAX_REQUESTS", 100, 1, 250),
+            tacacs_internal_user_detail_ttl=_bounded_i(
+                "TACACS_INTERNAL_USER_DETAIL_TTL", 604800, 86400),
+            tacacs_internal_user_detail_request_interval_ms=_bounded_i(
+                "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS", 250, 100),
             tacacs_unused_account_days=_i("TACACS_UNUSED_ACCOUNT_DAYS", 180),
             dataconnect_host=_s("ISE_DATACONNECT_HOST", _s("ISE_MNT_HOST")),
             dataconnect_port=_i("ISE_DATACONNECT_PORT", 2484),

@@ -68,7 +68,19 @@ ise_tacacs_internal_users_total = Gauge(
     "ise_tacacs_internal_users_total", "ISE internal users available to Device Administration")
 ise_tacacs_internal_user_detail_coverage = Gauge(
     "ise_tacacs_internal_user_detail_coverage",
-    "Fraction of enumerated internal users whose ERS detail was successfully fetched")
+    "Fraction of enumerated internal users whose ERS detail is available in the bounded cache")
+ise_tacacs_internal_user_detail_cache_entries = Gauge(
+    "ise_tacacs_internal_user_detail_cache_entries",
+    "Restart-persistent internal-user detail rows retained by the exporter")
+ise_tacacs_internal_user_detail_refresh_requests = Gauge(
+    "ise_tacacs_internal_user_detail_refresh_requests",
+    "Internal-user ERS detail requests attempted in the latest collection cycle")
+ise_tacacs_internal_user_detail_refresh_failures = Gauge(
+    "ise_tacacs_internal_user_detail_refresh_failures",
+    "Internal-user ERS detail requests that failed in the latest collection cycle")
+ise_tacacs_internal_user_detail_refresh_deferred = Gauge(
+    "ise_tacacs_internal_user_detail_refresh_deferred",
+    "Missing or stale internal-user details deferred by the per-cycle request budget")
 ise_tacacs_internal_user_info = Gauge(
     "ise_tacacs_internal_user_info", "ISE internal-user account state",
     ["username", "enabled", "password_never_expires", "change_password", "identity_store"])

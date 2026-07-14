@@ -177,7 +177,11 @@ ISE immediately.
 
 TACACS hygiene adds one deliberately smaller persistent record: at most three
 last-observed activity timestamps for each currently configured internal account,
-bounded by `TACACS_INTERNAL_USER_MAX`. It does not retain external identities, raw
+bounded by `TACACS_INTERNAL_USER_MAX`. Per-account ERS details are held in a
+restart-persistent, seven-day cache and refreshed under a paced, hard per-cycle
+request budget. Three detail failures stop that cycle; incomplete or failed
+refreshes reduce explicit coverage signals instead of invalidating the entire
+Device Administration snapshot. It does not retain external identities, raw
 TACACS events, commands, sessions, or MnT rows. Its size therefore follows the
 small internal-account inventory rather than the MnT database or event volume.
 

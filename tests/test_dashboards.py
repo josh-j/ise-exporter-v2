@@ -208,6 +208,16 @@ def test_tacacs_unused_account_panels_require_activity_and_bound_retention():
     assert "raw mnt history" in panels[3]["description"].lower()
 
 
+def test_tacacs_dashboard_exposes_internal_user_detail_completeness():
+    dashboard = json.loads((DASHBOARDS / "ise-tacacs.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+    assert "ise_tacacs_internal_user_detail_coverage" in panels[13]["targets"][0]["expr"]
+    assert "ise_tacacs_internal_user_detail_refresh_deferred" in \
+        panels[14]["targets"][0]["expr"]
+    assert "ise_tacacs_internal_user_detail_refresh_failures" in \
+        panels[15]["targets"][0]["expr"]
+
+
 def test_domain_queries_do_not_mask_outages_as_unconditional_zero():
     violations = []
     for path in sorted(DASHBOARDS.glob("*.json")):

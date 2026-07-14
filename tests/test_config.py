@@ -159,6 +159,10 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
         "ISE_DATACONNECT_NAD_HEALTH_INTERVAL": "1",
         "ISE_DATACONNECT_TACACS_INTERVAL": "1",
         "MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS": "999999",
+        "TACACS_INTERNAL_USER_MAX": "999999",
+        "TACACS_INTERNAL_USER_DETAIL_MAX_REQUESTS": "999999",
+        "TACACS_INTERNAL_USER_DETAIL_TTL": "1",
+        "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS": "0",
     }
     for name, value in unsafe.items():
         monkeypatch.setenv(name, value)
@@ -179,3 +183,7 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.dataconnect_nad_health_interval == 1800
     assert cfg.dataconnect_tacacs_interval == 1800
     assert cfg.mnt_active_posture_max_active_list_sessions == 250000
+    assert cfg.tacacs_internal_user_max == 1000
+    assert cfg.tacacs_internal_user_detail_max_requests == 250
+    assert cfg.tacacs_internal_user_detail_ttl == 86400
+    assert cfg.tacacs_internal_user_detail_request_interval_ms == 100

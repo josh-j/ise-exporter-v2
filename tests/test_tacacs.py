@@ -5,6 +5,7 @@ import pytest
 
 from ise_exporter import metrics
 from ise_exporter.collectors import tacacs
+from ise_exporter.state import StateStore
 from ise_exporter.util import clear_metric
 
 
@@ -31,7 +32,7 @@ class Client:
                 "id": "u1", "name": "netadmin", "enabled": True,
                 "passwordNeverExpires": False, "changePassword": False,
                 "passwordIDStore": "Internal Users", "dateCreated": "2026-07-01",
-                "dateModified": "2026-07-06",
+                "dateModified": "2026-07-06", "password": "must-not-persist",
             }}
         return None
 
@@ -99,7 +100,7 @@ def test_account_not_flagged_when_account_object_is_recent():
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
 
 
-def test_internal_user_detail_failure_preserves_previous_snapshot():
+def test_internal_user_detail_failure_publishes_partial_coverage():
     metrics.ise_tacacs_internal_user_info.labels(
         username="previous", enabled="true", password_never_expires="false",
         change_password="false", identity_store="Internal Users").set(1)
@@ -116,9 +117,107 @@ def test_internal_user_detail_failure_preserves_previous_snapshot():
     tacacs.collect_config(client, types.SimpleNamespace(
         tacacs_internal_user_max=1000, tacacs_unused_account_days=180, max_workers=2))
 
-    assert _rows(metrics.ise_tacacs_internal_user_info, "username") == {
-        ("previous",): 1.0}
+    assert _rows(metrics.ise_tacacs_internal_user_info, "username") == {}
     assert metrics.ise_tacacs_internal_users_total._value.get() == 1
+    assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 0
+    assert metrics.ise_tacacs_internal_user_detail_refresh_failures._value.get() == 1
+
+
+def test_internal_user_detail_cache_survives_restart_and_detail_failure(tmp_path):
+    state_path = str(tmp_path / "state.sqlite3")
+    cfg = types.SimpleNamespace(
+        state_db_path=state_path, tacacs_internal_user_max=1000,
+        tacacs_unused_account_days=180,
+        tacacs_internal_user_detail_max_requests=100,
+        tacacs_internal_user_detail_ttl=604800)
+    tacacs.collect_config(Client(), cfg)
+
+    class NoDetail(Client):
+        detail_requests = 0
+
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            if path.startswith("/config/internaluser/"):
+                self.detail_requests += 1
+                return None
+            return super().get_ers(path, params, get_all, api_name)
+
+    client = NoDetail()
+    tacacs.collect_config(client, cfg)
+
+    assert client.detail_requests == 0
+    assert _rows(metrics.ise_tacacs_internal_user_info, "username") == {
+        ("netadmin",): 1.0}
+    assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 1
+    assert metrics.ise_tacacs_internal_user_detail_cache_entries._value.get() == 1
+
+    store = StateStore(state_path)
+    cached = store.tacacs_user_entries(["u1"])["u1"]["detail"]
+    store.close()
+    assert set(cached) <= set(tacacs._INTERNAL_USER_DETAIL_FIELDS)
+    assert "password" not in cached
+
+
+def test_internal_user_detail_refresh_is_bounded_and_converges(tmp_path):
+    class ManyUsers(Client):
+        detail_requests = []
+
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            if path == "/config/internaluser":
+                return [{"id": f"u{number}", "name": f"user-{number}"}
+                        for number in range(3)]
+            if path.startswith("/config/internaluser/"):
+                user_id = path.rsplit("/", 1)[-1]
+                self.detail_requests.append(user_id)
+                return {"InternalUser": {
+                    "id": user_id, "name": f"user-{user_id[1:]}", "enabled": True,
+                }}
+            return super().get_ers(path, params, get_all, api_name)
+
+    cfg = types.SimpleNamespace(
+        state_db_path=str(tmp_path / "state.sqlite3"), tacacs_internal_user_max=1000,
+        tacacs_unused_account_days=180,
+        tacacs_internal_user_detail_max_requests=2,
+        tacacs_internal_user_detail_ttl=604800)
+    client = ManyUsers()
+
+    tacacs.collect_config(client, cfg)
+    assert client.detail_requests == ["u0", "u1"]
+    assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == pytest.approx(2 / 3)
+    assert metrics.ise_tacacs_internal_user_detail_refresh_deferred._value.get() == 1
+
+    tacacs.collect_config(client, cfg)
+    assert client.detail_requests == ["u0", "u1", "u2"]
+    assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 1
+    assert metrics.ise_tacacs_internal_user_detail_refresh_deferred._value.get() == 0
+
+
+def test_internal_user_detail_refresh_stops_after_three_failures(tmp_path):
+    class BrokenDetails(Client):
+        detail_requests = 0
+
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            if path == "/config/internaluser":
+                return [{"id": f"u{number}", "name": f"user-{number}"}
+                        for number in range(10)]
+            if path.startswith("/config/internaluser/"):
+                self.detail_requests += 1
+                return None
+            return super().get_ers(path, params, get_all, api_name)
+
+    cfg = types.SimpleNamespace(
+        state_db_path=str(tmp_path / "state.sqlite3"), tacacs_internal_user_max=1000,
+        tacacs_unused_account_days=180,
+        tacacs_internal_user_detail_max_requests=10,
+        tacacs_internal_user_detail_ttl=604800,
+        tacacs_internal_user_detail_request_interval_ms=0)
+    client = BrokenDetails()
+
+    tacacs.collect_config(client, cfg)
+
+    assert client.detail_requests == 3
+    assert metrics.ise_tacacs_internal_user_detail_refresh_requests._value.get() == 3
+    assert metrics.ise_tacacs_internal_user_detail_refresh_failures._value.get() == 3
+    assert metrics.ise_tacacs_internal_user_detail_refresh_deferred._value.get() == 7
 
 
 def test_valid_empty_tacacs_configuration_clears_stale_labels():

@@ -30,4 +30,17 @@ def test_upgrade_removes_obsolete_dataconnect_rollup_history(tmp_path):
     store.close()
 
     assert "dataconnect_rollup" not in tables
-    assert {"mnt_posture_cache", "exporter_state"} <= tables
+    assert {"mnt_posture_cache", "tacacs_internal_user_cache", "exporter_state"} <= tables
+
+
+def test_tacacs_user_cache_is_bounded_to_current_inventory(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.put_tacacs_user("u1", {"name": "one"}, now=10)
+    store.put_tacacs_user("u2", {"name": "two"}, now=10)
+    store.finish_tacacs_user_cycle(["u2"], now=20)
+
+    assert store.tacacs_user_entries(["u1", "u2"]) == {
+        "u2": {"detail": {"name": "two"}, "updated_at": 10.0},
+    }
+    assert store.tacacs_user_count() == 1
+    store.close()
