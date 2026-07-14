@@ -246,10 +246,12 @@ def test_every_domain_data_query_is_gated_by_its_authoritative_dataset():
     contracts = (
         (r"ise_dataconnect_radius_active_", "dataconnect_radius_active", "dataconnect"),
         (r"ise_dataconnect_radius_(?!active_)", "dataconnect_radius", "dataconnect"),
-        (r"ise_dataconnect_endpoint", "dataconnect_endpoints", "dataconnect"),
+        (r"ise_dataconnect_(?:endpoint|profile)",
+         "dataconnect_endpoints", "dataconnect"),
         (r"ise_dataconnect_posture_", "dataconnect_posture", "dataconnect"),
         (r"ise_dataconnect_(?:psn|node|diagnostic)",
          "dataconnect_performance", "dataconnect"),
+        (r"ise_dataconnect_view_", "dataconnect_freshness", "dataconnect"),
         (r"ise_mnt_active_", "mnt_active_posture", "mnt"),
         (r"ise_tacacs_(?:internal_user|policy_objects)", "tacacs_config", "rest"),
         (r"ise_tacacs_(?:account|events|dataconnect)",

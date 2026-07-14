@@ -52,8 +52,8 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(8.958333333333334)
-    assert statements_per_hour < 9
+    assert statements_per_hour == pytest.approx(8.375)
+    assert statements_per_hour < 8.5
 
 
 def test_radius_reporting_limits_raw_authentication_view_to_needed_dimensions():

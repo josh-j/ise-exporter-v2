@@ -274,7 +274,7 @@
       },
       "targets": [
         {
-          "expr": "topk(25, sum by (profile, source, action) (ise_dataconnect_profile_events))",
+          "expr": "topk(25, sum by (profile, source, action) (ise_dataconnect_profile_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{profile}} / {{source}} / {{action}}",
           "refId": "A",
           "datasource": {

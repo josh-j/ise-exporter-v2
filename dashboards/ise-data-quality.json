@@ -107,8 +107,8 @@
       "description": "Row presence and newest event inside each view's two-day window. Each source probe returns at most one row; exact counts and oldest-row scans are intentionally omitted to protect MnT.",
       "gridPos": {"h": 12, "w": 24, "x": 0, "y": 15},
       "targets": [
-        {"expr": "ise_dataconnect_view_has_rows", "format": "table", "instant": true, "refId": "Has rows", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "time() - (ise_dataconnect_view_newest_event_timestamp > 0)", "format": "table", "instant": true, "refId": "Newest event age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "ise_dataconnect_view_has_rows and on() (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)", "format": "table", "instant": true, "refId": "Has rows", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "(time() - (ise_dataconnect_view_newest_event_timestamp > 0)) and on() (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)", "format": "table", "instant": true, "refId": "Newest event age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
       "options": {"showHeader": true}

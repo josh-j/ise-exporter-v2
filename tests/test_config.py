@@ -112,7 +112,7 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["ISE_DATACONNECT_PERFORMANCE_INTERVAL"] == "3600"
     assert values["ISE_DATACONNECT_POSTURE_INTERVAL"] == "21600"
     assert values["ISE_DATACONNECT_ENDPOINTS_INTERVAL"] == "86400"
-    assert values["ISE_DATACONNECT_FRESHNESS_INTERVAL"] == "43200"
+    assert values["ISE_DATACONNECT_FRESHNESS_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_NAD_HEALTH_INTERVAL"] == "21600"
     assert values["ISE_DATACONNECT_TACACS_INTERVAL"] == "21600"
     assert values["ISE_DATACONNECT_SERVICE"] == "cpm10"
@@ -174,14 +174,14 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.dataconnect_min_query_interval_ms == 2000
     assert cfg.dataconnect_max_duty_cycle_percent == 0.5
     assert cfg.dataconnect_event_window_hours == 24
-    assert cfg.dataconnect_radius_interval == 21600
-    assert cfg.dataconnect_radius_active_interval == 900
-    assert cfg.dataconnect_performance_interval == 900
-    assert cfg.dataconnect_posture_interval == 1800
-    assert cfg.dataconnect_endpoints_interval == 21600
-    assert cfg.dataconnect_freshness_interval == 3600
-    assert cfg.dataconnect_nad_health_interval == 1800
-    assert cfg.dataconnect_tacacs_interval == 1800
+    assert cfg.dataconnect_radius_interval == 86400
+    assert cfg.dataconnect_radius_active_interval == 1800
+    assert cfg.dataconnect_performance_interval == 3600
+    assert cfg.dataconnect_posture_interval == 21600
+    assert cfg.dataconnect_endpoints_interval == 86400
+    assert cfg.dataconnect_freshness_interval == 86400
+    assert cfg.dataconnect_nad_health_interval == 21600
+    assert cfg.dataconnect_tacacs_interval == 21600
     assert cfg.mnt_active_posture_max_active_list_sessions == 250000
     assert cfg.tacacs_internal_user_max == 1000
     assert cfg.tacacs_internal_user_detail_max_requests == 250

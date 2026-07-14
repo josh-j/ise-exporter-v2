@@ -99,7 +99,7 @@ authentication view remains bounded and is used only for dimensions the summary
 does not expose: method, protocol, exact authorization policy, and status-specific
 latency. NAD activity health also uses a single per-device aggregation from the
 summary view, not an additional raw authentication scan.
-The steady-state scheduled workload is about 9 statements per hour after startup.
+The steady-state scheduled workload is about 8.4 statements per hour after startup.
 Daily RADIUS reporting scans 24 hours, while a disjoint active-session query
 scans only its configured stale window every 30 minutes. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
@@ -110,7 +110,9 @@ profiling. `ISE_DATACONNECT_EVENT_WINDOW_HOURS` is an absolute 24-hour-or-lower
 ceiling; setting it below a domain cadence is an explicit sampling tradeoff.
 TACACS also runs every six hours and applies an `EPOCH_TIME` lower bound to
 Cisco's two-day views before grouping, so the view's retention does not become
-the exporter's scan size.
+the exporter's scan size. The 14-view source-freshness diagnostic runs daily.
+Production cadence settings are minimum intervals: operators may collect less
+often, but environment overrides cannot restore the former aggressive schedule.
 The exporter and CLI also serialize through one persistent pacing gate so separate
 processes cannot bypass the cooldown. An empty pacing-path environment value is
 normalized back to the protected service-state path rather than disabling this

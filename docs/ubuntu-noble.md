@@ -120,6 +120,8 @@ hard maximum-pressure boundaries. Environment overrides may make collection more
 conservative, but the exporter and `ise-cli` clamp attempts to make it more
 aggressive. This applies even when the configured Data Connect host is a secondary
 MnT because an exposed reporting view may still consume cluster-wide resources.
+The documented 30-minute through daily domain cadences are also minimum intervals;
+the 14-view source-freshness diagnostic is intentionally daily.
 
 MnT ActiveList has no pagination. The collector first calls the small ActiveCount
 endpoint and refuses ActiveList above 10,000 sessions by default, marking the
