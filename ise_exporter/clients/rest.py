@@ -19,6 +19,11 @@ from ..metrics import ise_api_requests_total, ise_api_errors_total
 
 logger = logging.getLogger(__name__)
 
+# ISE ERS pages contain at most 100 resources in the runtime and CLI callers.
+# This ceiling still permits inventories twice the supported 100k endpoint scale,
+# while bounding a broken server that emits an endless chain of unique next links.
+ERS_MAX_PAGES = 2000
+
 
 def _strip_ns(tag):
     return tag.split("}", 1)[-1] if "}" in tag else tag
@@ -163,6 +168,12 @@ class ISERestClient:
                 api=api_name, error_type="parse", http_code=status).inc()
             return None
 
+    @staticmethod
+    def _ers_protocol_error(api_name, message, *args):
+        logger.warning(message, *args)
+        ise_api_errors_total.labels(
+            api=api_name, error_type="protocol", http_code="200").inc()
+
     # --- generic accessors used by collectors ---
     def get_ers(self, path, params=None, get_all=False, api_name="ers"):
         """ERS JSON GET. Returns the SearchResult.resources LIST (following
@@ -177,52 +188,73 @@ class ISERestClient:
         data = self._get_json(self.session, url, params, api_name=api_name)
         if data is None:
             return None
+        if not isinstance(data, dict):
+            self._ers_protocol_error(
+                api_name, "Malformed ERS response envelope for %s", url)
+            return None
         if "SearchResult" not in data:
             return data
 
         sr = data["SearchResult"]
         if not isinstance(sr, dict):
-            logger.warning("Malformed ERS SearchResult for %s", url)
+            self._ers_protocol_error(
+                api_name, "Malformed ERS SearchResult for %s", url)
             return None
         resources = sr.get("resources", [])
         if not isinstance(resources, list):
-            logger.warning("Malformed ERS resources for %s", url)
+            self._ers_protocol_error(api_name, "Malformed ERS resources for %s", url)
             return None
         resources = list(resources)
         expected_total = sr.get("total")
         visited = set()
+        pages = 1
         # follow nextPage.href iteratively — recursion would be one frame per page
         # and blow the stack on large result sets (tens of thousands of NADs)
         while get_all:
             next_page = sr.get("nextPage")
             if next_page is None:
                 break
+            if pages >= ERS_MAX_PAGES:
+                self._ers_protocol_error(
+                    api_name, "ERS pagination exceeded %d pages for %s",
+                    ERS_MAX_PAGES, url)
+                return None
             if not isinstance(next_page, dict):
-                logger.warning("Malformed ERS nextPage for %s", url)
+                self._ers_protocol_error(
+                    api_name, "Malformed ERS nextPage for %s", url)
                 return None
             href = next_page.get("href", "")
             if not isinstance(href, str) or "/ers" not in href or href in visited:
-                logger.warning("Invalid ERS nextPage href for %s: %r", url, href)
+                self._ers_protocol_error(
+                    api_name, "Invalid ERS nextPage href for %s: %r", url, href)
                 return None
             visited.add(href)
             page = self._get_json(self.session, f"{self.ers_url}{href.split('/ers', 1)[1]}",
                                   api_name=api_name)
+            if page is None:
+                return None
             if not isinstance(page, dict):
+                self._ers_protocol_error(
+                    api_name, "Malformed ERS pagination envelope for %s", href)
                 return None
             sr = page.get("SearchResult")
             if not isinstance(sr, dict) or not isinstance(sr.get("resources", []), list):
-                logger.warning("Malformed ERS pagination response for %s", href)
+                self._ers_protocol_error(
+                    api_name, "Malformed ERS pagination response for %s", href)
                 return None
             resources.extend(sr.get("resources", []))
+            pages += 1
         if get_all and expected_total is not None:
             try:
                 expected_total = int(expected_total)
             except (TypeError, ValueError):
-                logger.warning("Malformed ERS total for %s: %r", url, expected_total)
+                self._ers_protocol_error(
+                    api_name, "Malformed ERS total for %s: %r", url, expected_total)
                 return None
             if len(resources) != expected_total:
-                logger.warning("Incomplete ERS pagination for %s: got %d of %d rows",
-                               url, len(resources), expected_total)
+                self._ers_protocol_error(
+                    api_name, "Incomplete ERS pagination for %s: got %d of %d rows",
+                    url, len(resources), expected_total)
                 return None
         return resources
 
@@ -234,7 +266,22 @@ class ISERestClient:
         data = self._get_json(self.session, url, p, api_name=api_name)
         if data is None:
             return None
-        return data.get("SearchResult", {}).get("total")
+        if not isinstance(data, dict) or not isinstance(data.get("SearchResult"), dict):
+            self._ers_protocol_error(
+                api_name, "Malformed ERS total response for %s", url)
+            return None
+        total = data["SearchResult"].get("total")
+        try:
+            total = int(total)
+        except (TypeError, ValueError):
+            self._ers_protocol_error(
+                api_name, "Malformed ERS total for %s: %r", url, total)
+            return None
+        if total < 0:
+            self._ers_protocol_error(
+                api_name, "Negative ERS total for %s: %d", url, total)
+            return None
+        return total
 
     def get_pan_api(self, path, api_name="pan_api", unwrap=True, params=None):
         """PAN OpenAPI JSON GET. Unwraps the `response` envelope by default; pass

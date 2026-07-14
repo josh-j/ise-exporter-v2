@@ -7,6 +7,7 @@ import warnings
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
+import ise_exporter.clients.rest as rest_module
 from ise_exporter.clients.rest import (
     ISEControlPlaneClient,
     ISEOperatorClient,
@@ -204,6 +205,54 @@ def test_get_ers_rejects_missing_pages_when_total_is_larger():
     }}
 
     assert c.get_ers("/config/internaluser", get_all=True) is None
+
+
+def test_get_ers_bounds_unique_next_page_chain_and_reports_protocol_error(monkeypatch):
+    monkeypatch.setattr(rest_module, "ERS_MAX_PAGES", 2)
+    c = ISERestClient.__new__(ISERestClient)
+    c.ers_url = "https://h:9060/ers"
+    c.session = None
+    calls = 0
+
+    def fake_json(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return {"SearchResult": {
+            "resources": [{"id": str(calls)}],
+            "nextPage": {"href": f"https://h:9060/ers/config/endpoint?page={calls + 1}"},
+        }}
+
+    c._get_json = fake_json
+    counter = ise_api_errors_total.labels(
+        api="ers_endpoint", error_type="protocol", http_code="200")
+    before = counter._value.get()
+
+    assert c.get_ers(
+        "/config/endpoint", get_all=True, api_name="ers_endpoint") is None
+    assert calls == 2
+    assert counter._value.get() == before + 1
+
+
+def test_get_ers_total_rejects_malformed_envelope_without_raising():
+    c = ISERestClient.__new__(ISERestClient)
+    c.ers_url = "https://h:9060/ers"
+    c.session = None
+    c._get_json = lambda *_args, **_kwargs: []
+    counter = ise_api_errors_total.labels(
+        api="ers_total", error_type="protocol", http_code="200")
+    before = counter._value.get()
+
+    assert c.get_ers_total("/config/endpoint", api_name="ers_total") is None
+    assert counter._value.get() == before + 1
+
+
+def test_get_ers_total_returns_a_nonnegative_integer():
+    c = ISERestClient.__new__(ISERestClient)
+    c.ers_url = "https://h:9060/ers"
+    c.session = None
+    c._get_json = lambda *_args, **_kwargs: {"SearchResult": {"total": "100000"}}
+
+    assert c.get_ers_total("/config/endpoint") == 100000
 
 
 def test_401s_trip_auth_backoff_before_more_requests():

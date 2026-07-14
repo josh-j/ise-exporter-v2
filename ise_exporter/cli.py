@@ -29,7 +29,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .clients.dataconnect import DataConnectClient
-from .clients.rest import ISEOperatorClient
+from .clients.rest import ERS_MAX_PAGES, ISEOperatorClient
 from .collectors.dataconnect_common import recent_event_predicate
 from .config import Config
 from .dataconnect_schema import metadata_rows, schema_by_table, table_columns
@@ -630,6 +630,10 @@ def _ers_rows(client, path, *, limit=100, all_rows=False, filters=()):
     rows = []
     page = 1
     while all_rows or len(rows) < limit:
+        if page > ERS_MAX_PAGES:
+            raise CLIError(
+                f"ERS inventory exceeded the production safety ceiling of "
+                f"{ERS_MAX_PAGES * 100:,} rows")
         size = 100 if all_rows else min(100, limit - len(rows))
         params = {"size": size, "page": page}
         if filters:

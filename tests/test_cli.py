@@ -236,6 +236,20 @@ def test_endpoints_are_bounded_and_paginated(capsys):
     assert [call[2]["size"] for call in calls] == [100, 25]
 
 
+def test_all_ers_inventory_stops_at_production_page_ceiling(monkeypatch):
+    monkeypatch.setattr(cli, "ERS_MAX_PAGES", 2)
+
+    class EndlessClient(FakeClient):
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            self.calls.append(("ers", path, params, get_all, api_name))
+            return [{"id": f"row-{index}"} for index in range(100)]
+
+    client = EndlessClient()
+    with pytest.raises(cli.CLIError, match="production safety ceiling of 200 rows"):
+        cli._ers_rows(client, "/config/endpoint", all_rows=True)
+    assert len(client.calls) == 2
+
+
 @pytest.mark.parametrize("pattern", ("LAB-*", "*-WIN", "*LAPTOP*", "LAB-001"))
 def test_endpoint_name_search_requires_dataconnect_on_ise_33(pattern):
     client = FakeClient()
