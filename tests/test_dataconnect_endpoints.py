@@ -28,7 +28,7 @@ class DataConnect:
         if "as stale_30" in lowered:
             return [{"endpoints": 80000, "hostname": 72000, "ip": 64000,
                      "custom_attributes": 40000, "portal_user": 20000,
-                     "mdm": 16000, "udid": 8000,
+                     "mdm": 16000, "udid": 8000, "unknown_profile": 50,
                      "stale_30": 12000, "stale_90": 7000, "stale_180": 3000}]
         if "count(*) as endpoints from endpoints_data" in lowered:
             return [{"endpoints": 80000}]
@@ -50,6 +50,7 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     dataconnect_endpoints.collect(client, types.SimpleNamespace(dataconnect_max_groups=50))
 
     assert metrics.ise_dataconnect_endpoints_total._value.get() == 80000
+    assert metrics.ise_dataconnect_endpoints_unknown_profile_total._value.get() == 50
     assert _rows(metrics.ise_dataconnect_endpoints_by_profile, "profile") == {
         ("Windows10-Workstation",): 40000}
     assert _rows(metrics.ise_dataconnect_endpoints_by_identity_group,
@@ -77,4 +78,5 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     assert "FETCH FIRST 50" in profile_sql
     coverage_sql = next(sql for sql in client.sql if "AS stale_180" in sql)
     assert "NUMTODSINTERVAL(180, 'DAY')" in coverage_sql
+    assert "AS unknown_profile" in coverage_sql
     assert len(client.sql) == 6

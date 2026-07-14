@@ -6,6 +6,7 @@ from .dataconnect_common import group_limit, integer, label, replace_snapshot
 
 _METRICS = (
     metrics.ise_dataconnect_endpoints_total,
+    metrics.ise_dataconnect_endpoints_unknown_profile_total,
     metrics.ise_dataconnect_endpoint_field_populated,
     metrics.ise_dataconnect_endpoint_field_coverage_ratio,
     metrics.ise_dataconnect_endpoints_stale,
@@ -33,6 +34,10 @@ def _queries(limit):
                        AS portal_user,
                    SUM(CASE WHEN TRIM(mdm_guid) IS NOT NULL THEN 1 ELSE 0 END) AS mdm,
                    SUM(CASE WHEN TRIM(native_udid) IS NOT NULL THEN 1 ELSE 0 END) AS udid,
+                   SUM(CASE WHEN TRIM(endpoint_policy) IS NULL
+                                  OR LOWER(TRIM(endpoint_policy)) IN
+                                      ('unknown', 'none', 'missing')
+                            THEN 1 ELSE 0 END) AS unknown_profile,
                    SUM(CASE WHEN update_time < SYSTIMESTAMP - NUMTODSINTERVAL(30, 'DAY')
                             OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_30,
                    SUM(CASE WHEN update_time < SYSTIMESTAMP - NUMTODSINTERVAL(90, 'DAY')
@@ -110,6 +115,8 @@ def collect(dataconnect, cfg):
         writers = []
         writers.extend((
             lambda: metrics.ise_dataconnect_endpoints_total.set(total),
+            lambda: metrics.ise_dataconnect_endpoints_unknown_profile_total.set(
+                integer(coverage.get("unknown_profile"))),
             lambda: metrics.ise_dataconnect_profiled_endpoint_group_memberships_total.set(
                 profiling_memberships),
         ))

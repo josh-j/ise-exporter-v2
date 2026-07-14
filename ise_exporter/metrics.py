@@ -317,6 +317,9 @@ ise_dataconnect_posture_topk_truncated = Gauge(
 
 ise_dataconnect_endpoints_total = Gauge(
     "ise_dataconnect_endpoints_total", "Current endpoints exposed by Data Connect")
+ise_dataconnect_endpoints_unknown_profile_total = Gauge(
+    "ise_dataconnect_endpoints_unknown_profile_total",
+    "Exact current endpoint count with a missing or unknown endpoint policy")
 ise_dataconnect_endpoint_field_populated = Gauge(
     "ise_dataconnect_endpoint_field_populated",
     "Current endpoints with a populated operational inventory field", ["field"])

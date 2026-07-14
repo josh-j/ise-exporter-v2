@@ -129,7 +129,7 @@
       "title": "Unknown Endpoint Profiles",
       "description": "Current endpoints whose profile is missing or unknown.",
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 27},
-      "targets": [{"expr": "(sum(ise_dataconnect_endpoints_by_profile{profile=~\"(?i:unknown|none|missing)\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_dataconnect_endpoints_unknown_profile_total and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {}, "overrides": []}
     },
     {

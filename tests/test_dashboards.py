@@ -375,6 +375,15 @@ def test_data_quality_domain_panels_do_not_publish_stale_values_during_outages()
             assert "== 1" in expression, (panel_id, expression)
 
 
+def test_unknown_endpoint_profile_stat_uses_exact_inventory_total():
+    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 8)
+    expression = panel["targets"][0]["expr"]
+
+    assert "ise_dataconnect_endpoints_unknown_profile_total" in expression
+    assert "ise_dataconnect_endpoints_by_profile" not in expression
+
+
 def test_psn_diagnostic_headline_uses_exact_total_not_topk_breakdown():
     dashboard = json.loads((DASHBOARDS / "ise-psn-troubleshooting.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 4)
