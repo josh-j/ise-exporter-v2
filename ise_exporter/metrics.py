@@ -228,6 +228,10 @@ ise_dataconnect_radius_accounting_events = Gauge(
 ise_dataconnect_radius_accounting_events_total = Gauge(
     "ise_dataconnect_radius_accounting_events_total",
     "Exact RADIUS accounting event count in the Data Connect reporting window")
+ise_dataconnect_radius_accounting_event_type_total = Gauge(
+    "ise_dataconnect_radius_accounting_event_type_total",
+    "Exact RADIUS accounting event count for normalized start and stop event classes",
+    ["event_type"])
 ise_dataconnect_radius_accounting_session_seconds = Gauge(
     "ise_dataconnect_radius_accounting_session_seconds",
     "RADIUS accounting session-time aggregate from Data Connect",

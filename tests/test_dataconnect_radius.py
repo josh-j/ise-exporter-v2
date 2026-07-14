@@ -59,7 +59,8 @@ class DataConnect:
         if "grouped_accounting" in lowered:
             return [{"acct_status_type": "Start", "device_name": "nad-1",
                      "authorization_policy": "Employee", "ise_node": "psn-1",
-                     "events": 4, "total_events": 200, "total_groups": 2}]
+                     "events": 4, "total_events": 200, "start_events": 120,
+                     "stop_events": 80, "total_groups": 2}]
         if "grouped_sessions" in lowered:
             return [{"device_name": "nad-1", "ise_node": "psn-1",
                      "avg_session_seconds": 60, "max_session_seconds": 300,
@@ -117,6 +118,8 @@ def test_collects_bounded_aggregated_radius_metrics():
                  "failure_class", "policy_set", "location") == {
         ("credentials", "Wired", "Campus"): 9}
     assert metrics.ise_dataconnect_radius_accounting_events_total._value.get() == 200
+    assert _rows(metrics.ise_dataconnect_radius_accounting_event_type_total,
+                 "event_type") == {("start",): 120, ("stop",): 80}
     assert metrics.ise_dataconnect_radius_active_sessions_total._value.get() == 37
     assert metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds._value.get() == 3600
     assert metrics.ise_dataconnect_radius_errors_total._value.get() == 12
@@ -192,6 +195,8 @@ def test_incremental_rollups_survive_restart_and_scan_only_new_window(tmp_path, 
     assert metrics.ise_dataconnect_incremental_window_seconds.labels(
         domain="radius")._value.get() == 300
     assert metrics.ise_dataconnect_radius_authentication_events_total._value.get() == 214
+    assert _rows(metrics.ise_dataconnect_radius_accounting_event_type_total,
+                 "event_type") == {("start",): 240, ("stop",): 160}
     assert _rows(metrics.ise_dataconnect_radius_authentication_events,
                  "authentication_method", "nad") == {
         ("MSCHAPv2", "nad-1"): 14, ("EAP-TLS", "nad-1"): 6}

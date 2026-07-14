@@ -178,7 +178,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_dataconnect_radius_accounting_events{event_type=~\"(?i).*start.*\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(ise_dataconnect_radius_accounting_event_type_total{event_type=\"start\"} and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -200,7 +200,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_dataconnect_radius_accounting_events{event_type=~\"(?i).*stop.*\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(ise_dataconnect_radius_accounting_event_type_total{event_type=\"stop\"} and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {

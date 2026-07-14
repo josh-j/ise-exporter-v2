@@ -25,6 +25,7 @@ _METRICS = (
     metrics.ise_dataconnect_radius_response_time_samples,
     metrics.ise_dataconnect_radius_accounting_events,
     metrics.ise_dataconnect_radius_accounting_events_total,
+    metrics.ise_dataconnect_radius_accounting_event_type_total,
     metrics.ise_dataconnect_radius_accounting_session_seconds,
     metrics.ise_dataconnect_radius_active_sessions,
     metrics.ise_dataconnect_radius_active_sessions_total,
@@ -146,6 +147,10 @@ def _queries(limit, stale_minutes=60):
         "accounting": f"""
             SELECT grouped_accounting.*,
                    SUM(events) OVER () AS total_events,
+                   SUM(CASE WHEN LOWER(NVL(acct_status_type, '')) LIKE '%start%'
+                            THEN events ELSE 0 END) OVER () AS start_events,
+                   SUM(CASE WHEN LOWER(NVL(acct_status_type, '')) LIKE '%stop%'
+                            THEN events ELSE 0 END) OVER () AS stop_events,
                    COUNT(*) OVER () AS total_groups
             FROM (
                 SELECT acct_status_type, device_name, authorization_policy, ise_node,
@@ -242,11 +247,16 @@ def _merge_rollups(snapshots, limit):
         groups = {}
         total_events = 0
         total_groups = 0
+        accounting_start_events = 0
+        accounting_stop_events = 0
         for snapshot in snapshots.get(dataset, []):
             rows = snapshot["rows"]
             if rows:
                 total_events += integer(rows[0].get("total_events"))
                 total_groups = max(total_groups, integer(rows[0].get("total_groups")))
+                if dataset == "accounting":
+                    accounting_start_events += integer(rows[0].get("start_events"))
+                    accounting_stop_events += integer(rows[0].get("stop_events"))
             for row in rows:
                 key = tuple(str(row.get(name) or "") for name in _GROUP_KEYS[dataset])
                 if key not in groups:
@@ -288,6 +298,9 @@ def _merge_rollups(snapshots, limit):
         for row in values:
             if dataset in ("authentication", "failure_context", "accounting", "errors"):
                 row["total_events"] = total_events
+            if dataset == "accounting":
+                row["start_events"] = accounting_start_events
+                row["stop_events"] = accounting_stop_events
             row["total_groups"] = total_groups
         merged[dataset] = values
     return merged
@@ -484,6 +497,12 @@ def collect(dataconnect, cfg):
                 integer(summaries["failure_context"].get("total_events"))),
             lambda: metrics.ise_dataconnect_radius_accounting_events_total.set(
                 integer(summaries["accounting"].get("total_events"))),
+            lambda: metrics.ise_dataconnect_radius_accounting_event_type_total.labels(
+                event_type="start").set(
+                    integer(summaries["accounting"].get("start_events"))),
+            lambda: metrics.ise_dataconnect_radius_accounting_event_type_total.labels(
+                event_type="stop").set(
+                    integer(summaries["accounting"].get("stop_events"))),
             lambda: metrics.ise_dataconnect_radius_active_sessions_total.set(
                 integer(summaries["active_sessions"].get("total_sessions"))),
             lambda: metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds.set(

@@ -65,6 +65,8 @@ def test_radius_headline_stats_use_exact_totals_not_topk_breakdowns():
         "ise-sessions-auth.json": {
             2: ("ise_dataconnect_radius_authentication_events_total",),
             3: ("ise_dataconnect_radius_active_sessions_total",),
+            4: ("ise_dataconnect_radius_accounting_event_type_total",),
+            12: ("ise_dataconnect_radius_accounting_event_type_total",),
         },
     }
 
@@ -78,6 +80,8 @@ def test_radius_headline_stats_use_exact_totals_not_topk_breakdowns():
             assert "sum(ise_dataconnect_radius_authentication_events" not in expression
             if "ise_dataconnect_radius_active_sessions_total" in exact_metrics:
                 assert "sum(ise_dataconnect_radius_active_sessions)" not in expression
+            if "ise_dataconnect_radius_accounting_event_type_total" in exact_metrics:
+                assert "sum(ise_dataconnect_radius_accounting_events" not in expression
 
     for name in ("ise-auth-troubleshooting.json", "ise-failure-triage.json"):
         text = (DASHBOARDS / name).read_text()
