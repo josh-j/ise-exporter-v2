@@ -35,54 +35,46 @@ class DataConnect:
         lowered = sql.lower()
         if "count(distinct calling_station_id)" in lowered:
             return [{"distinct_endpoints": 81, "distinct_users": 54}]
-        if "as failure_class" in lowered:
+        if "grouped_failure" in lowered:
             return [{"failure_class": "credentials", "policy_set_name": "Wired",
-                     "location": "Campus", "events": 9}]
-        if "sum(events)" in lowered and "failure_reason" in lowered:
-            return [{"total_events": 11, "total_groups": 2}]
-        if "sum(events)" in lowered and "radius_authentications" in lowered:
-            return [{"total_events": 107, "total_groups": 30}]
-        if "count(*) as total_groups" in lowered and "response_time is not null" in lowered:
-            return [{"total_groups": 1}]
-        if "count(response_time)" in lowered:
+                     "location": "Campus", "events": 9,
+                     "total_events": 11, "total_groups": 2}]
+        if "grouped_latency" in lowered:
             return [{"status": "failed", "device_name": "nad-1", "ise_node": "psn-1",
-                     "samples": 4, "avg_response_ms": 200, "max_response_ms": 900}]
-        if "from radius_authentications" in lowered:
+                     "samples": 4, "avg_response_ms": 200, "max_response_ms": 900,
+                     "total_groups": 1}]
+        if "grouped_auth" in lowered:
             return [
                 {"status": "failed", "authentication_method": "MSCHAPv2",
                  "authentication_protocol": "PEAP", "device_name": "nad-1",
-                 "policy_set_name": "Wired", "ise_node": "psn-1", "events": 7},
+                 "policy_set_name": "Wired", "ise_node": "psn-1", "events": 7,
+                 "total_events": 107, "total_groups": 30},
                 {"status": "failed", "authentication_method": "EAP-TLS",
                  "authentication_protocol": "EAP-TLS", "device_name": "nad-1",
-                 "policy_set_name": "Wired", "ise_node": "psn-1", "events": 3},
+                 "policy_set_name": "Wired", "ise_node": "psn-1", "events": 3,
+                 "total_events": 107, "total_groups": 30},
             ]
-        if "sum(events)" in lowered and "radius_accounting" in lowered:
-            return [{"total_events": 200, "total_groups": 2}]
-        if "group by acct_status_type" in lowered:
+        if "grouped_accounting" in lowered:
             return [{"acct_status_type": "Start", "device_name": "nad-1",
                      "authorization_policy": "Employee", "ise_node": "psn-1",
-                     "events": 4}]
-        if "count(*) as total_groups" in lowered and "acct_session_time" in lowered:
-            return [{"total_groups": 1}]
-        if "avg(acct_session_time" in lowered:
+                     "events": 4, "total_events": 200, "total_groups": 2}]
+        if "grouped_sessions" in lowered:
             return [{"device_name": "nad-1", "ise_node": "psn-1",
-                     "avg_session_seconds": 60, "max_session_seconds": 300}]
-        if "count(*) as total_sessions" in lowered:
-            return [{"total_sessions": 37, "total_groups": 1}]
-        if "active_accounting" in lowered:
-            return [{"device_name": "nad-1", "ise_node": "psn-1", "sessions": 12}]
-        if "sum(events)" in lowered and "radius_errors_view" in lowered:
-            return [{"total_events": 12, "total_groups": 3}]
+                     "avg_session_seconds": 60, "max_session_seconds": 300,
+                     "total_groups": 1}]
+        if "grouped_active" in lowered:
+            return [{"device_name": "nad-1", "ise_node": "psn-1", "sessions": 12,
+                     "total_sessions": 37, "total_groups": 1}]
         return [{"message_code": "5440", "network_device_name": "nad-1",
                  "authentication_method": "MSCHAPv2", "ise_node": "psn-1",
-                 "events": 3}]
+                 "events": 3, "total_events": 12, "total_groups": 3}]
 
 
 def test_collects_bounded_aggregated_radius_metrics():
     client = DataConnect()
     dataconnect_radius.collect(client, types.SimpleNamespace(dataconnect_max_groups=25))
 
-    assert len(client.sql) == 15
+    assert len(client.sql) == 8
     assert all("INTERVAL '2' DAY" in sql for sql in client.sql)
     assert sum("FETCH FIRST 25" in sql for sql in client.sql) == 7
     assert _rows(metrics.ise_dataconnect_radius_authentication_events,

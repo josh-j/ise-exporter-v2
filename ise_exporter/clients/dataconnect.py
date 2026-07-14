@@ -10,6 +10,37 @@ import time
 
 import oracledb
 
+from .. import metrics
+
+
+_QUERY_VIEWS = (
+    "tacacs_authentication_last_two_days",
+    "tacacs_authorization_last_two_days",
+    "tacacs_accounting_last_two_days",
+    "posture_assessment_by_condition",
+    "posture_assessment_by_endpoint",
+    "profiled_endpoints_summary",
+    "radius_authentications",
+    "radius_accounting",
+    "radius_errors_view",
+    "key_performance_metrics",
+    "system_diagnostics_view",
+    "aaa_diagnostics_view",
+    "system_summary",
+    "endpoints_data",
+)
+
+
+def _query_view(sql):
+    """Return a bounded metric label; never put arbitrary SQL into Prometheus."""
+    normalized = str(sql or "").lower()
+    for view in _QUERY_VIEWS:
+        if view in normalized:
+            return view
+    if "user_tab_columns" in normalized:
+        return "schema_metadata"
+    return "other"
+
 
 def _materialize(value):
     """Convert Oracle LOB/binary values into deterministic CLI-safe data."""
@@ -38,9 +69,15 @@ class DataConnectClient:
         self.timeout = max(1, cfg.dataconnect_query_timeout)
         self.failure_threshold = max(1, getattr(cfg, "auth_failure_threshold", 3))
         self.failure_backoff = max(0, getattr(cfg, "auth_failure_backoff", 900))
+        self.min_query_interval = max(
+            0.1, getattr(cfg, "dataconnect_min_query_interval_ms", 250) / 1000.0)
+        self.max_duty_cycle = max(1, min(10, getattr(
+            cfg, "dataconnect_max_duty_cycle_percent", 5)))
         self._connection = None
         self._connect_failures = 0
         self._blocked_until = 0.0
+        self._next_query_at = 0.0
+        metrics.ise_dataconnect_query_pacing_seconds.set(self.min_query_interval)
 
     def _ssl_context(self):
         if not self.verify:
@@ -72,12 +109,21 @@ class DataConnectClient:
         return self._connection
 
     def query(self, sql, parameters=None):
+        remaining = self._next_query_at - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
+        started = time.monotonic()
+        view = _query_view(sql)
+        result = "error"
         try:
             with self.connect().cursor() as cursor:
                 cursor.execute(sql, parameters or {})
                 columns = [column.name.lower() for column in cursor.description]
-                return [dict(zip(columns, (_materialize(value) for value in row)))
+                rows = [dict(zip(columns, (_materialize(value) for value in row)))
                         for row in cursor.fetchall()]
+                result = "success"
+                metrics.ise_dataconnect_query_rows.labels(view=view).set(len(rows))
+                return rows
         except Exception:
             # A shared Thin connection can become unusable after an MnT restart or
             # network interruption. Drop it so the next scheduled domain can
@@ -87,6 +133,16 @@ class DataConnectClient:
             except Exception:
                 pass
             raise
+        finally:
+            finished = time.monotonic()
+            duration = max(0.0, finished - started)
+            metrics.ise_dataconnect_queries_total.labels(view=view, result=result).inc()
+            metrics.ise_dataconnect_query_duration_seconds.labels(
+                view=view, result=result).observe(duration)
+            duty_cycle_cooldown = duration * (100 / self.max_duty_cycle - 1)
+            cooldown = max(self.min_query_interval, duty_cycle_cooldown)
+            metrics.ise_dataconnect_query_cooldown_seconds.labels(view=view).set(cooldown)
+            self._next_query_at = finished + cooldown
 
     def close(self):
         if self._connection is not None:

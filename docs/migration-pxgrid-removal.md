@@ -77,7 +77,7 @@ pxGrid; it does not.
 - [x] Deduplicate active endpoint MACs and cap detail requests independently of
   total endpoint inventory.
 - [x] Export detail coverage, source-field coverage, candidate count, and
-  truncation so an 80,000-endpoint deployment can interpret the bounded sample.
+  truncation so a 100,000-endpoint deployment can interpret the bounded sample.
 - [x] Exclude MAC, username, session ID, raw posture report, and free-form text
   from Prometheus labels.
 - [x] Keep MnT CLI calls operator initiated and separate from scheduler state.

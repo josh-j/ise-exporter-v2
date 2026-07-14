@@ -41,25 +41,21 @@ def _queries(limit):
                             OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_180
             FROM endpoints_data
         """,
-        "profiles_summary": """
-            SELECT COUNT(*) AS total_groups FROM (
-                SELECT 1 FROM endpoints_data GROUP BY endpoint_policy
-            )
-        """,
         "profiles": f"""
-            SELECT endpoint_policy, COUNT(*) AS endpoints
-            FROM endpoints_data GROUP BY endpoint_policy
+            SELECT grouped_profiles.*, COUNT(*) OVER () AS total_groups
+            FROM (
+                SELECT endpoint_policy, COUNT(*) AS endpoints
+                FROM endpoints_data GROUP BY endpoint_policy
+            ) grouped_profiles
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
         "groups": f"""
-            SELECT identity_group_id, COUNT(*) AS endpoints
-            FROM endpoints_data GROUP BY identity_group_id
+            SELECT grouped_identity.*, COUNT(*) OVER () AS total_groups
+            FROM (
+                SELECT identity_group_id, COUNT(*) AS endpoints
+                FROM endpoints_data GROUP BY identity_group_id
+            ) grouped_identity
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
-        """,
-        "groups_summary": """
-            SELECT COUNT(*) AS total_groups FROM (
-                SELECT 1 FROM endpoints_data GROUP BY identity_group_id
-            )
         """,
         "posture": """
             SELECT CASE WHEN NVL(posture_applicable, 0) = 1 THEN 'yes' ELSE 'no' END AS applicable,
@@ -68,22 +64,17 @@ def _queries(limit):
             GROUP BY CASE WHEN NVL(posture_applicable, 0) = 1 THEN 'yes' ELSE 'no' END
         """,
         "profiling": f"""
-            SELECT endpoint_profile, source, endpoint_action_name, identity_group,
-                   COUNT(DISTINCT endpoint_id) AS endpoints
-            FROM profiled_endpoints_summary
-            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
-            GROUP BY endpoint_profile, source, endpoint_action_name, identity_group
-            ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
-        """,
-        "profiling_summary": """
-            SELECT NVL(SUM(endpoints), 0) AS total_memberships,
-                   COUNT(*) AS total_groups
+            SELECT grouped_profiling.*,
+                   SUM(endpoints) OVER () AS total_memberships,
+                   COUNT(*) OVER () AS total_groups
             FROM (
-                SELECT COUNT(DISTINCT endpoint_id) AS endpoints
+                SELECT endpoint_profile, source, endpoint_action_name, identity_group,
+                       COUNT(DISTINCT endpoint_id) AS endpoints
                 FROM profiled_endpoints_summary
                 WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
                 GROUP BY endpoint_profile, source, endpoint_action_name, identity_group
-            )
+            ) grouped_profiling
+            ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
     }
 
@@ -95,11 +86,11 @@ def collect(dataconnect, cfg):
                 for name, sql in _queries(group_limit(cfg)).items()}
         total = integer(rows["total"][0].get("endpoints")) if rows["total"] else 0
         coverage = rows["coverage"][0] if rows["coverage"] else {}
-        profile_groups = integer(rows["profiles_summary"][0].get("total_groups")) \
-            if rows["profiles_summary"] else 0
-        identity_groups = integer(rows["groups_summary"][0].get("total_groups")) \
-            if rows["groups_summary"] else 0
-        profiling_summary = rows["profiling_summary"][0] if rows["profiling_summary"] else {}
+        profile_summary = rows["profiles"][0] if rows["profiles"] else {}
+        group_summary = rows["groups"][0] if rows["groups"] else {}
+        profiling_summary = rows["profiling"][0] if rows["profiling"] else {}
+        profile_groups = integer(profile_summary.get("total_groups"))
+        identity_groups = integer(group_summary.get("total_groups"))
         profiling_groups = integer(profiling_summary.get("total_groups"))
         profiling_memberships = integer(profiling_summary.get("total_memberships"))
         profiles = [(label(row.get("endpoint_policy"), "Unknown"),

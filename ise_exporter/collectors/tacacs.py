@@ -82,59 +82,55 @@ _COMMAND_FAMILY_SQL = """CASE
     ELSE 'other' END"""
 
 
-def _collect_dataconnect(dataconnect, cfg):
-    limit = max(1, int(getattr(cfg, "dataconnect_max_groups", 5000)))
-    queries = {
-        "authentication_summary": f"""
-            SELECT NVL(SUM(hits), 0) AS total_events, COUNT(*) AS total_groups FROM (
-                SELECT COUNT(*) AS hits
+def _activity_queries(limit):
+    return {
+        "authentication": f"""
+            SELECT grouped_auth.*,
+                   SUM(hits) OVER () AS total_events,
+                   COUNT(*) OVER () AS total_groups
+            FROM (
+                SELECT username, status, device_name, authentication_policy,
+                       identity_store, {_FAILURE_CLASS_SQL} AS failure_class,
+                       COUNT(*) AS hits, MAX(epoch_time) AS last_seen
                 FROM tacacs_authentication_last_two_days
                 GROUP BY username, status, device_name, authentication_policy,
                          identity_store, {_FAILURE_CLASS_SQL}
-            )
-        """,
-        "authentication": f"""
-            SELECT username, status, device_name, authentication_policy,
-                   identity_store, {_FAILURE_CLASS_SQL} AS failure_class, COUNT(*) AS hits,
-                   MAX(epoch_time) AS last_seen
-            FROM tacacs_authentication_last_two_days
-            GROUP BY username, status, device_name, authentication_policy,
-                     identity_store, {_FAILURE_CLASS_SQL}
+            ) grouped_auth
             ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "authorization_summary": """
-            SELECT NVL(SUM(hits), 0) AS total_events, COUNT(*) AS total_groups FROM (
-                SELECT COUNT(*) AS hits
+        "authorization": f"""
+            SELECT grouped_authorization.*,
+                   SUM(hits) OVER () AS total_events,
+                   COUNT(*) OVER () AS total_groups
+            FROM (
+                SELECT username, status, device_name, authorization_policy,
+                       shell_profile, matched_command_set,
+                       COUNT(*) AS hits, MAX(epoch_time) AS last_seen
                 FROM tacacs_authorization_last_two_days
                 GROUP BY username, status, device_name, authorization_policy,
                          shell_profile, matched_command_set
-            )
-        """,
-        "authorization": f"""
-            SELECT username, status, device_name, authorization_policy,
-                   shell_profile, matched_command_set,
-                   COUNT(*) AS hits, MAX(epoch_time) AS last_seen
-            FROM tacacs_authorization_last_two_days
-            GROUP BY username, status, device_name, authorization_policy,
-                     shell_profile, matched_command_set
+            ) grouped_authorization
             ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "accounting_summary": f"""
-            SELECT NVL(SUM(hits), 0) AS total_events, COUNT(*) AS total_groups FROM (
-                SELECT COUNT(*) AS hits
+        "accounting": f"""
+            SELECT grouped_accounting.*,
+                   SUM(hits) OVER () AS total_events,
+                   COUNT(*) OVER () AS total_groups
+            FROM (
+                SELECT username, status, device_name,
+                       {_COMMAND_FAMILY_SQL} AS command_family,
+                       COUNT(*) AS hits, MAX(epoch_time) AS last_seen
                 FROM tacacs_accounting_last_two_days
                 GROUP BY username, status, device_name, {_COMMAND_FAMILY_SQL}
-            )
-        """,
-        "accounting": f"""
-            SELECT username, status, device_name,
-                   {_COMMAND_FAMILY_SQL} AS command_family,
-                   COUNT(*) AS hits, MAX(epoch_time) AS last_seen
-            FROM tacacs_accounting_last_two_days
-            GROUP BY username, status, device_name, {_COMMAND_FAMILY_SQL}
+            ) grouped_accounting
             ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
         """,
     }
+
+
+def _collect_dataconnect(dataconnect, cfg):
+    limit = max(1, min(2000, int(getattr(cfg, "dataconnect_max_groups", 2000))))
+    queries = _activity_queries(limit)
     rows = {kind: dataconnect.query(sql) for kind, sql in queries.items()}
 
     def publish():
@@ -184,8 +180,7 @@ def _collect_dataconnect(dataconnect, cfg):
                 username=username, event_type=event_type).set(timestamp)
 
         for event_type in ("authentication", "authorization", "accounting"):
-            summary_rows = rows[f"{event_type}_summary"]
-            summary = summary_rows[0] if summary_rows else {}
+            summary = rows[event_type][0] if rows[event_type] else {}
             total_events = int(summary.get("total_events") or 0)
             total_groups = int(summary.get("total_groups") or 0)
             returned = len(rows[event_type])

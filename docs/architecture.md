@@ -82,6 +82,27 @@ event history, and capped by `ISE_DATACONNECT_MAX_GROUPS`. Endpoint identities,
 session IDs, raw posture reports, and free-form failure text must not become
 unbounded Prometheus labels.
 
+Data Connect safety applies to the whole ISE deployment. Connecting to a
+secondary MnT does not imply that every exposed view is executed only on that
+node. Production defaults for up to 100,000 endpoints use one sequential
+connection, 250ms statement pacing, a 5% adaptive query-duty-cycle ceiling,
+15-second statement timeouts, and independent five-minute to six-hour domain
+cadences. Summary and top-group results share one Oracle aggregation wherever
+possible so completeness telemetry does not require a duplicate two-day scan.
+The default scheduled workload ceiling is 187 statements per hour after startup,
+excluding explicit operator CLI queries. The former shared-tier design issued
+1,437 statements per hour, so the 100k profile removes 87% of scheduled query
+invocations before the global duty-cycle cooldown is considered.
+The Data Quality dashboard exposes per-view statement rate, p95 duration, rows
+returned, configured/effective cadence, pacing, and adaptive backoff. Before a
+100,000-endpoint rollout, capture an ISE AWR report as a baseline and repeat it
+under representative load. If exporter statements appear among the highest-cost
+queries, increase the affected per-domain interval; do not add exporter replicas.
+Cisco's [ISE 3.3 Data Connect guidance](https://www.cisco.com/c/en/us/td/docs/security/ise/3-3/admin_guide/b_ise_admin_3_3/b_ISE_admin_33_basic_setup.html#Cisco_Concept.dita_b2bd25d1-ae61-4e7d-87ab-b580531a3033)
+recommends enabling Data Connect only when reports are required and identifies an
+AWR report in an ISE support bundle as the way to find the five queries consuming
+the most time and resources.
+
 ### Bounded MnT active-session plane
 
 MnT XML owns only a current, bounded active-session dataset:
@@ -94,9 +115,9 @@ MnT XML owns only a current, bounded active-session dataset:
 The collector deduplicates active MACs and fetches no more than
 `MNT_ACTIVE_POSTURE_MAX_SESSIONS` endpoint details per
 `MNT_ACTIVE_POSTURE_INTERVAL`, using at most `MNT_ACTIVE_POSTURE_WORKERS` workers.
-The production defaults are 1,000 details, five minutes, and eight workers. This
+The production defaults are 1,000 details, 15 minutes, and four workers. This
 fills the ISE 3.3 Patch 11 current-posture gap without an unbounded fan-out across
-an 80,000-endpoint inventory. Coverage, candidate count, selected count, and a
+a 100,000-endpoint inventory. Coverage, candidate count, selected count, and a
 truncation flag qualify every sample.
 
 MnT metrics never contain MAC addresses, usernames, session IDs, raw

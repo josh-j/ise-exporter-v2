@@ -406,3 +406,26 @@ ise_collector_duration_seconds = Gauge("ise_collector_duration_seconds", "Per-co
 ise_last_successful_scrape = Gauge("ise_last_successful_scrape_timestamp", "Last success ts", ["collector"])
 ise_consecutive_failures = Gauge("ise_consecutive_failures", "Consecutive failures", ["collector"])
 ise_collector_enabled = Gauge("ise_collector_enabled", "Collector enabled", ["collector"])
+ise_dataconnect_queries_total = Counter(
+    "ise_dataconnect_queries_total",
+    "Data Connect statements by fixed reporting view and result", ["view", "result"])
+ise_dataconnect_query_duration_seconds = Histogram(
+    "ise_dataconnect_query_duration_seconds",
+    "Data Connect statement duration by fixed reporting view and result",
+    ["view", "result"], buckets=[0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30])
+ise_dataconnect_query_rows = Gauge(
+    "ise_dataconnect_query_rows",
+    "Rows returned by the latest Data Connect statement for a fixed reporting view",
+    ["view"])
+ise_dataconnect_query_pacing_seconds = Gauge(
+    "ise_dataconnect_query_pacing_seconds",
+    "Configured minimum idle time between Data Connect statements")
+ise_dataconnect_query_cooldown_seconds = Gauge(
+    "ise_dataconnect_query_cooldown_seconds",
+    "Latest global duty-cycle cooldown after a Data Connect statement", ["view"])
+ise_dataset_effective_interval_seconds = Gauge(
+    "ise_dataset_effective_interval_seconds",
+    "Effective cadence after Data Connect duty-cycle protection", ["dataset", "source"])
+ise_dataconnect_load_backoff_seconds = Gauge(
+    "ise_dataconnect_load_backoff_seconds",
+    "Additional cadence imposed by Data Connect duty-cycle protection", ["dataset"])

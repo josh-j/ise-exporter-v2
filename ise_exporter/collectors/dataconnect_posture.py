@@ -61,13 +61,14 @@ def _queries(limit):
             LEFT JOIN latest_posture p ON p.endpoint_mac_address = e.mac_address
             WHERE NVL(e.posture_applicable, 0) = 1
         """,
-        "endpoints_summary": latest + f"""
-            SELECT NVL(SUM(endpoints), 0) AS total_endpoints,
-                   NVL(SUM(CASE WHEN status_key IN ('compliant', 'passed')
-                                THEN endpoints ELSE 0 END), 0) AS compliant_endpoints,
-                   NVL(SUM(CASE WHEN status_key IN ('noncompliant', 'failed', 'error')
-                                THEN endpoints ELSE 0 END), 0) AS failed_endpoints,
-                   COUNT(*) AS total_groups
+        "endpoints": latest + f"""
+            SELECT grouped_posture.*,
+                   SUM(endpoints) OVER () AS total_endpoints,
+                   SUM(CASE WHEN status_key IN ('compliant', 'passed')
+                            THEN endpoints ELSE 0 END) OVER () AS compliant_endpoints,
+                   SUM(CASE WHEN status_key IN ('noncompliant', 'failed', 'error')
+                            THEN endpoints ELSE 0 END) OVER () AS failed_endpoints,
+                   COUNT(*) OVER () AS total_groups
             FROM (
                 SELECT {_STATUS_KEY} AS status_key, posture_status,
                        endpoint_operating_system, posture_agent_version,
@@ -75,49 +76,30 @@ def _queries(limit):
                 FROM latest_posture
                 GROUP BY {_STATUS_KEY}, posture_status, endpoint_operating_system,
                          posture_agent_version, posture_policy_matched, ise_node
-            )
-        """,
-        "endpoints": latest + f"""
-            SELECT posture_status, endpoint_operating_system, posture_agent_version,
-                   posture_policy_matched, ise_node, COUNT(*) AS endpoints
-            FROM latest_posture
-            GROUP BY posture_status, endpoint_operating_system, posture_agent_version,
-                     posture_policy_matched, ise_node
+            ) grouped_posture
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "conditions_summary": """
-            SELECT COUNT(*) AS total_groups
+        "conditions": f"""
+            SELECT grouped_conditions.*, COUNT(*) OVER () AS total_groups
             FROM (
-                SELECT 1
+                SELECT policy, policy_status, condition_name, condition_status,
+                       enforcement_name, COUNT(DISTINCT endpoint_id) AS endpoints
                 FROM posture_assessment_by_condition
                 WHERE logged_at >= SYSTIMESTAMP - INTERVAL '2' DAY
                 GROUP BY policy, policy_status, condition_name, condition_status,
                          enforcement_name
-            )
-        """,
-        "conditions": f"""
-            SELECT policy, policy_status, condition_name, condition_status,
-                   enforcement_name, COUNT(DISTINCT endpoint_id) AS endpoints
-            FROM posture_assessment_by_condition
-            WHERE logged_at >= SYSTIMESTAMP - INTERVAL '2' DAY
-            GROUP BY policy, policy_status, condition_name, condition_status,
-                     enforcement_name
+            ) grouped_conditions
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "failures_summary": latest + f"""
-            SELECT COUNT(*) AS total_groups
+        "failures": latest + f"""
+            SELECT grouped_failures.*, COUNT(*) OVER () AS total_groups
             FROM (
-                SELECT 1 FROM latest_posture
+                SELECT message_code, posture_status, posture_policy_matched, ise_node,
+                       COUNT(*) AS endpoints
+                FROM latest_posture
                 WHERE {_STATUS_KEY} IN ('noncompliant', 'failed', 'error')
                 GROUP BY message_code, posture_status, posture_policy_matched, ise_node
-            )
-        """,
-        "failures": latest + f"""
-            SELECT message_code, posture_status, posture_policy_matched, ise_node,
-                   COUNT(*) AS endpoints
-            FROM latest_posture
-            WHERE {_STATUS_KEY} IN ('noncompliant', 'failed', 'error')
-            GROUP BY message_code, posture_status, posture_policy_matched, ise_node
+            ) grouped_failures
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
     }
@@ -128,8 +110,7 @@ def collect(dataconnect, cfg):
     with observe("dataconnect_posture"):
         rows = {name: dataconnect.query(sql)
                 for name, sql in _queries(group_limit(cfg)).items()}
-        summaries = {name: (values[0] if values else {}) for name, values in rows.items()
-                     if name.endswith("_summary")}
+        summaries = {name: (values[0] if values else {}) for name, values in rows.items()}
         endpoints = [{
             "status": label(row.get("posture_status"), "NotApplicable"),
             "os": label(row.get("endpoint_operating_system"), "Unknown"),
@@ -173,9 +154,9 @@ def collect(dataconnect, cfg):
                 policy=row["policy"], psn=row["psn"]).set(row["count"])
             for row in failures
         )
-        total = integer(summaries["endpoints_summary"].get("total_endpoints"))
-        compliant = integer(summaries["endpoints_summary"].get("compliant_endpoints"))
-        failed = integer(summaries["endpoints_summary"].get("failed_endpoints"))
+        total = integer(summaries["endpoints"].get("total_endpoints"))
+        compliant = integer(summaries["endpoints"].get("compliant_endpoints"))
+        failed = integer(summaries["endpoints"].get("failed_endpoints"))
         coverage = rows["coverage"][0] if rows["coverage"] else {}
         eligible = integer(coverage.get("eligible_endpoints"))
         eligible_assessed = integer(coverage.get("recently_assessed"))
@@ -195,9 +176,9 @@ def collect(dataconnect, cfg):
                 compliant / (compliant + failed) if compliant + failed else 0),
         ))
         breakdowns = {
-            "endpoints": (len(endpoints), summaries["endpoints_summary"]),
-            "conditions": (len(conditions), summaries["conditions_summary"]),
-            "failures": (len(failures), summaries["failures_summary"]),
+            "endpoints": (len(endpoints), summaries["endpoints"]),
+            "conditions": (len(conditions), summaries["conditions"]),
+            "failures": (len(failures), summaries["failures"]),
         }
         for breakdown, (returned, summary) in breakdowns.items():
             group_total = integer(summary.get("total_groups"))

@@ -3,6 +3,7 @@ import types
 import pytest
 
 from ise_exporter.clients import dataconnect
+from ise_exporter import metrics
 
 
 class Cursor:
@@ -59,6 +60,38 @@ def test_query_uses_tcps_and_returns_lowercase_mappings(monkeypatch):
 
     client.close()
     assert connection.closed is True
+
+
+def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
+    connection = Connection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    clock = iter((0.0, 0.0, 0.0, 0.1, 0.2, 0.35, 0.4))
+    monkeypatch.setattr(dataconnect.time, "monotonic", lambda: next(clock))
+    sleeps = []
+    monkeypatch.setattr(dataconnect.time, "sleep", sleeps.append)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_min_query_interval_ms=250,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    counter = metrics.ise_dataconnect_queries_total.labels(
+        view="radius_authentications", result="success")
+    before = counter._value.get()
+
+    client.query("SELECT username FROM radius_authentications")
+    client.query("SELECT username FROM radius_authentications")
+
+    assert sleeps == [pytest.approx(1.8)]
+    assert counter._value.get() == before + 2
+    assert metrics.ise_dataconnect_query_rows.labels(
+        view="radius_authentications")._value.get() == 1
+    assert metrics.ise_dataconnect_query_cooldown_seconds.labels(
+        view="radius_authentications")._value.get() == pytest.approx(0.95)
+    assert dataconnect._query_view("SELECT * FROM arbitrary_table") == "other"
 
 
 def test_connection_backoff_protects_dataconnect_account(monkeypatch):

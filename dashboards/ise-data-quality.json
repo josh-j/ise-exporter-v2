@@ -256,6 +256,73 @@
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 49},
       "targets": [{"expr": "ise_mnt_active_posture_field_coverage_ratio", "legendFormat": "{{field}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []}
+    },
+    {
+      "id": 22,
+      "type": "row",
+      "title": "Data Connect Load Safety",
+      "description": "Deployment-wide query pacing, runtime, result size, and adaptive duty-cycle protection.",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 57}
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Data Connect Statements per Minute",
+      "description": "Fixed reporting-view labels only; arbitrary SQL is never exported.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 58},
+      "targets": [{"expr": "60 * sum by (view, result) (rate(ise_dataconnect_queries_total[5m]))", "legendFormat": "{{view}} / {{result}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "qpm"}, "overrides": []}
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Data Connect Query p95 Duration",
+      "description": "Statement latency by reporting view; compare with the 15-second hard timeout.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 58},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, view) (rate(ise_dataconnect_query_duration_seconds_bucket{result=\"success\"}[15m])))", "legendFormat": "{{view}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 25,
+      "type": "table",
+      "title": "Configured vs Effective Data Connect Cadence",
+      "description": "Effective cadence grows automatically when query time would exceed the configured duty-cycle ceiling.",
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 66},
+      "targets": [
+        {"expr": "ise_dataset_interval_seconds{source=\"dataconnect\"}", "format": "table", "instant": true, "refId": "Configured", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_dataset_effective_interval_seconds{source=\"dataconnect\"}", "format": "table", "instant": true, "refId": "Effective", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_dataconnect_load_backoff_seconds", "format": "table", "instant": true, "refId": "Added backoff", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"showHeader": true}
+    },
+    {
+      "id": 26,
+      "type": "bargauge",
+      "title": "Latest Data Connect Rows Returned",
+      "description": "Client-side result size by fixed reporting view; grouped result caps protect exporter memory and metric cardinality.",
+      "gridPos": {"h": 9, "w": 9, "x": 12, "y": 66},
+      "targets": [{"expr": "ise_dataconnect_query_rows", "legendFormat": "{{view}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {}, "overrides": []}
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Statement Pacing",
+      "description": "Minimum idle time inserted between sequential Data Connect statements.",
+      "gridPos": {"h": 9, "w": 3, "x": 21, "y": 66},
+      "targets": [{"expr": "ise_dataconnect_query_pacing_seconds", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 28,
+      "type": "bargauge",
+      "title": "Latest Global Query Cooldown",
+      "description": "Quiet time imposed after each view query to keep aggregate Data Connect database duty cycle within the configured ceiling.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 75},
+      "targets": [{"expr": "ise_dataconnect_query_cooldown_seconds", "legendFormat": "{{view}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
     }
   ],
   "templating": {

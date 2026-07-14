@@ -31,33 +31,30 @@ class DataConnect:
         if "eligible_endpoints" in lowered:
             return [{"eligible_endpoints": 10, "recently_assessed": 8,
                      "without_recent_assessment": 2}]
-        if "total_endpoints" in lowered:
-            return [{"total_endpoints": 12, "compliant_endpoints": 8,
-                     "failed_endpoints": 2, "total_groups": 3}]
-        if "count(*) as total_groups" in lowered and "posture_assessment_by_condition" in lowered:
-            return [{"total_groups": 4}]
-        if "count(*) as total_groups" in lowered and "latest_posture" in lowered:
-            return [{"total_groups": 2}]
-        if "condition_name" in lowered:
+        if "grouped_conditions" in lowered:
             return [{"policy": "Firewall", "policy_status": "Failed",
                      "condition_name": "Firewall enabled", "condition_status": "Failed",
-                     "enforcement_name": "Optional", "endpoints": 2}]
-        if "in ('noncompliant', 'failed', 'error')" in lowered:
+                     "enforcement_name": "Optional", "endpoints": 2,
+                     "total_groups": 4}]
+        if "grouped_failures" in lowered:
             return [{"message_code": "8701", "posture_status": "NonCompliant",
                      "posture_policy_matched": "Firewall", "ise_node": "psn-1",
-                     "endpoints": 2}]
+                     "endpoints": 2, "total_groups": 2}]
         return [
             {"posture_status": "Compliant", "endpoint_operating_system": "Windows",
              "posture_agent_version": "5.1.18.314",
              "posture_policy_matched": "Corporate posture", "ise_node": "psn-1",
-             "endpoints": 8},
+             "endpoints": 8, "total_endpoints": 12, "compliant_endpoints": 8,
+             "failed_endpoints": 2, "total_groups": 3},
             {"posture_status": "NonCompliant", "endpoint_operating_system": "Windows",
              "posture_agent_version": "5.1.18.314",
              "posture_policy_matched": "Corporate posture", "ise_node": "psn-1",
-             "endpoints": 2},
+             "endpoints": 2, "total_endpoints": 12, "compliant_endpoints": 8,
+             "failed_endpoints": 2, "total_groups": 3},
             {"posture_status": "NotApplicable", "endpoint_operating_system": "Linux",
              "posture_agent_version": None, "posture_policy_matched": None,
-             "ise_node": "psn-1", "endpoints": 2},
+             "ise_node": "psn-1", "endpoints": 2, "total_endpoints": 12,
+             "compliant_endpoints": 8, "failed_endpoints": 2, "total_groups": 3},
         ]
 
 

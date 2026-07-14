@@ -32,21 +32,17 @@ class DataConnect:
                      "stale_30": 12000, "stale_90": 7000, "stale_180": 3000}]
         if "count(*) as endpoints from endpoints_data" in lowered:
             return [{"endpoints": 80000}]
-        if "total_groups" in lowered and "group by endpoint_policy" in lowered:
-            return [{"total_groups": 51}]
-        if "total_groups" in lowered and "group by identity_group_id" in lowered:
-            return [{"total_groups": 12}]
-        if "total_memberships" in lowered:
-            return [{"total_memberships": 81000, "total_groups": 75}]
-        if "group by endpoint_policy" in lowered:
-            return [{"endpoint_policy": "Windows10-Workstation", "endpoints": 40000}]
-        if "group by identity_group_id" in lowered:
-            return [{"identity_group_id": "group-1", "endpoints": 50000}]
+        if "grouped_profiles" in lowered:
+            return [{"endpoint_policy": "Windows10-Workstation", "endpoints": 40000,
+                     "total_groups": 51}]
+        if "grouped_identity" in lowered:
+            return [{"identity_group_id": "group-1", "endpoints": 50000,
+                     "total_groups": 12}]
         if "posture_applicable" in lowered:
             return [{"applicable": "yes", "endpoints": 60000}]
         return [{"endpoint_profile": "Windows10-Workstation", "source": "RADIUS Probe",
                  "endpoint_action_name": "Profiled", "identity_group": "Workstations",
-                 "endpoints": 1000}]
+                 "endpoints": 1000, "total_memberships": 81000, "total_groups": 75}]
 
 
 def test_collects_current_inventory_and_bounded_profile_activity():
@@ -81,3 +77,4 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     assert "FETCH FIRST 50" in profile_sql
     coverage_sql = next(sql for sql in client.sql if "AS stale_180" in sql)
     assert "NUMTODSINTERVAL(180, 'DAY')" in coverage_sql
+    assert len(client.sql) == 6

@@ -97,22 +97,61 @@ def test_rest_and_mnt_tls_are_verified_by_default_with_independent_overrides(mon
     assert cfg.mnt_ca_bundle == "/ca/mnt.pem"
 
 
-def test_env_example_is_parseable_ise33_80k_production_profile():
+def test_env_example_is_parseable_ise33_100k_production_profile():
     path = Path(__file__).parents[1] / ".env.example"
     values = dotenv_values(path, interpolate=False)
 
-    assert values["MAX_WORKERS"] == "12"
-    assert values["ISE_DATACONNECT_MAX_GROUPS"] == "5000"
+    assert values["MAX_WORKERS"] == "8"
+    assert values["ISE_DATACONNECT_MAX_GROUPS"] == "2000"
+    assert values["ISE_DATACONNECT_QUERY_TIMEOUT"] == "15"
+    assert values["ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS"] == "250"
+    assert values["ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT"] == "5"
+    assert values["ISE_DATACONNECT_RADIUS_INTERVAL"] == "300"
+    assert values["ISE_DATACONNECT_POSTURE_INTERVAL"] == "900"
+    assert values["ISE_DATACONNECT_ENDPOINTS_INTERVAL"] == "21600"
+    assert values["ISE_DATACONNECT_FRESHNESS_INTERVAL"] == "3600"
     assert values["ISE_DATACONNECT_SERVICE"] == "cpm10"
     assert values["ISE_DATACONNECT_SSL_VERIFY"] == "true"
     assert values["ISE_REST_SSL_VERIFY"] == "true"
     assert values["ISE_MNT_SSL_VERIFY"] == "true"
     assert values["COLLECT_MNT_ACTIVE_POSTURE"] == "true"
-    assert values["MNT_ACTIVE_POSTURE_INTERVAL"] == "300"
+    assert values["MNT_ACTIVE_POSTURE_INTERVAL"] == "900"
     assert values["MNT_ACTIVE_POSTURE_MAX_SESSIONS"] == "1000"
-    assert values["MNT_ACTIVE_POSTURE_WORKERS"] == "8"
+    assert values["MNT_ACTIVE_POSTURE_WORKERS"] == "4"
     # systemd EnvironmentFile= does not support trailing inline comments; keeping
     # comments on their own lines prevents them becoming part of numeric/boolean values.
     assignments = [line for line in path.read_text().splitlines()
                    if line.strip() and not line.lstrip().startswith("#")]
     assert all(" #" not in line for line in assignments)
+
+
+def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
+    unsafe = {
+        "ISE_DATACONNECT_QUERY_TIMEOUT": "999",
+        "ISE_DATACONNECT_MAX_GROUPS": "999999",
+        "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS": "0",
+        "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT": "99",
+        "ISE_DATACONNECT_RADIUS_INTERVAL": "1",
+        "ISE_DATACONNECT_PERFORMANCE_INTERVAL": "1",
+        "ISE_DATACONNECT_POSTURE_INTERVAL": "1",
+        "ISE_DATACONNECT_ENDPOINTS_INTERVAL": "1",
+        "ISE_DATACONNECT_FRESHNESS_INTERVAL": "1",
+        "ISE_DATACONNECT_NAD_HEALTH_INTERVAL": "1",
+        "ISE_DATACONNECT_TACACS_INTERVAL": "1",
+    }
+    for name, value in unsafe.items():
+        monkeypatch.setenv(name, value)
+
+    cfg = Config.from_env()
+
+    assert cfg.dataconnect_query_timeout == 15
+    assert cfg.dataconnect_max_groups == 2000
+    assert cfg.dataconnect_min_query_interval_ms == 100
+    assert cfg.dataconnect_max_duty_cycle_percent == 10
+    assert cfg.dataconnect_radius_interval == 300
+    assert cfg.dataconnect_performance_interval == 300
+    assert cfg.dataconnect_posture_interval == 900
+    assert cfg.dataconnect_endpoints_interval == 21600
+    assert cfg.dataconnect_freshness_interval == 3600
+    assert cfg.dataconnect_nad_health_interval == 900
+    assert cfg.dataconnect_tacacs_interval == 900

@@ -26,6 +26,19 @@ def _i(v, d):
         return d
 
 
+def _bounded_i(v, d, minimum=None, maximum=None):
+    value = _i(v, d)
+    bounded = value
+    if minimum is not None:
+        bounded = max(minimum, bounded)
+    if maximum is not None:
+        bounded = min(maximum, bounded)
+    if bounded != value:
+        logger.warning("%s=%s is outside the production-safe range — using %s",
+                       v, value, bounded)
+    return bounded
+
+
 def _b(v, d):
     raw = _s(v, None)
     if raw is None:
@@ -82,8 +95,20 @@ class Config:
     dataconnect_password: str = ""
     dataconnect_ca_bundle: str = ""
     dataconnect_ssl_verify: bool = True
-    dataconnect_query_timeout: int = 30
-    dataconnect_max_groups: int = 5000
+    # Production-safe guardrails for deployments up to 100k endpoints. Data
+    # Connect can route work across ISE personas, so these limits protect the
+    # deployment rather than assuming the secondary MnT absorbs every query.
+    dataconnect_query_timeout: int = 15
+    dataconnect_max_groups: int = 2000
+    dataconnect_min_query_interval_ms: int = 250
+    dataconnect_max_duty_cycle_percent: int = 5
+    dataconnect_radius_interval: int = 300
+    dataconnect_performance_interval: int = 300
+    dataconnect_posture_interval: int = 900
+    dataconnect_endpoints_interval: int = 21600
+    dataconnect_freshness_interval: int = 3600
+    dataconnect_nad_health_interval: int = 900
+    dataconnect_tacacs_interval: int = 900
     @property
     def dataconnect_ready(self) -> bool:
         return bool(self.dataconnect_host and self.dataconnect_user
@@ -136,6 +161,26 @@ class Config:
             dataconnect_password=_s("ISE_DATACONNECT_PASSWORD"),
             dataconnect_ca_bundle=_s("ISE_DATACONNECT_CA_BUNDLE"),
             dataconnect_ssl_verify=_b("ISE_DATACONNECT_SSL_VERIFY", True),
-            dataconnect_query_timeout=_i("ISE_DATACONNECT_QUERY_TIMEOUT", 30),
-            dataconnect_max_groups=_i("ISE_DATACONNECT_MAX_GROUPS", 5000),
+            dataconnect_query_timeout=_bounded_i(
+                "ISE_DATACONNECT_QUERY_TIMEOUT", 15, 5, 15),
+            dataconnect_max_groups=_bounded_i(
+                "ISE_DATACONNECT_MAX_GROUPS", 2000, 1, 2000),
+            dataconnect_min_query_interval_ms=_bounded_i(
+                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 250, 100),
+            dataconnect_max_duty_cycle_percent=_bounded_i(
+                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 5, 1, 10),
+            dataconnect_radius_interval=_bounded_i(
+                "ISE_DATACONNECT_RADIUS_INTERVAL", 300, 300),
+            dataconnect_performance_interval=_bounded_i(
+                "ISE_DATACONNECT_PERFORMANCE_INTERVAL", 300, 300),
+            dataconnect_posture_interval=_bounded_i(
+                "ISE_DATACONNECT_POSTURE_INTERVAL", 900, 900),
+            dataconnect_endpoints_interval=_bounded_i(
+                "ISE_DATACONNECT_ENDPOINTS_INTERVAL", 21600, 21600),
+            dataconnect_freshness_interval=_bounded_i(
+                "ISE_DATACONNECT_FRESHNESS_INTERVAL", 3600, 3600),
+            dataconnect_nad_health_interval=_bounded_i(
+                "ISE_DATACONNECT_NAD_HEALTH_INTERVAL", 900, 900),
+            dataconnect_tacacs_interval=_bounded_i(
+                "ISE_DATACONNECT_TACACS_INTERVAL", 900, 900),
         )

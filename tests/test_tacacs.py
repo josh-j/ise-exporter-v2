@@ -144,29 +144,26 @@ def test_collects_dataconnect_account_attribution():
         closed = False
 
         def query(self, sql):
-            if "SUM(hits)" in sql:
-                if "tacacs_authentication" in sql:
-                    return [{"total_events": 20, "total_groups": 4}]
-                if "tacacs_authorization" in sql:
-                    return [{"total_events": 30, "total_groups": 5}]
-                return [{"total_events": 40, "total_groups": 6}]
             if "tacacs_authentication" in sql:
                 return [{
                     "username": "netadmin", "status": "Fail", "device_name": "switch-1",
                     "authentication_policy": "Default >> Default",
                     "identity_store": "Internal Users", "failure_class": "credentials",
-                    "hits": 2, "last_seen": 100,
+                    "hits": 2, "last_seen": 100, "total_events": 20,
+                    "total_groups": 4,
                 }]
             if "tacacs_authorization" in sql:
                 return [{
                     "username": "netadmin", "status": "Pass", "device_name": "switch-1",
                     "authorization_policy": "Admins", "shell_profile": "Privilege 15",
                     "matched_command_set": "PermitAll", "command_from_device": "show run",
-                    "hits": 3, "last_seen": 110,
+                    "hits": 3, "last_seen": 110, "total_events": 30,
+                    "total_groups": 5,
                 }]
             return [{
                 "username": "netadmin", "status": "Pass", "device_name": "switch-1",
                 "command_family": "show", "hits": 4, "last_seen": 120,
+                "total_events": 40, "total_groups": 6,
             }]
 
         def close(self):

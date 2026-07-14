@@ -95,9 +95,9 @@ ISE_MNT_HOST=mnt1.example.mil
 ISE_MNT_SSL_VERIFY=true
 ISE_MNT_CA_BUNDLE=/etc/ise-exporter/certs/ise-mnt-ca.pem
 COLLECT_MNT_ACTIVE_POSTURE=true
-MNT_ACTIVE_POSTURE_INTERVAL=300
+MNT_ACTIVE_POSTURE_INTERVAL=900
 MNT_ACTIVE_POSTURE_MAX_SESSIONS=1000
-MNT_ACTIVE_POSTURE_WORKERS=8
+MNT_ACTIVE_POSTURE_WORKERS=4
 ISE_DATACONNECT_HOST=mnt1.example.mil
 ISE_DATACONNECT_PORT=2484
 ISE_DATACONNECT_SERVICE=cpm10
@@ -108,8 +108,9 @@ ISE_DATACONNECT_SSL_VERIFY=true
 ```
 
 At the production defaults, the MnT collector deduplicates ActiveList MACs and
-requests details for at most 1,000 currently active endpoints every five minutes
-with eight workers. This bound is independent of the 80,000-endpoint inventory.
+requests details for at most 1,000 currently active endpoints every 15 minutes
+with four workers. This bound is independent of the
+100,000-endpoint inventory.
 The resulting metrics are current aggregate samples with coverage/truncation
 signals; they never expose endpoint identity, session identity, or raw/free-form
 attributes as Prometheus labels. Data Connect remains the historical posture and

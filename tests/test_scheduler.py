@@ -103,7 +103,7 @@ def test_next_deadline_skips_missed_ticks_instead_of_replaying_them():
     assert _next_deadline(60, 119, 60) == 120
 
 
-def test_failed_attempt_is_observable_and_retries_at_scrape_cadence(monkeypatch):
+def test_failed_dataconnect_attempt_never_retries_faster_than_five_minutes(monkeypatch):
     now = [105.0]
     monkeypatch.setattr(scheduler_module.time, "time", lambda: now[0])
     scheduler = PollScheduler(_cfg(), object(), object())
@@ -119,15 +119,15 @@ def test_failed_attempt_is_observable_and_retries_at_scrape_cadence(monkeypatch)
     assert len(attempts) == 1
     assert "dataconnect_radius" not in scheduler.last_run
     assert scheduler.last_attempt["dataconnect_radius"] == 100.0
-    assert scheduler.next_run["dataconnect_radius"] == 165.0
+    assert scheduler.next_run["dataconnect_radius"] == 405.0
     assert collectors.outcome("dataconnect_radius") is False
     assert metrics.ise_dataset_up.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 0
 
-    scheduler._run("dataconnect_radius", 164.0, 60, fail)
+    scheduler._run("dataconnect_radius", 404.0, 60, fail)
     assert len(attempts) == 1
-    now[0] = 170.0
-    scheduler._run("dataconnect_radius", 165.0, 60, fail)
+    now[0] = 410.0
+    scheduler._run("dataconnect_radius", 405.0, 60, fail)
     assert len(attempts) == 2
 
 
@@ -144,6 +144,26 @@ def test_success_schedules_from_completion_and_does_not_catch_up(monkeypatch):
     assert scheduler.last_run["dataconnect_radius"] == 400.0
     assert scheduler.next_run["dataconnect_radius"] == 460.0
     assert scheduler.last_success["dataconnect_radius"] == 400.0
+
+
+def test_slow_dataconnect_collection_gets_duty_cycle_backoff(monkeypatch):
+    monotonic = iter((0.0, 20.0))
+    monkeypatch.setattr(scheduler_module.time, "monotonic", lambda: next(monotonic))
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: 100.0)
+    scheduler = PollScheduler(
+        _cfg(dataconnect_max_duty_cycle_percent=5), object(), object())
+
+    def succeed():
+        with collectors.observe("dataconnect_radius"):
+            pass
+
+    scheduler._run("dataconnect_radius", 100.0, 300, succeed)
+
+    assert scheduler.next_run["dataconnect_radius"] == 500.0
+    assert metrics.ise_dataset_effective_interval_seconds.labels(
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 400
+    assert metrics.ise_dataconnect_load_backoff_seconds.labels(
+        dataset="dataconnect_radius")._value.get() == 100
 
 
 def test_repeated_failures_use_slow_backoff(monkeypatch):
@@ -169,7 +189,7 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     assert metrics.ise_collector_enabled.labels(collector="certificates")._value.get() == 0
     assert metrics.ise_dataset_up.labels(dataset="certificates", source="rest")._value.get() == 0
     assert metrics.ise_dataset_interval_seconds.labels(
-        dataset="dataconnect_radius", source="dataconnect")._value.get() == 60
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 300
     assert metrics.ise_dataset_enabled.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     assert metrics.ise_dataset_enabled.labels(
@@ -177,9 +197,9 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     assert metrics.ise_collector_enabled.labels(collector="pxgrid_streaming")._value.get() == 0
 
     scheduler.last_success["dataconnect_radius"] = 100.0
-    scheduler._update_freshness(219.0)
+    scheduler._update_freshness(699.0)
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
-    scheduler._update_freshness(221.0)
+    scheduler._update_freshness(701.0)
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 0

@@ -117,7 +117,7 @@ before use with ERS or MnT.
 
 Inventory commands return at most 100 rows by default. Use `--limit N` for a larger
 bounded query or `--all` to explicitly enumerate the complete inventory. On an
-80,000-endpoint deployment, prefer bounded queries and server-side filters during
+100,000-endpoint deployment, prefer bounded queries and server-side filters during
 interactive work.
 
 ### Friendly endpoint searches

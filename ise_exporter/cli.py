@@ -2,7 +2,7 @@
 
 The command surface intentionally exposes GET operations only. Inventory commands
 are bounded by default so an exploratory query cannot accidentally enumerate an
-80k-endpoint deployment; callers must opt into ``--all`` explicitly.
+100k-endpoint deployment; callers must opt into ``--all`` explicitly.
 """
 from __future__ import annotations
 

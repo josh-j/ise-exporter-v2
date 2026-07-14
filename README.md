@@ -53,18 +53,19 @@ ISE_DATACONNECT_PASSWORD=use-a-secret-store
 ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer
 
 COLLECT_MNT_ACTIVE_POSTURE=true
-MNT_ACTIVE_POSTURE_INTERVAL=300
+MNT_ACTIVE_POSTURE_INTERVAL=900
 MNT_ACTIVE_POSTURE_MAX_SESSIONS=1000
-MNT_ACTIVE_POSTURE_WORKERS=8
+MNT_ACTIVE_POSTURE_WORKERS=4
 ```
 
 Values are parsed literally after the first `=`; `${NAME}` and additional `=`
 characters in passwords are preserved. Inline comments on integer values are
-not supported. The sample is production-oriented for roughly 80,000 endpoints:
-database-side aggregation, bounded result groups, 60-second fast reporting,
-five-minute posture/config reporting, and hourly inventory/slow state. The MnT
-bound means an 80,000-endpoint deployment performs at most 1,000 active endpoint
-detail requests per five-minute cycle, rather than a deployment-wide fan-out.
+not supported. The sample is production-oriented for up to 100,000 endpoints:
+database-side aggregation, collapsed summary/top-group scans, paced sequential
+queries, five-minute RADIUS/performance reporting, 15-minute posture/TACACS
+reporting, hourly source-freshness checks, and six-hour inventory state. The MnT
+bound means a 100,000-endpoint deployment performs at most 1,000 active endpoint
+detail requests per 15-minute cycle, rather than a deployment-wide fan-out.
 
 Before starting the service, verify the reporting connection:
 

@@ -23,7 +23,7 @@ def integer(value):
 
 
 def group_limit(cfg):
-    return max(1, min(10000, int(getattr(cfg, "dataconnect_max_groups", 5000))))
+    return max(1, min(2000, int(getattr(cfg, "dataconnect_max_groups", 2000))))
 
 
 def epoch(value):
