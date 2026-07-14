@@ -1,7 +1,14 @@
 """Posture and Secure Client reporting from Cisco ISE Data Connect."""
 from .. import metrics
 from . import observe
-from .dataconnect_common import group_limit, integer, label, replace_snapshot
+from .dataconnect_common import (
+    event_window_hours,
+    group_limit,
+    integer,
+    label,
+    recent_event_predicate,
+    replace_snapshot,
+)
 
 
 _METRICS = (
@@ -32,8 +39,9 @@ def _normalized_mac(column):
             "'-', ''), '.', ''))")
 
 
-def _latest_posture_cte():
+def _latest_posture_cte(window_hours=6):
     posture_mac = _normalized_mac("endpoint_mac_address")
+    posture_recent = recent_event_predicate("timestamp", window_hours)
     return f"""
         WITH ranked_posture AS (
             SELECT p.*,
@@ -48,15 +56,16 @@ def _latest_posture_cte():
                        ORDER BY timestamp DESC, id DESC
                    ) AS row_num
             FROM posture_assessment_by_endpoint p
-            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+            WHERE {posture_recent}
         ), latest_posture AS (
             SELECT * FROM ranked_posture WHERE row_num = 1
         )
     """
 
 
-def _queries(limit):
-    latest = _latest_posture_cte()
+def _queries(limit, window_hours=6):
+    latest = _latest_posture_cte(window_hours)
+    condition_recent = recent_event_predicate("logged_at", window_hours)
     posture_mac = _normalized_mac("p.endpoint_mac_address")
     inventory_mac = _normalized_mac("e.mac_address")
     return {
@@ -94,7 +103,7 @@ def _queries(limit):
                 SELECT policy, policy_status, condition_name, condition_status,
                        enforcement_name, COUNT(DISTINCT endpoint_id) AS endpoints
                 FROM posture_assessment_by_condition
-                WHERE logged_at >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {condition_recent}
                 GROUP BY policy, policy_status, condition_name, condition_status,
                          enforcement_name
             ) grouped_conditions
@@ -118,7 +127,9 @@ def collect(dataconnect, cfg):
     """Atomically replace posture snapshots without exporting endpoint identity."""
     with observe("dataconnect_posture"):
         rows = {name: dataconnect.query(sql)
-                for name, sql in _queries(group_limit(cfg)).items()}
+                for name, sql in _queries(
+                    group_limit(cfg), event_window_hours(
+                        cfg, getattr(cfg, "dataconnect_posture_interval", 21600))).items()}
         summaries = {name: (values[0] if values else {}) for name, values in rows.items()}
         endpoints = [{
             "status": label(row.get("posture_status"), "NotApplicable"),

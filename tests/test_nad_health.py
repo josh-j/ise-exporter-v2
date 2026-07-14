@@ -28,7 +28,7 @@ class Rest:
 
 class DataConnect:
     def query(self, sql):
-        assert "INTERVAL '2' DAY" in sql
+        assert "NUMTODSINTERVAL(6, 'HOUR')" in sql
         return [
             {"nad": "CAMPUS-CORP-WIRED", "status": "passed", "events": 132,
              "last_event": datetime(2026, 7, 14, 4, 30, tzinfo=timezone.utc)},

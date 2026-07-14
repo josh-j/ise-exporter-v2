@@ -88,12 +88,16 @@ node. Production defaults for up to 100,000 endpoints use one sequential
 connection, two-second statement pacing, a 0.5% adaptive query-duty-cycle ceiling,
 15-second statement timeouts, and independent 30-minute to 24-hour domain
 cadences. Summary and top-group results share one Oracle aggregation wherever
-possible so completeness telemetry does not require a duplicate two-day scan.
+possible so completeness telemetry does not require a duplicate event scan.
 The steady-state scheduled workload is about 9 statements per hour after startup.
-Exact two-day RADIUS reporting runs daily, while a disjoint active-session query
+Daily RADIUS reporting scans 24 hours, while a disjoint active-session query
 scans only its configured stale window every 30 minutes. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
 three-day reporting window.
+Other scheduled event scans match their cadence: one hour for PSN performance
+and diagnostics, six hours for posture and NAD health, and 24 hours for endpoint
+profiling. `ISE_DATACONNECT_EVENT_WINDOW_HOURS` is an absolute 24-hour-or-lower
+ceiling; setting it below a domain cadence is an explicit sampling tradeoff.
 The exporter and CLI also serialize through one persistent pacing gate so separate
 processes cannot bypass the cooldown. The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
@@ -145,7 +149,7 @@ details rather than creating a cold-start burst. Coverage, cache age, deferred
 refreshes, candidate count, and truncation qualify every sample.
 
 RADIUS history is not accumulated in SQLite. The daily reporting collection
-recomputes an exact, bounded two-day aggregate from Data Connect and persists only
+recomputes an exact, bounded recent-window aggregate from Data Connect and persists only
 the resulting bounded Prometheus snapshot. Current active-session reconstruction
 is a separate, one-query dataset with its own 30-minute cadence and snapshot.
 Neither path stores raw RADIUS identities, credentials, events, or session rows.

@@ -70,6 +70,20 @@ def test_collection_plan_has_one_writer_per_reporting_domain(monkeypatch):
     assert len(ran) == len(set(ran))
 
 
+def test_scheduler_publishes_cadence_aligned_scan_windows():
+    PollScheduler(_cfg(), client=object(), dataconnect=object(), mnt=object())
+
+    samples = {
+        sample.labels["dataset"]: sample.value
+        for sample in metrics.ise_dataconnect_scan_window_hours.collect()[0].samples
+    }
+    assert samples["dataconnect_radius"] == 24
+    assert samples["dataconnect_performance"] == 1
+    assert samples["dataconnect_posture"] == 6
+    assert samples["dataconnect_endpoints"] == 24
+    assert samples["dataconnect_nad_health"] == 6
+
+
 def test_scheduler_uses_only_the_dedicated_mnt_client(monkeypatch):
     class Client:
         def get_mnt_xml(self, *args, **kwargs):

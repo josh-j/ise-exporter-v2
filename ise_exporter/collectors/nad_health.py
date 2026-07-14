@@ -14,7 +14,7 @@ from .. import metrics
 from ..snapshots import replace_metric_snapshot
 from ..util import parse_ise_date
 from . import CollectorFailed, observe
-from .dataconnect_common import integer
+from .dataconnect_common import event_window_hours, integer, recent_event_predicate
 
 
 _METRICS = (
@@ -42,7 +42,6 @@ def _timestamp(value):
 
 def collect(client, dataconnect, cfg):
     """Publish recent activity only for configured NAD labels."""
-    del cfg
     with observe("dataconnect_nad_health"):
         devices = client.get_ers("/config/networkdevice", {"size": 100}, get_all=True,
                                  api_name="ers_nad_health_devices")
@@ -52,13 +51,16 @@ def collect(client, dataconnect, cfg):
                       if isinstance(row, dict) and str(row.get("name") or "").strip()}
         canonical = {name.casefold(): name for name in configured}
 
-        activity = dataconnect.query("""
+        recent = recent_event_predicate(
+            "timestamp", event_window_hours(
+                cfg, getattr(cfg, "dataconnect_nad_health_interval", 21600)))
+        activity = dataconnect.query(f"""
             SELECT NVL(device_name, 'unknown') AS nad,
                    CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END AS status,
                    COUNT(*) AS events,
                    MAX(timestamp) AS last_event
             FROM radius_authentications
-            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+            WHERE {recent}
             GROUP BY NVL(device_name, 'unknown'),
                      CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END
         """)

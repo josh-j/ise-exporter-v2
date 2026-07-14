@@ -106,6 +106,7 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["ISE_DATACONNECT_QUERY_TIMEOUT"] == "15"
     assert values["ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS"] == "2000"
     assert values["ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT"] == "0.5"
+    assert values["ISE_DATACONNECT_EVENT_WINDOW_HOURS"] == "24"
     assert values["ISE_DATACONNECT_RADIUS_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL"] == "1800"
     assert values["ISE_DATACONNECT_PERFORMANCE_INTERVAL"] == "3600"
@@ -148,6 +149,7 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
         "ISE_DATACONNECT_MAX_GROUPS": "999999",
         "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS": "0",
         "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT": "99",
+        "ISE_DATACONNECT_EVENT_WINDOW_HOURS": "999",
         "ISE_DATACONNECT_RADIUS_INTERVAL": "1",
         "ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL": "1",
         "ISE_DATACONNECT_PERFORMANCE_INTERVAL": "1",
@@ -167,6 +169,7 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.dataconnect_max_groups == 2000
     assert cfg.dataconnect_min_query_interval_ms == 500
     assert cfg.dataconnect_max_duty_cycle_percent == 2.0
+    assert cfg.dataconnect_event_window_hours == 24
     assert cfg.dataconnect_radius_interval == 21600
     assert cfg.dataconnect_radius_active_interval == 900
     assert cfg.dataconnect_performance_interval == 900

@@ -303,13 +303,13 @@ ise_dataconnect_posture_eligible_endpoints_total = Gauge(
     "Current endpoints marked posture-applicable in endpoint inventory")
 ise_dataconnect_posture_eligible_recently_assessed_total = Gauge(
     "ise_dataconnect_posture_eligible_recently_assessed_total",
-    "Posture-applicable endpoints with an assessment in the two-day reporting window")
+    "Posture-applicable endpoints with an assessment in the configured reporting window")
 ise_dataconnect_posture_eligible_without_recent_assessment_total = Gauge(
     "ise_dataconnect_posture_eligible_without_recent_assessment_total",
-    "Posture-applicable endpoints without an assessment in the two-day reporting window")
+    "Posture-applicable endpoints without an assessment in the configured reporting window")
 ise_dataconnect_posture_eligible_recent_assessment_ratio = Gauge(
     "ise_dataconnect_posture_eligible_recent_assessment_ratio",
-    "Fraction of posture-applicable endpoints assessed in the two-day reporting window")
+    "Fraction of posture-applicable endpoints assessed in the configured reporting window")
 ise_dataconnect_posture_compliant_endpoints_total = Gauge(
     "ise_dataconnect_posture_compliant_endpoints_total",
     "Exact endpoints whose latest posture assessment is compliant")
@@ -478,6 +478,10 @@ ise_dataconnect_query_rows = Gauge(
 ise_dataconnect_query_pacing_seconds = Gauge(
     "ise_dataconnect_query_pacing_seconds",
     "Configured minimum idle time between Data Connect statements")
+ise_dataconnect_scan_window_hours = Gauge(
+    "ise_dataconnect_scan_window_hours",
+    "Scheduled event-history scan window after applying the production ceiling",
+    ["dataset"])
 ise_dataconnect_query_cooldown_seconds = Gauge(
     "ise_dataconnect_query_cooldown_seconds",
     "Latest global duty-cycle cooldown after a Data Connect statement", ["view"])

@@ -1,7 +1,15 @@
 """Latest PSN/node performance and bounded diagnostic aggregates."""
 from .. import metrics
 from . import observe
-from .dataconnect_common import group_limit, integer, label, number, replace_snapshot
+from .dataconnect_common import (
+    event_window_hours,
+    group_limit,
+    integer,
+    label,
+    number,
+    recent_event_predicate,
+    replace_snapshot,
+)
 
 
 _METRICS = (
@@ -23,19 +31,21 @@ _METRICS = (
 )
 
 
-def _queries(limit):
+def _queries(limit, window_hours=6):
+    kpi_recent = recent_event_predicate("logged_time", window_hours)
+    timestamp_recent = recent_event_predicate("timestamp", window_hours)
     return {
-        "kpi": """
+        "kpi": f"""
             SELECT ise_node, radius_requests_hr, logged_to_mnt_hr, noise_hr,
                    suppression_hr, avg_load, max_load, avg_latency_per_req, avg_tps
             FROM (
                 SELECT k.*, ROW_NUMBER() OVER
                     (PARTITION BY ise_node ORDER BY logged_time DESC) AS row_num
                 FROM key_performance_metrics k
-                WHERE logged_time >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {kpi_recent}
             ) WHERE row_num = 1
         """,
-        "system": """
+        "system": f"""
             SELECT ise_node, cpu_utilization, memory_utilization, diskspace_root,
                    diskspace_boot, diskspace_opt, diskspace_storedconfig,
                    diskspace_tmp, diskspace_runtime
@@ -43,7 +53,7 @@ def _queries(limit):
                 SELECT s.*, ROW_NUMBER() OVER
                     (PARTITION BY ise_node ORDER BY timestamp DESC) AS row_num
                 FROM system_summary s
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {timestamp_recent}
             ) WHERE row_num = 1
         """,
         "aaa_diagnostics": f"""
@@ -54,7 +64,7 @@ def _queries(limit):
                 SELECT ise_node, message_severity, category, message_code,
                        COUNT(*) AS events
                 FROM aaa_diagnostics_view
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {timestamp_recent}
                 GROUP BY ise_node, message_severity, category, message_code
             ) grouped_diagnostics
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
@@ -67,7 +77,7 @@ def _queries(limit):
                 SELECT ise_node, message_severity, category, message_code,
                        COUNT(*) AS events
                 FROM system_diagnostics_view
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {timestamp_recent}
                 GROUP BY ise_node, message_severity, category, message_code
             ) grouped_diagnostics
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
@@ -79,7 +89,9 @@ def collect(dataconnect, cfg):
     """Atomically replace latest node samples and diagnostic aggregates."""
     with observe("dataconnect_performance"):
         rows = {name: dataconnect.query(sql)
-                for name, sql in _queries(group_limit(cfg)).items()}
+                for name, sql in _queries(
+                    group_limit(cfg), event_window_hours(
+                        cfg, getattr(cfg, "dataconnect_performance_interval", 3600))).items()}
         kpis = [{
             "node": label(row.get("ise_node")),
             "requests": number(row.get("radius_requests_hr")),

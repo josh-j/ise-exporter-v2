@@ -131,6 +131,7 @@ class Config:
     dataconnect_max_groups: int = 1000
     dataconnect_min_query_interval_ms: int = 2000
     dataconnect_max_duty_cycle_percent: float = 0.5
+    dataconnect_event_window_hours: int = 24
     dataconnect_radius_interval: int = 86400
     dataconnect_radius_active_interval: int = 1800
     dataconnect_performance_interval: int = 3600
@@ -156,6 +157,8 @@ class Config:
                 f"mnt_active_list_ceiling="
                 f"{self.mnt_active_posture_max_active_list_sessions} "
                 f"dataconnect_ready={self.dataconnect_ready} "
+                f"dataconnect_event_window_ceiling_hours="
+                f"{self.dataconnect_event_window_hours} "
                 f"ise_host={self.ise_host!r} ise_mnt_host={self.ise_mnt_host!r} "
                 f"ise_user={self.ise_user!r}")
 
@@ -216,6 +219,8 @@ class Config:
                 "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 2000, 500),
             dataconnect_max_duty_cycle_percent=_bounded_f(
                 "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.5, 0.1, 2.0),
+            dataconnect_event_window_hours=_bounded_i(
+                "ISE_DATACONNECT_EVENT_WINDOW_HOURS", 24, 1, 24),
             dataconnect_radius_interval=_bounded_i(
                 "ISE_DATACONNECT_RADIUS_INTERVAL", 86400, 21600),
             dataconnect_radius_active_interval=_bounded_i(

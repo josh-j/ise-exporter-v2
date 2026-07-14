@@ -91,6 +91,7 @@ def test_collects_posture_without_endpoint_identity_labels():
 def test_posture_uses_latest_endpoint_state_and_explicit_failure_statuses():
     queries = dataconnect_posture._queries(20)
 
+    assert all("NUMTODSINTERVAL(6, 'HOUR')" in sql for sql in queries.values())
     assert "ROW_NUMBER() OVER" in queries["endpoints"]
     assert "PARTITION BY CASE" in queries["endpoints"]
     assert "'mac:' || UPPER(REPLACE(REPLACE(REPLACE(" in queries["endpoints"]

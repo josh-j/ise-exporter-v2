@@ -80,7 +80,7 @@ def test_collects_bounded_aggregated_radius_metrics():
     dataconnect_radius.collect_active(client, cfg)
 
     assert len(client.sql) == 8
-    assert sum("INTERVAL '2' DAY" in sql for sql in client.sql) == 7
+    assert sum("NUMTODSINTERVAL(24, 'HOUR')" in sql for sql in client.sql) == 7
     assert sum("FETCH FIRST 25" in sql for sql in client.sql) == 7
     assert _rows(metrics.ise_dataconnect_radius_authentication_events,
                  "authentication_method", "nad") == {
@@ -128,7 +128,7 @@ def test_collects_bounded_aggregated_radius_metrics():
     assert "session_id" in active_sql
     assert "nas_ip_address" in active_sql
     assert "NUMTODSINTERVAL(60, 'MINUTE')" in active_sql
-    assert "INTERVAL '2' DAY" not in active_sql
+    assert "NUMTODSINTERVAL(24, 'HOUR')" not in active_sql
     assert "LOWER(TRIM(acct_status_type)) IN" in active_sql
     assert "'start', 'interim', 'interim-update', 'interim update', 'update'" in active_sql
     assert "NOT LIKE '%stop%'" not in active_sql

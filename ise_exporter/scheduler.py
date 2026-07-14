@@ -30,6 +30,7 @@ from .collectors import (
     patches,
     tacacs,
 )
+from .collectors.dataconnect_common import event_window_hours
 
 logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
@@ -131,6 +132,21 @@ class PollScheduler:
             metrics.ise_dataset_up.labels(dataset=name, source=source).set(0)
             metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(0)
             metrics.ise_collector_enabled.labels(collector=name).set(int(enabled))
+        scan_intervals = {
+            "dataconnect_radius": getattr(
+                self.cfg, "dataconnect_radius_interval", 86400),
+            "dataconnect_performance": getattr(
+                self.cfg, "dataconnect_performance_interval", 3600),
+            "dataconnect_posture": getattr(
+                self.cfg, "dataconnect_posture_interval", 21600),
+            "dataconnect_endpoints": getattr(
+                self.cfg, "dataconnect_endpoints_interval", 86400),
+            "dataconnect_nad_health": getattr(
+                self.cfg, "dataconnect_nad_health_interval", 21600),
+        }
+        for dataset, interval in scan_intervals.items():
+            metrics.ise_dataconnect_scan_window_hours.labels(dataset=dataset).set(
+                event_window_hours(self.cfg, interval))
 
     def _update_freshness(self, now):
         for name, (source, interval, enabled) in self.dataset_plan.items():

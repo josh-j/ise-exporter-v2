@@ -1,7 +1,14 @@
 """Endpoint inventory and profiling reporting from Cisco ISE Data Connect."""
 from .. import metrics
 from . import observe
-from .dataconnect_common import group_limit, integer, label, replace_snapshot
+from .dataconnect_common import (
+    event_window_hours,
+    group_limit,
+    integer,
+    label,
+    recent_event_predicate,
+    replace_snapshot,
+)
 
 
 _METRICS = (
@@ -21,7 +28,8 @@ _METRICS = (
 )
 
 
-def _queries(limit):
+def _queries(limit, window_hours=6):
+    profiling_recent = recent_event_predicate("timestamp", window_hours)
     return {
         "total": "SELECT COUNT(*) AS endpoints FROM endpoints_data",
         "coverage": """
@@ -76,7 +84,7 @@ def _queries(limit):
                 SELECT endpoint_profile, source, endpoint_action_name, identity_group,
                        COUNT(DISTINCT endpoint_id) AS endpoints
                 FROM profiled_endpoints_summary
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {profiling_recent}
                 GROUP BY endpoint_profile, source, endpoint_action_name, identity_group
             ) grouped_profiling
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
@@ -88,7 +96,9 @@ def collect(dataconnect, cfg):
     """Atomically replace current inventory and bounded profiling snapshots."""
     with observe("dataconnect_endpoints"):
         rows = {name: dataconnect.query(sql)
-                for name, sql in _queries(group_limit(cfg)).items()}
+                for name, sql in _queries(
+                    group_limit(cfg), event_window_hours(
+                        cfg, getattr(cfg, "dataconnect_endpoints_interval", 86400))).items()}
         total = integer(rows["total"][0].get("endpoints")) if rows["total"] else 0
         coverage = rows["coverage"][0] if rows["coverage"] else {}
         profile_summary = rows["profiles"][0] if rows["profiles"] else {}

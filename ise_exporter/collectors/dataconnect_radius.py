@@ -1,13 +1,21 @@
 """Exact RADIUS reporting and bounded current-session collection from Data Connect.
 
-Historical event queries are explicitly bounded to the last two days and run on
+Historical event queries are explicitly bounded to a short configured window and run on
 a slow reporting cadence. A separate query reconstructs only current likely-active
 sessions on a shorter cadence. Usernames, MAC addresses, session IDs, free-form
 failure text, and other unbounded values never become Prometheus labels.
 """
 from .. import metrics
 from . import observe
-from .dataconnect_common import group_limit, integer, label, number, replace_snapshot
+from .dataconnect_common import (
+    event_window_hours,
+    group_limit,
+    integer,
+    label,
+    number,
+    recent_event_predicate,
+    replace_snapshot,
+)
 
 
 _REPORTING_METRICS = (
@@ -94,8 +102,11 @@ def _active_cte(stale_minutes):
     """
 
 
-def _queries(limit, stale_minutes=60):
+def _queries(limit, stale_minutes=60, window_hours=6):
     active_cte = _active_cte(stale_minutes)
+    auth_recent = recent_event_predicate("timestamp", window_hours)
+    accounting_recent = recent_event_predicate("timestamp", window_hours)
+    errors_recent = recent_event_predicate("timestamp", window_hours)
     return {
         "authentication": f"""
             SELECT grouped_auth.*,
@@ -107,18 +118,18 @@ def _queries(limit, stale_minutes=60):
                        authentication_method, authentication_protocol, device_name,
                        policy_set_name, ise_node, COUNT(*) AS events
                 FROM radius_authentications
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {auth_recent}
                 GROUP BY CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
                          authentication_method, authentication_protocol, device_name,
                          policy_set_name, ise_node
             ) grouped_auth
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "identity_summary": """
+        "identity_summary": f"""
             SELECT COUNT(DISTINCT calling_station_id) AS distinct_endpoints,
                    COUNT(DISTINCT username) AS distinct_users
             FROM radius_authentications
-            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+            WHERE {auth_recent}
         """,
         "failure_context": f"""
             SELECT grouped_failure.*,
@@ -128,7 +139,7 @@ def _queries(limit, stale_minutes=60):
                 SELECT {_FAILURE_CLASS_SQL} AS failure_class,
                        policy_set_name, location, COUNT(*) AS events
                 FROM radius_authentications
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {auth_recent}
                   AND NVL(failed, 0) > 0
                 GROUP BY {_FAILURE_CLASS_SQL}, policy_set_name, location
             ) grouped_failure
@@ -143,7 +154,7 @@ def _queries(limit, stale_minutes=60):
                        AVG(response_time) AS avg_response_ms,
                        MAX(response_time) AS max_response_ms
                 FROM radius_authentications
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {auth_recent}
                   AND response_time IS NOT NULL
                 GROUP BY CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
                          device_name, ise_node
@@ -162,7 +173,7 @@ def _queries(limit, stale_minutes=60):
                 SELECT acct_status_type, device_name, authorization_policy, ise_node,
                        COUNT(*) AS events
                 FROM radius_accounting
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {accounting_recent}
                 GROUP BY acct_status_type, device_name, authorization_policy, ise_node
             ) grouped_accounting
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
@@ -175,7 +186,7 @@ def _queries(limit, stale_minutes=60):
                        AVG(acct_session_time) AS avg_session_seconds,
                        MAX(acct_session_time) AS max_session_seconds
                 FROM radius_accounting
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {accounting_recent}
                   AND acct_session_time IS NOT NULL AND acct_session_time > 0
                 GROUP BY device_name, ise_node
             ) grouped_sessions
@@ -200,7 +211,7 @@ def _queries(limit, stale_minutes=60):
                 SELECT TO_CHAR(message_code) AS message_code, network_device_name,
                        authentication_method, ise_node, COUNT(*) AS events
                 FROM radius_errors_view
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                WHERE {errors_recent}
                 GROUP BY TO_CHAR(message_code), network_device_name,
                          authentication_method, ise_node
             ) grouped_errors
@@ -209,17 +220,19 @@ def _queries(limit, stale_minutes=60):
     }
 
 
-def _reporting_queries(limit):
-    return {name: sql for name, sql in _queries(limit).items()
+def _reporting_queries(limit, window_hours=6):
+    return {name: sql for name, sql in _queries(limit, window_hours=window_hours).items()
             if name != "active_sessions"}
 
 
 def collect_reporting(dataconnect, cfg):
-    """Atomically replace an exact two-day RADIUS reporting snapshot."""
+    """Atomically replace a bounded recent RADIUS reporting snapshot."""
     with observe("dataconnect_radius"):
         limit = group_limit(cfg)
         rows = {name: dataconnect.query(sql)
-                for name, sql in _reporting_queries(limit).items()}
+                for name, sql in _reporting_queries(
+                    limit, event_window_hours(
+                        cfg, getattr(cfg, "dataconnect_radius_interval", 86400))).items()}
         summaries = {name: (values[0] if values else {}) for name, values in rows.items()}
         auth = [{
             "status": label(row.get("status")),
