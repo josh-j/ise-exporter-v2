@@ -81,14 +81,14 @@ VIEW_CONTRACTS = {
     "TACACS_AUTHENTICATION_LAST_TWO_DAYS": _view({
         "USERNAME", "STATUS", "DEVICE_NAME", "AUTHENTICATION_POLICY", "IDENTITY_STORE",
         "FAILURE_REASON", "EPOCH_TIME",
-    }, domain="tacacs"),
+    }, time_column="EPOCH_TIME", domain="tacacs"),
     "TACACS_AUTHORIZATION_LAST_TWO_DAYS": _view({
         "USERNAME", "STATUS", "DEVICE_NAME", "AUTHORIZATION_POLICY", "SHELL_PROFILE",
         "MATCHED_COMMAND_SET", "COMMAND_FROM_DEVICE", "EPOCH_TIME",
-    }, domain="tacacs"),
+    }, time_column="EPOCH_TIME", domain="tacacs"),
     "TACACS_ACCOUNTING_LAST_TWO_DAYS": _view({
         "USERNAME", "STATUS", "DEVICE_NAME", "COMMAND", "COMMAND_ARGS", "EPOCH_TIME",
-    }, domain="tacacs"),
+    }, time_column="EPOCH_TIME", domain="tacacs"),
 }
 
 

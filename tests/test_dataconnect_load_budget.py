@@ -49,9 +49,9 @@ def test_100k_default_profile_stays_below_65_scheduled_statements_per_hour():
         "performance": 4,
         "posture": 4,
         "endpoints": 6,
-        "freshness": 10,
+        "freshness": 13,
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert reconciliation_statements_per_hour == pytest.approx(61.5)
-    assert steady_statements_per_hour == pytest.approx(61.5)
+    assert reconciliation_statements_per_hour == pytest.approx(63.0)
+    assert steady_statements_per_hour == pytest.approx(63.0)

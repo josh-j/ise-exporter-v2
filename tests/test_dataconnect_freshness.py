@@ -42,7 +42,12 @@ def test_collects_row_coverage_and_event_time_boundaries_for_every_timestamped_v
     timestamped = {name.lower(): contract.domain
                    for name, contract in VIEW_CONTRACTS.items() if contract.time_column}
     assert len(client.sql) == len(timestamped)
-    assert all("INTERVAL '2' DAY" in sql for sql in client.sql)
+    tacacs_sql = [sql for sql in client.sql if "TACACS_" in sql]
+    assert len(tacacs_sql) == 3
+    assert all("EPOCH_TIME" in sql and "INTERVAL '2' DAY" not in sql
+               for sql in tacacs_sql)
+    assert all("INTERVAL '2' DAY" in sql
+               for sql in client.sql if "TACACS_" not in sql)
 
     rows = _rows(metrics.ise_dataconnect_view_rows)
     assert set(rows) == {(view, domain) for view, domain in timestamped.items()}

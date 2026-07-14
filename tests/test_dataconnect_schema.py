@@ -64,6 +64,12 @@ def test_contract_requires_columns_used_unconditionally_by_endpoint_queries():
     } <= VIEW_CONTRACTS["ENDPOINTS_DATA"].required
 
 
+def test_tacacs_contracts_expose_epoch_freshness_boundaries():
+    for name, contract in VIEW_CONTRACTS.items():
+        if contract.domain == "tacacs":
+            assert contract.time_column == "EPOCH_TIME", name
+
+
 def test_validate_schema_reports_missing_views_and_columns():
     rows = _contract_rows()
     rows = [row for row in rows
