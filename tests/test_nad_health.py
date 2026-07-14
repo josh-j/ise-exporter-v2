@@ -25,12 +25,12 @@ DEVICES = [{"name": "campus-corp-wired"}, {"name": "branch-switch"}]
 class DataConnect:
     def query(self, sql):
         assert "NUMTODSINTERVAL(6, 'HOUR')" in sql
+        assert "FROM radius_authentication_summary" in sql
+        assert "FROM radius_authentications" not in sql
         return [
-            {"nad": "CAMPUS-CORP-WIRED", "status": "passed", "events": 132,
+            {"nad": "CAMPUS-CORP-WIRED", "passed_events": 132, "failed_events": 29,
              "last_event": datetime(2026, 7, 14, 4, 30, tzinfo=timezone.utc)},
-            {"nad": "campus-corp-wired", "status": "failed", "events": 29,
-             "last_event": datetime(2026, 7, 14, 4, 29, tzinfo=timezone.utc)},
-            {"nad": "unknown-client", "status": "failed", "events": 7,
+            {"nad": "unknown-client", "passed_events": 2, "failed_events": 5,
              "last_event": datetime(2026, 7, 14, 4, 20, tzinfo=timezone.utc)},
         ]
 

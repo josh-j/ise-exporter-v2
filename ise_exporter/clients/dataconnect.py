@@ -26,6 +26,7 @@ _QUERY_VIEWS = (
     "posture_assessment_by_condition",
     "posture_assessment_by_endpoint",
     "profiled_endpoints_summary",
+    "radius_authentication_summary",
     "radius_authentications",
     "radius_accounting",
     "radius_errors_view",

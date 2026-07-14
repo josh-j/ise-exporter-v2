@@ -107,6 +107,12 @@ def test_schema_validation_is_not_mislabeled_as_reporting_activity():
     assert dataconnect._query_view(sql) == "schema_metadata"
 
 
+def test_radius_summary_has_its_own_bounded_telemetry_label():
+    assert dataconnect._query_view(
+        "SELECT SUM(passed_count) FROM radius_authentication_summary"
+    ) == "radius_authentication_summary"
+
+
 def test_adaptive_pacing_wait_is_interruptible_during_shutdown():
     cfg = types.SimpleNamespace(
         dataconnect_host="mnt.example.mil", dataconnect_port=2484,

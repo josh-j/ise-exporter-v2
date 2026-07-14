@@ -88,7 +88,14 @@ node. Production defaults for up to 100,000 endpoints use one sequential
 connection, two-second statement pacing, a 0.5% adaptive query-duty-cycle ceiling,
 15-second statement timeouts, and independent 30-minute to 24-hour domain
 cadences. Summary and top-group results share one Oracle aggregation wherever
-possible so completeness telemetry does not require a duplicate event scan.
+possible so completeness telemetry does not require a duplicate event scan. Exact
+RADIUS volume, failure totals, and distinct endpoint/user counts come from Cisco's
+`RADIUS_AUTHENTICATION_SUMMARY` aggregate view, including failure class,
+authorization profile, and location weighted by `FAILED_COUNT`. The raw
+authentication view remains bounded and is used only for dimensions the summary
+does not expose: method, protocol, exact authorization policy, and status-specific
+latency. NAD activity health also uses a single per-device aggregation from the
+summary view, not an additional raw authentication scan.
 The steady-state scheduled workload is about 9 statements per hour after startup.
 Daily RADIUS reporting scans 24 hours, while a disjoint active-session query
 scans only its configured stale window every 30 minutes. No historical windows

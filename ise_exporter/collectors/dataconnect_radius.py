@@ -105,43 +105,43 @@ def _active_cte(stale_minutes):
 def _queries(limit, stale_minutes=60, window_hours=6):
     active_cte = _active_cte(stale_minutes)
     auth_recent = recent_event_predicate("timestamp", window_hours)
+    auth_summary_recent = recent_event_predicate("timestamp", window_hours)
     accounting_recent = recent_event_predicate("timestamp", window_hours)
     errors_recent = recent_event_predicate("timestamp", window_hours)
     return {
         "authentication": f"""
-            SELECT grouped_auth.*,
-                   SUM(events) OVER () AS total_events,
-                   COUNT(*) OVER () AS total_groups
+            SELECT grouped_auth.*, COUNT(*) OVER () AS total_groups
             FROM (
                 SELECT CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END
                            AS status,
                        authentication_method, authentication_protocol, device_name,
-                       policy_set_name, ise_node, COUNT(*) AS events
+                       authorization_policy, ise_node, COUNT(*) AS events
                 FROM radius_authentications
                 WHERE {auth_recent}
                 GROUP BY CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
                          authentication_method, authentication_protocol, device_name,
-                         policy_set_name, ise_node
+                         authorization_policy, ise_node
             ) grouped_auth
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "identity_summary": f"""
-            SELECT COUNT(DISTINCT calling_station_id) AS distinct_endpoints,
+        "volume_summary": f"""
+            SELECT SUM(NVL(passed_count, 0) + NVL(failed_count, 0)) AS total_events,
+                   SUM(NVL(failed_count, 0)) AS failure_events,
+                   COUNT(DISTINCT calling_station_id) AS distinct_endpoints,
                    COUNT(DISTINCT username) AS distinct_users
-            FROM radius_authentications
-            WHERE {auth_recent}
+            FROM radius_authentication_summary
+            WHERE {auth_summary_recent}
         """,
         "failure_context": f"""
-            SELECT grouped_failure.*,
-                   SUM(events) OVER () AS total_events,
-                   COUNT(*) OVER () AS total_groups
+            SELECT grouped_failure.*, COUNT(*) OVER () AS total_groups
             FROM (
                 SELECT {_FAILURE_CLASS_SQL} AS failure_class,
-                       policy_set_name, location, COUNT(*) AS events
-                FROM radius_authentications
-                WHERE {auth_recent}
-                  AND NVL(failed, 0) > 0
-                GROUP BY {_FAILURE_CLASS_SQL}, policy_set_name, location
+                       authorization_profiles, location,
+                       SUM(NVL(failed_count, 0)) AS events
+                FROM radius_authentication_summary
+                WHERE {auth_summary_recent}
+                  AND NVL(failed_count, 0) > 0
+                GROUP BY {_FAILURE_CLASS_SQL}, authorization_profiles, location
             ) grouped_failure
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
         """,
@@ -239,7 +239,7 @@ def collect_reporting(dataconnect, cfg):
             "method": label(row.get("authentication_method"), "none"),
             "protocol": label(row.get("authentication_protocol"), "none"),
             "nad": label(row.get("device_name")),
-            "policy": label(row.get("policy_set_name"), "none"),
+            "policy": label(row.get("authorization_policy"), "none"),
             "psn": label(row.get("ise_node")),
             "events": integer(row.get("events")),
         } for row in rows["authentication"]]
@@ -274,7 +274,7 @@ def collect_reporting(dataconnect, cfg):
         } for row in rows["errors"]]
         failure_context = [{
             "failure_class": label(row.get("failure_class"), "unspecified"),
-            "policy": label(row.get("policy_set_name"), "none"),
+            "profile": label(row.get("authorization_profiles"), "none"),
             "location": label(row.get("location"), "Unknown"),
             "events": integer(row.get("events")),
         } for row in rows["failure_context"]]
@@ -284,7 +284,7 @@ def collect_reporting(dataconnect, cfg):
             writers.append(lambda row=row: metrics.ise_dataconnect_radius_authentication_events.labels(
                 status=row["status"], authentication_method=row["method"],
                 authentication_protocol=row["protocol"], nad=row["nad"],
-                policy_set=row["policy"], psn=row["psn"]).set(row["events"]))
+                authorization_policy=row["policy"], psn=row["psn"]).set(row["events"]))
         for row in latency:
             for stat in ("avg", "max"):
                 writers.append(lambda row=row, stat=stat:
@@ -310,19 +310,19 @@ def collect_reporting(dataconnect, cfg):
                 authentication_method=row["method"], psn=row["psn"]).set(row["events"]))
         for row in failure_context:
             writers.append(lambda row=row: metrics.ise_dataconnect_radius_failure_events.labels(
-                failure_class=row["failure_class"], policy_set=row["policy"],
+                failure_class=row["failure_class"], authorization_profile=row["profile"],
                 location=row["location"]).set(row["events"]))
 
-        identity_summary = summaries["identity_summary"]
+        volume_summary = summaries["volume_summary"]
         writers.extend((
             lambda: metrics.ise_dataconnect_radius_authentication_events_total.set(
-                integer(summaries["authentication"].get("total_events"))),
+                integer(volume_summary.get("total_events"))),
             lambda: metrics.ise_dataconnect_radius_distinct_endpoints_total.set(
-                integer(identity_summary.get("distinct_endpoints"))),
+                integer(volume_summary.get("distinct_endpoints"))),
             lambda: metrics.ise_dataconnect_radius_distinct_users_total.set(
-                integer(identity_summary.get("distinct_users"))),
+                integer(volume_summary.get("distinct_users"))),
             lambda: metrics.ise_dataconnect_radius_failure_events_total.set(
-                integer(summaries["failure_context"].get("total_events"))),
+                integer(volume_summary.get("failure_events"))),
             lambda: metrics.ise_dataconnect_radius_accounting_events_total.set(
                 integer(summaries["accounting"].get("total_events"))),
             lambda: metrics.ise_dataconnect_radius_accounting_event_type_total.labels(

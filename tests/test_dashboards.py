@@ -50,6 +50,18 @@ def test_failure_nad_panels_use_all_failed_authentications_not_sparse_error_view
         assert "ise_dataconnect_radius_errors" not in expression
 
 
+def test_failure_context_panels_expose_summary_reason_profile_and_location():
+    dashboard = json.loads((DASHBOARDS / "ise-failure-triage.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+
+    for panel_id, label in ((11, "failure_class"), (12, "authorization_profile"),
+                            (13, "location")):
+        expression = panels[panel_id]["targets"][0]["expr"]
+        assert "ise_dataconnect_radius_failure_events" in expression
+        assert label in expression
+        assert 'ise_dataset_up{dataset="dataconnect_radius"' in expression
+
+
 def test_radius_headline_stats_use_exact_totals_not_topk_breakdowns():
     expected = {
         "ise-auth-troubleshooting.json": {

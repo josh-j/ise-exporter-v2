@@ -34,26 +34,27 @@ class DataConnect:
     def query(self, sql):
         self.sql.append(sql)
         lowered = sql.lower()
-        if "count(distinct calling_station_id)" in lowered:
-            return [{"distinct_endpoints": 81, "distinct_users": 54}]
         if "grouped_failure" in lowered:
-            return [{"failure_class": "credentials", "policy_set_name": "Wired",
+            return [{"failure_class": "credentials", "authorization_profiles": "PermitAccess",
                      "location": "Campus", "events": 9,
-                     "total_events": 11, "total_groups": 2}]
+                     "total_groups": 2}]
+        if "from radius_authentication_summary" in lowered:
+            return [{"total_events": 107, "failure_events": 11,
+                     "distinct_endpoints": 81, "distinct_users": 54}]
         if "grouped_latency" in lowered:
             return [{"status": "failed", "device_name": "nad-1", "ise_node": "psn-1",
                      "samples": 4, "avg_response_ms": 200, "max_response_ms": 900,
                      "total_groups": 1}]
         if "grouped_auth" in lowered:
             return [
-                {"status": "failed", "authentication_method": "MSCHAPv2",
+                 {"status": "failed", "authentication_method": "MSCHAPv2",
                  "authentication_protocol": "PEAP", "device_name": "nad-1",
-                 "policy_set_name": "Wired", "ise_node": "psn-1", "events": 7,
-                 "total_events": 107, "total_groups": 30},
+                 "authorization_policy": "Employee", "ise_node": "psn-1", "events": 7,
+                 "total_groups": 30},
                 {"status": "failed", "authentication_method": "EAP-TLS",
                  "authentication_protocol": "EAP-TLS", "device_name": "nad-1",
-                 "policy_set_name": "Wired", "ise_node": "psn-1", "events": 3,
-                 "total_events": 107, "total_groups": 30},
+                 "authorization_policy": "Employee", "ise_node": "psn-1", "events": 3,
+                 "total_groups": 30},
             ]
         if "grouped_accounting" in lowered:
             return [{"acct_status_type": "Start", "device_name": "nad-1",
@@ -102,8 +103,8 @@ def test_collects_bounded_aggregated_radius_metrics():
     assert metrics.ise_dataconnect_radius_distinct_endpoints_total._value.get() == 81
     assert metrics.ise_dataconnect_radius_distinct_users_total._value.get() == 54
     assert _rows(metrics.ise_dataconnect_radius_failure_events,
-                 "failure_class", "policy_set", "location") == {
-        ("credentials", "Wired", "Campus"): 9}
+                 "failure_class", "authorization_profile", "location") == {
+        ("credentials", "PermitAccess", "Campus"): 9}
     assert metrics.ise_dataconnect_radius_accounting_events_total._value.get() == 200
     assert _rows(metrics.ise_dataconnect_radius_accounting_event_type_total,
                  "event_type") == {("start",): 120, ("stop",): 80}
@@ -141,6 +142,21 @@ def test_latency_query_uses_one_matching_group_and_excludes_nulls():
     assert "response_time IS NOT NULL" in queries["latency"]
     assert "authentication_method" not in queries["latency"].split("GROUP BY", 1)[1]
     assert "policy_set_name" not in queries["latency"].split("GROUP BY", 1)[1]
+
+
+def test_exact_volume_uses_patch11_aggregate_view_not_raw_authentication_rows():
+    queries = dataconnect_radius._queries(25)
+
+    assert "FROM radius_authentication_summary" in queries["volume_summary"]
+    assert "SUM(NVL(passed_count, 0) + NVL(failed_count, 0))" in \
+        queries["volume_summary"]
+    assert "COUNT(DISTINCT calling_station_id)" in queries["volume_summary"]
+    assert "authorization_policy" in queries["authentication"]
+    assert "FROM radius_authentication_summary" in queries["failure_context"]
+    assert "authorization_profiles" in queries["failure_context"]
+    assert "SUM(NVL(failed_count, 0))" in queries["failure_context"]
+    assert "policy_set_name" not in queries["authentication"]
+    assert "policy_set_name" not in queries["failure_context"]
 
 
 def test_query_failure_preserves_previous_snapshot():

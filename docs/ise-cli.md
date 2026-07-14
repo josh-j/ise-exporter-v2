@@ -114,7 +114,7 @@ silently choosing a different endpoint; rerun with the intended MAC or ERS ID.
 | `device-admin-policy-sets`, `tacacs-command-sets`, `tacacs-shell-profiles` | Inspect Device Administration configuration |
 | `certificates` | List system and trusted certificates, optionally by node/store |
 | `endpoint-report` | Query bounded endpoint inventory directly from Data Connect |
-| `radius-auth`, `radius-errors`, `radius-accounting` | Query bounded two-day RADIUS reports from Data Connect |
+| `radius-auth`, `radius-errors`, `radius-accounting` | Query the configured bounded RADIUS window from Data Connect |
 | `posture`, `psn-metrics`, `tacacs-activity` | Query bounded posture, PSN, and TACACS reports from Data Connect |
 | `dataconnect-schema [TABLE]` | Show reporting-view column metadata without reading event rows |
 | `schema [COMMAND]` | Return API routes and contracts without credentials or network access |

@@ -72,7 +72,14 @@ six-hour posture/TACACS/NAD reporting, 12-hour source-freshness checks, and dail
 inventory state. A private
 SQLite cache survives restarts. MnT fetches at most 250 new or rotating endpoint
 details per 15-minute cycle, while cached active details retain dashboard coverage.
-RADIUS historical gauges come from one exact configured-window snapshot per day. The
+RADIUS exact volume, failure, and distinct-identity totals use Cisco's Patch 11
+`RADIUS_AUTHENTICATION_SUMMARY` aggregate view. Only method, protocol,
+authorization-policy and status-specific latency breakdowns read the bounded raw
+authentication view; failure class, authorization profile, and location remain on
+the aggregate view. Configured-NAD activity health also sums passed and failed
+counts from that aggregate view rather than grouping raw events again. RADIUS
+historical gauges come from one exact
+configured-window snapshot per day. The
 separate active-session dataset scans only the configured stale window every
 30 minutes; no locally merged historical event windows can grow without bound.
 TACACS applies a six-hour bound inside Cisco's two-day views, and endpoint totals,

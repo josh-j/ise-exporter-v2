@@ -45,9 +45,20 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
         "performance": 4,
         "posture": 4,
         "endpoints": 4,
-        "freshness": 13,
+        "freshness": 14,
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(8.875)
+    assert statements_per_hour == pytest.approx(8.958333333333334)
     assert statements_per_hour < 9
+
+
+def test_radius_reporting_limits_raw_authentication_view_to_needed_dimensions():
+    queries = dataconnect_radius._reporting_queries(Config().dataconnect_max_groups)
+    raw = [name for name, sql in queries.items()
+           if "FROM radius_authentications" in sql]
+    summary = [name for name, sql in queries.items()
+               if "FROM radius_authentication_summary" in sql]
+
+    assert raw == ["authentication", "latency"]
+    assert summary == ["volume_summary", "failure_context"]

@@ -54,13 +54,12 @@ def collect(devices, dataconnect, cfg):
                 cfg, getattr(cfg, "dataconnect_nad_health_interval", 21600)))
         activity = dataconnect.query(f"""
             SELECT NVL(device_name, 'unknown') AS nad,
-                   CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END AS status,
-                   COUNT(*) AS events,
+                   SUM(NVL(passed_count, 0)) AS passed_events,
+                   SUM(NVL(failed_count, 0)) AS failed_events,
                    MAX(timestamp) AS last_event
-            FROM radius_authentications
+            FROM radius_authentication_summary
             WHERE {recent}
-            GROUP BY NVL(device_name, 'unknown'),
-                     CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END
+            GROUP BY NVL(device_name, 'unknown')
         """)
 
         counts = defaultdict(int)
@@ -69,12 +68,13 @@ def collect(devices, dataconnect, cfg):
         for row in activity:
             reported = str(row.get("nad") or "unknown").strip()
             name = canonical.get(reported.casefold())
-            events = integer(row.get("events"))
+            passed = integer(row.get("passed_events"))
+            failed = integer(row.get("failed_events"))
             if name is None:
-                unconfigured += events
+                unconfigured += passed + failed
                 continue
-            status = str(row.get("status") or "unknown").strip().lower()
-            counts[(name, status)] += events
+            counts[(name, "passed")] += passed
+            counts[(name, "failed")] += failed
             last_seen[name] = max(last_seen[name], _timestamp(row.get("last_event")))
 
         writers = [

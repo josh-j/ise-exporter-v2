@@ -316,15 +316,87 @@
       ]
     },
     {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Failure Classes",
+      "description": "Failed authentications grouped into bounded reason classes from Cisco's aggregate RADIUS summary view.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (failure_class) (ise_dataconnect_radius_failure_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "instant": true,
+          "legendFormat": "{{failure_class}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "bargauge",
+      "title": "Failed Authorization Profiles",
+      "description": "Authorization profiles associated with failed authentications in the bounded aggregate reporting window.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (authorization_profile) (ise_dataconnect_radius_failure_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "instant": true,
+          "legendFormat": "{{authorization_profile}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "bargauge",
+      "title": "Failure Locations",
+      "description": "Network-device locations associated with failed authentications in the bounded aggregate reporting window.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (location) (ise_dataconnect_radius_failure_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "instant": true,
+          "legendFormat": "{{location}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
       "id": 10,
       "type": "table",
       "title": "RADIUS Failure Work Queue",
-      "description": "One row per failed-authentication combination of NAD, method, protocol, policy set, and PSN. Error-code panels above remain sourced from the separate RADIUS errors view.",
+      "description": "One row per failed-authentication combination of NAD, method, protocol, authorization policy, and PSN. Error-code panels above remain sourced from the separate RADIUS errors view.",
       "gridPos": {
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 40
       },
       "targets": [
         {

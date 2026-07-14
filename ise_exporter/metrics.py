@@ -208,7 +208,8 @@ ise_mnt_active_total_authentication_latency_samples = Gauge(
 ise_dataconnect_radius_authentication_events = Gauge(
     "ise_dataconnect_radius_authentication_events",
     "RADIUS authentication events in the bounded Data Connect reporting window",
-    ["status", "authentication_method", "authentication_protocol", "nad", "policy_set", "psn"])
+    ["status", "authentication_method", "authentication_protocol", "nad",
+     "authorization_policy", "psn"])
 ise_dataconnect_radius_authentication_events_total = Gauge(
     "ise_dataconnect_radius_authentication_events_total",
     "Exact RADIUS authentication event count in the Data Connect reporting window")
@@ -220,8 +221,8 @@ ise_dataconnect_radius_distinct_users_total = Gauge(
     "Exact distinct usernames in the RADIUS reporting window")
 ise_dataconnect_radius_failure_events = Gauge(
     "ise_dataconnect_radius_failure_events",
-    "Failed RADIUS authentications by bounded reason class, policy set, and location",
-    ["failure_class", "policy_set", "location"])
+    "Failed RADIUS authentications by bounded reason class, authorization profile, and location",
+    ["failure_class", "authorization_profile", "location"])
 ise_dataconnect_radius_failure_events_total = Gauge(
     "ise_dataconnect_radius_failure_events_total",
     "Exact failed RADIUS authentication count in the Data Connect reporting window")

@@ -56,6 +56,14 @@ def test_contract_requires_columns_used_unconditionally_by_latest_session_querie
         VIEW_CONTRACTS["POSTURE_ASSESSMENT_BY_ENDPOINT"].required
 
 
+def test_contract_requires_patch11_radius_summary_and_authorization_policy():
+    assert "AUTHORIZATION_POLICY" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].required
+    assert {
+        "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "PASSED_COUNT", "FAILED_COUNT",
+    } <= VIEW_CONTRACTS["RADIUS_AUTHENTICATION_SUMMARY"].required
+    assert VIEW_CONTRACTS["RADIUS_AUTHENTICATION_SUMMARY"].time_column == "TIMESTAMP"
+
+
 def test_contract_requires_columns_used_unconditionally_by_endpoint_queries():
     assert {
         "ENDPOINT_ID", "ENDPOINT_IP", "HOSTNAME", "ENDPOINT_POLICY", "IDENTITY_GROUP_ID",

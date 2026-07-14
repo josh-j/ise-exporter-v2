@@ -273,7 +273,7 @@
     {
       "id": 8,
       "type": "bargauge",
-      "title": "Policy Sets",
+      "title": "Authorization Policies",
       "gridPos": {
         "h": 8,
         "w": 8,
@@ -282,8 +282,8 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (policy_set) (ise_dataconnect_radius_authentication_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
-          "legendFormat": "{{policy_set}}",
+          "expr": "topk(20, sum by (authorization_policy) (ise_dataconnect_radius_authentication_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "legendFormat": "{{authorization_policy}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",

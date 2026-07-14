@@ -52,7 +52,7 @@ pxGrid; it does not.
 ## Data Connect reporting ownership
 
 - [x] Collect grouped RADIUS authentication outcomes, methods, protocols,
-  policy sets, NADs, PSNs, and response latency.
+  authorization policies, NADs, PSNs, and response latency.
 - [x] Collect grouped RADIUS accounting events and session-duration aggregates.
 - [x] Collect RADIUS error aggregates by message code, NAD, method, and PSN.
 - [x] Collect endpoint totals, profiles, identity groups, posture applicability,
