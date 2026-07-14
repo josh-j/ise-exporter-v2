@@ -90,9 +90,9 @@ silently becoming the Oracle target. Production defaults for up to 100,000
 endpoints use one sequential connection, two-second statement pacing, a 0.5%
 adaptive query-duty-cycle ceiling, 15-second statement timeouts, and independent
 30-minute to 24-hour domain cadences. The client enforces two seconds and 0.5%
-as hard safety limits even
-when a CLI caller or alternate configuration object requests a more aggressive
-value; grouped output is likewise capped at 1,000 series per breakdown. Summary
+as hard safety limits and refuses to materialize more than 5,000 rows from any
+statement, even when a CLI caller or alternate configuration object requests a
+more aggressive value; grouped output is likewise capped at 1,000 series per breakdown. Summary
 and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate event scan. Exact
 RADIUS volume, failure totals, and distinct endpoint/user counts come from Cisco's

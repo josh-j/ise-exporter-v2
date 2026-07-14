@@ -23,6 +23,9 @@ class Cursor:
     def fetchall(self):
         return [("netadmin", 3)]
 
+    def fetchmany(self, size):
+        return self.fetchall()[:size]
+
 
 class Connection:
     call_timeout = 0
@@ -376,3 +379,33 @@ def test_query_materializes_endpoint_clob_and_binary_fields(monkeypatch):
         "custom_attributes": '{"Ops Owner":"Campus Operations"}',
         "probe_data": "base64:cHJvYmU=",
     }]
+
+
+def test_query_refuses_to_materialize_more_than_hard_result_ceiling(monkeypatch):
+    class UnboundedCursor(Cursor):
+        def fetchmany(self, size):
+            return [(f"user-{index}", index) for index in range(size)]
+
+    class UnboundedConnection(Connection):
+        def cursor(self):
+            return UnboundedCursor()
+
+    connection = UnboundedConnection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    counter = metrics.ise_dataconnect_queries_total.labels(
+        view="endpoints_data", result="error")
+    before = counter._value.get()
+
+    with pytest.raises(RuntimeError, match="5000-row safety ceiling"):
+        client.query("SELECT fields FROM endpoints_data")
+
+    assert connection.closed is True
+    assert counter._value.get() == before + 1

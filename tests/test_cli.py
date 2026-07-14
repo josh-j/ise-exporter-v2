@@ -507,6 +507,22 @@ def test_dataconnect_schema_is_metadata_only_and_table_is_bound(capsys):
     assert "FROM endpoints_data" not in sql
 
 
+def test_dataconnect_schema_defaults_to_supported_contract_views(capsys):
+    dataconnect = FakeDataConnect()
+
+    assert cli.main([
+        "dataconnect-schema", "-o", "json"
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+
+    assert json.loads(capsys.readouterr().out)
+    sql, parameters = dataconnect.calls[-1]
+    assert "FROM user_tab_columns" in sql
+    assert "WHERE table_name IN" in sql
+    assert "'ENDPOINTS_DATA'" in sql
+    assert "'RADIUS_AUTHENTICATIONS'" in sql
+    assert parameters == {}
+
+
 def test_no_subcommand_enters_repl_and_question_mark_shows_commands():
     stdin = io.StringIO("?\nschema secure-client -o json\nquit\n")
     stdout = io.StringIO()

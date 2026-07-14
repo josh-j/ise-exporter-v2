@@ -1,8 +1,8 @@
 """Read-only Cisco ISE Data Connect client.
 
-Data Connect is Oracle-compatible SQL over TCPS on the MnT node.  The exporter
-only queries Cisco's bounded ``*_LAST_TWO_DAYS`` TACACS views and never mutates
-the database.
+Data Connect is Oracle-compatible SQL over TCPS on the MnT node. The exporter
+queries Cisco reporting views read-only, with time-bounded event statements,
+aggregated output, and a hard result-row ceiling.
 """
 import base64
 import fcntl
@@ -17,6 +17,11 @@ import oracledb
 from .. import metrics
 
 logger = logging.getLogger(__name__)
+
+# This matches the operator CLI's absolute row limit and is five times larger
+# than any scheduled top-K result. Even if a SQL/view contract regresses, the
+# exporter will not materialize an unbounded slice of the MnT database.
+MAX_RESULT_ROWS = 5000
 
 
 _QUERY_VIEWS = (
@@ -222,8 +227,13 @@ class DataConnectClient:
                     with self.connect().cursor() as cursor:
                         cursor.execute(sql, parameters or {})
                         columns = [column.name.lower() for column in cursor.description]
+                        fetched = cursor.fetchmany(MAX_RESULT_ROWS + 1)
+                        if len(fetched) > MAX_RESULT_ROWS:
+                            raise RuntimeError(
+                                f"Data Connect result exceeded the hard "
+                                f"{MAX_RESULT_ROWS}-row safety ceiling")
                         rows = [dict(zip(columns, (_materialize(value) for value in row)))
-                                for row in cursor.fetchall()]
+                                for row in fetched]
                     result = "success"
                     metrics.ise_dataconnect_query_rows.labels(view=view).set(len(rows))
                     return rows

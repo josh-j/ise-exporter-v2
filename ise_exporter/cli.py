@@ -1378,14 +1378,19 @@ def _dataconnect_health(dataconnect):
 def _dataconnect_schema(dataconnect, table=None):
     if dataconnect is None:
         raise CLIError("this command requires configured Data Connect credentials")
+    if not table:
+        try:
+            # Default discovery is the exporter contract, not the Data Connect
+            # account's entire catalog. Operators may still name one custom view.
+            return metadata_rows(dataconnect)
+        except Exception as error:
+            raise CLIError(f"Data Connect schema query failed: {error}") from error
     parameters = {}
-    predicate = ""
-    if table:
-        normalized = table.strip().upper()
-        if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", normalized):
-            raise CLIError("Data Connect table must contain only letters, numbers, and underscores")
-        predicate = " WHERE table_name = :table_name"
-        parameters["table_name"] = normalized
+    normalized = table.strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", normalized):
+        raise CLIError("Data Connect table must contain only letters, numbers, and underscores")
+    predicate = " WHERE table_name = :table_name"
+    parameters["table_name"] = normalized
     try:
         return dataconnect.query(f"""
             SELECT table_name, column_id, column_name, data_type, data_length, nullable
