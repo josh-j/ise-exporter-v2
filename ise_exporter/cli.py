@@ -1034,6 +1034,28 @@ def _text_expression(alias, column, data_type):
     return f"{alias}.{column}"
 
 
+def _normalized_mac_expression(alias, column):
+    """Normalize a bounded context-side MAC without wrapping the inventory join key."""
+    reference = f"{alias}.{column}"
+    return (
+        f"UPPER(REPLACE(REPLACE(REPLACE(TRIM({reference}), ':', ''), '-', ''), '.', ''))"
+    )
+
+
+def _mac_join_predicate(endpoint_reference, normalized_reference):
+    """Match Cisco MAC renderings while keeping ENDPOINTS_DATA.MAC_ADDRESS indexable."""
+    compact = normalized_reference
+    colon = " || ':' || ".join(
+        f"SUBSTR({compact}, {offset}, 2)" for offset in range(1, 12, 2))
+    hyphen = " || '-' || ".join(
+        f"SUBSTR({compact}, {offset}, 2)" for offset in range(1, 12, 2))
+    dotted = " || '.' || ".join(
+        f"SUBSTR({compact}, {offset}, 4)" for offset in range(1, 10, 4))
+    variants = (compact, f"LOWER({compact})", colon, f"LOWER({colon})",
+                hyphen, f"LOWER({hyphen})", dotted, f"LOWER({dotted})")
+    return f"{endpoint_reference} IN ({', '.join(variants)})"
+
+
 def _safe_select_expression(alias, column, data_type):
     """Project ISE reporting values without trusting legacy text encoding.
 
@@ -1160,8 +1182,9 @@ def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
                     source_columns, *ENDPOINT_CONTEXT_SOURCES[source]["timestamp"])
                 recent = (f" AND {alias}.{timestamp} >= SYSTIMESTAMP - INTERVAL '2' DAY"
                           if source != "endpoint" and timestamp else "")
+                normalized_mac = _normalized_mac_expression(alias, source_mac)
                 branches.append(
-                    f"SELECT {alias}.{source_mac} AS match_mac, "
+                    f"SELECT {normalized_mac} AS match_mac, "
                     f"{match_value} AS match_value "
                     f"FROM {binding['table']} {alias} "
                     f"WHERE {alias}.{source_mac} IS NOT NULL{recent} AND {match}")
@@ -1173,7 +1196,9 @@ def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
             f"{cte} AS (SELECT match_mac, MIN(match_value) AS match_value "
             f"FROM ({union}) GROUP BY match_mac "
             f"FETCH FIRST {ENDPOINT_SEARCH_CANDIDATE_LIMIT} ROWS ONLY)")
-        joins.append(f"JOIN {cte} m{field_index} ON m{field_index}.match_mac = e.{endpoint_mac}")
+        joins.append(
+            f"JOIN {cte} m{field_index} ON "
+            f"{_mac_join_predicate(f'e.{endpoint_mac}', f'm{field_index}.match_mac')}")
         context_alias = f"MATCHED_CONTEXT_{field_index}"
         matched_context_columns.append((field, context_alias))
 

@@ -593,6 +593,10 @@ def test_endpoint_context_search_joins_schema_discovered_sources(capsys):
     assert "MATCHED_CONTEXT_0" in sql
     assert "ASCIISTR(e.HOSTNAME) AS HOSTNAME" in sql
     assert "ASCIISTR(s0_0_0.HOSTNAME) AS match_value" in sql
+    assert "UPPER(REPLACE(REPLACE(REPLACE(TRIM(s0_0_0.MAC_ADDRESS)" in sql
+    assert "e.MAC_ADDRESS IN (m0.match_mac" in sql
+    assert "REPLACE(e.MAC_ADDRESS" not in sql
+    assert "LOWER(SUBSTR(m0.match_mac, 1, 2)" in sql
     assert "FETCH FIRST 25 ROWS ONLY" in sql
     assert set(parameters.values()) == {"LAB-%", "PERMIT%", "BERLIN-%", "WINDOWS%"}
 
@@ -611,7 +615,9 @@ def test_repeated_endpoint_field_values_are_or_and_distinct_fields_are_and(capsy
     assert "POSTURE_ASSESSMENT_BY_ENDPOINT" in sql
     assert " UNION " in sql
     assert "JOIN matched_0" in sql and "JOIN matched_1" in sql
-    assert "EXISTS" not in sql and "REPLACE(" not in sql
+    assert "EXISTS" not in sql
+    assert "REPLACE(e.MAC_ADDRESS" not in sql
+    assert "e.MAC_ADDRESS IN (m0.match_mac" in sql
     assert "FETCH FIRST 100 ROWS ONLY" in sql
 
 
