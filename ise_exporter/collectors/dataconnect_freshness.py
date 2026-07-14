@@ -55,13 +55,13 @@ def collect(dataconnect, cfg):
             # Cisco's TACACS views are already hard-bounded to two days and expose
             # numeric Unix EPOCH_TIME rather than an Oracle timestamp. Applying a
             # SYSTIMESTAMP predicate to that column is both invalid and redundant.
-            predicate = ("" if view.startswith("TACACS_") else
+            predicate = (f"WHERE {column} IS NOT NULL" if view.startswith("TACACS_") else
                          f"WHERE {column} >= SYSTIMESTAMP - INTERVAL '2' DAY")
             result = dataconnect.query(f"""
                 SELECT {column} AS newest_event
                 FROM {view}
                 {predicate}
-                ORDER BY {column} DESC FETCH FIRST 1 ROWS ONLY
+                ORDER BY {column} DESC NULLS LAST FETCH FIRST 1 ROWS ONLY
             """)
             row = result[0] if result else {}
             rows.append({

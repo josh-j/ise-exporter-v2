@@ -262,7 +262,11 @@ ise_dataconnect_radius_topk_groups_returned = Gauge(
     ["breakdown"])
 ise_dataconnect_radius_topk_groups_total = Gauge(
     "ise_dataconnect_radius_topk_groups_total",
-    "Exact number of dimensional groups before the Data Connect top-K limit",
+    "Dimensional group count before the top-K limit; a lower bound when exactness is zero",
+    ["breakdown"])
+ise_dataconnect_radius_topk_groups_total_exact = Gauge(
+    "ise_dataconnect_radius_topk_groups_total_exact",
+    "Whether the reported RADIUS dimensional group count is exact",
     ["breakdown"])
 ise_dataconnect_radius_topk_truncated = Gauge(
     "ise_dataconnect_radius_topk_truncated",

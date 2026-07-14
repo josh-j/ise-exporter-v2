@@ -42,13 +42,14 @@ def test_collects_bounded_presence_and_newest_event_for_every_timestamped_view()
     assert len(client.sql) == len(timestamped)
     tacacs_sql = [sql for sql in client.sql if "TACACS_" in sql]
     assert len(tacacs_sql) == 3
-    assert all("EPOCH_TIME" in sql and "INTERVAL '2' DAY" not in sql
+    assert all("EPOCH_TIME IS NOT NULL" in sql and "INTERVAL '2' DAY" not in sql
                for sql in tacacs_sql)
     assert all("INTERVAL '2' DAY" in sql
                for sql in client.sql if "TACACS_" not in sql)
     assert all("COUNT(" not in sql and "MIN(" not in sql and "MAX(" not in sql
                for sql in client.sql)
     assert all("FETCH FIRST 1 ROWS ONLY" in sql for sql in client.sql)
+    assert all("DESC NULLS LAST" in sql for sql in client.sql)
 
     rows = _rows(metrics.ise_dataconnect_view_has_rows)
     assert set(rows) == {(view, domain) for view, domain in timestamped.items()}

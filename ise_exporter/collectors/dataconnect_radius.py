@@ -34,6 +34,7 @@ _METRICS = (
     metrics.ise_dataconnect_radius_errors_total,
     metrics.ise_dataconnect_radius_topk_groups_returned,
     metrics.ise_dataconnect_radius_topk_groups_total,
+    metrics.ise_dataconnect_radius_topk_groups_total_exact,
     metrics.ise_dataconnect_radius_topk_truncated,
 )
 
@@ -248,13 +249,17 @@ def _merge_rollups(snapshots, limit):
         groups = {}
         total_events = 0
         total_groups = 0
+        total_groups_exact = True
         accounting_start_events = 0
         accounting_stop_events = 0
         for snapshot in snapshots.get(dataset, []):
             rows = snapshot["rows"]
             if rows:
                 total_events += integer(rows[0].get("total_events"))
-                total_groups = max(total_groups, integer(rows[0].get("total_groups")))
+                window_groups = integer(rows[0].get("total_groups"))
+                total_groups = max(total_groups, window_groups)
+                if len(rows) < window_groups:
+                    total_groups_exact = False
                 if dataset == "accounting":
                     accounting_start_events += integer(rows[0].get("start_events"))
                     accounting_stop_events += integer(rows[0].get("stop_events"))
@@ -303,6 +308,7 @@ def _merge_rollups(snapshots, limit):
                 row["start_events"] = accounting_start_events
                 row["stop_events"] = accounting_stop_events
             row["total_groups"] = total_groups
+            row["total_groups_exact"] = int(total_groups_exact)
         merged[dataset] = values
     return merged
 
@@ -522,6 +528,7 @@ def collect(dataconnect, cfg):
         }
         for breakdown, (returned, summary) in breakdowns.items():
             total = integer(summary.get("total_groups"))
+            total_exact = integer(summary.get("total_groups_exact", 1))
             writers.extend((
                 lambda breakdown=breakdown, returned=returned:
                     metrics.ise_dataconnect_radius_topk_groups_returned.labels(
@@ -529,8 +536,13 @@ def collect(dataconnect, cfg):
                 lambda breakdown=breakdown, total=total:
                     metrics.ise_dataconnect_radius_topk_groups_total.labels(
                         breakdown=breakdown).set(total),
-                lambda breakdown=breakdown, returned=returned, total=total:
+                lambda breakdown=breakdown, total_exact=total_exact:
+                    metrics.ise_dataconnect_radius_topk_groups_total_exact.labels(
+                        breakdown=breakdown).set(total_exact),
+                lambda breakdown=breakdown, returned=returned, total=total,
+                total_exact=total_exact:
                     metrics.ise_dataconnect_radius_topk_truncated.labels(
-                        breakdown=breakdown).set(1 if returned < total else 0),
+                        breakdown=breakdown).set(
+                            1 if not total_exact or returned < total else 0),
             ))
         replace_snapshot(_METRICS, writers)

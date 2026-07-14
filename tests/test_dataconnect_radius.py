@@ -127,6 +127,8 @@ def test_collects_bounded_aggregated_radius_metrics():
                  "breakdown")[("authentication",)] == 2
     assert _rows(metrics.ise_dataconnect_radius_topk_groups_total,
                  "breakdown")[("authentication",)] == 30
+    assert _rows(metrics.ise_dataconnect_radius_topk_groups_total_exact,
+                 "breakdown")[("authentication",)] == 1
     assert _rows(metrics.ise_dataconnect_radius_topk_truncated,
                  "breakdown")[("authentication",)] == 1
 
@@ -204,3 +206,7 @@ def test_incremental_rollups_survive_restart_and_scan_only_new_window(tmp_path, 
     assert _rows(metrics.ise_dataconnect_radius_authentication_events,
                  "authentication_method", "nad") == {
         ("MSCHAPv2", "nad-1"): 14, ("EAP-TLS", "nad-1"): 6}
+    assert _rows(metrics.ise_dataconnect_radius_topk_groups_total_exact,
+                 "breakdown")[("authentication",)] == 0
+    assert _rows(metrics.ise_dataconnect_radius_topk_truncated,
+                 "breakdown")[("authentication",)] == 1
