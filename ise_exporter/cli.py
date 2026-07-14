@@ -1026,6 +1026,86 @@ def _text_expression(alias, column, data_type):
     return f"{alias}.{column}"
 
 
+def _safe_select_expression(alias, column, data_type):
+    """Project ISE reporting values without trusting legacy text encoding.
+
+    Some ISE 3.3 ENDPOINTS_DATA VARCHAR2 values contain historical probe or
+    custom-attribute bytes that python-oracledb cannot decode as UTF-8. ASCIISTR
+    makes Oracle return an ASCII-only representation while preserving escaped
+    non-ASCII code points. The conversion happens before bytes reach the driver,
+    so one malformed optional attribute cannot make an entire endpoint search
+    unusable.
+    """
+    normalized = str(data_type).upper()
+    reference = f"{alias}.{column}"
+    if "CLOB" in normalized:
+        return f"ASCIISTR(DBMS_LOB.SUBSTR({reference}, 4000, 1)) AS {column}"
+    if "CHAR" in normalized:
+        return f"ASCIISTR({reference}) AS {column}"
+    if "TIMESTAMP" in normalized and "TIME ZONE" in normalized:
+        return f"TO_CHAR({reference}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF TZH:TZM') AS {column}"
+    if "TIMESTAMP" in normalized:
+        return f"TO_CHAR({reference}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF') AS {column}"
+    if "DATE" in normalized:
+        return f"TO_CHAR({reference}, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS {column}"
+    return f"{reference}"
+
+
+def _safe_match_expression(alias, column, data_type):
+    normalized = str(data_type).upper()
+    if "CLOB" in normalized:
+        return f"ASCIISTR(DBMS_LOB.SUBSTR({alias}.{column}, 4000, 1))"
+    if "CHAR" in normalized:
+        return f"ASCIISTR({alias}.{column})"
+    return _text_expression(alias, column, normalized)
+
+
+def _decode_endpoint_attribute_payload(value):
+    """Turn ISE endpoint attribute blobs into operator-readable structures."""
+    if not isinstance(value, str) or not value:
+        return value
+    stripped = value.strip()
+    if stripped[:1] in ("{", "["):
+        try:
+            return json.loads(stripped)
+        except (TypeError, ValueError):
+            pass
+
+    # PROBE_DATA on ISE 3.3 is commonly a one-byte-length-prefixed key/value
+    # stream: header, 0x11 separator, length, text, separator, length, text...
+    # Parse it only when the complete framing is internally consistent. Unknown
+    # payloads stay verbatim so the CLI never discards diagnostic evidence.
+    if len(value) < 3 or value[1] != "\x11":
+        return value
+    position = 2
+    tokens = []
+    while position < len(value):
+        length = ord(value[position])
+        position += 1
+        if position + length > len(value):
+            return value
+        tokens.append(value[position:position + length])
+        position += length
+        if position == len(value):
+            break
+        if value[position] != "\x11":
+            return value
+        position += 1
+    if len(tokens) < 2:
+        return value
+    if len(tokens) % 2:
+        tokens.append("")
+    return {tokens[index]: tokens[index + 1] for index in range(0, len(tokens), 2)}
+
+
+def _normalize_endpoint_payloads(rows):
+    for row in rows:
+        for field in ("custom_attributes", "probe_data"):
+            if field in row:
+                row[field] = _decode_endpoint_attribute_payload(row[field])
+    return rows
+
+
 def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
     if limit < 1 or limit > 5000:
         raise CLIError("--limit must be between 1 and 5000")
@@ -1065,6 +1145,8 @@ def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
                 expression = _text_expression(
                     alias,
                     binding["column"], binding["data_type"])
+                match_value = _safe_match_expression(
+                    alias, binding["column"], binding["data_type"])
                 match = f"UPPER({expression}) LIKE :{parameter} ESCAPE '\\'"
                 timestamp = _first_column(
                     source_columns, *ENDPOINT_CONTEXT_SOURCES[source]["timestamp"])
@@ -1072,7 +1154,7 @@ def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
                           if source != "endpoint" and timestamp else "")
                 branches.append(
                     f"SELECT {alias}.{source_mac} AS match_mac, "
-                    f"{expression} AS match_value "
+                    f"{match_value} AS match_value "
                     f"FROM {binding['table']} {alias} "
                     f"WHERE {alias}.{source_mac} IS NOT NULL{recent} AND {match}")
         if not branches:
@@ -1088,8 +1170,7 @@ def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
         matched_context_columns.append((field, context_alias))
 
     select_expressions = [
-        (f"TO_CHAR(e.{column}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF TZH:TZM') AS {column}"
-         if "TIME ZONE" in data_type else f"e.{column}")
+        _safe_select_expression("e", column, data_type)
         for column, data_type in endpoint_columns.items() if _searchable_datatype(data_type)
     ]
     select_expressions.extend(
@@ -1116,7 +1197,7 @@ def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
                 value = row.pop(alias, None)
             matched_context[field] = value
         row["matched_context"] = matched_context
-    return result
+    return _normalize_endpoint_payloads(result)
 
 
 def _dataconnect_report(args, client, dataconnect):
@@ -1216,7 +1297,8 @@ def _dataconnect_report(args, client, dataconnect):
     sql = (f"SELECT {', '.join(select_expressions)} FROM {table}{where}{order} "
            f"FETCH FIRST {args.limit} ROWS ONLY")
     try:
-        return dataconnect.query(sql, parameters)
+        rows = dataconnect.query(sql, parameters)
+        return _normalize_endpoint_payloads(rows) if table == "ENDPOINTS_DATA" else rows
     except Exception as error:
         raise CLIError(f"Data Connect query failed for {table}: {error}") from error
 

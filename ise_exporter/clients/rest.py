@@ -260,15 +260,23 @@ class ISERestClient:
         health = {"pan": False, "mnt": False}
         if self.session is not None:
             try:
-                r = self.session.get(f"https://{self.host}:{self.cfg.ers_port}/ers",
-                                     timeout=5, allow_redirects=False)
+                # Health probes intentionally accept any non-5xx response as
+                # reachability. Keep explicitly disabled lab TLS from leaking an
+                # urllib3 warning into ise-cli's JSON/CSV output, just as _request
+                # does for normal API calls.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", InsecureRequestWarning)
+                    r = self.session.get(f"https://{self.host}:{self.cfg.ers_port}/ers",
+                                         timeout=5, allow_redirects=False)
                 health["pan"] = r.status_code < 500
             except Exception as e:
                 logger.debug("PAN health check failed: %s", e)
         if self.mnt_session is not None:
             try:
-                r = self.mnt_session.get(
-                    f"https://{self.mnt_host}/admin", timeout=5, allow_redirects=False)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", InsecureRequestWarning)
+                    r = self.mnt_session.get(
+                        f"https://{self.mnt_host}/admin", timeout=5, allow_redirects=False)
                 health["mnt"] = r.status_code < 500
             except Exception as e:
                 logger.debug("MnT health check failed: %s", e)

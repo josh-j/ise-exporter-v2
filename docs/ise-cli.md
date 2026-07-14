@@ -149,6 +149,12 @@ endpoint inventory column made available by the live schema. Results also includ
 or other context value that matched each requested field, while `matched_filters`
 records the requested patterns.
 
+ISE 3.3 can store historical `PROBE_DATA` or `CUSTOM_ATTRIBUTES` bytes that are not
+valid UTF-8. The CLI asks Oracle for an ASCII-safe projection so one legacy value
+cannot break the entire search. JSON custom attributes and ISE's length-prefixed
+probe attributes are rendered as normal key/value objects (including keys with
+spaces such as `Ops Owner`); an unrecognized payload is preserved verbatim.
+
 The field catalog is schema-driven rather than tied to a guessed ISE column list:
 
 ```console
@@ -226,6 +232,9 @@ the same spirit as selecting properties from PowerCLI objects.
   and exposes no HTTP method flag.
 - Inventory enumeration is bounded unless `--all` is explicit.
 - Passwords are loaded from the environment/dotenv source and are never rendered.
+- Explicitly disabled lab TLS does not emit urllib3 warnings into structured CLI
+  output; production deployments should still install the CA chain and enable
+  verification.
 - `schema` is local-only and does not load credentials or construct a client.
 
 The standalone scripts under `tools/curl_*` remain useful for comparing raw API

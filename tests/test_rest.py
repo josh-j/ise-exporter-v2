@@ -240,3 +240,26 @@ def test_unverified_https_warning_is_suppressed_at_request_boundary():
         assert client._request(Session(), "https://ise.example/ers") is not None
 
     assert not [item for item in caught if issubclass(item.category, InsecureRequestWarning)]
+
+
+def test_unverified_https_warning_is_suppressed_for_health_checks():
+    client = ISERestClient.__new__(ISERestClient)
+    client.host = "pan.example"
+    client.mnt_host = "mnt.example"
+    client.cfg = types.SimpleNamespace(ers_port=9060)
+
+    class Response:
+        status_code = 200
+
+    class Session:
+        def get(self, *args, **kwargs):
+            warnings.warn("unverified health request", InsecureRequestWarning)
+            return Response()
+
+    client.session = Session()
+    client.mnt_session = Session()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert client.health_check() == {"pan": True, "mnt": True}
+
+    assert not [item for item in caught if issubclass(item.category, InsecureRequestWarning)]

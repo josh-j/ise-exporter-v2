@@ -515,6 +515,8 @@ def test_endpoint_context_search_joins_schema_discovered_sources(capsys):
     assert "ENDPOINT_POLICY" in sql
     assert "MIN(match_value) AS match_value" in sql
     assert "MATCHED_CONTEXT_0" in sql
+    assert "ASCIISTR(e.HOSTNAME) AS HOSTNAME" in sql
+    assert "ASCIISTR(s0_0_0.HOSTNAME) AS match_value" in sql
     assert "FETCH FIRST 25 ROWS ONLY" in sql
     assert set(parameters.values()) == {"LAB-%", "PERMIT%", "BERLIN-%", "WINDOWS%"}
 
@@ -555,3 +557,27 @@ def test_endpoint_search_completion_offers_fields_and_live_context_values():
     assert "authorization-policy=" in shell.completion_candidates("endpoints auth")
     assert shell.completion_candidates("endpoints endpoint-policy=Win") == [
         "'endpoint-policy=Windows Servers'", "'endpoint-policy=Windows Workstations'"]
+
+
+def test_endpoint_projection_safely_converts_legacy_text_and_time_types():
+    assert cli._safe_select_expression("e", "CUSTOM_ATTRIBUTES", "VARCHAR2") == \
+        "ASCIISTR(e.CUSTOM_ATTRIBUTES) AS CUSTOM_ATTRIBUTES"
+    assert cli._safe_select_expression("e", "PROBE_DATA", "CLOB") == \
+        "ASCIISTR(DBMS_LOB.SUBSTR(e.PROBE_DATA, 4000, 1)) AS PROBE_DATA"
+    assert cli._safe_select_expression(
+        "e", "UPDATE_TIME", "TIMESTAMP(6) WITH TIME ZONE") == (
+            "TO_CHAR(e.UPDATE_TIME, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF TZH:TZM') AS UPDATE_TIME")
+
+
+def test_endpoint_attribute_payloads_are_operator_readable_without_data_loss():
+    probe = ("i\x11\x06chaddr\x11\x11AA:BB:CC:DD:EE:FF"
+             "\x11\x09Ops Owner\x11\x11Campus Operations")
+    assert cli._decode_endpoint_attribute_payload(probe) == {
+        "chaddr": "AA:BB:CC:DD:EE:FF",
+        "Ops Owner": "Campus Operations",
+    }
+    assert cli._decode_endpoint_attribute_payload(
+        '{"Ops Owner":"Campus Operations"}') == {
+            "Ops Owner": "Campus Operations"}
+    malformed = "i\x11\x20too-short"
+    assert cli._decode_endpoint_attribute_payload(malformed) == malformed
