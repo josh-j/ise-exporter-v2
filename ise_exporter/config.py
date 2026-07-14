@@ -214,7 +214,9 @@ class Config:
             tacacs_internal_user_detail_request_interval_ms=_bounded_i(
                 "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS", 250, 100),
             tacacs_unused_account_days=_i("TACACS_UNUSED_ACCOUNT_DAYS", 180),
-            dataconnect_host=_s("ISE_DATACONNECT_HOST", _s("ISE_MNT_HOST")),
+            # Never infer the Oracle target from the MnT XML host. Production
+            # deployments must choose the intended Data Connect node explicitly.
+            dataconnect_host=_s("ISE_DATACONNECT_HOST"),
             dataconnect_port=_i("ISE_DATACONNECT_PORT", 2484),
             dataconnect_service=_s("ISE_DATACONNECT_SERVICE", "cpm10"),
             dataconnect_user=_s("ISE_DATACONNECT_USER", "dataconnect"),

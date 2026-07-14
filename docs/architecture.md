@@ -84,10 +84,13 @@ unbounded Prometheus labels.
 
 Data Connect safety applies to the whole ISE deployment. Connecting to a
 secondary MnT does not imply that every exposed view is executed only on that
-node. Production defaults for up to 100,000 endpoints use one sequential
-connection, two-second statement pacing, a 0.5% adaptive query-duty-cycle ceiling,
-15-second statement timeouts, and independent 30-minute to 24-hour domain
-cadences. The client enforces two seconds and 0.5% as hard safety limits even
+node. `ISE_DATACONNECT_HOST` is therefore mandatory when Data Connect is enabled
+and never inherits `ISE_MNT_HOST`; this prevents an XML API routing choice from
+silently becoming the Oracle target. Production defaults for up to 100,000
+endpoints use one sequential connection, two-second statement pacing, a 0.5%
+adaptive query-duty-cycle ceiling, 15-second statement timeouts, and independent
+30-minute to 24-hour domain cadences. The client enforces two seconds and 0.5%
+as hard safety limits even
 when a CLI caller or alternate configuration object requests a more aggressive
 value; grouped output is likewise capped at 1,000 series per breakdown. Summary
 and top-group results share one Oracle aggregation wherever

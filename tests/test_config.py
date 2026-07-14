@@ -68,6 +68,7 @@ def test_s_default_when_unset(monkeypatch):
 def test_summary_excludes_password(monkeypatch):
     monkeypatch.setenv("ISE_PASS", "super-secret")
     monkeypatch.setenv("ISE_DATACONNECT_PASSWORD", "database-secret")
+    monkeypatch.setenv("ISE_DATACONNECT_HOST", "mnt2.example.mil")
     monkeypatch.setenv("ISE_MNT_HOST", "mnt1.example.mil")
     monkeypatch.setenv("ISE_HOST", "pan1.example.mil")
     cfg = Config.from_env()
@@ -75,7 +76,18 @@ def test_summary_excludes_password(monkeypatch):
     assert "database-secret" not in cfg.summary()
     assert "pan1.example.mil" in cfg.summary()
     assert cfg.dataconnect_ready is True
-    assert cfg.dataconnect_host == "mnt1.example.mil"
+    assert cfg.dataconnect_host == "mnt2.example.mil"
+
+
+def test_dataconnect_host_never_falls_back_to_mnt_host(monkeypatch):
+    monkeypatch.setenv("ISE_MNT_HOST", "primary-mnt.example.mil")
+    monkeypatch.setenv("ISE_DATACONNECT_PASSWORD", "database-secret")
+    monkeypatch.delenv("ISE_DATACONNECT_HOST", raising=False)
+
+    cfg = Config.from_env()
+
+    assert cfg.dataconnect_host == ""
+    assert cfg.dataconnect_ready is False
 
 
 def test_rest_and_mnt_tls_are_verified_by_default_with_independent_overrides(monkeypatch):
