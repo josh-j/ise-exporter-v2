@@ -340,6 +340,37 @@ def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
     assert truncation.count("max(ise_dataset_up") == 4
 
 
+def test_data_quality_domain_panels_do_not_publish_stale_values_during_outages():
+    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+    ownership = {
+        7: "dataconnect_posture",
+        8: "dataconnect_endpoints",
+        9: "dataconnect_endpoints",
+        10: "dataconnect_radius",
+        11: "dataconnect_nad_health",
+        12: "dataconnect_nad_health",
+        13: "certificates",
+        14: "deployment",
+        15: "dataconnect_nad_health",
+        16: "certificates",
+        19: "mnt_active_posture",
+        20: "mnt_active_posture",
+        21: "mnt_active_posture",
+        30: "mnt_active_posture",
+        31: "mnt_active_posture",
+        32: "mnt_active_posture",
+        33: "dataconnect_radius",
+    }
+
+    for panel_id, dataset in ownership.items():
+        for target in panels[panel_id]["targets"]:
+            expression = target["expr"]
+            assert f'dataset="{dataset}"' in expression, (panel_id, expression)
+            assert "ise_dataset_up" in expression, (panel_id, expression)
+            assert "== 1" in expression, (panel_id, expression)
+
+
 def test_psn_diagnostic_headline_uses_exact_total_not_topk_breakdown():
     dashboard = json.loads((DASHBOARDS / "ise-psn-troubleshooting.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 4)

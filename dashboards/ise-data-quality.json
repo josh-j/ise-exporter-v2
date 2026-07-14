@@ -120,7 +120,7 @@
       "title": "Posture Coverage",
       "description": "Fraction of posture-applicable endpoints with a recent assessment in the bounded reporting window.",
       "gridPos": {"h": 4, "w": 6, "x": 0, "y": 27},
-      "targets": [{"expr": "ise_dataconnect_posture_eligible_recent_assessment_ratio", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_dataconnect_posture_eligible_recent_assessment_ratio and on() (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []}
     },
     {
@@ -129,7 +129,7 @@
       "title": "Unknown Endpoint Profiles",
       "description": "Current endpoints whose profile is missing or unknown.",
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 27},
-      "targets": [{"expr": "sum(ise_dataconnect_endpoints_by_profile{profile=~\"(?i:unknown|none|missing)\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "(sum(ise_dataconnect_endpoints_by_profile{profile=~\"(?i:unknown|none|missing)\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {}, "overrides": []}
     },
     {
@@ -138,7 +138,7 @@
       "title": "Endpoints Stale 90d",
       "description": "Current endpoint inventory not updated during the last 90 days.",
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 27},
-      "targets": [{"expr": "ise_dataconnect_endpoints_stale{age_days=\"90\"}", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_dataconnect_endpoints_stale{age_days=\"90\"} and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {}, "overrides": []}
     },
     {
@@ -147,7 +147,7 @@
       "title": "Distinct RADIUS Users",
       "description": "Exact distinct usernames observed in the bounded RADIUS reporting window.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 27},
-      "targets": [{"expr": "ise_dataconnect_radius_distinct_users_total", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_dataconnect_radius_distinct_users_total and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {}, "overrides": []}
     },
     {
@@ -156,7 +156,7 @@
       "title": "Configured NADs Without Activity",
       "description": "Configured network devices with no RADIUS authentications in the reporting window.",
       "gridPos": {"h": 4, "w": 6, "x": 0, "y": 31},
-      "targets": [{"expr": "count(ise_nad_seen_recently == 0)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "(count(ise_nad_seen_recently == 0) and on() (max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}]}}, "overrides": []}
     },
     {
@@ -165,7 +165,7 @@
       "title": "Unconfigured NAD Events",
       "description": "RADIUS authentications attributed to device names absent from the configured ERS inventory.",
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 31},
-      "targets": [{"expr": "ise_nad_unconfigured_authentication_events_total", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_nad_unconfigured_authentication_events_total and on() (max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}]}}, "overrides": []}
     },
     {
@@ -174,7 +174,7 @@
       "title": "Certificate Security Findings",
       "description": "Weak-signature, self-signed, or issuer-not-present findings across collected system certificates.",
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 31},
-      "targets": [{"expr": "sum(ise_certificate_weak_signature) + sum(ise_certificate_self_signed) + sum(1 - ise_certificate_issuer_present_in_trust_store)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "((sum(ise_certificate_weak_signature) or on() (0 * (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1))) + (sum(ise_certificate_self_signed) or on() (0 * (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1))) + (sum(1 - ise_certificate_issuer_present_in_trust_store) or on() (0 * (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1)))) and on() (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}]}}, "overrides": []}
     },
     {
@@ -183,7 +183,7 @@
       "title": "Disconnected ISE Nodes",
       "description": "Deployment nodes currently reporting a disconnected state.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 31},
-      "targets": [{"expr": "sum(ise_deployment_status{ise_deployment_status=\"Disconnected\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "sum(ise_deployment_status{ise_deployment_status=\"Disconnected\"}) and on() (max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []}
     },
     {
@@ -193,9 +193,9 @@
       "description": "Recent pass/fail counts, last authentication time, and activity state for every configured NAD.",
       "gridPos": {"h": 10, "w": 12, "x": 0, "y": 35},
       "targets": [
-        {"expr": "ise_nad_authentication_events", "format": "table", "instant": true, "refId": "Events", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_nad_seen_recently", "format": "table", "instant": true, "refId": "Seen", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "time() - ise_nad_last_authentication_timestamp", "format": "table", "instant": true, "refId": "Last auth age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "ise_nad_authentication_events and on() (max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1)", "format": "table", "instant": true, "refId": "Events", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_nad_seen_recently and on() (max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1)", "format": "table", "instant": true, "refId": "Seen", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "(time() - ise_nad_last_authentication_timestamp) and on() (max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1)", "format": "table", "instant": true, "refId": "Last auth age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
       "options": {"showHeader": true}
@@ -207,8 +207,8 @@
       "description": "Active service bindings and public-key sizes for ISE system and trusted certificates.",
       "gridPos": {"h": 10, "w": 12, "x": 12, "y": 35},
       "targets": [
-        {"expr": "ise_certificate_binding", "format": "table", "instant": true, "refId": "Bindings", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_certificate_key_size_bits", "format": "table", "instant": true, "refId": "Key size", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "ise_certificate_binding and on() (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1)", "format": "table", "instant": true, "refId": "Bindings", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_certificate_key_size_bits and on() (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1)", "format": "table", "instant": true, "refId": "Key size", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
       "options": {"showHeader": true}
@@ -236,7 +236,7 @@
       "title": "MnT Detail Coverage",
       "description": "Successful detail lookups divided by selected active endpoints.",
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 45},
-      "targets": [{"expr": "ise_mnt_active_posture_detail_coverage_ratio", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_mnt_active_posture_detail_coverage_ratio and on() (max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []}
     },
     {
@@ -245,7 +245,7 @@
       "title": "MnT Detail Truncated",
       "description": "1 means candidate active endpoints exceeded the configured detail-request bound.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 45},
-      "targets": [{"expr": "ise_mnt_active_posture_detail_truncated", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_mnt_active_posture_detail_truncated and on() (max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "COMPLETE", "color": "green"}, "1": {"text": "TRUNCATED", "color": "yellow"}}}]}, "overrides": []}
     },
     {
@@ -254,7 +254,7 @@
       "title": "MnT Active Posture Field Coverage",
       "description": "Fraction of collected active endpoint details containing each posture source field.",
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 49},
-      "targets": [{"expr": "ise_mnt_active_posture_field_coverage_ratio", "legendFormat": "{{field}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_mnt_active_posture_field_coverage_ratio and on() (max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1)", "legendFormat": "{{field}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []}
     },
     {
@@ -270,7 +270,7 @@
       "type": "stat",
       "title": "MnT Cached Active Details",
       "gridPos": {"h": 4, "w": 6, "x": 0, "y": 58},
-      "targets": [{"expr": "ise_mnt_active_posture_cache_entries", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
+      "targets": [{"expr": "ise_mnt_active_posture_cache_entries and on() (max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
     },
     {
       "id": 31,
@@ -279,8 +279,8 @@
       "description": "Actual detail calls and refreshes deferred by the production request budget.",
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 58},
       "targets": [
-        {"expr": "ise_mnt_active_posture_detail_requests", "instant": true, "legendFormat": "requested", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_mnt_active_posture_refresh_deferred", "instant": true, "legendFormat": "deferred", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "ise_mnt_active_posture_detail_requests and on() (max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1)", "instant": true, "legendFormat": "requested", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_mnt_active_posture_refresh_deferred and on() (max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1)", "instant": true, "legendFormat": "deferred", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ]
     },
     {
@@ -288,7 +288,7 @@
       "type": "stat",
       "title": "Oldest Active Detail Cache Age",
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 58},
-      "targets": [{"expr": "ise_mnt_active_posture_cache_oldest_age_seconds", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_mnt_active_posture_cache_oldest_age_seconds and on() (max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
     },
     {
@@ -298,8 +298,8 @@
       "description": "Mode 1 is a small new-event window; mode 0 is a full two-day reconciliation.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 58},
       "targets": [
-        {"expr": "ise_dataconnect_incremental_mode{domain=\"radius\"}", "instant": true, "legendFormat": "incremental mode", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_dataconnect_reconciliation_age_seconds{domain=\"radius\"}", "instant": true, "legendFormat": "reconciliation age", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "ise_dataconnect_incremental_mode{domain=\"radius\"} and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)", "instant": true, "legendFormat": "incremental mode", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_dataconnect_reconciliation_age_seconds{domain=\"radius\"} and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)", "instant": true, "legendFormat": "reconciliation age", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ]
     },
     {
