@@ -97,6 +97,18 @@ def test_api_families_route_to_their_configured_hosts():
     assert result["sessions"][0]["other_attr_string"] == "PostureStatus=Compliant"
 
 
+def test_mnt_active_count_preserves_the_count_field_for_safe_preflight():
+    client = ISERestClient.__new__(ISERestClient)
+    client.mnt_xml_url = "https://mnt.example.mil/admin/API/mnt"
+    client.mnt_session = object()
+    client._request = lambda *_args, **_kwargs: _Resp(
+        b"<sessionCount><count>12345</count></sessionCount>")
+
+    result = client.get_mnt_xml("/Session/ActiveCount")
+
+    assert result == {"total": 1, "sessions": [{"count": "12345"}]}
+
+
 def test_openapi_get_passes_query_parameters():
     client = ISERestClient.__new__(ISERestClient)
     client.pan_url = "https://ise.example/api/v1"

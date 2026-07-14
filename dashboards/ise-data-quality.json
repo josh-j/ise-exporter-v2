@@ -395,6 +395,18 @@
       "gridPos": {"h": 5, "w": 8, "x": 16, "y": 88},
       "targets": [{"expr": "ise_mnt_worker_busy", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "IDLE", "color": "green"}, "1": {"text": "RUNNING", "color": "blue"}}}]}, "overrides": []}
+    },
+    {
+      "id": 37,
+      "type": "stat",
+      "title": "MnT Unpaged ActiveList Safety",
+      "description": "The cheap ActiveCount result, configured ceiling, and whether the exporter refused the unpaged ActiveList download.",
+      "gridPos": {"h": 5, "w": 24, "x": 0, "y": 93},
+      "targets": [
+        {"expr": "ise_mnt_session_list_preflight_count", "instant": true, "legendFormat": "active sessions", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_mnt_session_list_ceiling", "instant": true, "legendFormat": "download ceiling", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_mnt_session_list_skipped", "instant": true, "legendFormat": "list refused", "refId": "C", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+      ]
     }
   ],
   "templating": {

@@ -82,6 +82,21 @@ def _active_mac(row):
     return normalize_mac(raw) if is_mac(raw) else ""
 
 
+def _active_count(payload):
+    """Extract MnT's small ActiveCount response without trusting wrapper totals."""
+    if not isinstance(payload, dict):
+        return None
+    sessions = payload.get("sessions")
+    if not isinstance(sessions, list) or not sessions or not isinstance(sessions[0], dict):
+        return None
+    raw = first_nonempty(sessions[0], "count", "active_count", "activeCount")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return max(0, value)
+
+
 def _milliseconds(value):
     """Return a safe seconds value for ISE's millisecond latency attributes."""
     text = str(value or "").strip()
@@ -268,8 +283,24 @@ def _aggregate(details):
 def collect(client, cfg):
     """Publish one atomic, bounded snapshot of current MnT endpoint detail."""
     with observe("mnt_active_posture"):
-        active = client.get_mnt_xml(
-            "/Session/ActiveList", api_name="mnt_active_posture_list")
+        count_payload = client.get_mnt_xml(
+            "/Session/ActiveCount", api_name="mnt_active_posture_count")
+        preflight_count = _active_count(count_payload)
+        if preflight_count is None:
+            raise CollectorFailed("MnT ActiveCount returned no usable session count")
+        list_ceiling = max(1, int(getattr(
+            cfg, "mnt_active_posture_max_active_list_sessions", 10000)))
+        metrics.ise_mnt_session_list_preflight_count.set(preflight_count)
+        metrics.ise_mnt_session_list_ceiling.set(list_ceiling)
+        metrics.ise_mnt_session_list_skipped.set(int(preflight_count > list_ceiling))
+        if preflight_count > list_ceiling:
+            raise CollectorFailed(
+                f"MnT ActiveList refused: ActiveCount {preflight_count} exceeds "
+                f"production ceiling {list_ceiling}")
+
+        active = ({"total": 0, "sessions": []} if preflight_count == 0 else
+                  client.get_mnt_xml(
+                      "/Session/ActiveList", api_name="mnt_active_posture_list"))
         if not isinstance(active, dict) or not isinstance(active.get("sessions"), list):
             raise CollectorFailed("MnT ActiveList returned no usable session list")
 

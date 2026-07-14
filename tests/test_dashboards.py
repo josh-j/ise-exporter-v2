@@ -363,6 +363,9 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_dataconnect_queue_depth",
         "ise_dataconnect_oldest_queued_seconds",
         "ise_mnt_worker_busy",
+        "ise_mnt_session_list_preflight_count",
+        "ise_mnt_session_list_ceiling",
+        "ise_mnt_session_list_skipped",
     ):
         assert metric in text
 

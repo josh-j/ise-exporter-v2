@@ -11,7 +11,12 @@ from ise_exporter.collectors import mnt_active_posture
 def _clear():
     collectors._failures.clear()
     collectors._outcomes.clear()
-    for metric in mnt_active_posture._METRICS:
+    operational = (
+        metrics.ise_mnt_session_list_preflight_count,
+        metrics.ise_mnt_session_list_ceiling,
+        metrics.ise_mnt_session_list_skipped,
+    )
+    for metric in mnt_active_posture._METRICS + operational:
         if hasattr(metric, "_metrics"):
             metric._metrics.clear()
         elif hasattr(metric, "_value"):
@@ -29,6 +34,8 @@ class MnT:
 
     def get_mnt_xml(self, path, api_name="mnt"):
         self.calls.append((path, api_name))
+        if path == "/Session/ActiveCount":
+            return {"total": 1, "sessions": [{"count": "4"}]}
         if path == "/Session/ActiveList":
             return {
                 "total": 4,
@@ -63,7 +70,11 @@ class MnT:
 
 
 def _cfg(**overrides):
-    values = dict(mnt_active_posture_max_sessions=10, mnt_active_posture_workers=2)
+    values = dict(
+        mnt_active_posture_max_active_list_sessions=10000,
+        mnt_active_posture_max_sessions=10,
+        mnt_active_posture_workers=2,
+    )
     values.update(overrides)
     return types.SimpleNamespace(**values)
 
@@ -138,7 +149,7 @@ def test_bound_is_explicit_and_failed_full_sample_preserves_previous_snapshot():
 
     class Failed(MnT):
         def get_mnt_xml(self, path, api_name="mnt"):
-            if path == "/Session/ActiveList":
+            if path in ("/Session/ActiveCount", "/Session/ActiveList"):
                 return super().get_mnt_xml(path, api_name)
             return None
 
@@ -150,14 +161,42 @@ def test_bound_is_explicit_and_failed_full_sample_preserves_previous_snapshot():
 
 def test_valid_empty_active_list_publishes_an_empty_snapshot():
     class Empty:
-        def get_mnt_xml(self, path, api_name="mnt"):
-            return {"total": 0, "sessions": []}
+        def __init__(self):
+            self.calls = []
 
-    mnt_active_posture.collect(Empty(), _cfg())
+        def get_mnt_xml(self, path, api_name="mnt"):
+            self.calls.append(path)
+            return {"total": 1, "sessions": [{"count": "0"}]}
+
+    client = Empty()
+    mnt_active_posture.collect(client, _cfg())
     assert collectors.outcome("mnt_active_posture") is True
+    assert client.calls == ["/Session/ActiveCount"]
     assert metrics.ise_mnt_active_sessions_total._value.get() == 0
     assert metrics.ise_mnt_active_posture_detail_coverage_ratio._value.get() == 1
     assert not _rows(metrics.ise_mnt_active_posture_endpoints, "status")
+
+
+def test_large_unpaged_active_list_is_refused_after_small_count_preflight():
+    class Large:
+        def __init__(self):
+            self.calls = []
+
+        def get_mnt_xml(self, path, api_name="mnt"):
+            self.calls.append(path)
+            if path == "/Session/ActiveCount":
+                return {"total": 1, "sessions": [{"count": "100001"}]}
+            raise AssertionError("unbounded ActiveList must not be requested")
+
+    client = Large()
+    mnt_active_posture.collect(
+        client, _cfg(mnt_active_posture_max_active_list_sessions=10000))
+
+    assert collectors.outcome("mnt_active_posture") is False
+    assert client.calls == ["/Session/ActiveCount"]
+    assert metrics.ise_mnt_session_list_preflight_count._value.get() == 100001
+    assert metrics.ise_mnt_session_list_ceiling._value.get() == 10000
+    assert metrics.ise_mnt_session_list_skipped._value.get() == 1
 
 
 def test_persistent_cache_bounds_cold_start_and_survives_restart(tmp_path):

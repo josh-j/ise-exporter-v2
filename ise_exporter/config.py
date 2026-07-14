@@ -109,6 +109,7 @@ class Config:
     collect_tacacs: bool = True
     collect_mnt_active_posture: bool = True
     mnt_active_posture_interval: int = 900
+    mnt_active_posture_max_active_list_sessions: int = 10000
     mnt_active_posture_max_sessions: int = 1000
     mnt_active_posture_workers: int = 2
     mnt_active_posture_max_requests_per_cycle: int = 250
@@ -152,6 +153,8 @@ class Config:
         silent misconfiguration. Log this once at startup — ise_pass is excluded."""
         return (f"collect_tacacs={self.collect_tacacs} "
                 f"collect_mnt_active_posture={self.collect_mnt_active_posture} "
+                f"mnt_active_list_ceiling="
+                f"{self.mnt_active_posture_max_active_list_sessions} "
                 f"dataconnect_ready={self.dataconnect_ready} "
                 f"ise_host={self.ise_host!r} ise_mnt_host={self.ise_mnt_host!r} "
                 f"ise_user={self.ise_user!r}")
@@ -184,6 +187,8 @@ class Config:
             collect_mnt_active_posture=_b("COLLECT_MNT_ACTIVE_POSTURE", True),
             mnt_active_posture_interval=_bounded_i(
                 "MNT_ACTIVE_POSTURE_INTERVAL", 900, 900),
+            mnt_active_posture_max_active_list_sessions=_bounded_i(
+                "MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS", 10000, 1, 250000),
             mnt_active_posture_max_sessions=_bounded_i(
                 "MNT_ACTIVE_POSTURE_MAX_SESSIONS", 1000, 1, 1000),
             mnt_active_posture_workers=_bounded_i(

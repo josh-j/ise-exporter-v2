@@ -125,12 +125,17 @@ the most time and resources.
 
 MnT XML owns only a current, bounded active-session dataset:
 
+- an ActiveCount preflight that refuses the unpaged ActiveList above the configured
+  production ceiling;
 - ActiveList session and unique endpoint candidate counts;
 - posture status, applicability, assessment state, OS, and Secure Client version;
 - posture policy passed/failed aggregates parsed from `PostureReport`; and
 - numeric authentication-step and total-authentication latency aggregates.
 
-The collector deduplicates active MACs and tracks no more than
+The collector avoids ActiveList entirely when ActiveCount is zero and marks the
+dataset unavailable without downloading the list when ActiveCount exceeds
+`MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS`. It otherwise deduplicates active
+MACs and tracks no more than
 `MNT_ACTIVE_POSTURE_MAX_SESSIONS` endpoints. Details are stored in the private
 `ISE_EXPORTER_STATE_DB`; departed sessions are removed immediately, new or changed
 sessions are prioritized, and unchanged sessions are refreshed in oldest-first

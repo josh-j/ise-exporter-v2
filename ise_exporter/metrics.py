@@ -125,6 +125,15 @@ ise_tacacs_topk_truncated = Gauge(
 # --- MnT bounded active-session posture plane ---
 # These are current, bounded samples from MnT Session detail. They intentionally
 # do not populate Data Connect's historical posture metric families.
+ise_mnt_session_list_preflight_count = Gauge(
+    "ise_mnt_session_list_preflight_count",
+    "Active sessions reported by the bounded MnT ActiveCount preflight")
+ise_mnt_session_list_ceiling = Gauge(
+    "ise_mnt_session_list_ceiling",
+    "Maximum ActiveCount permitted before the unpaged MnT ActiveList is refused")
+ise_mnt_session_list_skipped = Gauge(
+    "ise_mnt_session_list_skipped",
+    "Whether MnT ActiveList was refused because ActiveCount exceeded its ceiling")
 ise_mnt_active_sessions_total = Gauge(
     "ise_mnt_active_sessions_total", "Active sessions reported by the MnT ActiveList")
 ise_mnt_active_posture_candidate_endpoints_total = Gauge(

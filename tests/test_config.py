@@ -120,6 +120,7 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["ISE_MNT_SSL_VERIFY"] == "true"
     assert values["COLLECT_MNT_ACTIVE_POSTURE"] == "true"
     assert values["MNT_ACTIVE_POSTURE_INTERVAL"] == "900"
+    assert values["MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS"] == "10000"
     assert values["MNT_ACTIVE_POSTURE_MAX_SESSIONS"] == "1000"
     assert values["MNT_ACTIVE_POSTURE_WORKERS"] == "2"
     assert values["MNT_ACTIVE_POSTURE_MAX_REQUESTS_PER_CYCLE"] == "250"
@@ -155,6 +156,7 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
         "ISE_DATACONNECT_FRESHNESS_INTERVAL": "1",
         "ISE_DATACONNECT_NAD_HEALTH_INTERVAL": "1",
         "ISE_DATACONNECT_TACACS_INTERVAL": "1",
+        "MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS": "999999",
     }
     for name, value in unsafe.items():
         monkeypatch.setenv(name, value)
@@ -173,3 +175,4 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.dataconnect_freshness_interval == 3600
     assert cfg.dataconnect_nad_health_interval == 1800
     assert cfg.dataconnect_tacacs_interval == 1800
+    assert cfg.mnt_active_posture_max_active_list_sessions == 250000

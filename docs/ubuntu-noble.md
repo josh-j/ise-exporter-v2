@@ -96,6 +96,7 @@ ISE_MNT_SSL_VERIFY=true
 ISE_MNT_CA_BUNDLE=/etc/ise-exporter/certs/ise-mnt-ca.pem
 COLLECT_MNT_ACTIVE_POSTURE=true
 MNT_ACTIVE_POSTURE_INTERVAL=900
+MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS=10000
 MNT_ACTIVE_POSTURE_MAX_SESSIONS=1000
 MNT_ACTIVE_POSTURE_WORKERS=2
 MNT_ACTIVE_POSTURE_MAX_REQUESTS_PER_CYCLE=250
@@ -114,7 +115,10 @@ ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT=0.5
 ISE_DATACONNECT_SHARED_PACING_FILE=/var/lib/ise-exporter/dataconnect.pacing
 ```
 
-At the production defaults, the MnT collector deduplicates ActiveList MACs and
+MnT ActiveList has no pagination. The collector first calls the small ActiveCount
+endpoint and refuses ActiveList above 10,000 sessions by default, marking the
+dataset unavailable while retaining its last snapshot. At the production defaults,
+the MnT collector deduplicates ActiveList MACs and
 tracks at most 1,000 currently active endpoints and performs no more than 250
 new/changed/rotating detail requests every 15 minutes with two paced workers.
 The systemd `StateDirectory` preserves cached active-posture details and compatible
