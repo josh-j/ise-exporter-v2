@@ -1,9 +1,9 @@
 """Configured network-device activity health.
 
 ERS is authoritative for the configured NAD inventory while Data Connect is
-authoritative for recent authentication activity.  Joining the two inside one
-collector exposes never-seen devices and unconfigured-client traffic without
-exporting endpoint or user identity.
+authoritative for recent authentication activity. The scheduler passes the last
+successful REST-owned inventory into this Data Connect-only collector, avoiding
+cross-plane network calls on the serialized database worker.
 """
 from __future__ import annotations
 
@@ -40,11 +40,9 @@ def _timestamp(value):
     return parsed.timestamp()
 
 
-def collect(client, dataconnect, cfg):
+def collect(devices, dataconnect, cfg):
     """Publish recent activity only for configured NAD labels."""
     with observe("dataconnect_nad_health"):
-        devices = client.get_ers("/config/networkdevice", {"size": 100}, get_all=True,
-                                 api_name="ers_nad_health_devices")
         if devices is None or not isinstance(devices, list):
             raise CollectorFailed("network device inventory unavailable for NAD health")
         configured = {str(row.get("name") or "").strip(): row for row in devices

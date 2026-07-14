@@ -474,6 +474,7 @@ def test_dataconnect_report_is_bounded_and_filters_normalized_mac(capsys):
     assert json.loads(capsys.readouterr().out)[0]["username"] == "alice"
     report_sql, parameters = dataconnect.calls[-1]
     assert "FETCH FIRST 5 ROWS ONLY" in report_sql
+    assert "NUMTODSINTERVAL(24, 'HOUR')" in report_sql
     assert "CALLING_STATION_ID = :endpoint_identifier" in report_sql
     assert parameters["endpoint_identifier"] == "AA:BB:CC:DD:EE:FF"
 
@@ -552,6 +553,8 @@ def test_repl_completion_offers_bounded_quoted_live_values_and_caches_them():
     assert shell.completion_candidates("endpoint client") == [
         "'client with space'", "client-25.example.test"]
     first_call_count = len(dataconnect.calls)
+    assert shell.completion_candidates("endpoint client-2") == [
+        "client-25.example.test "]
     assert shell.completion_candidates("endpoint client") == [
         "'client with space'", "client-25.example.test"]
     assert len(dataconnect.calls) == first_call_count
@@ -561,7 +564,7 @@ def test_repl_completion_offers_bounded_quoted_live_values_and_caches_them():
         "laba-ise-001", "laba-ise-002"]
     endpoint_sql, parameters = dataconnect.calls[0]
     assert "FETCH FIRST 25 ROWS ONLY" in endpoint_sql
-    assert parameters == {"prefix": "CLIENT%"}
+    assert parameters == {"prefix": "CL%"}
 
 
 def test_repl_completion_offers_schema_tables_and_comma_select_fields():
@@ -572,6 +575,28 @@ def test_repl_completion_offers_schema_tables_and_comma_select_fields():
     assert tables == ["CUSTOM_REPORT_VIEW "]
     assert shell.completion_candidates(
         "radius-auth --select timestamp,user") == ["timestamp,username"]
+
+
+def test_live_completion_refines_a_truncated_cached_prefix():
+    class SaturatedDataConnect(CompletionDataConnect):
+        def query(self, sql, parameters=None):
+            self.calls.append((sql, parameters or {}))
+            prefix = (parameters or {}).get("prefix")
+            if prefix == "WI%":
+                return [{"value": f"Win-{index:02d}"} for index in range(25)]
+            if prefix == "WINDOWS%":
+                return [{"value": "Windows Workstations"}]
+            return super().query(sql, parameters)
+
+    dataconnect = SaturatedDataConnect()
+    shell = cli.ISEShell(client=FakeClient(), dataconnect=dataconnect,
+                         stdin=io.StringIO(), stdout=io.StringIO())
+
+    assert shell._dc_values(
+        "ENDPOINTS_DATA", "ENDPOINT_POLICY", "Windows") == (
+            "Windows Workstations",)
+    assert [parameters["prefix"] for _sql, parameters in dataconnect.calls] == [
+        "WI%", "WINDOWS%"]
 
 
 def test_endpoint_context_search_joins_schema_discovered_sources(capsys):
@@ -605,12 +630,52 @@ def test_endpoint_context_search_joins_schema_discovered_sources(capsys):
     assert "REPLACE(e.MAC_ADDRESS" not in sql
     assert "LOWER(SUBSTR(m0.match_mac, 1, 2)" in sql
     assert "FETCH FIRST 25 ROWS ONLY" in sql
+    assert "NUMTODSINTERVAL(24, 'HOUR')" in sql
     assert set(parameters.values()) == {"LAB-%", "PERMIT%", "BERLIN-%", "WINDOWS%"}
     schema_queries = [sql for sql, _parameters in dataconnect.calls
                       if "FROM user_tab_columns" in sql]
     assert len(schema_queries) == 1
     assert all(spec["table"] in schema_queries[0]
                for spec in cli.ENDPOINT_CONTEXT_SOURCES.values())
+
+
+def test_cli_dataconnect_reports_honor_lower_production_scan_ceiling(capsys):
+    client = FakeClient()
+    client.cfg.dataconnect_event_window_hours = 4
+    dataconnect = FakeDataConnect()
+
+    assert cli.main(["radius-auth", "--limit", "5", "-o", "json"],
+                    client=client, dataconnect=dataconnect) == 0
+
+    report_sql, _parameters = dataconnect.calls[-1]
+    assert "NUMTODSINTERVAL(4, 'HOUR')" in report_sql
+    assert "INTERVAL '2' DAY" not in report_sql
+
+
+def test_cli_tacacs_report_bounds_numeric_epoch_view(monkeypatch, capsys):
+    class TacacsDataConnect(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            self.calls.append((sql, parameters or {}))
+            if "FROM user_tab_columns" in sql:
+                return [
+                    {"column_name": "EPOCH_TIME", "data_type": "NUMBER"},
+                    {"column_name": "USERNAME", "data_type": "VARCHAR2"},
+                ]
+            return [{"epoch_time": 99999, "username": "netadmin"}]
+
+    client = FakeClient()
+    client.cfg.dataconnect_event_window_hours = 4
+    dataconnect = TacacsDataConnect()
+    monkeypatch.setattr(cli.time, "time", lambda: 100000)
+
+    assert cli.main([
+        "tacacs-activity", "--event-type", "authentication", "--limit", "5",
+        "-o", "json",
+    ], client=client, dataconnect=dataconnect) == 0
+
+    report_sql, parameters = dataconnect.calls[-1]
+    assert "EPOCH_TIME >= :minimum_epoch" in report_sql
+    assert parameters == {"minimum_epoch": 85600}
 
 
 def test_repeated_endpoint_field_values_are_or_and_distinct_fields_are_and(capsys):

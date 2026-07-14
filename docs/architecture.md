@@ -98,6 +98,9 @@ Other scheduled event scans match their cadence: one hour for PSN performance
 and diagnostics, six hours for posture and NAD health, and 24 hours for endpoint
 profiling. `ISE_DATACONNECT_EVENT_WINDOW_HOURS` is an absolute 24-hour-or-lower
 ceiling; setting it below a domain cadence is an explicit sampling tradeoff.
+TACACS also runs every six hours and applies an `EPOCH_TIME` lower bound to
+Cisco's two-day views before grouping, so the view's retention does not become
+the exporter's scan size.
 The exporter and CLI also serialize through one persistent pacing gate so separate
 processes cannot bypass the cooldown. The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
@@ -109,6 +112,10 @@ other. Service shutdown interrupts pending query and detail pacing waits instead
 waiting for their full deadlines. Cold starts prioritize the bounded active-session,
 performance, and NAD-health datasets before historical reporting; duplicate due
 events are coalesced while a domain is queued or running.
+The REST-owned network-device collector passes its latest successful in-memory
+inventory to NAD activity correlation. The Data Connect worker never performs an
+ERS request, never repeats the NAD enumeration, and refuses to publish NAD health
+after a failed current inventory refresh.
 Cross-process lock acquisition is non-blocking and cancellation-aware, so a CLI
 process holding the shared pacing gate cannot strand exporter shutdown behind a
 kernel lock during a long adaptive cooldown.

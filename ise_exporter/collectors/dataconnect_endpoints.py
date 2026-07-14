@@ -31,7 +31,6 @@ _METRICS = (
 def _queries(limit, window_hours=6):
     profiling_recent = recent_event_predicate("timestamp", window_hours)
     return {
-        "total": "SELECT COUNT(*) AS endpoints FROM endpoints_data",
         "coverage": """
             SELECT COUNT(*) AS endpoints,
                    SUM(CASE WHEN TRIM(hostname) IS NOT NULL THEN 1 ELSE 0 END) AS hostname,
@@ -42,6 +41,10 @@ def _queries(limit, window_hours=6):
                        AS portal_user,
                    SUM(CASE WHEN TRIM(mdm_guid) IS NOT NULL THEN 1 ELSE 0 END) AS mdm,
                    SUM(CASE WHEN TRIM(native_udid) IS NOT NULL THEN 1 ELSE 0 END) AS udid,
+                   SUM(CASE WHEN NVL(posture_applicable, 0) = 1 THEN 1 ELSE 0 END)
+                       AS posture_yes,
+                   SUM(CASE WHEN NVL(posture_applicable, 0) = 1 THEN 0 ELSE 1 END)
+                       AS posture_no,
                    SUM(CASE WHEN TRIM(endpoint_policy) IS NULL
                                   OR LOWER(TRIM(endpoint_policy)) IN
                                       ('unknown', 'none', 'missing')
@@ -70,12 +73,6 @@ def _queries(limit, window_hours=6):
             ) grouped_identity
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "posture": """
-            SELECT CASE WHEN NVL(posture_applicable, 0) = 1 THEN 'yes' ELSE 'no' END AS applicable,
-                   COUNT(*) AS endpoints
-            FROM endpoints_data
-            GROUP BY CASE WHEN NVL(posture_applicable, 0) = 1 THEN 'yes' ELSE 'no' END
-        """,
         "profiling": f"""
             SELECT grouped_profiling.*,
                    SUM(endpoints) OVER () AS total_memberships,
@@ -99,8 +96,8 @@ def collect(dataconnect, cfg):
                 for name, sql in _queries(
                     group_limit(cfg), event_window_hours(
                         cfg, getattr(cfg, "dataconnect_endpoints_interval", 86400))).items()}
-        total = integer(rows["total"][0].get("endpoints")) if rows["total"] else 0
         coverage = rows["coverage"][0] if rows["coverage"] else {}
+        total = integer(coverage.get("endpoints"))
         profile_summary = rows["profiles"][0] if rows["profiles"] else {}
         group_summary = rows["groups"][0] if rows["groups"] else {}
         profiling_summary = rows["profiling"][0] if rows["profiling"] else {}
@@ -112,8 +109,10 @@ def collect(dataconnect, cfg):
                      integer(row.get("endpoints"))) for row in rows["profiles"]]
         groups = [(label(row.get("identity_group_id"), "none"),
                    integer(row.get("endpoints"))) for row in rows["groups"]]
-        posture = [(label(row.get("applicable")), integer(row.get("endpoints")))
-                   for row in rows["posture"]]
+        posture = [
+            ("yes", integer(coverage.get("posture_yes"))),
+            ("no", integer(coverage.get("posture_no"))),
+        ]
         profiling = [{
             "profile": label(row.get("endpoint_profile"), "Unknown"),
             "source": label(row.get("source"), "Unknown"),

@@ -78,6 +78,7 @@ class PollScheduler:
         self._mnt_lock = threading.RLock()
         self._mnt_worker = None
         self._shutdown = None
+        self._nad_inventory = None
         self.dataset_plan = self._dataset_plan()
         self._initialize_dataset_state()
         self._publish_worker_state(time.time())
@@ -143,6 +144,8 @@ class PollScheduler:
                 self.cfg, "dataconnect_endpoints_interval", 86400),
             "dataconnect_nad_health": getattr(
                 self.cfg, "dataconnect_nad_health_interval", 21600),
+            "tacacs_activity": getattr(
+                self.cfg, "dataconnect_tacacs_interval", 21600),
         }
         for dataset, interval in scan_intervals.items():
             metrics.ise_dataconnect_scan_window_hours.labels(dataset=dataset).set(
@@ -412,8 +415,12 @@ class PollScheduler:
         # REST/OpenAPI control plane: always authoritative in every profile.
         self._run("deployment", now, cfg.medium_interval,
                   lambda: deployment.collect(self.client, cfg))
-        self._run("devices", now, cfg.medium_interval,
-                  lambda: devices.collect(self.client, cfg))
+        def collect_devices():
+            # A failed current REST attempt invalidates the join input; retaining
+            # an older list would make NAD health look authoritative while ERS is down.
+            self._nad_inventory = devices.collect(self.client, cfg)
+
+        self._run("devices", now, cfg.medium_interval, collect_devices)
         if cfg.collect_certificates:
             self._run("certificates", now, cfg.slow_interval,
                       lambda: certificates.collect(self.client, cfg))
@@ -442,7 +449,7 @@ class PollScheduler:
         self._run_dataconnect(
             "dataconnect_nad_health",
             self.dataset_plan["dataconnect_nad_health"][1],
-            lambda: nad_health.collect(self.client, self.dataconnect, cfg))
+            lambda: nad_health.collect(self._nad_inventory, self.dataconnect, cfg))
         self._run_dataconnect(
             "dataconnect_radius", self.dataset_plan["dataconnect_radius"][1],
             lambda: dataconnect_radius.collect_reporting(self.dataconnect, cfg))

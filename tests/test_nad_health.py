@@ -19,11 +19,7 @@ def _rows(metric, *labels):
             for sample in metric.collect()[0].samples}
 
 
-class Rest:
-    def get_ers(self, path, params=None, get_all=False, api_name="ers"):
-        assert path == "/config/networkdevice"
-        assert get_all is True
-        return [{"name": "campus-corp-wired"}, {"name": "branch-switch"}]
+DEVICES = [{"name": "campus-corp-wired"}, {"name": "branch-switch"}]
 
 
 class DataConnect:
@@ -40,7 +36,7 @@ class DataConnect:
 
 
 def test_joins_configured_nads_to_activity_without_exporting_unconfigured_names():
-    nad_health.collect(Rest(), DataConnect(), types.SimpleNamespace())
+    nad_health.collect(DEVICES, DataConnect(), types.SimpleNamespace())
 
     assert _rows(metrics.ise_nad_seen_recently, "nad") == {
         ("campus-corp-wired",): 1,
@@ -58,9 +54,5 @@ def test_joins_configured_nads_to_activity_without_exporting_unconfigured_names(
 
 
 def test_inventory_failure_does_not_publish_plausible_empty_health():
-    class FailedRest(Rest):
-        def get_ers(self, *args, **kwargs):
-            return None
-
-    nad_health.collect(FailedRest(), DataConnect(), types.SimpleNamespace())
+    nad_health.collect(None, DataConnect(), types.SimpleNamespace())
     assert not _rows(metrics.ise_nad_seen_recently, "nad")

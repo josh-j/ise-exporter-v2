@@ -53,6 +53,7 @@ def _classify(det):
 
 
 def collect(client, cfg):
+    inventory = None
     with observe("devices"):
         devices = client.get_ers("/config/networkdevice", {"size": 100},
                                  get_all=True, api_name="ers_devices")
@@ -64,7 +65,7 @@ def collect(client, cfg):
         if not cfg.collect_device_details:
             replace_metric_snapshot(
                 _METRICS, (lambda: metrics.ise_network_devices_total.set(len(devices)),))
-            return
+            return devices
 
         cache = _device_cache(cfg)
         loc_counts = defaultdict(int)
@@ -77,10 +78,12 @@ def collect(client, cfg):
                 continue
             det = cache.get(dev_id)
             if det is None:
-                raw = client.get_ers(f"/config/networkdevice/{dev_id}", api_name="ers_device_detail")
+                raw = client.get_ers(
+                    f"/config/networkdevice/{dev_id}", api_name="ers_device_detail")
                 det = raw.get("NetworkDevice") if raw else None
                 if not det:
-                    raise CollectorFailed(f"network device detail request failed for {dev_id}")
+                    raise CollectorFailed(
+                        f"network device detail request failed for {dev_id}")
                 cache.set(dev_id, det)
 
             _name, _ip, device_type, location, ops_owner = _classify(det)
@@ -98,4 +101,7 @@ def collect(client, cfg):
                 metrics.ise_network_devices_by_type.labels(device_type=key).set(value)
 
         replace_metric_snapshot(_METRICS, (publish,))
+        inventory = devices
         logger.info("Devices: %d total, %d locations", len(devices), len(loc_counts))
+
+    return inventory

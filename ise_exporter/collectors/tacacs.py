@@ -8,12 +8,13 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
 import logging
+import time
 
 from .. import metrics
 from ..state import StateStore
 from ..util import normalize_bool_label
 from . import CollectorFailed, observe
-from .dataconnect_common import replace_snapshot
+from .dataconnect_common import event_window_hours, replace_snapshot
 
 
 _CONFIG_METRICS = (
@@ -158,7 +159,8 @@ _COMMAND_FAMILY_SQL = """CASE
     ELSE 'other' END"""
 
 
-def _activity_queries(limit):
+def _activity_queries(limit, cutoff_epoch=None):
+    recent = "WHERE epoch_time >= :minimum_epoch" if cutoff_epoch is not None else ""
     return {
         "authentication": f"""
             SELECT grouped_auth.*,
@@ -169,6 +171,7 @@ def _activity_queries(limit):
                        identity_store, {_FAILURE_CLASS_SQL} AS failure_class,
                        COUNT(*) AS hits, MAX(epoch_time) AS last_seen
                 FROM tacacs_authentication_last_two_days
+                {recent}
                 GROUP BY username, status, device_name, authentication_policy,
                          identity_store, {_FAILURE_CLASS_SQL}
             ) grouped_auth
@@ -183,6 +186,7 @@ def _activity_queries(limit):
                        shell_profile, matched_command_set,
                        COUNT(*) AS hits, MAX(epoch_time) AS last_seen
                 FROM tacacs_authorization_last_two_days
+                {recent}
                 GROUP BY username, status, device_name, authorization_policy,
                          shell_profile, matched_command_set
             ) grouped_authorization
@@ -197,6 +201,7 @@ def _activity_queries(limit):
                        {_COMMAND_FAMILY_SQL} AS command_family,
                        COUNT(*) AS hits, MAX(epoch_time) AS last_seen
                 FROM tacacs_accounting_last_two_days
+                {recent}
                 GROUP BY username, status, device_name, {_COMMAND_FAMILY_SQL}
             ) grouped_accounting
             ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
@@ -206,8 +211,12 @@ def _activity_queries(limit):
 
 def _collect_dataconnect(dataconnect, cfg):
     limit = max(1, min(2000, int(getattr(cfg, "dataconnect_max_groups", 2000))))
-    queries = _activity_queries(limit)
-    rows = {kind: dataconnect.query(sql) for kind, sql in queries.items()}
+    window = event_window_hours(
+        cfg, getattr(cfg, "dataconnect_tacacs_interval", 21600))
+    cutoff = max(0, int(time.time()) - window * 3600)
+    queries = _activity_queries(limit, cutoff)
+    rows = {kind: dataconnect.query(sql, {"minimum_epoch": cutoff})
+            for kind, sql in queries.items()}
     observed_last_seen = {}
     for event_type, event_rows in rows.items():
         for row in event_rows:

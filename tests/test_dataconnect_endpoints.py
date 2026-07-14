@@ -29,17 +29,14 @@ class DataConnect:
             return [{"endpoints": 80000, "hostname": 72000, "ip": 64000,
                      "custom_attributes": 40000, "portal_user": 20000,
                      "mdm": 16000, "udid": 8000, "unknown_profile": 50,
+                     "posture_yes": 60000, "posture_no": 20000,
                      "stale_30": 12000, "stale_90": 7000, "stale_180": 3000}]
-        if "count(*) as endpoints from endpoints_data" in lowered:
-            return [{"endpoints": 80000}]
         if "grouped_profiles" in lowered:
             return [{"endpoint_policy": "Windows10-Workstation", "endpoints": 40000,
                      "total_groups": 51}]
         if "grouped_identity" in lowered:
             return [{"identity_group_id": "group-1", "endpoints": 50000,
                      "total_groups": 12}]
-        if "posture_applicable" in lowered:
-            return [{"applicable": "yes", "endpoints": 60000}]
         return [{"endpoint_profile": "Windows10-Workstation", "source": "RADIUS Probe",
                  "endpoint_action_name": "Profiled", "identity_group": "Workstations",
                  "endpoints": 1000, "total_memberships": 81000, "total_groups": 75}]
@@ -56,7 +53,7 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     assert _rows(metrics.ise_dataconnect_endpoints_by_identity_group,
                  "identity_group") == {("group-1",): 50000}
     assert _rows(metrics.ise_dataconnect_endpoints_by_posture_applicable,
-                 "applicable") == {("yes",): 60000}
+                 "applicable") == {("yes",): 60000, ("no",): 20000}
     assert _rows(metrics.ise_dataconnect_profile_events,
                  "profile", "source") == {("Windows10-Workstation", "RADIUS Probe"): 1000}
     assert metrics.ise_dataconnect_profiled_endpoint_group_memberships_total._value.get() == 81000
@@ -79,4 +76,4 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     coverage_sql = next(sql for sql in client.sql if "AS stale_180" in sql)
     assert "NUMTODSINTERVAL(180, 'DAY')" in coverage_sql
     assert "AS unknown_profile" in coverage_sql
-    assert len(client.sql) == 6
+    assert len(client.sql) == 4

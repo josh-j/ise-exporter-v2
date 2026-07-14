@@ -95,22 +95,22 @@ ise_tacacs_dataconnect_up = Gauge(
     "ise_tacacs_dataconnect_up", "ISE Data Connect TACACS query status (1=successful)")
 ise_tacacs_account_authentication_events = Gauge(
     "ise_tacacs_account_authentication_events",
-    "TACACS authentication events in Data Connect's last-two-days view",
+    "TACACS authentication events in the configured bounded reporting window",
     ["username", "status", "device", "policy", "identity_store", "failure_class"])
 ise_tacacs_account_authorization_events = Gauge(
     "ise_tacacs_account_authorization_events",
-    "TACACS authorization events in Data Connect's last-two-days view",
+    "TACACS authorization events in the configured bounded reporting window",
     ["username", "status", "device", "policy", "shell_profile", "command_set"])
 ise_tacacs_accounting_events = Gauge(
     "ise_tacacs_accounting_events",
-    "TACACS accounting events in Data Connect's last-two-days view",
+    "TACACS accounting events in the configured bounded reporting window",
     ["username", "status", "device", "command_family"])
 ise_tacacs_account_last_seen_timestamp = Gauge(
     "ise_tacacs_account_last_seen_timestamp",
     "Most recent TACACS event timestamp observed through Data Connect; internal-account high-water values persist across view rollover",
     ["username", "event_type"])
 ise_tacacs_events_total = Gauge(
-    "ise_tacacs_events_total", "Exact TACACS events in each Data Connect two-day view",
+    "ise_tacacs_events_total", "Exact TACACS events in each configured reporting window",
     ["event_type"])
 ise_tacacs_topk_groups_returned = Gauge(
     "ise_tacacs_topk_groups_returned", "TACACS groups exported after the top-K limit",

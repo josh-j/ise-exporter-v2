@@ -141,11 +141,17 @@ def test_valid_empty_tacacs_configuration_clears_stale_labels():
     assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 1
 
 
-def test_collects_dataconnect_account_attribution():
+def test_collects_dataconnect_account_attribution(monkeypatch):
     class DataConnect:
         closed = False
 
-        def query(self, sql):
+        def __init__(self):
+            self.sql = []
+            self.parameters = []
+
+        def query(self, sql, parameters=None):
+            self.sql.append(sql)
+            self.parameters.append(parameters)
             if "tacacs_authentication" in sql:
                 return [{
                     "username": "netadmin", "status": "Fail", "device_name": "switch-1",
@@ -171,10 +177,13 @@ def test_collects_dataconnect_account_attribution():
         def close(self):
             self.closed = True
 
+    monkeypatch.setattr(tacacs.time, "time", lambda: 100000)
     dataconnect = DataConnect()
     tacacs.collect_activity(dataconnect, types.SimpleNamespace(dataconnect_max_groups=50))
 
     assert dataconnect.closed is False
+    assert all("WHERE epoch_time >= :minimum_epoch" in sql for sql in dataconnect.sql)
+    assert dataconnect.parameters == [{"minimum_epoch": 78400}] * 3
     assert metrics.ise_tacacs_dataconnect_up._value.get() == 1
     assert _rows(metrics.ise_tacacs_account_authentication_events,
                  "username", "status", "device", "failure_class") == {
@@ -212,7 +221,7 @@ def test_internal_last_seen_survives_view_rollover_and_restart(tmp_path):
     now = int(time.time())
 
     class CurrentActivity:
-        def query(self, sql):
+        def query(self, sql, parameters=None):
             event_type = next(kind for kind in tacacs._EVENT_TYPES if f"tacacs_{kind}" in sql)
             return [{
                 "username": "netadmin", "status": "Pass", "device_name": "switch-1",
@@ -235,7 +244,7 @@ def test_internal_last_seen_survives_view_rollover_and_restart(tmp_path):
         clear_metric(metric)
 
     class RolledOverViews:
-        def query(self, sql):
+        def query(self, sql, parameters=None):
             return []
 
     tacacs.collect_activity(RolledOverViews(), cfg)

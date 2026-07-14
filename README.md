@@ -75,6 +75,9 @@ details per 15-minute cycle, while cached active details retain dashboard covera
 RADIUS historical gauges come from one exact configured-window snapshot per day. The
 separate active-session dataset scans only the configured stale window every
 30 minutes; no locally merged historical event windows can grow without bound.
+TACACS applies a six-hour bound inside Cisco's two-day views, and endpoint totals,
+field coverage, and posture applicability share one inventory scan. CLI reports,
+context searches, and live completion obey the same event-window ceiling.
 
 Before starting the service, verify the reporting connection:
 

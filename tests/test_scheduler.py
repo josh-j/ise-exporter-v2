@@ -82,6 +82,7 @@ def test_scheduler_publishes_cadence_aligned_scan_windows():
     assert samples["dataconnect_posture"] == 6
     assert samples["dataconnect_endpoints"] == 24
     assert samples["dataconnect_nad_health"] == 6
+    assert samples["tacacs_activity"] == 6
 
 
 def test_scheduler_uses_only_the_dedicated_mnt_client(monkeypatch):
@@ -109,6 +110,34 @@ def test_scheduler_uses_only_the_dedicated_mnt_client(monkeypatch):
 
     PollScheduler(_cfg(collect_tacacs=False), Client(), object(), mnt=mnt).run_cycle()
     assert seen == [mnt]
+
+
+def test_nad_health_reuses_rest_owned_device_inventory(monkeypatch):
+    inventory = [{"name": "switch-1"}]
+    seen = []
+    modules = (
+        "deployment", "dataconnect_performance", "dataconnect_posture",
+        "dataconnect_endpoints", "dataconnect_freshness", "mnt_active_posture",
+    )
+    for name in modules:
+        monkeypatch.setattr(
+            getattr(scheduler_module, name), "collect", lambda *args, **kwargs: None)
+    monkeypatch.setattr(scheduler_module.devices, "collect", lambda *_: inventory)
+    monkeypatch.setattr(
+        scheduler_module.nad_health, "collect",
+        lambda devices, dataconnect, cfg: seen.append((devices, dataconnect)),
+    )
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_reporting", lambda *args: None)
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_active", lambda *args: None)
+    dataconnect = object()
+
+    PollScheduler(
+        _cfg(collect_tacacs=False), client=object(), dataconnect=dataconnect,
+        mnt=object()).run_cycle()
+
+    assert seen == [(inventory, dataconnect)]
 
 
 def test_disabled_control_plane_collectors_do_not_run(monkeypatch):

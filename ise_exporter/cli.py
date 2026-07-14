@@ -30,6 +30,7 @@ from rich.text import Text
 
 from .clients.dataconnect import DataConnectClient
 from .clients.rest import ISEOperatorClient
+from .collectors.dataconnect_common import recent_event_predicate
 from .config import Config
 from .dataconnect_schema import metadata_rows, schema_by_table, table_columns
 from .util import (first_nonempty, is_mac, normalize_agent_version, normalize_mac,
@@ -1142,7 +1143,8 @@ def _normalize_endpoint_payloads(rows):
     return rows
 
 
-def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
+def _dataconnect_endpoint_search(
+        dataconnect, criteria, limit, all_rows=False, window_hours=24):
     if limit < 1 or limit > 5000:
         raise CLIError("--limit must be between 1 and 5000")
     bindings, _rows, schemas = _endpoint_field_bindings(dataconnect)
@@ -1186,8 +1188,10 @@ def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
                 match = f"UPPER({expression}) LIKE :{parameter} ESCAPE '\\'"
                 timestamp = _first_column(
                     source_columns, *ENDPOINT_CONTEXT_SOURCES[source]["timestamp"])
-                recent = (f" AND {alias}.{timestamp} >= SYSTIMESTAMP - INTERVAL '2' DAY"
-                          if source != "endpoint" and timestamp else "")
+                recent = ""
+                if source != "endpoint" and timestamp:
+                    recent = " AND " + recent_event_predicate(
+                        f"{alias}.{timestamp}", window_hours)
                 normalized_mac = _normalized_mac_expression(alias, source_mac)
                 branches.append(
                     f"SELECT {normalized_mac} AS match_mac, "
@@ -1239,7 +1243,7 @@ def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
     return _normalize_endpoint_payloads(result)
 
 
-def _dataconnect_report(args, client, dataconnect):
+def _dataconnect_report(args, client, dataconnect, cfg):
     if dataconnect is None:
         raise CLIError("this command requires configured Data Connect credentials")
     if args.limit < 1 or args.limit > 5000:
@@ -1327,9 +1331,16 @@ def _dataconnect_report(args, client, dataconnect):
             raise CLIError(f"{table} cannot filter by --status")
 
     timestamp_column = _first_column(columns, "TIMESTAMP", "LOGGED_AT", "LOGGED_TIME")
+    epoch_column = _first_column(columns, "EPOCH_TIME")
     if timestamp_column:
-        predicates.append(f"{timestamp_column} >= SYSTIMESTAMP - INTERVAL '2' DAY")
-    order_column = timestamp_column or _first_column(columns, "EPOCH_TIME")
+        predicates.append(recent_event_predicate(
+            timestamp_column, getattr(cfg, "dataconnect_event_window_hours", 24)))
+    elif epoch_column:
+        window = max(1, min(24, int(getattr(
+            cfg, "dataconnect_event_window_hours", 24))))
+        predicates.append(f"{epoch_column} >= :minimum_epoch")
+        parameters["minimum_epoch"] = int(time.time()) - window * 3600
+    order_column = timestamp_column or epoch_column
     where = " WHERE " + " AND ".join(predicates) if predicates else ""
     order = f" ORDER BY {order_column} DESC" if order_column else ""
     select_expressions = [
@@ -1402,7 +1413,8 @@ def _execute(args, client, cfg, dataconnect=None):
                 raise CLIError(
                     "friendly endpoint searches cannot be combined with advanced --filter")
             return _dataconnect_endpoint_search(
-                dataconnect, criteria, args.limit, all_rows=args.all)
+                dataconnect, criteria, args.limit, all_rows=args.all,
+                window_hours=getattr(cfg, "dataconnect_event_window_hours", 24))
         if criteria:
             raise CLIError(
                 "endpoint name and attribute searches require Data Connect on ISE 3.3 "
@@ -1456,7 +1468,7 @@ def _execute(args, client, cfg, dataconnect=None):
         return result
     if command in DATACONNECT_REPORTS:
         _guard_row_limit(args, cfg)
-        return _dataconnect_report(args, client, dataconnect)
+        return _dataconnect_report(args, client, dataconnect, cfg)
     if command == "dataconnect-schema":
         return _dataconnect_schema(dataconnect, args.table)
     if command == "sessions":
@@ -2022,40 +2034,50 @@ class ISEShell(cmd.Cmd):
         return prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
     def _dc_values(self, table, column, prefix, *, min_prefix=COMPLETION_MIN_LIVE_PREFIX):
-        if len(prefix.strip()) < min_prefix:
+        normalized_prefix = prefix.strip()
+        if len(normalized_prefix) < min_prefix:
             return ()
-        key = ("dc", table, column, prefix.casefold())
+        base_prefix = normalized_prefix[:min_prefix]
 
-        def load():
+        def load(query_prefix):
             self._completion_runtime("dataconnect-schema")
             if self.dataconnect is None:
                 return ()
             source = next((spec for spec in ENDPOINT_CONTEXT_SOURCES.values()
                            if spec["table"] == table), None)
             timestamp = source["timestamp"][0] if source and table != "ENDPOINTS_DATA" else ""
-            recent = (f" AND {timestamp} >= SYSTIMESTAMP - INTERVAL '2' DAY"
-                      if timestamp else "")
+            recent = ""
+            if timestamp:
+                recent = " AND " + recent_event_predicate(
+                    timestamp, getattr(self.cfg, "dataconnect_event_window_hours", 24))
             sql = (
                 f"SELECT DISTINCT {column} AS value FROM {table} "
                 f"WHERE {column} IS NOT NULL{recent} "
                 f"AND UPPER({column}) LIKE :prefix ESCAPE '\\' "
                 f"FETCH FIRST {COMPLETION_LIMIT} ROWS ONLY")
             rows = self.dataconnect.query(
-                sql, {"prefix": self._like_prefix(prefix.upper())})
+                sql, {"prefix": self._like_prefix(query_prefix.upper())})
             return (row.get("value") for row in rows if row.get("value") not in (None, ""))
 
-        return self._cached_completion(key, load)
+        key = ("dc", table, column, base_prefix.casefold())
+        values = self._cached_completion(key, lambda: load(base_prefix))
+        if len(values) >= COMPLETION_LIMIT and normalized_prefix != base_prefix:
+            key = ("dc", table, column, normalized_prefix.casefold())
+            values = self._cached_completion(key, lambda: load(normalized_prefix))
+        return tuple(value for value in values
+                     if str(value).casefold().startswith(normalized_prefix.casefold()))
 
     def _endpoint_values(self, prefix):
-        if len(prefix.strip()) < COMPLETION_MIN_LIVE_PREFIX:
+        normalized_prefix = prefix.strip()
+        if len(normalized_prefix) < COMPLETION_MIN_LIVE_PREFIX:
             return ()
-        key = ("endpoints", prefix.casefold())
+        base_prefix = normalized_prefix[:COMPLETION_MIN_LIVE_PREFIX]
 
-        def load():
+        def load(query_prefix):
             self._completion_runtime("endpoint-report")
             if self.dataconnect is None:
                 return ()
-            like = self._like_prefix(prefix.upper())
+            like = self._like_prefix(query_prefix.upper())
             sql = (
                 "SELECT MAC_ADDRESS, ENDPOINT_IP, HOSTNAME FROM ENDPOINTS_DATA "
                 "WHERE UPPER(MAC_ADDRESS) LIKE :prefix ESCAPE '\\' "
@@ -2069,7 +2091,13 @@ class ISEShell(cmd.Cmd):
                     "hostname", "endpoint_ip", "mac_address"))
             return (value for value in values if value not in (None, ""))
 
-        return self._cached_completion(key, load)
+        key = ("endpoints", base_prefix.casefold())
+        values = self._cached_completion(key, lambda: load(base_prefix))
+        if len(values) >= COMPLETION_LIMIT and normalized_prefix != base_prefix:
+            key = ("endpoints", normalized_prefix.casefold())
+            values = self._cached_completion(key, lambda: load(normalized_prefix))
+        return tuple(value for value in values
+                     if str(value).casefold().startswith(normalized_prefix.casefold()))
 
     def _dataconnect_tables(self, prefix):
         known = set()

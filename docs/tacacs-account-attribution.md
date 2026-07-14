@@ -10,8 +10,8 @@ state does not establish account activity; the bounded Data Connect views below
 remain the reporting authority.
 
 ISE 3.3 exposes the required account evidence through the read-only Data Connect
-service on the MnT node. For production queries, use the performance-oriented
-two-day views:
+service on the MnT node. The exporter uses the performance-oriented two-day views
+but applies a numeric `EPOCH_TIME` lower bound before grouping:
 
 - `TACACS_AUTHENTICATION_LAST_TWO_DAYS` for username, status, device, identity
   store, and authentication activity.
@@ -25,11 +25,13 @@ Useful read-only queries are:
 SELECT username, status, device_name, COUNT(*) AS hits,
        MAX(epoch_time) AS last_seen
 FROM tacacs_authentication_last_two_days
+WHERE epoch_time >= :minimum_epoch
 GROUP BY username, status, device_name;
 
 SELECT username, authorization_policy, shell_profile, matched_command_set,
        COUNT(*) AS hits, MAX(epoch_time) AS last_seen
 FROM tacacs_authorization_last_two_days
+WHERE epoch_time >= :minimum_epoch
 GROUP BY username, authorization_policy, shell_profile, matched_command_set;
 ```
 
@@ -57,10 +59,15 @@ ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer
 ISE_DATACONNECT_SSL_VERIFY=true
 ISE_DATACONNECT_QUERY_TIMEOUT=15
 ISE_DATACONNECT_MAX_GROUPS=1000
+ISE_DATACONNECT_EVENT_WINDOW_HOURS=24
 ISE_DATACONNECT_TACACS_INTERVAL=21600
 ```
 
-The collector emits snapshot gauges for the two-day views:
+With the defaults, TACACS runs every six hours and scans six hours rather than
+regrouping the complete two-day view. Lowering the event-window ceiling below the
+collector cadence deliberately changes this to sampling.
+
+The collector emits snapshot gauges for the bounded view slice:
 
 - `ise_tacacs_account_authentication_events` by account, status, NAD, policy,
   identity store, and bounded failure class.

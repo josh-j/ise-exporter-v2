@@ -44,10 +44,10 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
         "radius_active": 1,
         "performance": 4,
         "posture": 4,
-        "endpoints": 6,
+        "endpoints": 4,
         "freshness": 13,
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(8.9583333333)
+    assert statements_per_hour == pytest.approx(8.875)
     assert statements_per_hour < 9
