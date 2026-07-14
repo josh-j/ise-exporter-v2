@@ -1,5 +1,6 @@
 """ISERestClient.get_ers must follow nextPage.href across all pages iteratively
 (no per-page recursion that would blow the stack on large result sets)."""
+import threading
 import types
 import warnings
 
@@ -240,6 +241,46 @@ def test_unverified_https_warning_is_suppressed_at_request_boundary():
         assert client._request(Session(), "https://ise.example/ers") is not None
 
     assert not [item for item in caught if issubclass(item.category, InsecureRequestWarning)]
+
+
+def test_control_plane_transport_serializes_concurrent_session_use():
+    client = ISERestClient.__new__(ISERestClient)
+    client._auth_failures = 0
+    client._auth_block_until = 0.0
+    entered = threading.Event()
+    release = threading.Event()
+    active = 0
+    maximum = 0
+    state_lock = threading.Lock()
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+    class Session:
+        def get(self, *args, **kwargs):
+            nonlocal active, maximum
+            with state_lock:
+                active += 1
+                maximum = max(maximum, active)
+            entered.set()
+            assert release.wait(1)
+            with state_lock:
+                active -= 1
+            return Response()
+
+    session = Session()
+    first = threading.Thread(target=client._request, args=(session, "https://ise/first"))
+    second = threading.Thread(target=client._request, args=(session, "https://ise/second"))
+    first.start()
+    assert entered.wait(1)
+    second.start()
+    release.set()
+    first.join(1)
+    second.join(1)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert maximum == 1
 
 
 def test_unverified_https_warning_is_suppressed_for_health_checks():

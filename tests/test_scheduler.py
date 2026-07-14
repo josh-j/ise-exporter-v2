@@ -1,3 +1,4 @@
+import threading
 import types
 
 import pytest
@@ -120,6 +121,120 @@ def test_next_deadline_skips_missed_ticks_instead_of_replaying_them():
     assert _next_deadline(60, 190, 60) == 240
     assert _next_deadline(60, 180, 60) == 240
     assert _next_deadline(60, 119, 60) == 120
+
+
+def test_dataconnect_cooldown_lane_does_not_block_other_collection_planes():
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    shutdown = threading.Event()
+    started = threading.Event()
+    release = threading.Event()
+    scheduler._start_dataconnect_worker(shutdown)
+
+    def slow_dataconnect():
+        with collectors.observe("dataconnect_radius_active"):
+            started.set()
+            assert release.wait(1)
+
+    scheduler._run_dataconnect("dataconnect_radius_active", 1800, slow_dataconnect)
+    assert started.wait(1)
+
+    rest_runs = []
+    scheduler._run("deployment", 100.0, 300, lambda: rest_runs.append(True))
+    assert rest_runs == [True]
+
+    release.set()
+    scheduler._dataconnect_queue.join()
+    shutdown.set()
+    scheduler._stop_dataconnect_worker()
+
+
+def test_dataconnect_worker_serializes_domains_and_deduplicates_queued_runs():
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    shutdown = threading.Event()
+    first_started = threading.Event()
+    release_first = threading.Event()
+    second_started = threading.Event()
+    order = []
+    scheduler._start_dataconnect_worker(shutdown)
+
+    def first():
+        with collectors.observe("dataconnect_radius_active"):
+            order.append("first")
+            first_started.set()
+            assert release_first.wait(1)
+
+    def second():
+        with collectors.observe("dataconnect_performance"):
+            order.append("second")
+            second_started.set()
+
+    scheduler._run_dataconnect("dataconnect_radius_active", 1800, first)
+    scheduler._run_dataconnect("dataconnect_radius_active", 1800, first)
+    scheduler._run_dataconnect("dataconnect_performance", 3600, second)
+    assert first_started.wait(1)
+    assert not second_started.is_set()
+    assert metrics.ise_dataconnect_worker_busy._value.get() == 1
+    assert metrics.ise_dataconnect_queue_depth._value.get() == 1
+
+    release_first.set()
+    scheduler._dataconnect_queue.join()
+    assert order == ["first", "second"]
+    assert metrics.ise_dataconnect_worker_busy._value.get() == 0
+    assert metrics.ise_dataconnect_queue_depth._value.get() == 0
+    shutdown.set()
+    scheduler._stop_dataconnect_worker()
+
+
+def test_paced_mnt_lane_does_not_block_rest_and_deduplicates_cycles():
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, request_timeout=1), object(), object(), mnt=object())
+    shutdown = threading.Event()
+    started = threading.Event()
+    release = threading.Event()
+    runs = []
+    scheduler._start_mnt_worker(shutdown)
+
+    def slow_mnt():
+        with collectors.observe("mnt_active_posture"):
+            runs.append(True)
+            started.set()
+            assert release.wait(1)
+
+    scheduler._run_mnt("mnt_active_posture", 900, slow_mnt)
+    scheduler._run_mnt("mnt_active_posture", 900, slow_mnt)
+    assert started.wait(1)
+    assert metrics.ise_mnt_worker_busy._value.get() == 1
+
+    rest_runs = []
+    scheduler._run("deployment", 100.0, 300, lambda: rest_runs.append(True))
+    assert rest_runs == [True]
+
+    release.set()
+    scheduler._mnt_worker.join(1)
+    assert runs == [True]
+    assert metrics.ise_mnt_worker_busy._value.get() == 0
+    shutdown.set()
+    scheduler._stop_mnt_worker()
+
+
+def test_loop_exception_signals_workers_before_teardown(monkeypatch):
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1, request_timeout=1),
+        object(), object(), mnt=object(),
+    )
+    shutdown = threading.Event()
+    monkeypatch.setattr(
+        scheduler, "run_cycle",
+        lambda: (_ for _ in ()).throw(RuntimeError("scheduler failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="scheduler failed"):
+        scheduler.loop(shutdown)
+
+    assert shutdown.is_set()
+    assert not scheduler.dataconnect_worker_alive
 
 
 def test_failed_dataconnect_attempt_never_retries_faster_than_five_minutes(monkeypatch):

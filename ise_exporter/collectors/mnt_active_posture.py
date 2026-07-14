@@ -131,16 +131,21 @@ def _agent_os(agent):
 
 
 class _RequestPacer:
-    def __init__(self, interval_seconds):
+    def __init__(self, interval_seconds, shutdown=None):
         self.interval = max(0.0, float(interval_seconds))
         self.next_at = 0.0
         self.lock = Lock()
+        self.shutdown = shutdown
 
     def wait(self):
         with self.lock:
             remaining = self.next_at - time.monotonic()
             if remaining > 0:
-                time.sleep(remaining)
+                if self.shutdown is not None:
+                    if self.shutdown.wait(remaining):
+                        raise RuntimeError("MnT detail pacing cancelled during exporter shutdown")
+                else:
+                    time.sleep(remaining)
             self.next_at = time.monotonic() + self.interval
 
 
@@ -161,7 +166,7 @@ def _bounded_details(client, macs, workers, request_interval=0):
     if not macs:
         return {}
     results = {}
-    pacer = _RequestPacer(request_interval)
+    pacer = _RequestPacer(request_interval, getattr(client, "shutdown_event", None))
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(macs)))) as executor:
         futures = {executor.submit(_detail, client, mac, pacer): mac for mac in macs}
         for future in as_completed(futures):

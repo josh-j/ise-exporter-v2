@@ -96,11 +96,11 @@
               },
               {
                 "color": "yellow",
-                "value": 120
+                "value": 5400
               },
               {
                 "color": "red",
-                "value": 180
+                "value": 7200
               }
             ]
           }
@@ -208,7 +208,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_psn_radius_requests_per_hour)",
+          "expr": "sort_desc(ise_dataconnect_psn_radius_requests_per_hour) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -236,7 +236,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_psn_average_latency_seconds)",
+          "expr": "sort_desc(ise_dataconnect_psn_average_latency_seconds) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -258,7 +258,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_psn_average_tps)",
+          "expr": "sort_desc(ise_dataconnect_psn_average_tps) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -286,7 +286,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_psn_load_percent",
+          "expr": "ise_dataconnect_psn_load_percent and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{node}} / {{stat}}",
           "refId": "A",
           "datasource": {
@@ -314,7 +314,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_node_cpu_utilization_percent",
+          "expr": "ise_dataconnect_node_cpu_utilization_percent and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -342,7 +342,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_node_memory_utilization_percent",
+          "expr": "ise_dataconnect_node_memory_utilization_percent and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -370,7 +370,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_node_disk_utilization_percent)",
+          "expr": "sort_desc(ise_dataconnect_node_disk_utilization_percent) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{node}} / {{partition}}",
           "refId": "A",
           "datasource": {
@@ -393,7 +393,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_psn_mnt_logs_per_hour",
+          "expr": "ise_dataconnect_psn_mnt_logs_per_hour and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "logs / {{node}}",
           "refId": "A",
           "datasource": {
@@ -402,7 +402,7 @@
           }
         },
         {
-          "expr": "ise_dataconnect_psn_noise_per_hour",
+          "expr": "ise_dataconnect_psn_noise_per_hour and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "noise / {{node}}",
           "refId": "B",
           "datasource": {
@@ -411,7 +411,7 @@
           }
         },
         {
-          "expr": "ise_dataconnect_psn_suppression_per_hour",
+          "expr": "ise_dataconnect_psn_suppression_per_hour and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "suppressed / {{node}}",
           "refId": "C",
           "datasource": {
@@ -433,7 +433,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_diagnostic_events)",
+          "expr": "sort_desc(ise_dataconnect_diagnostic_events) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
           "format": "table",
           "instant": true,
           "refId": "A",

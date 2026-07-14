@@ -269,7 +269,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events)",
+          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{status}}",
           "refId": "A",
           "datasource": {
@@ -291,7 +291,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (authentication_method) (ise_dataconnect_radius_authentication_events))",
+          "expr": "sort_desc(sum by (authentication_method) (ise_dataconnect_radius_authentication_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{authentication_method}}",
           "refId": "A",
           "datasource": {
@@ -313,7 +313,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events))",
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -335,7 +335,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_accounting_events))",
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_accounting_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -364,7 +364,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_radius_response_time_seconds",
+          "expr": "ise_dataconnect_radius_response_time_seconds and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{stat}} / {{status}} / {{nad}}",
           "refId": "A",
           "datasource": {
@@ -392,7 +392,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_radius_accounting_session_seconds)",
+          "expr": "sort_desc(ise_dataconnect_radius_accounting_session_seconds) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{stat}} / {{nad}} / {{psn}}",
           "refId": "A",
           "datasource": {

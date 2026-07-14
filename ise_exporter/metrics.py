@@ -472,6 +472,18 @@ ise_dataconnect_query_pacing_seconds = Gauge(
 ise_dataconnect_query_cooldown_seconds = Gauge(
     "ise_dataconnect_query_cooldown_seconds",
     "Latest global duty-cycle cooldown after a Data Connect statement", ["view"])
+ise_dataconnect_worker_busy = Gauge(
+    "ise_dataconnect_worker_busy",
+    "Whether the serialized Data Connect collection worker is executing a domain")
+ise_dataconnect_queue_depth = Gauge(
+    "ise_dataconnect_queue_depth",
+    "Number of Data Connect domains queued behind the serialized worker")
+ise_dataconnect_oldest_queued_seconds = Gauge(
+    "ise_dataconnect_oldest_queued_seconds",
+    "Age of the oldest Data Connect domain waiting for the serialized worker")
+ise_mnt_worker_busy = Gauge(
+    "ise_mnt_worker_busy",
+    "Whether the bounded MnT active-posture worker is executing")
 ise_dataset_effective_interval_seconds = Gauge(
     "ise_dataset_effective_interval_seconds",
     "Scheduled collection cadence currently applied by the scheduler", ["dataset", "source"])

@@ -96,11 +96,11 @@
               },
               {
                 "color": "yellow",
-                "value": 120
+                "value": 129600
               },
               {
                 "color": "red",
-                "value": 180
+                "value": 172800
               }
             ]
           }
@@ -194,7 +194,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})",
+          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{status}}",
           "refId": "A",
           "datasource": {
@@ -216,7 +216,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (message_code) (ise_dataconnect_radius_errors))",
+          "expr": "topk(20, sum by (message_code) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{message_code}}",
           "refId": "A",
           "datasource": {
@@ -238,7 +238,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}))",
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -260,7 +260,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (nad, authentication_method) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}))",
+          "expr": "sort_desc(sum by (nad, authentication_method) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{nad}} / {{authentication_method}}",
           "refId": "A",
           "datasource": {
@@ -282,7 +282,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn, message_code) (ise_dataconnect_radius_errors))",
+          "expr": "sort_desc(sum by (psn, message_code) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{psn}} / {{message_code}}",
           "refId": "A",
           "datasource": {
@@ -328,7 +328,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})",
+          "expr": "sort_desc(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
           "format": "table",
           "instant": true,
           "refId": "A",

@@ -4,6 +4,7 @@ get_network_devices, ...) collapse into the collectors, which now call the gener
 get_ers / get_ers_total / get_pan_api / get_mnt_xml directly. Pure plumbing, no
 metric writes except the api_requests/api_errors counters."""
 import logging
+import threading
 import time
 import warnings
 import xml.etree.ElementTree as ET
@@ -41,6 +42,23 @@ class ISERestClient:
             "application/xml", self._tls_verify("mnt")) if include_mnt else None
         self._auth_failures = 0
         self._auth_block_until = 0.0
+        self._request_lock = threading.RLock()
+        self.shutdown_event = None
+
+    def set_shutdown_event(self, shutdown):
+        if shutdown is not None and not isinstance(shutdown, threading.Event):
+            raise TypeError("shutdown must be a threading.Event")
+        self.shutdown_event = shutdown
+
+    def _transport_lock(self):
+        # A few compatibility tests construct the client with __new__. Lazily
+        # initializing preserves that surface while ensuring a requests.Session
+        # and its shared auth-backoff state are never used concurrently.
+        lock = getattr(self, "_request_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._request_lock = lock
+        return lock
 
     def _tls_verify(self, plane):
         enabled = bool(getattr(self.cfg, f"{plane}_ssl_verify", True))
@@ -63,6 +81,11 @@ class ISERestClient:
         return s
 
     def _request(self, session, url, params=None, timeout=30, api_name="unknown"):
+        with self._transport_lock():
+            return self._request_serialized(
+                session, url, params=params, timeout=timeout, api_name=api_name)
+
+    def _request_serialized(self, session, url, params=None, timeout=30, api_name="unknown"):
         now = time.time()
         if self._auth_block_until and now < self._auth_block_until:
             ise_api_requests_total.labels(api=api_name, status="auth_blocked").inc()
@@ -260,10 +283,11 @@ class ISERestClient:
         def probe(session, url, *, params=None):
             result = {"reachable": False, "authenticated": False, "http_status": 0}
             try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", InsecureRequestWarning)
-                    response = session.get(
-                        url, params=params, timeout=5, allow_redirects=False)
+                with self._transport_lock():
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", InsecureRequestWarning)
+                        response = session.get(
+                            url, params=params, timeout=5, allow_redirects=False)
                 result["reachable"] = True
                 result["http_status"] = response.status_code
                 result["authenticated"] = 200 <= response.status_code < 400

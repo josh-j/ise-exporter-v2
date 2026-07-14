@@ -1344,7 +1344,10 @@ def _dataconnect_health(dataconnect):
     if dataconnect is None:
         return None
     try:
-        return bool(dataconnect.query("SELECT COUNT(*) AS view_count FROM user_views"))
+        # Authentication/access proof only: do not count the complete catalog
+        # when a single bounded metadata row proves the same thing.
+        return bool(dataconnect.query(
+            "SELECT 1 AS available FROM user_views FETCH FIRST 1 ROWS ONLY"))
     except Exception:
         return False
 

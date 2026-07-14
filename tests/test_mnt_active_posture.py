@@ -1,3 +1,4 @@
+import threading
 import types
 
 import pytest
@@ -65,6 +66,16 @@ def _cfg(**overrides):
     values = dict(mnt_active_posture_max_sessions=10, mnt_active_posture_workers=2)
     values.update(overrides)
     return types.SimpleNamespace(**values)
+
+
+def test_detail_request_pacing_is_interruptible_during_shutdown():
+    shutdown = threading.Event()
+    shutdown.set()
+    pacer = mnt_active_posture._RequestPacer(60, shutdown)
+    pacer.next_at = mnt_active_posture.time.monotonic() + 60
+
+    with pytest.raises(RuntimeError, match="cancelled during exporter shutdown"):
+        pacer.wait()
 
 
 def test_collects_bounded_posture_and_latency_without_identity_labels():

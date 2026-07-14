@@ -144,8 +144,13 @@ def main(argv=None):
     scheduler = PollScheduler(cfg, client, dataconnect=dataconnect, mnt=mnt)
 
     scheduler.loop(shutdown)   # blocks until SIGTERM/SIGINT
-    if dataconnect is not None:
+    if dataconnect is not None and not scheduler.dataconnect_worker_alive:
         dataconnect.close()
+    elif dataconnect is not None:
+        # The worker is a daemon and the process is already shutting down. Do
+        # not close its database connection from another thread mid-call.
+        logger.warning("leaving Data Connect client open for process teardown because "
+                       "the worker is still stopping")
     logger.info("shutdown complete")
     return 0
 

@@ -9,6 +9,7 @@ import fcntl
 import logging
 import os
 import ssl
+import threading
 import time
 
 import oracledb
@@ -95,7 +96,23 @@ class DataConnectClient:
         self._connect_failures = 0
         self._blocked_until = 0.0
         self._next_query_at = 0.0
+        self._shutdown = None
         metrics.ise_dataconnect_query_pacing_seconds.set(self.min_query_interval)
+
+    def set_shutdown_event(self, shutdown):
+        """Make long adaptive pacing waits interruptible during service stop."""
+        if shutdown is not None and not isinstance(shutdown, threading.Event):
+            raise TypeError("shutdown must be a threading.Event")
+        self._shutdown = shutdown
+
+    def _wait(self, seconds):
+        if seconds <= 0:
+            return
+        if self._shutdown is not None:
+            if self._shutdown.wait(seconds):
+                raise RuntimeError("Data Connect query cancelled during exporter shutdown")
+        else:
+            time.sleep(seconds)
 
     def _shared_gate(self):
         """Serialize and pace queries across exporter and CLI processes.
@@ -117,7 +134,7 @@ class DataConnectClient:
             deadline = float(raw) if raw else 0.0
             remaining = deadline - time.time()
             if remaining > 0:
-                time.sleep(remaining)
+                self._wait(remaining)
             return descriptor
         except Exception as error:
             try:
@@ -172,7 +189,7 @@ class DataConnectClient:
     def query(self, sql, parameters=None):
         remaining = self._next_query_at - time.monotonic()
         if remaining > 0:
-            time.sleep(remaining)
+            self._wait(remaining)
         attempt_started = time.monotonic()
         shared_gate = None
         started = None

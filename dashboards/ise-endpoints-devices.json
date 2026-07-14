@@ -96,11 +96,11 @@
               },
               {
                 "color": "yellow",
-                "value": 7200
+                "value": 129600
               },
               {
                 "color": "red",
-                "value": 10800
+                "value": 172800
               }
             ]
           }
@@ -120,7 +120,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_endpoints_total",
+          "expr": "ise_dataconnect_endpoints_total and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -208,7 +208,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, ise_dataconnect_endpoints_by_profile)",
+          "expr": "topk(20, ise_dataconnect_endpoints_by_profile) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{profile}}",
           "refId": "A",
           "datasource": {
@@ -230,7 +230,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, ise_dataconnect_endpoints_by_identity_group)",
+          "expr": "topk(20, ise_dataconnect_endpoints_by_identity_group) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{identity_group}}",
           "refId": "A",
           "datasource": {
@@ -252,7 +252,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_endpoints_by_posture_applicable",
+          "expr": "ise_dataconnect_endpoints_by_posture_applicable and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
           "legendFormat": "{{applicable}}",
           "refId": "A",
           "datasource": {

@@ -197,8 +197,8 @@ def test_health_works_with_only_dataconnect_configuration(capsys):
         dataconnect_host="mnt.example.mil", dataconnect_ready=True)
     class HealthyDataConnect(FakeDataConnect):
         def query(self, sql, parameters=None):
-            if "COUNT(*)" in sql:
-                return [{"view_count": 14}]
+            if "user_views" in sql:
+                return [{"available": 1}]
             return super().query(sql, parameters)
 
     dataconnect = HealthyDataConnect()

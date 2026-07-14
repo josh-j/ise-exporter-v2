@@ -1,3 +1,4 @@
+import threading
 import types
 
 import pytest
@@ -103,6 +104,23 @@ def test_schema_validation_is_not_mislabeled_as_reporting_activity():
     """
 
     assert dataconnect._query_view(sql) == "schema_metadata"
+
+
+def test_adaptive_pacing_wait_is_interruptible_during_shutdown():
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    shutdown = threading.Event()
+    client = dataconnect.DataConnectClient(cfg)
+    client.set_shutdown_event(shutdown)
+    shutdown.set()
+
+    with pytest.raises(RuntimeError, match="cancelled during exporter shutdown"):
+        client._wait(3600)
 
 
 def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path):

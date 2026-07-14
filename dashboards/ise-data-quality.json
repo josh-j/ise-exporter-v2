@@ -227,7 +227,7 @@
       "title": "MnT Active Snapshot Age",
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 45},
       "targets": [{"expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"mnt_active_posture\",source=\"mnt\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
-      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 600}, {"color": "red", "value": 900}]}}, "overrides": []}
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1350}, {"color": "red", "value": 1800}]}}, "overrides": []}
     },
     {
       "id": 19,
@@ -366,6 +366,35 @@
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 80},
       "targets": [{"expr": "ise_dataconnect_query_cooldown_seconds", "legendFormat": "{{view}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "Data Connect Worker / Queue",
+      "description": "One worker executes reporting domains serially. Queue depth above zero is expected during a paced cold start but should eventually drain.",
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 88},
+      "targets": [
+        {"expr": "ise_dataconnect_worker_busy", "instant": true, "legendFormat": "busy", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_dataconnect_queue_depth", "instant": true, "legendFormat": "queued domains", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+      ]
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "Oldest Data Connect Queue Wait",
+      "description": "Time the oldest reporting domain has waited behind the serialized duty-cycle gate.",
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 88},
+      "targets": [{"expr": "ise_dataconnect_oldest_queued_seconds", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "MnT Posture Worker",
+      "description": "Whether the independent bounded MnT detail-refresh lane is currently executing.",
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 88},
+      "targets": [{"expr": "ise_mnt_worker_busy", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "IDLE", "color": "green"}, "1": {"text": "RUNNING", "color": "blue"}}}]}, "overrides": []}
     }
   ],
   "templating": {

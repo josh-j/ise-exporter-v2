@@ -220,6 +220,36 @@ def test_domain_queries_do_not_mask_outages_as_unconditional_zero():
     assert not violations, "outage-masking dashboard queries: " + ", ".join(violations)
 
 
+def test_every_domain_data_query_is_gated_by_its_authoritative_dataset():
+    contracts = (
+        (r"ise_dataconnect_radius_active_", "dataconnect_radius_active", "dataconnect"),
+        (r"ise_dataconnect_radius_(?!active_)", "dataconnect_radius", "dataconnect"),
+        (r"ise_dataconnect_endpoint", "dataconnect_endpoints", "dataconnect"),
+        (r"ise_dataconnect_posture_", "dataconnect_posture", "dataconnect"),
+        (r"ise_dataconnect_(?:psn|node|diagnostic)",
+         "dataconnect_performance", "dataconnect"),
+        (r"ise_mnt_active_", "mnt_active_posture", "mnt"),
+        (r"ise_tacacs_(?:internal_user|policy_objects)", "tacacs_config", "rest"),
+        (r"ise_tacacs_(?:account|events|dataconnect)",
+         "tacacs_activity", "dataconnect"),
+    )
+    violations = []
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        for panel in _panels(dashboard.get("panels", [])):
+            for target in panel.get("targets", []):
+                expression = target.get("expr", "")
+                for pattern, dataset, source in contracts:
+                    if not re.search(pattern, expression):
+                        continue
+                    selector = f'dataset="{dataset}",source="{source}"'
+                    if selector not in expression or "ise_dataset_up" not in expression:
+                        violations.append(
+                            f"{path.name}: panel {panel.get('id')} lacks {dataset} gate")
+
+    assert not violations, "ungated authoritative data: " + ", ".join(violations)
+
+
 def test_secureclient_dashboard_separates_active_mnt_from_historical_dataconnect():
     dashboard = json.loads((DASHBOARDS / "ise-secureclient.json").read_text())
     panels = {panel["title"]: panel for panel in _panels(dashboard["panels"])}
@@ -329,6 +359,10 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_mnt_active_posture_refresh_deferred",
         "ise_mnt_active_posture_cache_oldest_age_seconds",
         "ise_dataconnect_radius_active_groups_truncated",
+        "ise_dataconnect_worker_busy",
+        "ise_dataconnect_queue_depth",
+        "ise_dataconnect_oldest_queued_seconds",
+        "ise_mnt_worker_busy",
     ):
         assert metric in text
 
@@ -381,6 +415,27 @@ def test_sessions_dashboard_collection_age_thresholds_match_domain_cadences():
     assert active["matcher"] == {"id": "byFrameRefID", "options": "Active sessions"}
     steps = active["properties"][0]["value"]["steps"]
     assert [step["value"] for step in steps] == [None, 2700, 3600]
+
+
+def test_dashboard_age_thresholds_match_production_collection_cadences():
+    expected = {
+        ("ise-auth-troubleshooting.json", 91): (129600, 172800),
+        ("ise-failure-triage.json", 91): (129600, 172800),
+        ("ise-endpoint-profiles.json", 91): (129600, 172800),
+        ("ise-endpoints-devices.json", 91): (129600, 172800),
+        ("ise-psn-troubleshooting.json", 91): (5400, 7200),
+        ("ise-secureclient.json", 91): (1350, 1800),
+        ("ise-secureclient.json", 93): (32400, 43200),
+        ("ise-tacacs.json", 92): (32400, 43200),
+        ("ise-tacacs.json", 93): (32400, 43200),
+        ("ise-data-quality.json", 18): (1350, 1800),
+    }
+    for (filename, panel_id), thresholds in expected.items():
+        dashboard = json.loads((DASHBOARDS / filename).read_text())
+        panel = next(
+            panel for panel in _panels(dashboard["panels"]) if panel.get("id") == panel_id)
+        steps = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
+        assert tuple(step["value"] for step in steps[1:]) == thresholds
 
 
 def test_data_quality_domain_panels_do_not_publish_stale_values_during_outages():
