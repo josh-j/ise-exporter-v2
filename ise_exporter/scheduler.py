@@ -6,7 +6,6 @@ snapshot. There is no runtime source fallback and no collector reads another
 collector's metrics to decide ownership.
 """
 import logging
-import math
 import time
 
 from . import collectors, metrics
@@ -113,7 +112,6 @@ class PollScheduler:
     def _run(self, name, now, tier, callback):
         if self._due(name, now, tier):
             source = self.dataset_plan[name][0]
-            started = time.monotonic()
             collectors.begin_attempt(name)
             self.last_attempt[name] = now
             metrics.ise_dataset_last_attempt_timestamp.labels(
@@ -124,15 +122,13 @@ class PollScheduler:
                 logger.exception("%s callback escaped collector observation", name)
                 collectors.record_failure(name, "unhandled_exception")
             completed = time.time()
-            elapsed = max(0.0, time.monotonic() - started)
             effective_interval = tier
             if source == "dataconnect":
-                duty_cycle = max(0.1, min(2.0, float(getattr(
-                    self.cfg, "dataconnect_max_duty_cycle_percent", 0.5))))
-                load_interval = math.ceil(elapsed * 100 / duty_cycle)
-                effective_interval = max(tier, load_interval)
-                metrics.ise_dataconnect_load_backoff_seconds.labels(dataset=name).set(
-                    effective_interval - tier)
+                # DataConnectClient already enforces the shared cross-process
+                # statement duty cycle. Applying callback elapsed time again here
+                # double-throttles every dataset because elapsed includes those
+                # deliberate pacing sleeps.
+                metrics.ise_dataconnect_load_backoff_seconds.labels(dataset=name).set(0)
             metrics.ise_dataset_effective_interval_seconds.labels(
                 dataset=name, source=source).set(effective_interval)
             succeeded = collectors.outcome(name)

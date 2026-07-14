@@ -154,6 +154,38 @@ def test_connection_backoff_protects_dataconnect_account(monkeypatch):
     assert attempts == 3
 
 
+def test_query_reconnects_once_after_ise_expires_session(monkeypatch):
+    class ExpiredCursor(Cursor):
+        def execute(self, sql, parameters):
+            raise RuntimeError("ORA-02399: exceeded maximum connect time")
+
+    class ExpiredConnection(Connection):
+        def cursor(self):
+            return ExpiredCursor()
+
+    connections = iter((ExpiredConnection(), Connection()))
+    attempts = []
+
+    def connect(**_kwargs):
+        attempts.append(True)
+        return next(connections)
+
+    monkeypatch.setattr(dataconnect.oracledb, "connect", connect)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_shared_pacing_file="",
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    result = dataconnect.DataConnectClient(cfg).query("SELECT username FROM endpoints_data")
+
+    assert result == [{"username": "netadmin", "hits": 3}]
+    assert len(attempts) == 2
+
+
 def test_query_materializes_endpoint_clob_and_binary_fields(monkeypatch):
     class Lob:
         def __init__(self, value):

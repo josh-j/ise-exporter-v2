@@ -97,7 +97,10 @@ processes cannot bypass the cooldown. The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
 invocations before adaptive cooldown is considered.
 The Data Quality dashboard exposes per-view statement rate, p95 duration, rows
-returned, configured/effective cadence, pacing, and adaptive backoff. Before a
+returned, configured/effective cadence, pacing, and shared statement cooldown.
+The scheduler does not apply that cooldown a second time when calculating its
+next domain run. ISE-expired Oracle sessions are reconnected and retried once;
+authentication errors and SQL failures are never retried. Before a
 100,000-endpoint rollout, capture an ISE AWR report as a baseline and repeat it
 under representative load. If exporter statements appear among the highest-cost
 queries, increase the affected per-domain interval; do not add exporter replicas.

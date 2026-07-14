@@ -6,6 +6,7 @@ the database.
 """
 import base64
 import fcntl
+import logging
 import os
 import ssl
 import time
@@ -13,6 +14,8 @@ import time
 import oracledb
 
 from .. import metrics
+
+logger = logging.getLogger(__name__)
 
 
 _QUERY_VIEWS = (
@@ -57,6 +60,14 @@ def _materialize(value):
     if isinstance(value, dict):
         return {key: _materialize(item) for key, item in value.items()}
     return value
+
+
+def _retryable_disconnect(error):
+    message = str(error).upper()
+    return any(code in message for code in (
+        "ORA-02399", "ORA-03113", "ORA-03114", "ORA-03135",
+        "DPY-1001", "DPY-4010", "DPY-4011",
+    ))
 
 
 class DataConnectClient:
@@ -164,23 +175,29 @@ class DataConnectClient:
         view = _query_view(sql)
         result = "error"
         try:
-            with self.connect().cursor() as cursor:
-                cursor.execute(sql, parameters or {})
-                columns = [column.name.lower() for column in cursor.description]
-                rows = [dict(zip(columns, (_materialize(value) for value in row)))
-                        for row in cursor.fetchall()]
-                result = "success"
-                metrics.ise_dataconnect_query_rows.labels(view=view).set(len(rows))
-                return rows
-        except Exception:
-            # A shared Thin connection can become unusable after an MnT restart or
-            # network interruption. Drop it so the next scheduled domain can
-            # reconnect under the account-protection backoff.
-            try:
-                self.close()
-            except Exception:
-                pass
-            raise
+            for attempt in range(2):
+                try:
+                    with self.connect().cursor() as cursor:
+                        cursor.execute(sql, parameters or {})
+                        columns = [column.name.lower() for column in cursor.description]
+                        rows = [dict(zip(columns, (_materialize(value) for value in row)))
+                                for row in cursor.fetchall()]
+                    result = "success"
+                    metrics.ise_dataconnect_query_rows.labels(view=view).set(len(rows))
+                    return rows
+                except Exception as error:
+                    # ISE expires otherwise healthy Data Connect sessions after a
+                    # fixed maximum connection lifetime. Reconnect once inside the
+                    # same paced query so an idle period does not cost a full
+                    # scheduler interval. Authentication/query errors are never retried.
+                    try:
+                        self.close()
+                    except Exception:
+                        pass
+                    if attempt == 0 and _retryable_disconnect(error):
+                        logger.info("Data Connect session expired; reconnecting once")
+                        continue
+                    raise
         finally:
             finished = time.monotonic()
             duration = max(0.0, finished - started)
