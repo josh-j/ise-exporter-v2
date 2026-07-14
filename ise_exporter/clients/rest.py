@@ -156,7 +156,11 @@ class ISERestClient:
             return None
         try:
             return r.json()
-        except ValueError:
+        except ValueError as error:
+            status = str(getattr(r, "status_code", 0) or 0)
+            logger.warning("Invalid JSON from %s: %s", url, error)
+            ise_api_errors_total.labels(
+                api=api_name, error_type="parse", http_code=status).inc()
             return None
 
     # --- generic accessors used by collectors ---
@@ -290,7 +294,9 @@ class ISERestClient:
                             url, params=params, timeout=5, allow_redirects=False)
                 result["reachable"] = True
                 result["http_status"] = response.status_code
-                result["authenticated"] = 200 <= response.status_code < 400
+                # Redirects are deliberately not followed. A 3xx commonly points
+                # at an interactive login page and does not prove API credentials.
+                result["authenticated"] = 200 <= response.status_code < 300
             except Exception as error:
                 logger.debug("health probe failed for %s: %s", url, error)
             return result

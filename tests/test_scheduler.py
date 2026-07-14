@@ -425,9 +425,8 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
         dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 1800
     assert metrics.ise_dataset_enabled.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
-    assert metrics.ise_dataset_enabled.labels(
-        dataset="pxgrid_streaming", source="pxgrid")._value.get() == 0
-    assert metrics.ise_collector_enabled.labels(collector="pxgrid_streaming")._value.get() == 0
+    assert {source for source, _interval, _enabled in scheduler.dataset_plan.values()} == {
+        "rest", "dataconnect", "mnt"}
 
     scheduler.last_success["dataconnect_radius"] = 100.0
     scheduler._update_freshness(172899.0)

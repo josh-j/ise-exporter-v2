@@ -130,10 +130,6 @@ class PollScheduler:
             "mnt_active_posture": (
                 "mnt", getattr(cfg, "mnt_active_posture_interval", cfg.medium_interval),
                 getattr(cfg, "collect_mnt_active_posture", True)),
-            # Explicitly observable removal: no client, callback, or metric family
-            # exists, but operators can distinguish intentional disablement from
-            # a missing collector registration.
-            "pxgrid_streaming": ("pxgrid", cfg.slow_interval, False),
             "tacacs_config": ("rest", cfg.slow_interval, cfg.collect_tacacs),
             "tacacs_activity": (
                 "dataconnect", getattr(cfg, "dataconnect_tacacs_interval", 21600),

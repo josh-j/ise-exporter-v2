@@ -14,6 +14,7 @@ from ise_exporter.clients.rest import (
     MnTActiveSessionClient,
     MnTDiagnosticsClient,
 )
+from ise_exporter.metrics import ise_api_errors_total
 
 
 def test_sessions_verify_by_default_and_use_plane_specific_ca_bundles():
@@ -255,6 +256,26 @@ def test_unverified_https_warning_is_suppressed_at_request_boundary():
     assert not [item for item in caught if issubclass(item.category, InsecureRequestWarning)]
 
 
+def test_invalid_json_is_reported_as_api_parse_error():
+    client = ISERestClient.__new__(ISERestClient)
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            raise ValueError("HTML login page is not JSON")
+
+    client._request = lambda *_args, **_kwargs: Response()
+    counter = ise_api_errors_total.labels(
+        api="ers_endpoint", error_type="parse", http_code="200")
+    before = counter._value.get()
+
+    assert client._get_json(
+        object(), "https://ise.example/ers/config/endpoint",
+        api_name="ers_endpoint") is None
+    assert counter._value.get() == before + 1
+
+
 def test_control_plane_transport_serializes_concurrent_session_use():
     client = ISERestClient.__new__(ISERestClient)
     client._auth_failures = 0
@@ -344,4 +365,23 @@ def test_health_check_does_not_report_auth_failure_as_healthy():
     client.session = Session()
     client.mnt_session = Session()
     expected = {"reachable": True, "authenticated": False, "http_status": 401}
+    assert client.health_check() == {"pan": expected, "mnt": expected}
+
+
+def test_health_check_does_not_treat_login_redirect_as_authenticated():
+    client = ISERestClient.__new__(ISERestClient)
+    client.host = "pan.example"
+    client.mnt_host = "mnt.example"
+    client.cfg = types.SimpleNamespace(ers_port=9060)
+
+    class Response:
+        status_code = 302
+
+    class Session:
+        def get(self, *args, **kwargs):
+            return Response()
+
+    client.session = Session()
+    client.mnt_session = Session()
+    expected = {"reachable": True, "authenticated": False, "http_status": 302}
     assert client.health_check() == {"pan": expected, "mnt": expected}
