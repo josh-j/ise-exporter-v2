@@ -67,7 +67,8 @@ def _active_cte(stale_minutes):
                    END AS session_key,
                    id, timestamp AS event_time, device_name, ise_node, acct_status_type
             FROM radius_accounting
-            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+            WHERE timestamp >= SYSTIMESTAMP -
+                  NUMTODSINTERVAL({stale_minutes}, 'MINUTE')
               AND (TRIM(audit_session_id) IS NOT NULL
                    OR TRIM(session_id) IS NOT NULL
                    OR TRIM(acct_session_id) IS NOT NULL)
@@ -84,8 +85,6 @@ def _active_cte(stale_minutes):
               AND LOWER(TRIM(acct_status_type)) IN (
                   'start', 'interim', 'interim-update', 'interim update', 'update'
               )
-              AND event_time >= SYSTIMESTAMP -
-                  NUMTODSINTERVAL({stale_minutes}, 'MINUTE')
         )
     """
 
