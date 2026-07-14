@@ -16,11 +16,15 @@ Ctrl-D leave the shell. Interactive history is retained in
 
 Tab completion is context-aware. It completes commands, valid options, enum values,
 output/select fields, generic GET families and known paths, and Data Connect view
-names. Where credentials are configured, it also offers bounded,
-prefix-filtered endpoint identifiers, ISE nodes/PSNs, profiles, NADs, and usernames.
-Remote suggestions are capped at 25 rows and cached for five minutes; completion
-failures are silent and never prevent command entry. Press Tab twice to display all
-matching choices.
+names. Where credentials are configured, it also offers bounded, prefix-filtered
+endpoint identifiers and profiles from the 100k-scale endpoint inventory, plus ISE
+nodes, NADs, and internal TACACS usernames from REST configuration inventories.
+Field-name completion remains fully schema-aware. Production-safe completion never
+scans a RADIUS, TACACS, posture, accounting, diagnostic, or performance event view
+merely because an operator pressed Tab: live values from those views require
+`ISE_CLI_ALLOW_EXPENSIVE=true`. Remote suggestions are capped at 25 rows and cached
+for five minutes; completion failures are silent and never prevent command entry.
+Press Tab twice to display all matching choices.
 
 ```console
 $ ise-cli
@@ -176,9 +180,10 @@ Short operator aliases include `name`, `mac`, `ip`, `endpoint-policy`, `profile`
 `response-time`. Every correlatable text, numeric, or timestamp field is also exposed
 with a qualified name such as `endpoint.endpoint-policy`,
 `auth.authorization-policy`, `accounting.authorization-policy`,
-`error.failure-reason`, or `posture.posture-status`. Tab completion lists available
-field names and distinct live values. If a view or column does not exist on the
-target ISE 3.3 Patch 11 deployment, it is not advertised.
+`error.failure-reason`, or `posture.posture-status`. Tab completion lists every
+available field name and safe inventory/configuration values. Distinct event-view
+values are offered only with the expensive-query opt-in. If a view or column does
+not exist on the target ISE 3.3 Patch 11 deployment, it is not advertised.
 
 Endpoint name and attribute searches require Data Connect. ISE 3.3 Patch 11's ERS
 endpoint collection rejects the `name` filter, and ERS does not own authorization,
@@ -234,6 +239,10 @@ the same spirit as selecting properties from PowerCLI objects.
   must pass `--allow-active-list-scan` when that fallback is genuinely required.
 - Exporter and CLI Data Connect queries share a file-locked pacing deadline, so
   concurrent CLI processes cannot bypass the configured duty-cycle cooldown.
+- Tab completion uses only bounded inventory/metadata Data Connect views and REST
+  configuration inventory by default. High-volume event-view value completion
+  requires the global expensive-query opt-in; a result-row cap alone does not
+  bound Oracle scan work.
 - The generic command requires a family-relative path, rejects full URLs and `..`,
   and exposes no HTTP method flag.
 - Inventory enumeration is bounded unless `--all` is explicit.

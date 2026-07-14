@@ -181,7 +181,9 @@ bounded by `TACACS_INTERNAL_USER_MAX`. Per-account ERS details are held in a
 restart-persistent, seven-day cache and refreshed under a paced, hard per-cycle
 request budget. Three detail failures stop that cycle; incomplete or failed
 refreshes reduce explicit coverage signals instead of invalidating the entire
-Device Administration snapshot. It does not retain external identities, raw
+Device Administration snapshot. Selection is deterministic and coverage is
+measured against the complete enumerated inventory, so a configured cap cannot
+masquerade as 100 percent coverage. It does not retain external identities, raw
 TACACS events, commands, sessions, or MnT rows. Its size therefore follows the
 small internal-account inventory rather than the MnT database or event volume.
 

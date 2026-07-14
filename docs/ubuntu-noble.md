@@ -129,6 +129,8 @@ database burst after a service restart. This bound is independent of the
 100,000-endpoint inventory.
 Authorized `ise-cli` users must belong to the `ise-exporter` group so their Data
 Connect queries participate in the same serialized pacing gate as the service.
+The state directory is mode `2770`; setgid group inheritance prevents a CLI-created
+gate from locking the service out when the operator has a different primary group.
 The resulting metrics are current aggregate samples with coverage/truncation
 signals; they never expose endpoint identity, session identity, or raw/free-form
 attributes as Prometheus labels. Data Connect remains the historical posture and

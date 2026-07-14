@@ -560,8 +560,7 @@ def test_repl_completion_offers_bounded_quoted_live_values_and_caches_them():
     assert len(dataconnect.calls) == first_call_count
     assert shell.completion_candidates("endpoint-report --profile Win") == [
         "'Windows Workstations'", "'Windows Servers'"]
-    assert shell.completion_candidates("certificates --node laba-") == [
-        "laba-ise-001", "laba-ise-002"]
+    assert shell.completion_candidates("certificates --node pan") == ["pan-1"]
     endpoint_sql, parameters = dataconnect.calls[0]
     assert "FETCH FIRST 25 ROWS ONLY" in endpoint_sql
     assert parameters == {"prefix": "CL%"}
@@ -597,6 +596,32 @@ def test_live_completion_refines_a_truncated_cached_prefix():
             "Windows Workstations",)
     assert [parameters["prefix"] for _sql, parameters in dataconnect.calls] == [
         "WI%", "WINDOWS%"]
+
+
+def test_production_completion_never_scans_event_views():
+    dataconnect = CompletionDataConnect()
+    client = FakeClient()
+    shell = cli.ISEShell(client=client, dataconnect=dataconnect,
+                         stdin=io.StringIO(), stdout=io.StringIO())
+
+    assert shell.completion_candidates("radius-auth --username al") == []
+    assert shell.completion_candidates("endpoints authorization-policy=Pe") == []
+    assert shell.completion_candidates("tacacs-activity --device sw") == ["switch-1"]
+    assert shell.completion_candidates("tacacs-activity --username re") == ["readonly"]
+    assert not any(
+        "RADIUS_AUTHENTICATIONS" in sql or "TACACS_" in sql
+        for sql, _parameters in dataconnect.calls)
+
+
+def test_expensive_completion_opt_in_restores_live_event_values():
+    dataconnect = CompletionDataConnect()
+    cfg = types.SimpleNamespace(cli_production_safe=True, cli_allow_expensive=True)
+    shell = cli.ISEShell(client=FakeClient(), cfg=cfg, dataconnect=dataconnect,
+                         stdin=io.StringIO(), stdout=io.StringIO())
+
+    assert shell.completion_candidates("radius-auth --username al") == [
+        "alice", "'alex admin'"]
+    assert any("RADIUS_AUTHENTICATIONS" in sql for sql, _parameters in dataconnect.calls)
 
 
 def test_endpoint_context_search_joins_schema_discovered_sources(capsys):

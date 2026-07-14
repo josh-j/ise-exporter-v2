@@ -388,6 +388,7 @@ COMPLETION_LIMIT = 25
 COMPLETION_CACHE_TTL = 300.0
 COMPLETION_MIN_LIVE_PREFIX = 2
 ENDPOINT_SEARCH_CANDIDATE_LIMIT = 5000
+_SAFE_LIVE_COMPLETION_TABLES = frozenset(("ENDPOINTS_DATA", "USER_TAB_COLUMNS"))
 
 COMPLETION_STATUS_VALUES = {
     "radius-auth": ("failed", "passed", "success"),
@@ -1871,13 +1872,13 @@ class ISEShell(cmd.Cmd):
             return self._quote_values(self._dc_values(
                 "ENDPOINTS_DATA", "ENDPOINT_POLICY", prefix), prefix)
         if destination in ("nad", "device"):
-            table = "RADIUS_AUTHENTICATIONS" if destination == "nad" else \
-                "TACACS_ACCOUNTING_LAST_TWO_DAYS"
-            column = "DEVICE_NAME"
-            return self._quote_values(self._dc_values(table, column, prefix), prefix)
+            return self._quote_values(self._ers_completion_values(
+                "nads", "/config/networkdevice", prefix), prefix)
         if destination == "username":
-            table = ("TACACS_AUTHENTICATION_LAST_TWO_DAYS"
-                     if command == "tacacs-activity" else "RADIUS_AUTHENTICATIONS")
+            if command == "tacacs-activity":
+                return self._quote_values(self._ers_completion_values(
+                    "tacacs-users", "/config/internaluser", prefix), prefix)
+            table = "RADIUS_AUTHENTICATIONS"
             return self._quote_values(self._dc_values(table, "USERNAME", prefix), prefix)
         return []
 
@@ -2038,6 +2039,14 @@ class ISEShell(cmd.Cmd):
         normalized_prefix = prefix.strip()
         if len(normalized_prefix) < min_prefix:
             return ()
+        production_safe = bool(getattr(self.cfg, "cli_production_safe", True))
+        allow_expensive = bool(getattr(self.cfg, "cli_allow_expensive", False))
+        if (table.upper() not in _SAFE_LIVE_COMPLETION_TABLES
+                and production_safe and not allow_expensive):
+            # FETCH FIRST bounds returned rows, not Oracle scan/group work.
+            # Never turn a Tab press into a broad query over high-volume event
+            # views unless the operator explicitly enabled expensive CLI work.
+            return ()
         base_prefix = normalized_prefix[:min_prefix]
 
         def load(query_prefix):
@@ -2065,6 +2074,33 @@ class ISEShell(cmd.Cmd):
         if len(values) >= COMPLETION_LIMIT and normalized_prefix != base_prefix:
             key = ("dc", table, column, normalized_prefix.casefold())
             values = self._cached_completion(key, lambda: load(normalized_prefix))
+        return tuple(value for value in values
+                     if str(value).casefold().startswith(normalized_prefix.casefold()))
+
+    def _ers_completion_values(self, kind, path, prefix):
+        """Complete configuration names without querying high-volume event views."""
+        normalized_prefix = prefix.strip()
+        if len(normalized_prefix) < COMPLETION_MIN_LIVE_PREFIX:
+            return ()
+        base_prefix = normalized_prefix[:COMPLETION_MIN_LIVE_PREFIX]
+
+        def load():
+            try:
+                self._completion_runtime(kind)
+                if self.client is None:
+                    return ()
+                rows = self.client.get_ers(
+                    path, {"size": 100, "page": 1},
+                    api_name=f"cli_completion_{kind.replace('-', '_')}")
+                return (
+                    row.get("name") for row in rows or ()
+                    if isinstance(row, dict) and row.get("name")
+                    and str(row["name"]).casefold().startswith(base_prefix.casefold())
+                )
+            except Exception:
+                return ()
+
+        values = self._cached_completion(("ers", kind, base_prefix.casefold()), load)
         return tuple(value for value in values
                      if str(value).casefold().startswith(normalized_prefix.casefold()))
 
@@ -2122,8 +2158,7 @@ class ISEShell(cmd.Cmd):
                     rows = rows.get("response", rows.get("items", ()))
                 for row in rows or ():
                     if isinstance(row, dict):
-                        values.append(first_nonempty(
-                            row.get("hostname"), row.get("name"), row.get("fqdn")))
+                        values.append(first_nonempty(row, "hostname", "name", "fqdn"))
             except Exception:
                 pass
             return (value for value in values if value)

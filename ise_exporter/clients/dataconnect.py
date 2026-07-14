@@ -129,6 +129,11 @@ class DataConnectClient:
             descriptor = os.open(
                 path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o660)
             if os.fstat(descriptor).st_uid == os.geteuid():
+                # Authorized CLI users may create the gate before the service.
+                # Match the state directory's group explicitly in addition to
+                # requiring setgid deployment directories, so both processes
+                # retain access regardless of the creator's primary group.
+                os.fchown(descriptor, -1, os.stat(os.path.dirname(path)).st_gid)
                 os.fchmod(descriptor, 0o660)
             # A blocking flock cannot be interrupted by threading.Event. That
             # matters when another CLI process owns the gate through a long

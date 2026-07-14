@@ -162,6 +162,29 @@ def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path
     assert (tmp_path / "dataconnect.pacing").stat().st_mode & 0o777 == 0o660
 
 
+def test_shared_pacing_gate_inherits_state_directory_group(monkeypatch, tmp_path):
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file=str(
+            tmp_path / "dataconnect.pacing"),
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    calls = []
+    real_fchown = dataconnect.os.fchown
+
+    def record_fchown(descriptor, uid, gid):
+        calls.append((uid, gid))
+        real_fchown(descriptor, uid, gid)
+
+    monkeypatch.setattr(dataconnect.os, "fchown", record_fchown)
+    descriptor = client._shared_gate()
+    client._release_shared_gate(descriptor, 0)
+
+    assert calls == [(-1, tmp_path.stat().st_gid)]
+
+
 def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):
     path = tmp_path / "dataconnect.pacing"
     owner = path.open("w+")

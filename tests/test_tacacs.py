@@ -191,6 +191,42 @@ def test_internal_user_detail_refresh_is_bounded_and_converges(tmp_path):
     assert metrics.ise_tacacs_internal_user_detail_refresh_deferred._value.get() == 0
 
 
+def test_internal_user_selection_is_stable_and_reports_inventory_truncation(tmp_path):
+    class UnstableOrder(Client):
+        detail_requests = []
+
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            if path == "/config/internaluser":
+                return [
+                    {"id": "u3", "name": "zeta"},
+                    {"id": "u1", "name": "alpha"},
+                    {"id": "u2", "name": "beta"},
+                ]
+            if path.startswith("/config/internaluser/"):
+                user_id = path.rsplit("/", 1)[-1]
+                self.detail_requests.append(user_id)
+                return {"InternalUser": {
+                    "id": user_id, "name": {"u1": "alpha", "u2": "beta"}[user_id],
+                    "enabled": True,
+                }}
+            return super().get_ers(path, params, get_all, api_name)
+
+    cfg = types.SimpleNamespace(
+        state_db_path=str(tmp_path / "state.sqlite3"), tacacs_internal_user_max=2,
+        tacacs_unused_account_days=180,
+        tacacs_internal_user_detail_max_requests=2,
+        tacacs_internal_user_detail_ttl=604800)
+    client = UnstableOrder()
+
+    tacacs.collect_config(client, cfg)
+
+    assert client.detail_requests == ["u1", "u2"]
+    assert metrics.ise_tacacs_internal_users_total._value.get() == 3
+    assert metrics.ise_tacacs_internal_user_inventory_selected._value.get() == 2
+    assert metrics.ise_tacacs_internal_user_inventory_truncated._value.get() == 1
+    assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == pytest.approx(2 / 3)
+
+
 def test_internal_user_detail_refresh_stops_after_three_failures(tmp_path):
     class BrokenDetails(Client):
         detail_requests = 0

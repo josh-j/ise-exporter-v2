@@ -66,9 +66,15 @@ ise_patch_installed = Gauge("ise_patch_installed", "Patch installed", ["patch_nu
 # --- TACACS / Device Administration ---
 ise_tacacs_internal_users_total = Gauge(
     "ise_tacacs_internal_users_total", "ISE internal users available to Device Administration")
+ise_tacacs_internal_user_inventory_selected = Gauge(
+    "ise_tacacs_internal_user_inventory_selected",
+    "Internal users selected for bounded detail and hygiene collection")
+ise_tacacs_internal_user_inventory_truncated = Gauge(
+    "ise_tacacs_internal_user_inventory_truncated",
+    "Internal users excluded by the configured detail inventory ceiling")
 ise_tacacs_internal_user_detail_coverage = Gauge(
     "ise_tacacs_internal_user_detail_coverage",
-    "Fraction of enumerated internal users whose ERS detail is available in the bounded cache")
+    "Fraction of the complete enumerated internal-user inventory backed by cached ERS detail")
 ise_tacacs_internal_user_detail_cache_entries = Gauge(
     "ise_tacacs_internal_user_detail_cache_entries",
     "Restart-persistent internal-user detail rows retained by the exporter")

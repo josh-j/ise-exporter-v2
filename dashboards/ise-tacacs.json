@@ -509,7 +509,7 @@
       "id": 13,
       "type": "stat",
       "title": "Internal-User Detail Coverage",
-      "description": "Fraction of the bounded internal-user inventory backed by restart-persistent ERS detail. Hygiene panels are incomplete while this is below 100%.",
+      "description": "Fraction of the complete ERS internal-user inventory backed by restart-persistent detail. Hygiene panels are incomplete while this is below 100%, including when the inventory exceeds TACACS_INTERNAL_USER_MAX.",
       "gridPos": {
         "h": 4,
         "w": 8,

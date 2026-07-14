@@ -18,6 +18,8 @@ from .dataconnect_common import event_window_hours, replace_snapshot
 
 _CONFIG_METRICS = (
     metrics.ise_tacacs_internal_users_total,
+    metrics.ise_tacacs_internal_user_inventory_selected,
+    metrics.ise_tacacs_internal_user_inventory_truncated,
     metrics.ise_tacacs_internal_user_detail_coverage,
     metrics.ise_tacacs_internal_user_detail_cache_entries,
     metrics.ise_tacacs_internal_user_detail_refresh_requests,
@@ -305,7 +307,14 @@ def collect_config(client, cfg):
         if not isinstance(policy_sets, list):
             raise CollectorFailed("Device Admin policy-set request failed")
         limit = max(1, min(1000, int(getattr(cfg, "tacacs_internal_user_max", 1000))))
-        selected = resources[:limit] if limit else []
+        ordered_resources = sorted(
+            resources,
+            key=lambda resource: (
+                str(resource.get("name") or "").casefold(),
+                str(resource.get("id") or ""),
+            ) if isinstance(resource, dict) else ("", ""),
+        )
+        selected = ordered_resources[:limit]
         now = time.time()
         refresh_ttl = max(
             86400, int(getattr(cfg, "tacacs_internal_user_detail_ttl", 604800)))
@@ -427,8 +436,11 @@ def collect_config(client, cfg):
 
         def publish():
             metrics.ise_tacacs_internal_users_total.set(len(resources))
+            metrics.ise_tacacs_internal_user_inventory_selected.set(len(selected_by_id))
+            metrics.ise_tacacs_internal_user_inventory_truncated.set(
+                max(0, len(resources) - len(selected_by_id)))
             metrics.ise_tacacs_internal_user_detail_coverage.set(
-                detail_count / len(selected) if selected else 1.0)
+                detail_count / len(resources) if resources else 1.0)
             metrics.ise_tacacs_internal_user_detail_cache_entries.set(cache_entries)
             metrics.ise_tacacs_internal_user_detail_refresh_requests.set(refresh_requests)
             metrics.ise_tacacs_internal_user_detail_refresh_failures.set(refresh_failures)
