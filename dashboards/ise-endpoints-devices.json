@@ -7,6 +7,108 @@
   "description": "Endpoint reporting from Data Connect plus authoritative network-device inventory from REST/OpenAPI.",
   "panels": [
     {
+      "id": 90,
+      "type": "stat",
+      "title": "Dataset Availability",
+      "description": "Authoritative Data Connect dataset health. DOWN is not a valid zero.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 91,
+      "type": "stat",
+      "title": "Dataset Collection Age",
+      "description": "Seconds since the last successful snapshot replacement; thresholds are based on this dataset cadence.",
+      "gridPos": {
+        "h": 4,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 7200
+              },
+              {
+                "color": "red",
+                "value": 10800
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 1,
       "type": "stat",
       "title": "Endpoints",
@@ -14,7 +116,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
@@ -36,7 +138,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
@@ -58,11 +160,11 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
-          "expr": "count(ise_dataconnect_endpoints_by_profile) or vector(0)",
+          "expr": "count(ise_dataconnect_endpoints_by_profile) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -80,11 +182,11 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
-          "expr": "count(ise_dataconnect_endpoints_by_identity_group) or vector(0)",
+          "expr": "count(ise_dataconnect_endpoints_by_identity_group) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -102,7 +204,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 8
       },
       "targets": [
         {
@@ -124,7 +226,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 8
       },
       "targets": [
         {
@@ -146,7 +248,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 13
+        "y": 17
       },
       "targets": [
         {
@@ -168,7 +270,7 @@
         "h": 8,
         "w": 16,
         "x": 8,
-        "y": 13
+        "y": 17
       },
       "targets": [
         {
@@ -190,7 +292,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 21
+        "y": 25
       },
       "targets": [
         {
@@ -212,7 +314,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 21
+        "y": 25
       },
       "targets": [
         {
@@ -234,7 +336,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 21
+        "y": 25
       },
       "targets": [
         {

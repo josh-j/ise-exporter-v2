@@ -12,6 +12,7 @@ def _clear_metrics():
     for metric in tacacs._CONFIG_METRICS + tacacs._ACTIVITY_METRICS:
         clear_metric(metric)
     metrics.ise_tacacs_internal_users_total.set(0)
+    metrics.ise_tacacs_internal_user_detail_coverage.set(0)
     metrics.ise_tacacs_dataconnect_up.set(0)
 
 
@@ -96,7 +97,11 @@ def test_account_not_flagged_when_device_admin_policy_has_hits():
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
 
 
-def test_internal_user_list_row_survives_detail_fetch_failure():
+def test_internal_user_detail_failure_preserves_previous_snapshot():
+    metrics.ise_tacacs_internal_user_info.labels(
+        username="previous", enabled="true", password_never_expires="false",
+        change_password="false", identity_store="Internal Users").set(1)
+    metrics.ise_tacacs_internal_users_total.set(1)
     client = Client()
     original = client.get_ers
 
@@ -109,8 +114,29 @@ def test_internal_user_list_row_survives_detail_fetch_failure():
     tacacs.collect_config(client, types.SimpleNamespace(
         tacacs_internal_user_max=1000, tacacs_unused_account_days=180, max_workers=2))
 
-    assert _rows(metrics.ise_tacacs_internal_user_info, "username") == {("netadmin",): 1.0}
-    assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 0.0
+    assert _rows(metrics.ise_tacacs_internal_user_info, "username") == {
+        ("previous",): 1.0}
+    assert metrics.ise_tacacs_internal_users_total._value.get() == 1
+
+
+def test_valid_empty_tacacs_configuration_clears_stale_labels():
+    metrics.ise_tacacs_internal_user_info.labels(
+        username="previous", enabled="true", password_never_expires="false",
+        change_password="false", identity_store="Internal Users").set(1)
+
+    class EmptyClient:
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            return []
+
+        def get_pan_api(self, path, api_name="x"):
+            return []
+
+    tacacs.collect_config(EmptyClient(), types.SimpleNamespace(
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=180, max_workers=2))
+
+    assert not metrics.ise_tacacs_internal_user_info._metrics
+    assert metrics.ise_tacacs_internal_users_total._value.get() == 0
+    assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 1
 
 
 def test_collects_dataconnect_account_attribution():
@@ -118,11 +144,17 @@ def test_collects_dataconnect_account_attribution():
         closed = False
 
         def query(self, sql):
+            if "SUM(hits)" in sql:
+                if "tacacs_authentication" in sql:
+                    return [{"total_events": 20, "total_groups": 4}]
+                if "tacacs_authorization" in sql:
+                    return [{"total_events": 30, "total_groups": 5}]
+                return [{"total_events": 40, "total_groups": 6}]
             if "tacacs_authentication" in sql:
                 return [{
                     "username": "netadmin", "status": "Fail", "device_name": "switch-1",
                     "authentication_policy": "Default >> Default",
-                    "identity_store": "Internal Users", "failure_reason": "bad password",
+                    "identity_store": "Internal Users", "failure_class": "credentials",
                     "hits": 2, "last_seen": 100,
                 }]
             if "tacacs_authorization" in sql:
@@ -134,7 +166,7 @@ def test_collects_dataconnect_account_attribution():
                 }]
             return [{
                 "username": "netadmin", "status": "Pass", "device_name": "switch-1",
-                "command": "show version", "hits": 4, "last_seen": 120,
+                "command_family": "show", "hits": 4, "last_seen": 120,
             }]
 
         def close(self):
@@ -146,17 +178,27 @@ def test_collects_dataconnect_account_attribution():
     assert dataconnect.closed is False
     assert metrics.ise_tacacs_dataconnect_up._value.get() == 1
     assert _rows(metrics.ise_tacacs_account_authentication_events,
-                 "username", "status", "device") == {
-        ("netadmin", "Fail", "switch-1"): 2.0}
+                 "username", "status", "device", "failure_class") == {
+        ("netadmin", "Fail", "switch-1", "credentials"): 2.0}
     assert _rows(metrics.ise_tacacs_account_authorization_events,
-                 "username", "command") == {
-        ("netadmin", "show run"): 3.0}
+                 "username", "command_set") == {
+        ("netadmin", "PermitAll"): 3.0}
     assert _rows(metrics.ise_tacacs_accounting_events,
-                 "username", "command") == {
-        ("netadmin", "show version"): 4.0}
+                 "username", "command_family") == {
+        ("netadmin", "show"): 4.0}
     assert _rows(metrics.ise_tacacs_account_last_seen_timestamp,
                  "username", "event_type") == {
         ("netadmin", "authentication"): 100.0,
         ("netadmin", "authorization"): 110.0,
         ("netadmin", "accounting"): 120.0,
+    }
+    assert _rows(metrics.ise_tacacs_events_total, "event_type") == {
+        ("authentication",): 20.0,
+        ("authorization",): 30.0,
+        ("accounting",): 40.0,
+    }
+    assert _rows(metrics.ise_tacacs_topk_truncated, "event_type") == {
+        ("authentication",): 1.0,
+        ("authorization",): 1.0,
+        ("accounting",): 1.0,
     }

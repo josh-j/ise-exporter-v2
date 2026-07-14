@@ -4,10 +4,26 @@ Data Connect is Oracle-compatible SQL over TCPS on the MnT node.  The exporter
 only queries Cisco's bounded ``*_LAST_TWO_DAYS`` TACACS views and never mutates
 the database.
 """
+import base64
 import ssl
 import time
 
 import oracledb
+
+
+def _materialize(value):
+    """Convert Oracle LOB/binary values into deterministic CLI-safe data."""
+    if hasattr(value, "read") and callable(value.read):
+        value = value.read()
+    if isinstance(value, memoryview):
+        value = value.tobytes()
+    if isinstance(value, bytes):
+        return "base64:" + base64.b64encode(value).decode("ascii")
+    if isinstance(value, list):
+        return [_materialize(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _materialize(item) for key, item in value.items()}
+    return value
 
 
 class DataConnectClient:
@@ -60,7 +76,8 @@ class DataConnectClient:
             with self.connect().cursor() as cursor:
                 cursor.execute(sql, parameters or {})
                 columns = [column.name.lower() for column in cursor.description]
-                return [dict(zip(columns, row)) for row in cursor.fetchall()]
+                return [dict(zip(columns, (_materialize(value) for value in row)))
+                        for row in cursor.fetchall()]
         except Exception:
             # A shared Thin connection can become unusable after an MnT restart or
             # network interruption. Drop it so the next scheduled domain can

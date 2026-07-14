@@ -157,6 +157,13 @@ The hostname must match the Admin certificate. Data Connect credentials and CA
 material are read by the unprivileged `ise-exporter` service account. No ISE
 root credential or appliance filesystem access is used.
 
+On a fresh Ubuntu installation, the systemd unit is enabled but not started.
+The operator must replace the seeded example hosts and passwords, install the CA
+chain, and pass `ise-exporter --dataconnect-check` before explicitly starting the
+service. The installer refuses to start or restart the unit while sample
+placeholders remain. Upgrades restart a configured service only when it was
+already active; an intentionally stopped service remains stopped.
+
 ## Configuration principle
 
 Configuration selects domains and intervals, not competing transports. Normal

@@ -21,6 +21,7 @@ There is no live-event or dynamic source fallback layer. A missing dataset remai
 | `ise-secureclient.json` | Posture status, policies, conditions, agent versions, OS, and failures | Data Connect |
 | `ise-psn-troubleshooting.json` | RADIUS workload, latency, TPS, resource utilization, and diagnostics by node | Data Connect plus REST deployment health |
 | `ise-tacacs.json` | Device Administration configuration, account hygiene, and attributed TACACS activity | REST/OpenAPI and Data Connect |
+| `ise-data-quality.json` | Dataset plan, collection and source-event freshness, view row coverage, and top-K truncation | Exporter telemetry and Data Connect |
 
 ## Semantics
 
@@ -34,6 +35,10 @@ and depends on NAD Start, Interim-Update, and Stop quality.
 Endpoint metrics expose the fields currently normalized by the exporter: profile, identity group, posture applicability, and profile-event source/action. Hardware manufacturer/model and a profiler category hierarchy are not displayed because the current Data Connect metric contract does not expose them.
 
 Posture policy and condition panels use the normalized Data Connect status labels. They preserve the policy, policy result, condition, condition result, enforcement, PSN, OS, and agent-version dimensions exported by the collector.
+
+The data-quality dashboard deliberately separates collection freshness from
+source-event freshness. A successful query can remain green even when the newest
+row in an ISE reporting view is old or the bounded view is empty.
 
 ## Import
 

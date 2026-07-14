@@ -7,14 +7,117 @@
   "description": "Secure Client posture outcomes parsed from the ISE 3.3 Patch 11 Data Connect posture assessment views.",
   "panels": [
     {
+      "id": 90,
+      "type": "stat",
+      "title": "Dataset Availability",
+      "description": "Authoritative Data Connect dataset health. DOWN is not a valid zero.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 91,
+      "type": "stat",
+      "title": "Dataset Collection Age",
+      "description": "Seconds since the last successful snapshot replacement; thresholds are based on this dataset cadence.",
+      "gridPos": {
+        "h": 4,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"dataconnect_posture\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 600
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 1,
       "type": "stat",
-      "title": "Posture Compliance",
+      "title": "Assessment-Group Compliance Share",
+      "description": "Share of exported assessment groups in a compliant/passed state. Endpoints can occur in multiple OS, agent, policy, PSN, or status groups, so this is not a global distinct-endpoint compliance rate.",
       "gridPos": {
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -26,7 +129,7 @@
       },
       "targets": [
         {
-          "expr": "100 * sum(ise_dataconnect_posture_endpoint_assessments{status=~\"(?i)compliant|passed\"}) / clamp_min(sum(ise_dataconnect_posture_endpoint_assessments{status=~\"(?i)compliant|passed|non.?compliant|failed\"}), 1)",
+          "expr": "(100 * sum(ise_dataconnect_posture_endpoint_assessments{status=~\"(?i)compliant|passed\"}) / clamp_min(sum(ise_dataconnect_posture_endpoint_assessments{status=~\"(?i)compliant|passed|non.?compliant|failed\"}), 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -39,16 +142,17 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Failed Posture",
+      "title": "Failed Assessment-Group Sum",
+      "description": "Sum of failed/non-compliant grouped counts. An endpoint can occur in more than one group during the reporting window.",
       "gridPos": {
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
-          "expr": "sum(ise_dataconnect_posture_endpoint_assessments{status=~\"(?i)non.?compliant|failed\"}) or vector(0)",
+          "expr": "sum(ise_dataconnect_posture_endpoint_assessments{status=~\"(?i)non.?compliant|failed\"}) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -61,16 +165,17 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Assessed Endpoints",
+      "title": "Assessment-Group Sum",
+      "description": "Sum across status, OS, agent, policy, and PSN groups. This is not a global distinct endpoint count.",
       "gridPos": {
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
-          "expr": "sum(ise_dataconnect_posture_endpoint_assessments) or vector(0)",
+          "expr": "sum(ise_dataconnect_posture_endpoint_assessments) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -88,11 +193,11 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
-          "expr": "count(count by (message_code) (ise_dataconnect_posture_failures)) or vector(0)",
+          "expr": "count(count by (message_code) (ise_dataconnect_posture_failures)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -105,12 +210,13 @@
     {
       "id": 5,
       "type": "piechart",
-      "title": "Posture Status",
+      "title": "Posture Status Group Sums",
+      "description": "Grouped assessment counts by status; repeated endpoints across other dimensions can be counted more than once.",
       "gridPos": {
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 4
+        "y": 8
       },
       "targets": [
         {
@@ -132,7 +238,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 4
+        "y": 8
       },
       "targets": [
         {
@@ -154,7 +260,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 4
+        "y": 8
       },
       "targets": [
         {
@@ -176,7 +282,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 16
       },
       "targets": [
         {
@@ -198,7 +304,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 16
       },
       "targets": [
         {
@@ -220,7 +326,7 @@
         "h": 11,
         "w": 12,
         "x": 0,
-        "y": 21
+        "y": 25
       },
       "targets": [
         {
@@ -243,7 +349,7 @@
         "h": 11,
         "w": 12,
         "x": 12,
-        "y": 21
+        "y": 25
       },
       "targets": [
         {
@@ -266,7 +372,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 36
       },
       "targets": [
         {

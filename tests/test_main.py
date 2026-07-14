@@ -20,23 +20,25 @@ def _cfg(**overrides):
     return cfg
 
 
-def test_dataconnect_check_queries_catalog_and_closes(monkeypatch):
+def test_dataconnect_check_validates_contract_and_closes(monkeypatch):
     calls = []
 
     class Client:
         def __init__(self, cfg):
             calls.append("init")
 
-        def query(self, sql):
-            calls.append(sql)
-            return [{"view_count": 70}]
-
         def close(self):
             calls.append("close")
 
     monkeypatch.setattr(app, "DataConnectClient", Client)
+    monkeypatch.setattr(
+        app, "validate_dataconnect_schema",
+        lambda client, include_tacacs: calls.append((client, include_tacacs)) or {"A": {}},
+    )
     assert app.dataconnect_check(_cfg()) == 0
-    assert calls == ["init", "SELECT COUNT(*) AS view_count FROM user_views", "close"]
+    assert calls[0] == "init"
+    assert calls[1][1] is True
+    assert calls[-1] == "close"
 
 
 def test_dataconnect_check_requires_credentials():

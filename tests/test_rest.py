@@ -6,19 +6,46 @@ import warnings
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
-from ise_exporter.clients.rest import ISERestClient
+from ise_exporter.clients.rest import (
+    ISEControlPlaneClient,
+    ISEOperatorClient,
+    ISERestClient,
+    MnTDiagnosticsClient,
+)
 
 
-def test_sessions_disable_trust_env_so_verify_false_sticks():
-    """ISE uses a self-signed cert; verify=False is intentional. trust_env must be
-    False so an ambient REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE (e.g. under Nix) can't
-    silently force verification and break every call."""
+def test_sessions_verify_by_default_and_use_plane_specific_ca_bundles():
     cfg = types.SimpleNamespace(ise_host="h", ise_mnt_host="m", ers_port=9060,
-                                ise_user="u", ise_pass="p")
+                                ise_user="u", ise_pass="p",
+                                rest_ssl_verify=True, rest_ca_bundle="/ca/rest.pem",
+                                mnt_ssl_verify=True, mnt_ca_bundle="/ca/mnt.pem")
     c = ISERestClient(cfg)
-    for s in (c.session, c.mnt_session):
-        assert s.verify is False
-        assert s.trust_env is False
+    assert c.session.verify == "/ca/rest.pem"
+    assert c.mnt_session.verify == "/ca/mnt.pem"
+    assert c.session.trust_env is False
+    assert c.mnt_session.trust_env is False
+
+
+def test_tls_verification_can_be_explicitly_disabled_for_an_isolated_lab():
+    cfg = types.SimpleNamespace(
+        ise_host="h", ise_mnt_host="m", ers_port=9060, ise_user="u", ise_pass="p",
+        rest_ssl_verify=False, mnt_ssl_verify=False,
+    )
+    client = ISERestClient(cfg)
+    assert client.session.verify is False
+    assert client.mnt_session.verify is False
+
+
+def test_runtime_and_diagnostics_clients_do_not_construct_the_other_plane():
+    cfg = types.SimpleNamespace(
+        ise_host="h", ise_mnt_host="m", ers_port=9060, ise_user="u", ise_pass="p")
+    control = ISEControlPlaneClient(cfg)
+    diagnostics = MnTDiagnosticsClient(cfg)
+    operator = ISEOperatorClient(cfg)
+    assert control.session is not None and control.mnt_session is None
+    assert diagnostics.session is None and diagnostics.mnt_session is not None
+    assert operator.control.mnt_session is None
+    assert operator.mnt.session is None
 
 
 class _Resp:
@@ -119,6 +146,47 @@ def test_get_ers_single_page_when_not_get_all():
         {"SearchResult": {"resources": [{"id": "1"}], "nextPage": {"href": "x/ers/more"}}})
     res = c.get_ers("/config/networkdevice")
     assert [r["id"] for r in res] == ["1"]
+
+
+def test_get_ers_discards_all_rows_when_a_later_page_fails():
+    c = ISERestClient.__new__(ISERestClient)
+    c.ers_url = "https://h:9060/ers"
+    c.session = None
+    first = "https://h:9060/ers/config/internaluser"
+    second = first + "?page=2"
+
+    def fake_json(session, url, params=None, api_name="x"):
+        if url == first:
+            return {"SearchResult": {
+                "resources": [{"id": "partial"}],
+                "nextPage": {"href": second},
+            }}
+        return None
+
+    c._get_json = fake_json
+
+    assert c.get_ers("/config/internaluser", get_all=True) is None
+
+
+def test_get_ers_preserves_valid_empty_search_result():
+    c = ISERestClient.__new__(ISERestClient)
+    c.ers_url = "https://h:9060/ers"
+    c.session = None
+    c._get_json = lambda *args, **kwargs: {"SearchResult": {"resources": []}}
+
+    assert c.get_ers("/config/internaluser", get_all=True) == []
+
+
+def test_get_ers_rejects_missing_pages_when_total_is_larger():
+    c = ISERestClient.__new__(ISERestClient)
+    c.ers_url = "https://h:9060/ers"
+    c.session = None
+    c._get_json = lambda *args, **kwargs: {"SearchResult": {
+        "total": 2,
+        "resources": [{"id": "partial"}],
+    }}
+
+    assert c.get_ers("/config/internaluser", get_all=True) is None
 
 
 def test_401s_trip_auth_backoff_before_more_requests():

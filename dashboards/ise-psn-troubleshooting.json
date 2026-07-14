@@ -7,6 +7,108 @@
   "description": "ISE node capacity, RADIUS workload, latency, and diagnostics from Data Connect, with REST deployment and exporter health.",
   "panels": [
     {
+      "id": 90,
+      "type": "stat",
+      "title": "Dataset Availability",
+      "description": "Authoritative Data Connect dataset health. DOWN is not a valid zero.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 91,
+      "type": "stat",
+      "title": "Dataset Collection Age",
+      "description": "Seconds since the last successful snapshot replacement; thresholds are based on this dataset cadence.",
+      "gridPos": {
+        "h": 4,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"dataconnect_performance\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 120
+              },
+              {
+                "color": "red",
+                "value": 180
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 1,
       "type": "stat",
       "title": "ISE API",
@@ -14,7 +116,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
@@ -36,11 +138,11 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
-          "expr": "count(ise_dataconnect_psn_radius_requests_per_hour) or vector(0)",
+          "expr": "count(ise_dataconnect_psn_radius_requests_per_hour) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -58,11 +160,11 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
-          "expr": "sum(ise_dataconnect_psn_radius_requests_per_hour) or vector(0)",
+          "expr": "sum(ise_dataconnect_psn_radius_requests_per_hour) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -80,11 +182,11 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
-          "expr": "sum(ise_dataconnect_diagnostic_events) or vector(0)",
+          "expr": "sum(ise_dataconnect_diagnostic_events) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -102,7 +204,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 8
       },
       "targets": [
         {
@@ -124,7 +226,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 4
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -152,7 +254,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 4
+        "y": 8
       },
       "targets": [
         {
@@ -174,7 +276,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 12
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -202,7 +304,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 12
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -230,7 +332,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 12
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -258,7 +360,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 20
+        "y": 24
       },
       "fieldConfig": {
         "defaults": {
@@ -287,7 +389,7 @@
         "h": 8,
         "w": 16,
         "x": 8,
-        "y": 20
+        "y": 24
       },
       "targets": [
         {
@@ -327,7 +429,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 32
       },
       "targets": [
         {
@@ -350,7 +452,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 44
       },
       "targets": [
         {
@@ -373,7 +475,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 44
       },
       "targets": [
         {

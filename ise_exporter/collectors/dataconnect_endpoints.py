@@ -5,16 +5,47 @@ from .dataconnect_common import group_limit, integer, label, replace_snapshot
 
 
 _METRICS = (
+    metrics.ise_dataconnect_endpoints_total,
+    metrics.ise_dataconnect_endpoint_field_populated,
+    metrics.ise_dataconnect_endpoint_field_coverage_ratio,
+    metrics.ise_dataconnect_endpoints_stale,
+    metrics.ise_dataconnect_profiled_endpoint_group_memberships_total,
     metrics.ise_dataconnect_endpoints_by_profile,
     metrics.ise_dataconnect_endpoints_by_identity_group,
     metrics.ise_dataconnect_endpoints_by_posture_applicable,
     metrics.ise_dataconnect_profile_events,
+    metrics.ise_dataconnect_endpoint_topk_groups_returned,
+    metrics.ise_dataconnect_endpoint_topk_groups_total,
+    metrics.ise_dataconnect_endpoint_topk_truncated,
 )
 
 
 def _queries(limit):
     return {
         "total": "SELECT COUNT(*) AS endpoints FROM endpoints_data",
+        "coverage": """
+            SELECT COUNT(*) AS endpoints,
+                   SUM(CASE WHEN TRIM(hostname) IS NOT NULL THEN 1 ELSE 0 END) AS hostname,
+                   SUM(CASE WHEN TRIM(endpoint_ip) IS NOT NULL THEN 1 ELSE 0 END) AS ip,
+                   SUM(CASE WHEN TRIM(custom_attributes) IS NOT NULL THEN 1 ELSE 0 END)
+                       AS custom_attributes,
+                   SUM(CASE WHEN TRIM(portal_user) IS NOT NULL THEN 1 ELSE 0 END)
+                       AS portal_user,
+                   SUM(CASE WHEN TRIM(mdm_guid) IS NOT NULL THEN 1 ELSE 0 END) AS mdm,
+                   SUM(CASE WHEN TRIM(native_udid) IS NOT NULL THEN 1 ELSE 0 END) AS udid,
+                   SUM(CASE WHEN update_time < SYSTIMESTAMP - NUMTODSINTERVAL(30, 'DAY')
+                            OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_30,
+                   SUM(CASE WHEN update_time < SYSTIMESTAMP - NUMTODSINTERVAL(90, 'DAY')
+                            OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_90,
+                   SUM(CASE WHEN update_time < SYSTIMESTAMP - NUMTODSINTERVAL(180, 'DAY')
+                            OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_180
+            FROM endpoints_data
+        """,
+        "profiles_summary": """
+            SELECT COUNT(*) AS total_groups FROM (
+                SELECT 1 FROM endpoints_data GROUP BY endpoint_policy
+            )
+        """,
         "profiles": f"""
             SELECT endpoint_policy, COUNT(*) AS endpoints
             FROM endpoints_data GROUP BY endpoint_policy
@@ -24,6 +55,11 @@ def _queries(limit):
             SELECT identity_group_id, COUNT(*) AS endpoints
             FROM endpoints_data GROUP BY identity_group_id
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "groups_summary": """
+            SELECT COUNT(*) AS total_groups FROM (
+                SELECT 1 FROM endpoints_data GROUP BY identity_group_id
+            )
         """,
         "posture": """
             SELECT CASE WHEN NVL(posture_applicable, 0) = 1 THEN 'yes' ELSE 'no' END AS applicable,
@@ -39,6 +75,16 @@ def _queries(limit):
             GROUP BY endpoint_profile, source, endpoint_action_name, identity_group
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
+        "profiling_summary": """
+            SELECT NVL(SUM(endpoints), 0) AS total_memberships,
+                   COUNT(*) AS total_groups
+            FROM (
+                SELECT COUNT(DISTINCT endpoint_id) AS endpoints
+                FROM profiled_endpoints_summary
+                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                GROUP BY endpoint_profile, source, endpoint_action_name, identity_group
+            )
+        """,
     }
 
 
@@ -48,6 +94,14 @@ def collect(dataconnect, cfg):
         rows = {name: dataconnect.query(sql)
                 for name, sql in _queries(group_limit(cfg)).items()}
         total = integer(rows["total"][0].get("endpoints")) if rows["total"] else 0
+        coverage = rows["coverage"][0] if rows["coverage"] else {}
+        profile_groups = integer(rows["profiles_summary"][0].get("total_groups")) \
+            if rows["profiles_summary"] else 0
+        identity_groups = integer(rows["groups_summary"][0].get("total_groups")) \
+            if rows["groups_summary"] else 0
+        profiling_summary = rows["profiling_summary"][0] if rows["profiling_summary"] else {}
+        profiling_groups = integer(profiling_summary.get("total_groups"))
+        profiling_memberships = integer(profiling_summary.get("total_memberships"))
         profiles = [(label(row.get("endpoint_policy"), "Unknown"),
                      integer(row.get("endpoints"))) for row in rows["profiles"]]
         groups = [(label(row.get("identity_group_id"), "none"),
@@ -63,6 +117,25 @@ def collect(dataconnect, cfg):
         } for row in rows["profiling"]]
 
         writers = []
+        writers.extend((
+            lambda: metrics.ise_dataconnect_endpoints_total.set(total),
+            lambda: metrics.ise_dataconnect_profiled_endpoint_group_memberships_total.set(
+                profiling_memberships),
+        ))
+        for field in ("hostname", "ip", "custom_attributes", "portal_user", "mdm", "udid"):
+            populated = integer(coverage.get(field))
+            writers.extend((
+                lambda field=field, populated=populated:
+                    metrics.ise_dataconnect_endpoint_field_populated.labels(
+                        field=field).set(populated),
+                lambda field=field, populated=populated:
+                    metrics.ise_dataconnect_endpoint_field_coverage_ratio.labels(
+                        field=field).set(populated / total if total else 0),
+            ))
+        for age_days in (30, 90, 180):
+            writers.append(
+                lambda age_days=age_days: metrics.ise_dataconnect_endpoints_stale.labels(
+                    age_days=str(age_days)).set(integer(coverage.get(f"stale_{age_days}"))))
         writers.extend(lambda profile=profile, count=count:
                        metrics.ise_dataconnect_endpoints_by_profile.labels(
                            profile=profile).set(count) for profile, count in profiles)
@@ -78,5 +151,23 @@ def collect(dataconnect, cfg):
                 identity_group=row["group"]).set(row["count"])
             for row in profiling
         )
+        returned = {
+            "profile": len(profiles),
+            "identity_group": len(groups),
+            "profiling": len(profiling),
+        }
+        available = {
+            "profile": profile_groups,
+            "identity_group": identity_groups,
+            "profiling": profiling_groups,
+        }
+        for breakdown in returned:
+            writers.extend((
+                lambda breakdown=breakdown: metrics.ise_dataconnect_endpoint_topk_groups_returned.labels(
+                    breakdown=breakdown).set(returned[breakdown]),
+                lambda breakdown=breakdown: metrics.ise_dataconnect_endpoint_topk_groups_total.labels(
+                    breakdown=breakdown).set(available[breakdown]),
+                lambda breakdown=breakdown: metrics.ise_dataconnect_endpoint_topk_truncated.labels(
+                    breakdown=breakdown).set(returned[breakdown] < available[breakdown]),
+            ))
         replace_snapshot(_METRICS, writers)
-        metrics.ise_dataconnect_endpoints_total.set(total)

@@ -10,17 +10,49 @@ ise_deployment_status = Enum(
     states=["Connected", "Disconnected", "Registering", "Syncing", "Unknown"])
 ise_node_count = Gauge("ise_node_count", "Number of nodes by role", ["role"])
 ise_pan_ha_enabled = Gauge("ise_pan_ha_enabled", "PAN HA enabled (1=yes, 0=no)")
+ise_node_service_enabled = Gauge(
+    "ise_node_service_enabled", "Service currently assigned to an ISE deployment node",
+    ["node", "service"])
 
 # --- network devices ---
 ise_network_devices_total = Gauge("ise_network_devices_total", "Total network devices")
 ise_network_devices_by_location = Gauge("ise_network_devices_by_location", "Devices per location", ["location"])
 ise_network_devices_by_ops_owner = Gauge("ise_network_devices_by_ops_owner", "Devices per ops owner", ["ops_owner"])
 ise_network_devices_by_type = Gauge("ise_network_devices_by_type", "Devices by type", ["device_type"])
+ise_nad_authentication_events = Gauge(
+    "ise_nad_authentication_events",
+    "Recent RADIUS authentication events attributed to configured NADs",
+    ["nad", "status"])
+ise_nad_last_authentication_timestamp = Gauge(
+    "ise_nad_last_authentication_timestamp",
+    "Most recent RADIUS authentication timestamp for each configured NAD", ["nad"])
+ise_nad_seen_recently = Gauge(
+    "ise_nad_seen_recently",
+    "Whether a configured NAD has authentication activity in the reporting window", ["nad"])
+ise_nad_unconfigured_authentication_events_total = Gauge(
+    "ise_nad_unconfigured_authentication_events_total",
+    "Recent RADIUS authentication events whose NAD name is not configured in ERS")
 
 # --- certs / license / backup / patch (slow tier) ---
 ise_certificate_expiry_days = Gauge("ise_certificate_expiry_days", "Days until cert expires", ["hostname", "cert_name", "cert_type", "usage"])
 ise_certificates_expiring_soon = Gauge("ise_certificates_expiring_soon", "Certs expiring within threshold", ["threshold_days"])
 ise_certificate_expired = Gauge("ise_certificate_expired", "Expired certificates")
+ise_certificate_key_size_bits = Gauge(
+    "ise_certificate_key_size_bits", "Certificate public-key size",
+    ["hostname", "cert_name", "cert_type"])
+ise_certificate_weak_signature = Gauge(
+    "ise_certificate_weak_signature", "Certificate uses a deprecated signature algorithm",
+    ["hostname", "cert_name", "cert_type"])
+ise_certificate_self_signed = Gauge(
+    "ise_certificate_self_signed", "System certificate is self-signed",
+    ["hostname", "cert_name"])
+ise_certificate_binding = Gauge(
+    "ise_certificate_binding", "Certificate service/trust binding by canonical role",
+    ["hostname", "cert_name", "cert_type", "role"])
+ise_certificate_issuer_present_in_trust_store = Gauge(
+    "ise_certificate_issuer_present_in_trust_store",
+    "System certificate issuer matches a subject in the ISE trusted-certificate store",
+    ["hostname", "cert_name"])
 ise_license_consumption = Gauge("ise_license_consumption", "License consumption", ["tier"])
 ise_license_compliance = Gauge("ise_license_compliance", "License compliance", ["tier"])
 ise_license_enabled = Gauge("ise_license_enabled", "License tier enabled", ["tier"])
@@ -61,19 +93,31 @@ ise_tacacs_dataconnect_up = Gauge(
 ise_tacacs_account_authentication_events = Gauge(
     "ise_tacacs_account_authentication_events",
     "TACACS authentication events in Data Connect's last-two-days view",
-    ["username", "status", "device", "policy", "identity_store", "failure_reason"])
+    ["username", "status", "device", "policy", "identity_store", "failure_class"])
 ise_tacacs_account_authorization_events = Gauge(
     "ise_tacacs_account_authorization_events",
     "TACACS authorization events in Data Connect's last-two-days view",
-    ["username", "status", "device", "policy", "shell_profile", "command_set", "command"])
+    ["username", "status", "device", "policy", "shell_profile", "command_set"])
 ise_tacacs_accounting_events = Gauge(
     "ise_tacacs_accounting_events",
     "TACACS accounting events in Data Connect's last-two-days view",
-    ["username", "status", "device", "command"])
+    ["username", "status", "device", "command_family"])
 ise_tacacs_account_last_seen_timestamp = Gauge(
     "ise_tacacs_account_last_seen_timestamp",
     "Most recent TACACS event timestamp from Data Connect",
     ["username", "event_type"])
+ise_tacacs_events_total = Gauge(
+    "ise_tacacs_events_total", "Exact TACACS events in each Data Connect two-day view",
+    ["event_type"])
+ise_tacacs_topk_groups_returned = Gauge(
+    "ise_tacacs_topk_groups_returned", "TACACS groups exported after the top-K limit",
+    ["event_type"])
+ise_tacacs_topk_groups_total = Gauge(
+    "ise_tacacs_topk_groups_total", "Exact TACACS groups before the top-K limit",
+    ["event_type"])
+ise_tacacs_topk_truncated = Gauge(
+    "ise_tacacs_topk_truncated", "Whether TACACS groups were truncated by the top-K limit",
+    ["event_type"])
 
 # --- Data Connect reporting plane ---
 # These metrics are populated only by the Data Connect domain collectors.  REST
@@ -83,31 +127,96 @@ ise_dataconnect_radius_authentication_events = Gauge(
     "ise_dataconnect_radius_authentication_events",
     "RADIUS authentication events in the bounded Data Connect reporting window",
     ["status", "authentication_method", "authentication_protocol", "nad", "policy_set", "psn"])
+ise_dataconnect_radius_authentication_events_total = Gauge(
+    "ise_dataconnect_radius_authentication_events_total",
+    "Exact RADIUS authentication event count in the Data Connect reporting window")
+ise_dataconnect_radius_distinct_endpoints_total = Gauge(
+    "ise_dataconnect_radius_distinct_endpoints_total",
+    "Exact distinct calling-station identifiers in the RADIUS reporting window")
+ise_dataconnect_radius_distinct_users_total = Gauge(
+    "ise_dataconnect_radius_distinct_users_total",
+    "Exact distinct usernames in the RADIUS reporting window")
+ise_dataconnect_radius_failure_events = Gauge(
+    "ise_dataconnect_radius_failure_events",
+    "Failed RADIUS authentications by bounded reason class, policy set, and location",
+    ["failure_class", "policy_set", "location"])
 ise_dataconnect_radius_response_time_seconds = Gauge(
     "ise_dataconnect_radius_response_time_seconds",
     "RADIUS response-time aggregate from Data Connect",
     ["stat", "status", "nad", "psn"])
+ise_dataconnect_radius_response_time_samples = Gauge(
+    "ise_dataconnect_radius_response_time_samples",
+    "RADIUS events with a non-null response time in Data Connect",
+    ["status", "nad", "psn"])
 ise_dataconnect_radius_accounting_events = Gauge(
     "ise_dataconnect_radius_accounting_events",
     "RADIUS accounting events in the bounded Data Connect reporting window",
     ["event_type", "nad", "authorization_policy", "psn"])
+ise_dataconnect_radius_accounting_events_total = Gauge(
+    "ise_dataconnect_radius_accounting_events_total",
+    "Exact RADIUS accounting event count in the Data Connect reporting window")
 ise_dataconnect_radius_accounting_session_seconds = Gauge(
     "ise_dataconnect_radius_accounting_session_seconds",
     "RADIUS accounting session-time aggregate from Data Connect",
     ["stat", "nad", "psn"])
 ise_dataconnect_radius_active_sessions = Gauge(
     "ise_dataconnect_radius_active_sessions",
-    "Likely active sessions based on each accounting session ID's latest record",
+    "Likely active sessions whose latest accounting record is non-stop and within the stale cutoff",
     ["nad", "psn"])
+ise_dataconnect_radius_active_sessions_total = Gauge(
+    "ise_dataconnect_radius_active_sessions_total",
+    "Exact accounting-derived likely-active session count before top-K breakdown limiting")
+ise_dataconnect_radius_active_session_stale_cutoff_seconds = Gauge(
+    "ise_dataconnect_radius_active_session_stale_cutoff_seconds",
+    "Maximum age of the latest non-stop accounting record counted as likely active")
 ise_dataconnect_radius_errors = Gauge(
     "ise_dataconnect_radius_errors",
     "RADIUS errors grouped by stable troubleshooting dimensions",
     ["message_code", "nad", "authentication_method", "psn"])
+ise_dataconnect_radius_errors_total = Gauge(
+    "ise_dataconnect_radius_errors_total",
+    "Exact RADIUS error count in the Data Connect reporting window")
+ise_dataconnect_radius_topk_groups_returned = Gauge(
+    "ise_dataconnect_radius_topk_groups_returned",
+    "Number of dimensional groups exported after the Data Connect top-K limit",
+    ["breakdown"])
+ise_dataconnect_radius_topk_groups_total = Gauge(
+    "ise_dataconnect_radius_topk_groups_total",
+    "Exact number of dimensional groups before the Data Connect top-K limit",
+    ["breakdown"])
+ise_dataconnect_radius_topk_truncated = Gauge(
+    "ise_dataconnect_radius_topk_truncated",
+    "Whether a RADIUS dimensional breakdown was truncated by its top-K limit",
+    ["breakdown"])
 
 ise_dataconnect_posture_endpoint_assessments = Gauge(
     "ise_dataconnect_posture_endpoint_assessments",
     "Distinct endpoints assessed by posture status, OS, agent, policy, and PSN",
     ["status", "os", "agent_version", "policy", "psn"])
+ise_dataconnect_posture_assessed_endpoints_total = Gauge(
+    "ise_dataconnect_posture_assessed_endpoints_total",
+    "Exact distinct endpoints represented by their latest posture assessment")
+ise_dataconnect_posture_eligible_endpoints_total = Gauge(
+    "ise_dataconnect_posture_eligible_endpoints_total",
+    "Current endpoints marked posture-applicable in endpoint inventory")
+ise_dataconnect_posture_eligible_recently_assessed_total = Gauge(
+    "ise_dataconnect_posture_eligible_recently_assessed_total",
+    "Posture-applicable endpoints with an assessment in the two-day reporting window")
+ise_dataconnect_posture_eligible_without_recent_assessment_total = Gauge(
+    "ise_dataconnect_posture_eligible_without_recent_assessment_total",
+    "Posture-applicable endpoints without an assessment in the two-day reporting window")
+ise_dataconnect_posture_eligible_recent_assessment_ratio = Gauge(
+    "ise_dataconnect_posture_eligible_recent_assessment_ratio",
+    "Fraction of posture-applicable endpoints assessed in the two-day reporting window")
+ise_dataconnect_posture_compliant_endpoints_total = Gauge(
+    "ise_dataconnect_posture_compliant_endpoints_total",
+    "Exact endpoints whose latest posture assessment is compliant")
+ise_dataconnect_posture_failed_endpoints_total = Gauge(
+    "ise_dataconnect_posture_failed_endpoints_total",
+    "Exact endpoints whose latest posture assessment is an explicit failure state")
+ise_dataconnect_posture_compliance_ratio = Gauge(
+    "ise_dataconnect_posture_compliance_ratio",
+    "Compliant fraction of latest explicit compliant-or-failed posture assessments")
 ise_dataconnect_posture_condition_assessments = Gauge(
     "ise_dataconnect_posture_condition_assessments",
     "Distinct endpoints assessed by posture policy condition and result",
@@ -116,9 +225,33 @@ ise_dataconnect_posture_failures = Gauge(
     "ise_dataconnect_posture_failures",
     "Distinct failed posture endpoints grouped by message code and policy",
     ["message_code", "status", "policy", "psn"])
+ise_dataconnect_posture_topk_groups_returned = Gauge(
+    "ise_dataconnect_posture_topk_groups_returned",
+    "Number of posture dimensional groups exported after the Data Connect top-K limit",
+    ["breakdown"])
+ise_dataconnect_posture_topk_groups_total = Gauge(
+    "ise_dataconnect_posture_topk_groups_total",
+    "Exact number of posture dimensional groups before the Data Connect top-K limit",
+    ["breakdown"])
+ise_dataconnect_posture_topk_truncated = Gauge(
+    "ise_dataconnect_posture_topk_truncated",
+    "Whether a posture dimensional breakdown was truncated by its top-K limit",
+    ["breakdown"])
 
 ise_dataconnect_endpoints_total = Gauge(
     "ise_dataconnect_endpoints_total", "Current endpoints exposed by Data Connect")
+ise_dataconnect_endpoint_field_populated = Gauge(
+    "ise_dataconnect_endpoint_field_populated",
+    "Current endpoints with a populated operational inventory field", ["field"])
+ise_dataconnect_endpoint_field_coverage_ratio = Gauge(
+    "ise_dataconnect_endpoint_field_coverage_ratio",
+    "Fraction of current endpoints with a populated operational inventory field", ["field"])
+ise_dataconnect_endpoints_stale = Gauge(
+    "ise_dataconnect_endpoints_stale",
+    "Current endpoints not updated within the configured age threshold", ["age_days"])
+ise_dataconnect_profiled_endpoint_group_memberships_total = Gauge(
+    "ise_dataconnect_profiled_endpoint_group_memberships_total",
+    "Exact sum of distinct endpoint memberships across profiling groups in the reporting window")
 ise_dataconnect_endpoints_by_profile = Gauge(
     "ise_dataconnect_endpoints_by_profile", "Current endpoints by endpoint policy",
     ["profile"])
@@ -132,6 +265,31 @@ ise_dataconnect_profile_events = Gauge(
     "ise_dataconnect_profile_events",
     "Distinct profiled endpoints in the bounded Data Connect reporting window",
     ["profile", "source", "action", "identity_group"])
+ise_dataconnect_endpoint_topk_groups_returned = Gauge(
+    "ise_dataconnect_endpoint_topk_groups_returned",
+    "Number of endpoint dimensional groups exported after the Data Connect top-K limit",
+    ["breakdown"])
+ise_dataconnect_endpoint_topk_groups_total = Gauge(
+    "ise_dataconnect_endpoint_topk_groups_total",
+    "Exact number of endpoint dimensional groups before the Data Connect top-K limit",
+    ["breakdown"])
+ise_dataconnect_endpoint_topk_truncated = Gauge(
+    "ise_dataconnect_endpoint_topk_truncated",
+    "Whether an endpoint dimensional breakdown was truncated by its top-K limit",
+    ["breakdown"])
+
+ise_dataconnect_view_rows = Gauge(
+    "ise_dataconnect_view_rows",
+    "Rows currently visible in each bounded Data Connect reporting view",
+    ["view", "domain"])
+ise_dataconnect_view_newest_event_timestamp = Gauge(
+    "ise_dataconnect_view_newest_event_timestamp",
+    "Newest source-event timestamp visible in each Data Connect reporting view",
+    ["view", "domain"])
+ise_dataconnect_view_oldest_event_timestamp = Gauge(
+    "ise_dataconnect_view_oldest_event_timestamp",
+    "Oldest source-event timestamp visible in each Data Connect reporting view",
+    ["view", "domain"])
 
 ise_dataconnect_psn_radius_requests_per_hour = Gauge(
     "ise_dataconnect_psn_radius_requests_per_hour", "RADIUS requests per hour by ISE node",
@@ -168,6 +326,19 @@ ise_dataconnect_diagnostic_events = Gauge(
 # --- exporter self-observability ---
 ise_dataset_up = Gauge(
     "ise_dataset_up", "Authoritative dataset collection status (1=successful)",
+    ["dataset", "source"])
+ise_dataset_enabled = Gauge(
+    "ise_dataset_enabled", "Whether the dataset is enabled by the immutable collection plan",
+    ["dataset", "source"])
+ise_dataset_interval_seconds = Gauge(
+    "ise_dataset_interval_seconds", "Configured successful collection cadence",
+    ["dataset", "source"])
+ise_dataset_fresh = Gauge(
+    "ise_dataset_fresh",
+    "Whether the last successful replacement is within two configured collection intervals",
+    ["dataset", "source"])
+ise_dataset_last_attempt_timestamp = Gauge(
+    "ise_dataset_last_attempt_timestamp", "Last attempted authoritative dataset collection",
     ["dataset", "source"])
 ise_dataset_last_success_timestamp = Gauge(
     "ise_dataset_last_success_timestamp",

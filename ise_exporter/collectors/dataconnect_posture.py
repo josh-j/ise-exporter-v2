@@ -6,22 +6,94 @@ from .dataconnect_common import group_limit, integer, label, replace_snapshot
 
 _METRICS = (
     metrics.ise_dataconnect_posture_endpoint_assessments,
+    metrics.ise_dataconnect_posture_assessed_endpoints_total,
+    metrics.ise_dataconnect_posture_eligible_endpoints_total,
+    metrics.ise_dataconnect_posture_eligible_recently_assessed_total,
+    metrics.ise_dataconnect_posture_eligible_without_recent_assessment_total,
+    metrics.ise_dataconnect_posture_eligible_recent_assessment_ratio,
+    metrics.ise_dataconnect_posture_compliant_endpoints_total,
+    metrics.ise_dataconnect_posture_failed_endpoints_total,
+    metrics.ise_dataconnect_posture_compliance_ratio,
     metrics.ise_dataconnect_posture_condition_assessments,
     metrics.ise_dataconnect_posture_failures,
+    metrics.ise_dataconnect_posture_topk_groups_returned,
+    metrics.ise_dataconnect_posture_topk_groups_total,
+    metrics.ise_dataconnect_posture_topk_truncated,
 )
 
 
-def _queries(limit):
-    return {
-        "endpoints": f"""
-            SELECT posture_status, endpoint_operating_system, posture_agent_version,
-                   posture_policy_matched, ise_node,
-                   COUNT(DISTINCT endpoint_mac_address) AS endpoints
-            FROM posture_assessment_by_endpoint
+_STATUS_KEY = """LOWER(REPLACE(REPLACE(REPLACE(
+    TRIM(posture_status), '-', ''), '_', ''), ' ', ''))"""
+
+
+def _latest_posture_cte():
+    return """
+        WITH ranked_posture AS (
+            SELECT p.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY CASE
+                           WHEN TRIM(endpoint_mac_address) IS NOT NULL
+                               THEN 'mac:' || TRIM(endpoint_mac_address)
+                           WHEN TRIM(session_id) IS NOT NULL
+                               THEN 'session:' || TRIM(session_id)
+                           ELSE 'row:' || TO_CHAR(id)
+                       END
+                       ORDER BY timestamp DESC, id DESC
+                   ) AS row_num
+            FROM posture_assessment_by_endpoint p
             WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+        ), latest_posture AS (
+            SELECT * FROM ranked_posture WHERE row_num = 1
+        )
+    """
+
+
+def _queries(limit):
+    latest = _latest_posture_cte()
+    return {
+        "coverage": latest + """
+            SELECT COUNT(*) AS eligible_endpoints,
+                   SUM(CASE WHEN p.endpoint_mac_address IS NOT NULL THEN 1 ELSE 0 END)
+                       AS recently_assessed,
+                   SUM(CASE WHEN p.endpoint_mac_address IS NULL THEN 1 ELSE 0 END)
+                       AS without_recent_assessment
+            FROM endpoints_data e
+            LEFT JOIN latest_posture p ON p.endpoint_mac_address = e.mac_address
+            WHERE NVL(e.posture_applicable, 0) = 1
+        """,
+        "endpoints_summary": latest + f"""
+            SELECT NVL(SUM(endpoints), 0) AS total_endpoints,
+                   NVL(SUM(CASE WHEN status_key IN ('compliant', 'passed')
+                                THEN endpoints ELSE 0 END), 0) AS compliant_endpoints,
+                   NVL(SUM(CASE WHEN status_key IN ('noncompliant', 'failed', 'error')
+                                THEN endpoints ELSE 0 END), 0) AS failed_endpoints,
+                   COUNT(*) AS total_groups
+            FROM (
+                SELECT {_STATUS_KEY} AS status_key, posture_status,
+                       endpoint_operating_system, posture_agent_version,
+                       posture_policy_matched, ise_node, COUNT(*) AS endpoints
+                FROM latest_posture
+                GROUP BY {_STATUS_KEY}, posture_status, endpoint_operating_system,
+                         posture_agent_version, posture_policy_matched, ise_node
+            )
+        """,
+        "endpoints": latest + f"""
+            SELECT posture_status, endpoint_operating_system, posture_agent_version,
+                   posture_policy_matched, ise_node, COUNT(*) AS endpoints
+            FROM latest_posture
             GROUP BY posture_status, endpoint_operating_system, posture_agent_version,
                      posture_policy_matched, ise_node
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "conditions_summary": """
+            SELECT COUNT(*) AS total_groups
+            FROM (
+                SELECT 1
+                FROM posture_assessment_by_condition
+                WHERE logged_at >= SYSTIMESTAMP - INTERVAL '2' DAY
+                GROUP BY policy, policy_status, condition_name, condition_status,
+                         enforcement_name
+            )
         """,
         "conditions": f"""
             SELECT policy, policy_status, condition_name, condition_status,
@@ -32,13 +104,19 @@ def _queries(limit):
                      enforcement_name
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "failures": f"""
+        "failures_summary": latest + f"""
+            SELECT COUNT(*) AS total_groups
+            FROM (
+                SELECT 1 FROM latest_posture
+                WHERE {_STATUS_KEY} IN ('noncompliant', 'failed', 'error')
+                GROUP BY message_code, posture_status, posture_policy_matched, ise_node
+            )
+        """,
+        "failures": latest + f"""
             SELECT message_code, posture_status, posture_policy_matched, ise_node,
-                   COUNT(DISTINCT endpoint_mac_address) AS endpoints
-            FROM posture_assessment_by_endpoint
-            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
-              AND (LOWER(NVL(posture_status, 'unknown')) NOT IN
-                   ('compliant', 'passed', 'notapplicable') OR failure_reason IS NOT NULL)
+                   COUNT(*) AS endpoints
+            FROM latest_posture
+            WHERE {_STATUS_KEY} IN ('noncompliant', 'failed', 'error')
             GROUP BY message_code, posture_status, posture_policy_matched, ise_node
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
@@ -50,6 +128,8 @@ def collect(dataconnect, cfg):
     with observe("dataconnect_posture"):
         rows = {name: dataconnect.query(sql)
                 for name, sql in _queries(group_limit(cfg)).items()}
+        summaries = {name: (values[0] if values else {}) for name, values in rows.items()
+                     if name.endswith("_summary")}
         endpoints = [{
             "status": label(row.get("posture_status"), "NotApplicable"),
             "os": label(row.get("endpoint_operating_system"), "Unknown"),
@@ -93,4 +173,43 @@ def collect(dataconnect, cfg):
                 policy=row["policy"], psn=row["psn"]).set(row["count"])
             for row in failures
         )
+        total = integer(summaries["endpoints_summary"].get("total_endpoints"))
+        compliant = integer(summaries["endpoints_summary"].get("compliant_endpoints"))
+        failed = integer(summaries["endpoints_summary"].get("failed_endpoints"))
+        coverage = rows["coverage"][0] if rows["coverage"] else {}
+        eligible = integer(coverage.get("eligible_endpoints"))
+        eligible_assessed = integer(coverage.get("recently_assessed"))
+        eligible_unassessed = integer(coverage.get("without_recent_assessment"))
+        writers.extend((
+            lambda: metrics.ise_dataconnect_posture_assessed_endpoints_total.set(total),
+            lambda: metrics.ise_dataconnect_posture_eligible_endpoints_total.set(eligible),
+            lambda: metrics.ise_dataconnect_posture_eligible_recently_assessed_total.set(
+                eligible_assessed),
+            lambda: metrics.ise_dataconnect_posture_eligible_without_recent_assessment_total.set(
+                eligible_unassessed),
+            lambda: metrics.ise_dataconnect_posture_eligible_recent_assessment_ratio.set(
+                eligible_assessed / eligible if eligible else 0),
+            lambda: metrics.ise_dataconnect_posture_compliant_endpoints_total.set(compliant),
+            lambda: metrics.ise_dataconnect_posture_failed_endpoints_total.set(failed),
+            lambda: metrics.ise_dataconnect_posture_compliance_ratio.set(
+                compliant / (compliant + failed) if compliant + failed else 0),
+        ))
+        breakdowns = {
+            "endpoints": (len(endpoints), summaries["endpoints_summary"]),
+            "conditions": (len(conditions), summaries["conditions_summary"]),
+            "failures": (len(failures), summaries["failures_summary"]),
+        }
+        for breakdown, (returned, summary) in breakdowns.items():
+            group_total = integer(summary.get("total_groups"))
+            writers.extend((
+                lambda breakdown=breakdown, returned=returned:
+                    metrics.ise_dataconnect_posture_topk_groups_returned.labels(
+                        breakdown=breakdown).set(returned),
+                lambda breakdown=breakdown, group_total=group_total:
+                    metrics.ise_dataconnect_posture_topk_groups_total.labels(
+                        breakdown=breakdown).set(group_total),
+                lambda breakdown=breakdown, returned=returned, group_total=group_total:
+                    metrics.ise_dataconnect_posture_topk_truncated.labels(
+                        breakdown=breakdown).set(1 if returned < group_total else 0),
+            ))
         replace_snapshot(_METRICS, writers)

@@ -10,7 +10,7 @@ from . import observe, CollectorFailed
 logger = logging.getLogger(__name__)
 
 
-def collect(client, cfg, mappings):
+def collect(client, cfg):
     with observe("patches"):
         patches = client.get_pan_api("/patch", api_name="pan_patches")
         if not patches:

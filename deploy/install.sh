@@ -159,13 +159,35 @@ echo "==> installing systemd unit"
 cp "$SOURCE_DIR/deploy/ise-exporter.service" "$UNIT_PATH"
 systemctl daemon-reload
 
-# --- (re)start -------------------------------------------------------
-if systemctl is-active --quiet "$SERVICE_NAME"; then
-    echo "==> restarting $SERVICE_NAME (upgrade)"
+# --- lifecycle -------------------------------------------------------
+# A newly seeded EnvironmentFile intentionally contains documentation
+# placeholders. Never start (or restart) a network client with those values: a
+# systemd restart loop would repeatedly try the example hosts and credentials.
+PLACEHOLDER_CONFIG=0
+if grep -Eq \
+    '^(ISE_HOST=pan1\.example\.mil|ISE_MNT_HOST=mnt1\.example\.mil|ISE_PASS=changeme|ISE_DATACONNECT_HOST=mnt1\.example\.mil|ISE_DATACONNECT_PASSWORD=changeme)$' \
+    "$ENV_FILE"; then
+    PLACEHOLDER_CONFIG=1
+fi
+
+if [[ "$FRESH_CONFIG" -eq 1 ]]; then
+    echo "==> enabling $SERVICE_NAME without starting it (configuration required)"
+    systemctl enable "$SERVICE_NAME"
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo "==> stopping $SERVICE_NAME so sample credentials cannot be retried"
+        systemctl stop "$SERVICE_NAME"
+    fi
+elif [[ "$PLACEHOLDER_CONFIG" -eq 1 ]]; then
+    echo "==> WARNING: placeholder values remain in $ENV_FILE; service will not be started"
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo "==> stopping $SERVICE_NAME so placeholder credentials cannot be retried"
+        systemctl stop "$SERVICE_NAME"
+    fi
+elif systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo "==> restarting active $SERVICE_NAME (upgrade)"
     systemctl restart "$SERVICE_NAME"
 else
-    echo "==> enabling + starting $SERVICE_NAME (fresh install)"
-    systemctl enable --now "$SERVICE_NAME"
+    echo "==> $SERVICE_NAME is inactive; preserving operator-selected stopped state"
 fi
 
 sleep 1
@@ -178,7 +200,12 @@ echo "==> read-only CLI: $CLI_LINK --help"
 echo "==> Data Connect check (run as the service user so it reads deployed config):"
 echo "    sudo -u $SERVICE_USER $INSTALL_DIR/.venv/bin/$SERVICE_NAME --dataconnect-check"
 if [[ "$FRESH_CONFIG" -eq 1 ]]; then
-    echo "==> NOTE: this was a fresh install — edit $ENV_FILE (ISE_HOST/ISE_MNT_HOST/ISE_USER/ISE_PASS"
-    echo "    plus ISE_DATACONNECT_* and the CA chain under $CERTS_DIR), then:"
-    echo "    sudo systemctl restart $SERVICE_NAME"
+    echo "==> NOTE: fresh installation is enabled but intentionally NOT running. Next steps:"
+    echo "    1. sudoedit $ENV_FILE"
+    echo "    2. install the Data Connect CA chain under $CERTS_DIR"
+    echo "    3. sudo -u $SERVICE_USER $INSTALL_DIR/.venv/bin/$SERVICE_NAME --dataconnect-check"
+    echo "    4. sudo systemctl start $SERVICE_NAME"
+    echo "    5. sudo systemctl status $SERVICE_NAME"
+elif [[ "$PLACEHOLDER_CONFIG" -eq 1 ]]; then
+    echo "==> Replace every example/changeme value, run --dataconnect-check, then start the service."
 fi

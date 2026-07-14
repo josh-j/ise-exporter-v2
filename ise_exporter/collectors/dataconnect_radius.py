@@ -11,28 +11,157 @@ from .dataconnect_common import group_limit, integer, label, number, replace_sna
 
 _METRICS = (
     metrics.ise_dataconnect_radius_authentication_events,
+    metrics.ise_dataconnect_radius_authentication_events_total,
+    metrics.ise_dataconnect_radius_distinct_endpoints_total,
+    metrics.ise_dataconnect_radius_distinct_users_total,
+    metrics.ise_dataconnect_radius_failure_events,
     metrics.ise_dataconnect_radius_response_time_seconds,
+    metrics.ise_dataconnect_radius_response_time_samples,
     metrics.ise_dataconnect_radius_accounting_events,
+    metrics.ise_dataconnect_radius_accounting_events_total,
     metrics.ise_dataconnect_radius_accounting_session_seconds,
     metrics.ise_dataconnect_radius_active_sessions,
+    metrics.ise_dataconnect_radius_active_sessions_total,
+    metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds,
     metrics.ise_dataconnect_radius_errors,
+    metrics.ise_dataconnect_radius_errors_total,
+    metrics.ise_dataconnect_radius_topk_groups_returned,
+    metrics.ise_dataconnect_radius_topk_groups_total,
+    metrics.ise_dataconnect_radius_topk_truncated,
 )
 
+_FAILURE_CLASS_SQL = """CASE
+    WHEN TRIM(failure_reason) IS NULL THEN 'unspecified'
+    WHEN LOWER(failure_reason) LIKE '%password%'
+      OR LOWER(failure_reason) LIKE '%credential%' THEN 'credentials'
+    WHEN LOWER(failure_reason) LIKE '%certificate%'
+      OR LOWER(failure_reason) LIKE '%tls%' THEN 'certificate_or_tls'
+    WHEN LOWER(failure_reason) LIKE '%identity%'
+      OR LOWER(failure_reason) LIKE '%user not found%' THEN 'identity'
+    WHEN LOWER(failure_reason) LIKE '%timeout%'
+      OR LOWER(failure_reason) LIKE '%no response%' THEN 'timeout'
+    WHEN LOWER(failure_reason) LIKE '%policy%'
+      OR LOWER(failure_reason) LIKE '%reject%'
+      OR LOWER(failure_reason) LIKE '%denied%' THEN 'policy_denied'
+    ELSE 'other' END"""
 
-def _queries(limit):
+
+def _active_cte(stale_minutes):
+    return f"""
+        WITH keyed_accounting AS (
+            SELECT CASE
+                       WHEN TRIM(audit_session_id) IS NOT NULL
+                           THEN 'audit:' || TRIM(audit_session_id)
+                       WHEN TRIM(session_id) IS NOT NULL
+                           THEN 'session:' || TRIM(session_id)
+                       ELSE 'acct:' ||
+                            NVL(TRIM(device_name), NVL(TRIM(nas_ip_address), 'unknown')) ||
+                            ':' || TRIM(acct_session_id)
+                   END AS session_key,
+                   id, timestamp AS event_time, device_name, ise_node, acct_status_type
+            FROM radius_accounting
+            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+              AND (TRIM(audit_session_id) IS NOT NULL
+                   OR TRIM(session_id) IS NOT NULL
+                   OR TRIM(acct_session_id) IS NOT NULL)
+        ), latest_accounting AS (
+            SELECT keyed_accounting.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY session_key ORDER BY event_time DESC, id DESC
+                   ) AS row_num
+            FROM keyed_accounting
+        ), active_accounting AS (
+            SELECT device_name, ise_node
+            FROM latest_accounting
+            WHERE row_num = 1
+              AND LOWER(NVL(acct_status_type, 'stop')) NOT LIKE '%stop%'
+              AND event_time >= SYSTIMESTAMP -
+                  NUMTODSINTERVAL({stale_minutes}, 'MINUTE')
+        )
+    """
+
+
+def _queries(limit, stale_minutes=60):
+    active_cte = _active_cte(stale_minutes)
     return {
+        "authentication_summary": """
+            SELECT NVL(SUM(events), 0) AS total_events, COUNT(*) AS total_groups
+            FROM (
+                SELECT COUNT(*) AS events
+                FROM radius_authentications
+                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                GROUP BY CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
+                         authentication_method, authentication_protocol, device_name,
+                         policy_set_name, ise_node
+            )
+        """,
         "authentication": f"""
             SELECT CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END AS status,
                    authentication_method, authentication_protocol, device_name,
-                   policy_set_name, ise_node, COUNT(*) AS events,
-                   AVG(NVL(response_time, 0)) AS avg_response_ms,
-                   MAX(NVL(response_time, 0)) AS max_response_ms
+                   policy_set_name, ise_node, COUNT(*) AS events
             FROM radius_authentications
             WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
             GROUP BY CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
                      authentication_method, authentication_protocol, device_name,
                      policy_set_name, ise_node
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "identity_summary": """
+            SELECT COUNT(DISTINCT calling_station_id) AS distinct_endpoints,
+                   COUNT(DISTINCT username) AS distinct_users
+            FROM radius_authentications
+            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+        """,
+        "failure_context_summary": f"""
+            SELECT NVL(SUM(events), 0) AS total_events, COUNT(*) AS total_groups
+            FROM (
+                SELECT COUNT(*) AS events
+                FROM radius_authentications
+                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                  AND NVL(failed, 0) > 0
+                GROUP BY {_FAILURE_CLASS_SQL}, policy_set_name, location
+            )
+        """,
+        "failure_context": f"""
+            SELECT {_FAILURE_CLASS_SQL} AS failure_class,
+                   policy_set_name, location, COUNT(*) AS events
+            FROM radius_authentications
+            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+              AND NVL(failed, 0) > 0
+            GROUP BY {_FAILURE_CLASS_SQL}, policy_set_name, location
+            ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "latency_summary": """
+            SELECT COUNT(*) AS total_groups
+            FROM (
+                SELECT 1
+                FROM radius_authentications
+                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                  AND response_time IS NOT NULL
+                GROUP BY CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
+                         device_name, ise_node
+            )
+        """,
+        "latency": f"""
+            SELECT CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END AS status,
+                   device_name, ise_node, COUNT(response_time) AS samples,
+                   AVG(response_time) AS avg_response_ms,
+                   MAX(response_time) AS max_response_ms
+            FROM radius_authentications
+            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+              AND response_time IS NOT NULL
+            GROUP BY CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
+                     device_name, ise_node
+            ORDER BY samples DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "accounting_summary": """
+            SELECT NVL(SUM(events), 0) AS total_events, COUNT(*) AS total_groups
+            FROM (
+                SELECT COUNT(*) AS events
+                FROM radius_accounting
+                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                GROUP BY acct_status_type, device_name, authorization_policy, ise_node
+            )
         """,
         "accounting": f"""
             SELECT acct_status_type, device_name, authorization_policy, ise_node,
@@ -42,31 +171,46 @@ def _queries(limit):
             GROUP BY acct_status_type, device_name, authorization_policy, ise_node
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
         """,
+        "accounting_sessions_summary": """
+            SELECT COUNT(*) AS total_groups
+            FROM (
+                SELECT 1 FROM radius_accounting
+                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                  AND acct_session_time IS NOT NULL AND acct_session_time > 0
+                GROUP BY device_name, ise_node
+            )
+        """,
         "accounting_sessions": f"""
             SELECT device_name, ise_node,
-                   AVG(NVL(acct_session_time, 0)) AS avg_session_seconds,
-                   MAX(NVL(acct_session_time, 0)) AS max_session_seconds
+                   AVG(acct_session_time) AS avg_session_seconds,
+                   MAX(acct_session_time) AS max_session_seconds
             FROM radius_accounting
             WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
-              AND NVL(acct_session_time, 0) > 0
+              AND acct_session_time IS NOT NULL AND acct_session_time > 0
             GROUP BY device_name, ise_node
             ORDER BY max_session_seconds DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "active_sessions": f"""
+        "active_sessions_summary": active_cte + """
+            SELECT COUNT(*) AS total_sessions,
+                   COUNT(DISTINCT NVL(device_name, 'unknown') || CHR(0) ||
+                                  NVL(ise_node, 'unknown')) AS total_groups
+            FROM active_accounting
+        """,
+        "active_sessions": active_cte + f"""
             SELECT device_name, ise_node, COUNT(*) AS sessions
-            FROM (
-                SELECT acct_session_id,
-                       MAX(device_name) KEEP (DENSE_RANK LAST ORDER BY timestamp) AS device_name,
-                       MAX(ise_node) KEEP (DENSE_RANK LAST ORDER BY timestamp) AS ise_node,
-                       MAX(acct_status_type) KEEP (DENSE_RANK LAST ORDER BY timestamp) AS last_status
-                FROM radius_accounting
-                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
-                  AND acct_session_id IS NOT NULL
-                GROUP BY acct_session_id
-            )
-            WHERE LOWER(NVL(last_status, 'stop')) NOT LIKE '%stop%'
+            FROM active_accounting
             GROUP BY device_name, ise_node
             ORDER BY sessions DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "errors_summary": """
+            SELECT NVL(SUM(events), 0) AS total_events, COUNT(*) AS total_groups
+            FROM (
+                SELECT COUNT(*) AS events
+                FROM radius_errors_view
+                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                GROUP BY TO_CHAR(message_code), network_device_name,
+                         authentication_method, ise_node
+            )
         """,
         "errors": f"""
             SELECT TO_CHAR(message_code) AS message_code, network_device_name,
@@ -83,8 +227,13 @@ def _queries(limit):
 def collect(dataconnect, cfg):
     """Atomically replace the bounded RADIUS reporting snapshot."""
     with observe("dataconnect_radius"):
+        limit = group_limit(cfg)
+        stale_minutes = max(5, min(1440, int(getattr(
+            cfg, "dataconnect_active_session_stale_minutes", 60))))
         rows = {name: dataconnect.query(sql)
-                for name, sql in _queries(group_limit(cfg)).items()}
+                for name, sql in _queries(limit, stale_minutes).items()}
+        summaries = {name: (values[0] if values else {}) for name, values in rows.items()
+                     if name.endswith("_summary")}
         auth = [{
             "status": label(row.get("status")),
             "method": label(row.get("authentication_method"), "none"),
@@ -93,9 +242,16 @@ def collect(dataconnect, cfg):
             "policy": label(row.get("policy_set_name"), "none"),
             "psn": label(row.get("ise_node")),
             "events": integer(row.get("events")),
+        } for row in rows["authentication"]]
+        latency = [{
+            "status": label(row.get("status")),
+            "nad": label(row.get("device_name")),
+            "psn": label(row.get("ise_node")),
+            "samples": integer(row.get("samples")),
             "avg": number(row.get("avg_response_ms")) / 1000.0,
             "max": number(row.get("max_response_ms")) / 1000.0,
-        } for row in rows["authentication"]]
+        } for row in rows["latency"]
+            if row.get("avg_response_ms") is not None and row.get("max_response_ms") is not None]
         accounting = [{
             "event_type": label(row.get("acct_status_type"), "unknown"),
             "nad": label(row.get("device_name")),
@@ -121,6 +277,12 @@ def collect(dataconnect, cfg):
             "psn": label(row.get("ise_node")),
             "events": integer(row.get("events")),
         } for row in rows["errors"]]
+        failure_context = [{
+            "failure_class": label(row.get("failure_class"), "unspecified"),
+            "policy": label(row.get("policy_set_name"), "none"),
+            "location": label(row.get("location"), "Unknown"),
+            "events": integer(row.get("events")),
+        } for row in rows["failure_context"]]
 
         writers = []
         for row in auth:
@@ -128,11 +290,16 @@ def collect(dataconnect, cfg):
                 status=row["status"], authentication_method=row["method"],
                 authentication_protocol=row["protocol"], nad=row["nad"],
                 policy_set=row["policy"], psn=row["psn"]).set(row["events"]))
+        for row in latency:
             for stat in ("avg", "max"):
                 writers.append(lambda row=row, stat=stat:
                     metrics.ise_dataconnect_radius_response_time_seconds.labels(
                         stat=stat, status=row["status"], nad=row["nad"], psn=row["psn"]
                     ).set(row[stat]))
+            writers.append(lambda row=row:
+                metrics.ise_dataconnect_radius_response_time_samples.labels(
+                    status=row["status"], nad=row["nad"], psn=row["psn"]
+                ).set(row["samples"]))
         for row in accounting:
             writers.append(lambda row=row: metrics.ise_dataconnect_radius_accounting_events.labels(
                 event_type=row["event_type"], nad=row["nad"],
@@ -149,4 +316,50 @@ def collect(dataconnect, cfg):
             writers.append(lambda row=row: metrics.ise_dataconnect_radius_errors.labels(
                 message_code=row["code"], nad=row["nad"],
                 authentication_method=row["method"], psn=row["psn"]).set(row["events"]))
+        for row in failure_context:
+            writers.append(lambda row=row: metrics.ise_dataconnect_radius_failure_events.labels(
+                failure_class=row["failure_class"], policy_set=row["policy"],
+                location=row["location"]).set(row["events"]))
+
+        identity_summary = summaries["identity_summary"]
+        writers.extend((
+            lambda: metrics.ise_dataconnect_radius_authentication_events_total.set(
+                integer(summaries["authentication_summary"].get("total_events"))),
+            lambda: metrics.ise_dataconnect_radius_distinct_endpoints_total.set(
+                integer(identity_summary.get("distinct_endpoints"))),
+            lambda: metrics.ise_dataconnect_radius_distinct_users_total.set(
+                integer(identity_summary.get("distinct_users"))),
+            lambda: metrics.ise_dataconnect_radius_accounting_events_total.set(
+                integer(summaries["accounting_summary"].get("total_events"))),
+            lambda: metrics.ise_dataconnect_radius_active_sessions_total.set(
+                integer(summaries["active_sessions_summary"].get("total_sessions"))),
+            lambda: metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds.set(
+                stale_minutes * 60),
+            lambda: metrics.ise_dataconnect_radius_errors_total.set(
+                integer(summaries["errors_summary"].get("total_events"))),
+        ))
+        breakdowns = {
+            "authentication": (len(auth), summaries["authentication_summary"]),
+            "latency": (len(latency), summaries["latency_summary"]),
+            "accounting": (len(accounting), summaries["accounting_summary"]),
+            "accounting_sessions": (
+                len(accounting_sessions), summaries["accounting_sessions_summary"]),
+            "active_sessions": (len(active_sessions), summaries["active_sessions_summary"]),
+            "errors": (len(errors), summaries["errors_summary"]),
+            "failure_context": (
+                len(failure_context), summaries["failure_context_summary"]),
+        }
+        for breakdown, (returned, summary) in breakdowns.items():
+            total = integer(summary.get("total_groups"))
+            writers.extend((
+                lambda breakdown=breakdown, returned=returned:
+                    metrics.ise_dataconnect_radius_topk_groups_returned.labels(
+                        breakdown=breakdown).set(returned),
+                lambda breakdown=breakdown, total=total:
+                    metrics.ise_dataconnect_radius_topk_groups_total.labels(
+                        breakdown=breakdown).set(total),
+                lambda breakdown=breakdown, returned=returned, total=total:
+                    metrics.ise_dataconnect_radius_topk_truncated.labels(
+                        breakdown=breakdown).set(1 if returned < total else 0),
+            ))
         replace_snapshot(_METRICS, writers)

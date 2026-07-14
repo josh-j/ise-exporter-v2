@@ -36,14 +36,24 @@ Clone or copy the repository to the server, then run:
 ```bash
 sudo ./deploy/install.sh
 sudoedit /etc/ise-exporter/ise-exporter.env
-sudo systemctl restart ise-exporter
+# Install the Data Connect CA chain under /etc/ise-exporter/certs, then preflight:
+sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --dataconnect-check
+sudo systemctl start ise-exporter
 sudo systemctl status ise-exporter
 curl --fail --silent http://127.0.0.1:9618/metrics | head
 ```
 
+The fresh install is enabled for boot but intentionally left stopped. The seeded
+configuration contains example hosts and `changeme` passwords; the installer
+will not start or restart the service while any of those placeholders remain.
+This prevents a systemd restart loop from repeatedly sending invalid credentials
+to ISE.
+
 The installer is idempotent. Re-run it from an updated checkout to upgrade the
-virtual environment, command-line tools, systemd unit, and service while
-preserving `/etc/ise-exporter/ise-exporter.env` and certificates.
+virtual environment, command-line tools, and systemd unit while preserving
+`/etc/ise-exporter/ise-exporter.env` and certificates. A configured service that
+was active is restarted during an upgrade. An intentionally stopped service
+remains stopped.
 
 It creates:
 
@@ -72,6 +82,11 @@ enabled. Install the PEM chain under `/etc/ise-exporter/certs`, owned by
 `root:ise-exporter`, and configure:
 
 ```dotenv
+ISE_REST_SSL_VERIFY=true
+ISE_REST_CA_BUNDLE=/etc/ise-exporter/certs/ise-rest-ca.pem
+# MnT is used only by explicit ise-cli diagnostics and may use another CA.
+ISE_MNT_SSL_VERIFY=true
+ISE_MNT_CA_BUNDLE=/etc/ise-exporter/certs/ise-mnt-ca.pem
 ISE_DATACONNECT_HOST=mnt1.example.mil
 ISE_DATACONNECT_PORT=2484
 ISE_DATACONNECT_SERVICE=cpm10
@@ -99,6 +114,7 @@ journalctl -u ise-exporter -n 100 --no-pager
 
 The install path is continuously exercised on an `ubuntu-24.04` GitHub Actions
 runner, including package installation, Python imports, global CLI availability,
-and systemd-unit validation. Live startup and the metrics endpoint require the
-exact supported ISE and Data Connect credentials, so those are covered by the
-lab smoke test rather than public CI.
+systemd-unit validation, and the safe fresh-install state: enabled, inactive, and
+with zero restarts while placeholders remain. Live startup and the metrics endpoint
+require the exact supported ISE and Data Connect credentials, so those are covered
+by the lab smoke test rather than public CI.

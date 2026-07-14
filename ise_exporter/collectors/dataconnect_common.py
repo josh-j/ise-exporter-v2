@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 import math
 
-from ..util import clear_metric
+from ..snapshots import replace_metric_snapshot
 
 
 def label(value, default="unknown"):
@@ -43,13 +43,9 @@ def epoch(value):
 
 
 def replace_snapshot(metric_families, writers):
-    """Replace a domain snapshot only after all rows were normalized.
+    """Publish a complete domain snapshot only after all rows were normalized.
 
-    Callers build ``writers`` as zero-argument callbacks.  This deliberately
-    clears immediately before emission, never before I/O or parsing, so a query
-    failure leaves the previous successful snapshot intact.
+    Prometheus collection and replacement share one lock. A writer failure rolls
+    every family back to the previous snapshot before the lock is released.
     """
-    for metric in metric_families:
-        clear_metric(metric)
-    for writer in writers:
-        writer()
+    replace_metric_snapshot(metric_families, writers)

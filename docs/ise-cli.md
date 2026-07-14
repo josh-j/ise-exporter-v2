@@ -81,7 +81,8 @@ before use with ERS or MnT.
 | `health` | Check PAN/ERS and MnT reachability independently |
 | `nodes` | List deployment nodes from OpenAPI |
 | `nads` | List Network Access Devices from ERS |
-| `endpoints [PATTERN]` | List endpoints from ERS, optionally using a friendly name wildcard |
+| `endpoints [[FIELD=]PATTERN ...]` | Search endpoints by inventory and recent context attributes |
+| `endpoint-fields [PATTERN]` | List every searchable field exposed by the live Data Connect schema |
 | `endpoint IDENTIFIER` | Resolve and inspect one endpoint; optionally join its MnT session |
 | `resolve IDENTIFIER` | Show identifier kind, resolution source, MAC/IP/hostname, endpoint, and sessions |
 | `sessions` | List active MnT sessions |
@@ -104,10 +105,62 @@ before use with ERS or MnT.
 
 Inventory commands return at most 100 rows by default. Use `--limit N` for a larger
 bounded query or `--all` to explicitly enumerate the complete inventory. On an
-80,000-endpoint deployment, prefer bounded queries and ERS filters during interactive
-work. Inside `ise-cli`, `endpoints` accepts `NAME`, `PREFIX-*`, `*-SUFFIX`, and
-`*TEXT*`. These become server-side ISE filters, not client-side scans. In a normal OS
-shell, quote wildcard arguments so the local shell does not expand them.
+80,000-endpoint deployment, prefer bounded queries and server-side filters during
+interactive work.
+
+### Friendly endpoint searches
+
+Inside `ise-cli`, a bare pattern searches the endpoint name/hostname. A qualified
+pattern uses `FIELD=PATTERN`:
+
+```console
+ise> endpoints LAB-*
+ise> endpoints authorization-policy=PermitAccess*
+ise> endpoints location=Berlin-* endpoint-policy=Windows*
+ise> endpoints posture-status=Compliant agent-version=5.1.*
+ise> endpoints username=alice nad=access-switch-*
+```
+
+`*` matches any text and `?` matches one character. Different fields are combined
+with AND. Repeating one field supplies alternatives with OR:
+
+```console
+ise> endpoints location=Berlin-* location=London-* posture-status=Compliant
+```
+
+Searches run in Data Connect with bound values, a default 100-row limit, and a
+two-day window for event/context views. They correlate context records to
+`ENDPOINTS_DATA` by ISE's native MAC key and return every text, numeric, and timestamp
+endpoint inventory column made available by the live schema. Results also include
+`matched_context`, containing the actual authorization policy, location, posture,
+or other context value that matched each requested field, while `matched_filters`
+records the requested patterns.
+
+The field catalog is schema-driven rather than tied to a guessed ISE column list:
+
+```console
+ise> endpoint-fields
+ise> endpoint-fields *policy*
+ise> endpoint-fields *location*
+```
+
+Short operator aliases include `name`, `mac`, `ip`, `endpoint-policy`, `profile`,
+`identity-group`, `authorization-policy`, `authentication-policy`, `policy-set`,
+`authorization-profile`, `location`, `nad`, `device-type`, `device-groups`,
+`username`, `identity-store`, `psn`, `posture-status`, `posture-policy`,
+`posture-report`, `agent-version`, `mdm-server`, `security-group`, and
+`response-time`. Every correlatable text, numeric, or timestamp field is also exposed
+with a qualified name such as `endpoint.endpoint-policy`,
+`auth.authorization-policy`, `accounting.authorization-policy`,
+`error.failure-reason`, or `posture.posture-status`. Tab completion lists available
+field names and distinct live values. If a view or column does not exist on the
+target ISE 3.3 Patch 11 deployment, it is not advertised.
+
+When Data Connect is unavailable, one bare endpoint-name pattern still falls back to
+the ERS server-side `EQ`, `STARTSW`, `ENDSW`, or `CONTAINS` filter. Attribute searches
+require Data Connect because ERS does not own authorization, accounting, or posture
+context. In a normal OS shell, quote wildcard arguments so the local shell does not
+expand them.
 
 ## Examples
 
@@ -116,6 +169,8 @@ ise-cli health
 ise-cli nodes --output json
 ise-cli endpoints --limit 25 --select id,name,description
 ise-cli endpoints 'LAB-*' --limit 25
+ise-cli endpoints 'authorization-policy=PermitAccess*' 'location=Berlin-*'
+ise-cli endpoint-fields '*policy*'
 ise-cli endpoints --filter 'groupId.EQ.abc-123' --output csv
 ise-cli endpoint AA:BB:CC:DD:EE:FF --include-session --output json
 ise-cli endpoint aabb.ccdd.eeff

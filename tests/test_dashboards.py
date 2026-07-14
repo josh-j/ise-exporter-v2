@@ -1,5 +1,7 @@
+import ast
 import json
 from pathlib import Path
+import re
 
 
 DASHBOARDS = Path(__file__).parents[1] / "dashboards"
@@ -79,3 +81,116 @@ def test_every_prometheus_target_uses_imported_datasource():
 def test_sessions_dashboard_exposes_accounting_derived_active_sessions():
     text = (DASHBOARDS / "ise-sessions-auth.json").read_text()
     assert "ise_dataconnect_radius_active_sessions" in text
+
+
+def test_domain_dashboards_expose_authoritative_dataset_availability():
+    expected = {
+        "ise-auth-troubleshooting.json": {("dataconnect_radius", "dataconnect")},
+        "ise-sessions-auth.json": {("dataconnect_radius", "dataconnect")},
+        "ise-failure-triage.json": {("dataconnect_radius", "dataconnect")},
+        "ise-endpoint-profiles.json": {("dataconnect_endpoints", "dataconnect")},
+        "ise-endpoints-devices.json": {("dataconnect_endpoints", "dataconnect")},
+        "ise-secureclient.json": {("dataconnect_posture", "dataconnect")},
+        "ise-psn-troubleshooting.json": {("dataconnect_performance", "dataconnect")},
+        "ise-tacacs.json": {
+            ("tacacs_config", "rest"),
+            ("tacacs_activity", "dataconnect"),
+        },
+    }
+    for name, datasets in expected.items():
+        dashboard = json.loads((DASHBOARDS / name).read_text())
+        expressions = {
+            target["expr"]
+            for panel in _panels(dashboard["panels"])
+            for target in panel.get("targets", [])
+        }
+        for dataset, source in datasets:
+            selector = f'ise_dataset_up{{dataset="{dataset}",source="{source}"}}'
+            assert any(selector in expression for expression in expressions), (
+                f"{name} has no visible availability query for {dataset}/{source}")
+
+
+def test_domain_queries_do_not_mask_outages_as_unconditional_zero():
+    violations = []
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        if path.name == "ise-overview.json":
+            continue
+        dashboard = json.loads(path.read_text())
+        for panel in _panels(dashboard.get("panels", [])):
+            for target in panel.get("targets", []):
+                expression = target.get("expr", "")
+                if "or vector(0)" in expression:
+                    violations.append(f"{path.name}: panel {panel.get('id')} uses bare vector(0)")
+                if "or on() (0 *" in expression and not (
+                        "ise_dataset_up" in expression and "== 1" in expression):
+                    violations.append(
+                        f"{path.name}: panel {panel.get('id')} zero fallback is not up-gated")
+
+    assert not violations, "outage-masking dashboard queries: " + ", ".join(violations)
+
+
+def test_posture_dashboard_does_not_claim_group_sums_are_distinct_endpoint_totals():
+    dashboard = json.loads((DASHBOARDS / "ise-secureclient.json").read_text())
+    panels = {panel["title"]: panel for panel in _panels(dashboard["panels"])}
+
+    assert "Posture Compliance" not in panels
+    assert "Assessed Endpoints" not in panels
+    for title in ("Assessment-Group Compliance Share", "Assessment-Group Sum"):
+        assert "not a global distinct" in panels[title]["description"]
+
+
+def _exported_metric_names():
+    metrics_path = DASHBOARDS.parent / "ise_exporter/metrics.py"
+    tree = ast.parse(metrics_path.read_text())
+    names = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        call = node.value
+        if not isinstance(call.func, ast.Name) or not call.args:
+            continue
+        kind = call.func.id
+        if kind not in {"Gauge", "Counter", "Histogram", "Info", "Enum"}:
+            continue
+        if not isinstance(call.args[0], ast.Constant):
+            continue
+        base = call.args[0].value
+        if kind == "Info":
+            names.add(f"{base}_info")
+        else:
+            names.add(base)
+        if kind == "Histogram":
+            names.update(f"{base}_{suffix}" for suffix in ("bucket", "count", "sum", "created"))
+        if kind == "Counter":
+            counter_base = base.removesuffix("_total")
+            names.update((f"{counter_base}_total", f"{counter_base}_created"))
+    return names
+
+
+def test_every_dashboard_metric_exists_in_the_registry_contract():
+    exported = _exported_metric_names()
+    missing = []
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        for panel in _panels(dashboard.get("panels", [])):
+            for target in panel.get("targets", []):
+                referenced = set(re.findall(r"\bise_[a-zA-Z0-9_]+\b", target.get("expr", "")))
+                for metric in sorted(referenced - exported):
+                    missing.append(f"{path.name}: panel {panel.get('id')}: {metric}")
+
+    assert not missing, "dashboard references unknown metrics: " + ", ".join(missing)
+
+
+def test_data_quality_dashboard_exposes_collection_and_source_freshness():
+    text = (DASHBOARDS / "ise-data-quality.json").read_text()
+    for metric in (
+        "ise_dataset_enabled",
+        "ise_dataset_up",
+        "ise_dataset_fresh",
+        "ise_dataset_last_attempt_timestamp",
+        "ise_dataset_last_success_timestamp",
+        "ise_dataconnect_view_rows",
+        "ise_dataconnect_view_newest_event_timestamp",
+        "ise_dataconnect_view_oldest_event_timestamp",
+    ):
+        assert metric in text

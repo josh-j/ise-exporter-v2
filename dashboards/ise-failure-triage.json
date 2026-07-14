@@ -7,9 +7,10 @@
   "description": "RADIUS failure work queue from stable Data Connect dimensions. Counts cover the bounded ISE reporting view, not unique currently connected endpoints.",
   "panels": [
     {
-      "id": 1,
+      "id": 90,
       "type": "stat",
-      "title": "Failed Authentication Events",
+      "title": "Dataset Availability",
+      "description": "Authoritative Data Connect dataset health. DOWN is not a valid zero.",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -18,7 +19,108 @@
       },
       "targets": [
         {
-          "expr": "sum(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) or vector(0)",
+          "expr": "max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 91,
+      "type": "stat",
+      "title": "Dataset Collection Age",
+      "description": "Seconds since the last successful snapshot replacement; thresholds are based on this dataset cadence.",
+      "gridPos": {
+        "h": 4,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"dataconnect_radius\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 120
+              },
+              {
+                "color": "red",
+                "value": 180
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Failed Authentication Events",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -36,7 +138,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 0
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -48,7 +150,7 @@
       },
       "targets": [
         {
-          "expr": "100 * sum(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) / clamp_min(sum(ise_dataconnect_radius_authentication_events), 1)",
+          "expr": "(100 * sum(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) / clamp_min(sum(ise_dataconnect_radius_authentication_events), 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -66,11 +168,11 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 0
+        "y": 4
       },
       "targets": [
         {
-          "expr": "count(count by (nad) (ise_dataconnect_radius_errors)) or vector(0)",
+          "expr": "count(count by (nad) (ise_dataconnect_radius_errors)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -88,7 +190,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 8
       },
       "targets": [
         {
@@ -110,7 +212,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 8
       },
       "targets": [
         {
@@ -132,7 +234,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 16
       },
       "targets": [
         {
@@ -154,7 +256,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 16
       },
       "targets": [
         {
@@ -176,7 +278,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 24
       },
       "targets": [
         {
@@ -199,11 +301,11 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 24
       },
       "targets": [
         {
-          "expr": "sum(ise_dataconnect_radius_errors{message_code=~\"12300|12321|12500|12501|12511|12625|22056\"}) or vector(0)",
+          "expr": "sum(ise_dataconnect_radius_errors{message_code=~\"12300|12321|12500|12501|12511|12625|22056\"}) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -222,7 +324,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 32
       },
       "targets": [
         {

@@ -9,7 +9,7 @@ from . import observe, CollectorFailed
 logger = logging.getLogger(__name__)
 
 
-def collect(client, cfg, mappings):
+def collect(client, cfg):
     with observe("licensing"):
         # /license/system/tier-state returns a bare list (no `response` envelope)
         tiers = client.get_pan_api("/license/system/tier-state", api_name="pan_license", unwrap=False)

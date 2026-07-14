@@ -24,7 +24,10 @@ def _strip_ns(tag):
 
 
 class ISERestClient:
-    def __init__(self, cfg):
+    """Compatibility client spanning both planes; new runtime code uses the
+    plane-specific clients below."""
+
+    def __init__(self, cfg, *, include_control=True, include_mnt=True):
         self.cfg = cfg
         self.host = cfg.ise_host
         self.mnt_host = cfg.ise_mnt_host
@@ -32,18 +35,26 @@ class ISERestClient:
         self.pan_url = f"https://{cfg.ise_host}/api/v1"
         self.mnt_xml_url = f"https://{cfg.ise_mnt_host}/admin/API/mnt"
         self.auth = HTTPBasicAuth(cfg.ise_user, cfg.ise_pass)
-        self.session = self._mk("application/json")
-        self.mnt_session = self._mk("application/xml")
+        self.session = self._mk(
+            "application/json", self._tls_verify("rest")) if include_control else None
+        self.mnt_session = self._mk(
+            "application/xml", self._tls_verify("mnt")) if include_mnt else None
         self._auth_failures = 0
         self._auth_block_until = 0.0
 
-    def _mk(self, content_type):
+    def _tls_verify(self, plane):
+        enabled = bool(getattr(self.cfg, f"{plane}_ssl_verify", True))
+        if not enabled:
+            return False
+        bundle = str(getattr(self.cfg, f"{plane}_ca_bundle", "") or "").strip()
+        return bundle or True
+
+    def _mk(self, content_type, verify=True):
         s = requests.Session()
         s.auth = self.auth
-        s.verify = False
-        # ISE presents a self-signed cert; verify=False is intentional. trust_env=False
-        # stops requests from silently overriding that with an ambient REQUESTS_CA_BUNDLE
-        # / CURL_CA_BUNDLE (e.g. under Nix), which otherwise forces verification and fails.
+        s.verify = verify
+        # Keep trust deterministic: explicit configuration, not ambient process
+        # REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE state, owns each plane's trust policy.
         s.trust_env = False
         retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
         s.mount("https://", HTTPAdapter(max_retries=retry))
@@ -59,9 +70,8 @@ class ISERestClient:
                                         http_code="401").inc()
             return None
         try:
-            # ISE commonly uses an internal/self-signed certificate and these sessions
-            # intentionally set verify=False. Suppress only the matching urllib3 warning
-            # at the request boundary so CLI output stays machine-readable and quiet.
+            # Suppress only urllib3's warning when an operator explicitly selected
+            # unverified lab TLS; this keeps CLI JSON/table output machine-readable.
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", InsecureRequestWarning)
                 r = session.get(url, params=params, timeout=timeout)
@@ -129,7 +139,13 @@ class ISERestClient:
     # --- generic accessors used by collectors ---
     def get_ers(self, path, params=None, get_all=False, api_name="ers"):
         """ERS JSON GET. Returns the SearchResult.resources LIST (following
-        nextPage.href when get_all), or the raw dict when there's no SearchResult."""
+        nextPage.href when get_all), or the raw dict when there's no SearchResult.
+
+        A failed or malformed page invalidates the complete enumeration. Returning
+        a partial list would make collectors publish a plausible but incorrect
+        inventory, so failures return ``None`` while a valid empty result remains
+        the distinct value ``[]``.
+        """
         url = f"{self.ers_url}{path}"
         data = self._get_json(self.session, url, params, api_name=api_name)
         if data is None:
@@ -138,19 +154,49 @@ class ISERestClient:
             return data
 
         sr = data["SearchResult"]
+        if not isinstance(sr, dict):
+            logger.warning("Malformed ERS SearchResult for %s", url)
+            return None
         resources = sr.get("resources", [])
+        if not isinstance(resources, list):
+            logger.warning("Malformed ERS resources for %s", url)
+            return None
+        resources = list(resources)
+        expected_total = sr.get("total")
+        visited = set()
         # follow nextPage.href iteratively — recursion would be one frame per page
         # and blow the stack on large result sets (tens of thousands of NADs)
         while get_all:
-            href = (sr.get("nextPage") or {}).get("href", "")
-            if "/ers" not in href:
+            next_page = sr.get("nextPage")
+            if next_page is None:
                 break
+            if not isinstance(next_page, dict):
+                logger.warning("Malformed ERS nextPage for %s", url)
+                return None
+            href = next_page.get("href", "")
+            if not isinstance(href, str) or "/ers" not in href or href in visited:
+                logger.warning("Invalid ERS nextPage href for %s: %r", url, href)
+                return None
+            visited.add(href)
             page = self._get_json(self.session, f"{self.ers_url}{href.split('/ers', 1)[1]}",
                                   api_name=api_name)
-            if page is None:
-                break
-            sr = page.get("SearchResult", {})
+            if not isinstance(page, dict):
+                return None
+            sr = page.get("SearchResult")
+            if not isinstance(sr, dict) or not isinstance(sr.get("resources", []), list):
+                logger.warning("Malformed ERS pagination response for %s", href)
+                return None
             resources.extend(sr.get("resources", []))
+        if get_all and expected_total is not None:
+            try:
+                expected_total = int(expected_total)
+            except (TypeError, ValueError):
+                logger.warning("Malformed ERS total for %s: %r", url, expected_total)
+                return None
+            if len(resources) != expected_total:
+                logger.warning("Incomplete ERS pagination for %s: got %d of %d rows",
+                               url, len(resources), expected_total)
+                return None
         return resources
 
     def get_ers_total(self, path, params=None, api_name="ers"):
@@ -212,15 +258,59 @@ class ISERestClient:
 
     def health_check(self):
         health = {"pan": False, "mnt": False}
-        try:
-            r = self.session.get(f"https://{self.host}:{self.cfg.ers_port}/ers",
-                                 timeout=5, allow_redirects=False)
-            health["pan"] = r.status_code < 500
-        except Exception as e:
-            logger.debug("PAN health check failed: %s", e)
-        try:
-            r = self.mnt_session.get(f"https://{self.mnt_host}/admin", timeout=5, allow_redirects=False)
-            health["mnt"] = r.status_code < 500
-        except Exception as e:
-            logger.debug("MnT health check failed: %s", e)
+        if self.session is not None:
+            try:
+                r = self.session.get(f"https://{self.host}:{self.cfg.ers_port}/ers",
+                                     timeout=5, allow_redirects=False)
+                health["pan"] = r.status_code < 500
+            except Exception as e:
+                logger.debug("PAN health check failed: %s", e)
+        if self.mnt_session is not None:
+            try:
+                r = self.mnt_session.get(
+                    f"https://{self.mnt_host}/admin", timeout=5, allow_redirects=False)
+                health["mnt"] = r.status_code < 500
+            except Exception as e:
+                logger.debug("MnT health check failed: %s", e)
         return health
+
+
+class ISEControlPlaneClient(ISERestClient):
+    """ERS and PAN OpenAPI transport used by the exporter runtime."""
+
+    def __init__(self, cfg):
+        super().__init__(cfg, include_control=True, include_mnt=False)
+
+
+class MnTDiagnosticsClient(ISERestClient):
+    """MnT XML transport used only by explicit operator diagnostics."""
+
+    def __init__(self, cfg):
+        super().__init__(cfg, include_control=False, include_mnt=True)
+
+
+class ISEOperatorClient:
+    """Composition used by ise-cli when commands span control and MnT planes."""
+
+    def __init__(self, cfg):
+        self.control = ISEControlPlaneClient(cfg)
+        self.mnt = MnTDiagnosticsClient(cfg)
+        self.host = self.control.host
+        self.mnt_host = self.mnt.mnt_host
+
+    def get_ers(self, *args, **kwargs):
+        return self.control.get_ers(*args, **kwargs)
+
+    def get_ers_total(self, *args, **kwargs):
+        return self.control.get_ers_total(*args, **kwargs)
+
+    def get_pan_api(self, *args, **kwargs):
+        return self.control.get_pan_api(*args, **kwargs)
+
+    def get_mnt_xml(self, *args, **kwargs):
+        return self.mnt.get_mnt_xml(*args, **kwargs)
+
+    def health_check(self):
+        control = self.control.health_check()
+        diagnostics = self.mnt.health_check()
+        return {"pan": control["pan"], "mnt": diagnostics["mnt"]}

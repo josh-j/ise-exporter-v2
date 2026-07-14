@@ -29,8 +29,9 @@ from rich.table import Table
 from rich.text import Text
 
 from .clients.dataconnect import DataConnectClient
-from .clients.rest import ISERestClient
+from .clients.rest import ISEOperatorClient
 from .config import Config
+from .dataconnect_schema import table_columns
 from .util import (first_nonempty, is_mac, normalize_agent_version, normalize_mac,
                    normalize_posture,
                    parse_other_attr_string, parse_posture_report)
@@ -43,8 +44,13 @@ COMMAND_SCHEMAS = {
         "method": "GET + SELECT", "paths": ["/ers", "/admin"],
     },
     "endpoints": {
-        "api": "ERS", "host_env": "ISE_HOST", "method": "GET",
-        "path": "/ers/config/endpoint", "bounded_default": 100,
+        "api": "Data Connect + ERS", "host_env": ["ISE_DATACONNECT_HOST", "ISE_HOST"],
+        "method": "SELECT or GET", "path": "/ers/config/endpoint",
+        "bounded_default": 100,
+    },
+    "endpoint-fields": {
+        "api": "Data Connect metadata", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "USER_TAB_COLUMNS", "reads_event_rows": False,
     },
     "endpoint": {
         "api": "Data Connect + ERS + optional MnT",
@@ -279,10 +285,102 @@ DATACONNECT_REPORTS = {
     },
 }
 
-DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {"dataconnect-schema"}
+DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {
+    "dataconnect-schema", "endpoint-fields", "endpoints"}
+
+ENDPOINT_CONTEXT_SOURCES = {
+    "endpoint": {
+        "table": "ENDPOINTS_DATA", "mac": ("MAC_ADDRESS",),
+        "timestamp": ("UPDATE_TIME", "CREATE_TIME"),
+    },
+    "auth": {
+        "table": "RADIUS_AUTHENTICATIONS",
+        "mac": ("CALLING_STATION_ID", "ORIG_CALLING_STATION_ID",
+                "ENDPOINT_MAC_ADDRESS", "MAC_ADDRESS"),
+        "timestamp": ("TIMESTAMP", "LOGGED_AT"),
+    },
+    "accounting": {
+        "table": "RADIUS_ACCOUNTING",
+        "mac": ("CALLING_STATION_ID", "ENDPOINT_MAC_ADDRESS", "MAC_ADDRESS"),
+        "timestamp": ("TIMESTAMP", "LOGGED_AT"),
+    },
+    "error": {
+        "table": "RADIUS_ERRORS_VIEW",
+        "mac": ("CALLING_STATION_ID", "ENDPOINT_MAC_ADDRESS", "MAC_ADDRESS"),
+        "timestamp": ("TIMESTAMP", "LOGGED_AT"),
+    },
+    "posture": {
+        "table": "POSTURE_ASSESSMENT_BY_ENDPOINT",
+        "mac": ("ENDPOINT_MAC_ADDRESS", "CALLING_STATION_ID", "MAC_ADDRESS"),
+        "timestamp": ("TIMESTAMP", "LOGGED_AT"),
+    },
+}
+
+ENDPOINT_FIELD_ALIASES = {
+    "name": (("endpoint", "HOSTNAME"), ("endpoint", "ASSET_NAME")),
+    "hostname": (("endpoint", "HOSTNAME"),),
+    "mac": (("endpoint", "MAC_ADDRESS"),),
+    "ip": (("endpoint", "ENDPOINT_IP"), ("auth", "FRAMED_IP_ADDRESS")),
+    "endpoint-policy": (("endpoint", "ENDPOINT_POLICY"),),
+    "profile": (("endpoint", "ENDPOINT_PROFILE"), ("endpoint", "ENDPOINT_POLICY")),
+    "identity-group": (("endpoint", "IDENTITY_GROUP"),
+                       ("endpoint", "IDENTITY_GROUP_ID"),
+                       ("auth", "IDENTITY_GROUP"),
+                       ("accounting", "IDENTITY_GROUP")),
+    "portal-user": (("endpoint", "PORTAL_USER"),),
+    "posture-applicable": (("endpoint", "POSTURE_APPLICABLE"),),
+    "profile-server": (("endpoint", "PROFILE_SERVER"),),
+    "custom-attributes": (("endpoint", "CUSTOM_ATTRIBUTES"),),
+    "probe-data": (("endpoint", "PROBE_DATA"),),
+    "authorization-policy": (("auth", "AUTHORIZATION_POLICY"),
+                             ("accounting", "AUTHORIZATION_POLICY")),
+    "authorization-profile": (("auth", "AUTHORIZATION_PROFILES"),),
+    "authorization-rule": (("auth", "AUTHORIZATION_RULE"),),
+    "authentication-policy": (("auth", "AUTHENTICATION_POLICY"),),
+    "policy-set": (("auth", "POLICY_SET_NAME"),),
+    "authentication-method": (("auth", "AUTHENTICATION_METHOD"),),
+    "authentication-protocol": (("auth", "AUTHENTICATION_PROTOCOL"),),
+    "location": (("auth", "LOCATION"), ("auth", "NETWORK_DEVICE_LOCATION"),
+                 ("auth", "NETWORK_DEVICE_GROUPS"),
+                 ("accounting", "LOCATION"),
+                 ("accounting", "NETWORK_DEVICE_LOCATION"),
+                 ("posture", "NAD_LOCATION")),
+    "nad": (("auth", "DEVICE_NAME"), ("auth", "NETWORK_DEVICE_NAME"),
+            ("accounting", "DEVICE_NAME"), ("error", "NETWORK_DEVICE_NAME")),
+    "username": (("auth", "USERNAME"), ("accounting", "USERNAME"),
+                 ("error", "USERNAME")),
+    "identity-store": (("auth", "IDENTITY_STORE"),
+                       ("accounting", "IDENTITY_STORE")),
+    "failure-reason": (("auth", "FAILURE_REASON"),
+                       ("error", "FAILURE_REASON"),
+                       ("posture", "FAILURE_REASON")),
+    "ssid": (("auth", "SSID"), ("accounting", "SSID")),
+    "nas-ip": (("auth", "NAS_IP_ADDRESS"), ("accounting", "NAS_IP_ADDRESS")),
+    "psn": (("auth", "ISE_NODE"), ("accounting", "ISE_NODE"),
+            ("error", "ISE_NODE"), ("posture", "ISE_NODE")),
+    "posture-status": (("posture", "POSTURE_STATUS"),
+                       ("posture", "POLICY_STATUS")),
+    "posture-policy": (("posture", "POSTURE_POLICY_MATCHED"),
+                       ("posture", "POLICY")),
+    "posture-report": (("posture", "POSTURE_REPORT"),),
+    "agent-version": (("posture", "POSTURE_AGENT_VERSION"),),
+    "endpoint-profile": (("endpoint", "ENDPOINT_POLICY"),
+                         ("auth", "ENDPOINT_PROFILE")),
+    "device-type": (("auth", "DEVICE_TYPE"),),
+    "device-groups": (("auth", "NETWORK_DEVICE_GROUPS"),
+                      ("accounting", "DEVICE_GROUPS")),
+    "mdm-server": (("auth", "MDM_SERVER_NAME"),),
+    "security-group": (("auth", "SECURITY_GROUP"),
+                       ("accounting", "SECURITY_GROUP")),
+    "response-time": (("auth", "RESPONSE_TIME"),
+                      ("accounting", "RESPONSE_TIME"),
+                      ("posture", "RESPONSE_TIME")),
+}
 
 COMPLETION_LIMIT = 25
-COMPLETION_CACHE_TTL = 30.0
+COMPLETION_CACHE_TTL = 300.0
+COMPLETION_MIN_LIVE_PREFIX = 2
+ENDPOINT_SEARCH_CANDIDATE_LIMIT = 5000
 
 COMPLETION_STATUS_VALUES = {
     "radius-auth": ("failed", "passed", "success"),
@@ -344,8 +442,11 @@ def build_parser(*, require_command=False):
                          help="ISE ERS filter expression; repeatable")
         if name == "endpoints":
             sub.add_argument(
-                "pattern", nargs="?",
-                help="friendly name search: NAME, PREFIX-*, *-SUFFIX, or *TEXT*")
+                "criteria", nargs="*", metavar="[FIELD=]PATTERN",
+                help="friendly searches, e.g. LAB-* authorization-policy=Permit*")
+
+    sub = command("endpoint-fields", "list searchable endpoint/context fields")
+    sub.add_argument("pattern", nargs="?", help="optional field-name wildcard")
 
     sub = command("sessions", "list active MnT sessions")
     sub.add_argument("--limit", type=int, default=100)
@@ -753,20 +854,221 @@ def _secure_client(client, mac, include_all=False):
 
 
 def _dataconnect_table_columns(dataconnect, table):
-    rows = dataconnect.query("""
-        SELECT column_name, data_type
-        FROM user_tab_columns
-        WHERE table_name = :table_name
-        ORDER BY column_id
-    """, {"table_name": table})
-    return {str(row.get("column_name") or "").upper():
-            str(row.get("data_type") or "").upper()
-            for row in rows if row.get("column_name")}
+    return table_columns(dataconnect, table)
 
 
 def _first_column(columns, *candidates):
     available = set(columns)
     return next((candidate for candidate in candidates if candidate in available), "")
+
+
+def _field_alias(value):
+    return re.sub(r"[^a-z0-9]+", "-", str(value).strip().casefold()).strip("-")
+
+
+def _searchable_datatype(data_type):
+    value = str(data_type).upper()
+    return any(token in value for token in (
+        "CHAR", "CLOB", "NUMBER", "INTEGER", "FLOAT", "DECIMAL", "DATE", "TIMESTAMP"))
+
+
+def _endpoint_field_bindings(dataconnect):
+    """Discover searchable endpoint/context fields from the live ISE schema."""
+    if dataconnect is None:
+        raise CLIError("endpoint field search requires configured Data Connect credentials")
+    schemas = {}
+    for source, spec in ENDPOINT_CONTEXT_SOURCES.items():
+        try:
+            schemas[source] = _dataconnect_table_columns(dataconnect, spec["table"])
+        except Exception:
+            schemas[source] = {}
+        if (source != "endpoint" and not _first_column(
+                schemas[source], *spec["mac"])):
+            # A view without an endpoint correlation key cannot safely participate
+            # in an endpoint search, so do not advertise its fields as searchable.
+            schemas[source] = {}
+
+    bindings = {}
+    rows = []
+    for source, columns in schemas.items():
+        table = ENDPOINT_CONTEXT_SOURCES[source]["table"]
+        for column, data_type in columns.items():
+            if not re.fullmatch(r"[A-Z][A-Z0-9_$#]*", column):
+                continue
+            if not _searchable_datatype(data_type):
+                continue
+            short = _field_alias(column)
+            qualified = f"{source}.{short}"
+            binding = {"source": source, "table": table, "column": column,
+                       "data_type": data_type, "field": qualified}
+            bindings.setdefault(qualified, []).append(binding)
+            bindings.setdefault(short, []).append(binding)
+            rows.append({"field": qualified, "short_field": short, "source": source,
+                         "view": table, "column": column, "data_type": data_type})
+
+    for alias, candidates in ENDPOINT_FIELD_ALIASES.items():
+        resolved = []
+        for source, column in candidates:
+            data_type = schemas.get(source, {}).get(column)
+            if data_type and _searchable_datatype(data_type):
+                resolved.append({
+                    "source": source, "table": ENDPOINT_CONTEXT_SOURCES[source]["table"],
+                    "column": column, "data_type": data_type, "field": alias})
+        if resolved:
+            bindings[alias] = resolved
+    return bindings, rows, schemas
+
+
+def _endpoint_fields(dataconnect, pattern=None):
+    bindings, rows, _schemas = _endpoint_field_bindings(dataconnect)
+    aliases = set(ENDPOINT_FIELD_ALIASES) & set(bindings)
+    for row in rows:
+        short = row["short_field"]
+        if len(bindings.get(short, ())) == 1:
+            aliases.add(short)
+    result = []
+    for alias in sorted(aliases, key=str.casefold):
+        sources = bindings[alias]
+        result.append({
+            "field": alias,
+            "qualified_fields": sorted({item["field"] for item in sources}),
+            "sources": sorted({item["source"] for item in sources}),
+            "views": sorted({item["table"] for item in sources}),
+            "columns": sorted({item["column"] for item in sources}),
+            "data_types": sorted({item["data_type"] for item in sources}),
+        })
+    result.extend({
+        "field": row["field"], "qualified_fields": [row["field"]],
+        "sources": [row["source"]], "views": [row["view"]],
+        "columns": [row["column"]], "data_types": [row["data_type"]],
+    } for row in rows)
+    if pattern:
+        regex = re.compile("^" + re.escape(pattern).replace(r"\*", ".*") + "$", re.I)
+        result = [row for row in result if regex.match(row["field"])]
+    unique = {row["field"]: row for row in result}
+    return [unique[field] for field in sorted(unique, key=str.casefold)]
+
+
+def _parse_endpoint_criteria(items):
+    criteria = []
+    for item in items:
+        field, separator, pattern = str(item).partition("=")
+        if not separator:
+            field, pattern = "name", field
+        field = (_field_alias(field) if "." not in field else
+                 ".".join(_field_alias(part) for part in field.split(".", 1)))
+        if not field or not pattern:
+            raise CLIError(
+                f"invalid endpoint search {item!r}; use FIELD=PATTERN, e.g. location=Berlin-*")
+        criteria.append((field, pattern))
+    return criteria
+
+
+def _sql_pattern(pattern):
+    escaped = (str(pattern).replace("\\", "\\\\").replace("%", "\\%")
+               .replace("_", "\\_").replace("*", "%").replace("?", "_"))
+    return escaped.upper()
+
+
+def _text_expression(alias, column, data_type):
+    if any(token in data_type for token in ("NUMBER", "INTEGER", "FLOAT", "DECIMAL")):
+        return f"TO_CHAR({alias}.{column})"
+    if "DATE" in data_type or "TIMESTAMP" in data_type:
+        return f"TO_CHAR({alias}.{column}, 'YYYY-MM-DD HH24:MI:SS')"
+    return f"{alias}.{column}"
+
+
+def _dataconnect_endpoint_search(dataconnect, criteria, limit, all_rows=False):
+    if limit < 1 or limit > 5000:
+        raise CLIError("--limit must be between 1 and 5000")
+    bindings, _rows, schemas = _endpoint_field_bindings(dataconnect)
+    endpoint_columns = schemas.get("endpoint", {})
+    endpoint_mac = _first_column(endpoint_columns, *ENDPOINT_CONTEXT_SOURCES["endpoint"]["mac"])
+    if not endpoint_columns or not endpoint_mac:
+        raise CLIError("Data Connect ENDPOINTS_DATA lacks a searchable MAC column")
+
+    grouped = {}
+    for field, pattern in criteria:
+        options = bindings.get(field, ())
+        if not options:
+            suggestions = sorted(name for name in bindings if name.startswith(field[:3]))[:5]
+            suffix = f"; try: {', '.join(suggestions)}" if suggestions else \
+                "; run endpoint-fields to list available fields"
+            raise CLIError(f"unknown or unavailable endpoint field {field!r}{suffix}")
+        grouped.setdefault(field, []).append((pattern, options))
+
+    parameters = {}
+    common_table_expressions = []
+    joins = []
+    matched_context_columns = []
+    for field_index, (field, values) in enumerate(grouped.items()):
+        branches = []
+        for value_index, (pattern, options) in enumerate(values):
+            parameter = f"search_{field_index}_{value_index}"
+            parameters[parameter] = _sql_pattern(pattern)
+            for option_index, binding in enumerate(options):
+                source = binding["source"]
+                source_columns = schemas.get(source, {})
+                source_mac = _first_column(
+                    source_columns, *ENDPOINT_CONTEXT_SOURCES[source]["mac"])
+                if not source_mac:
+                    continue
+                alias = f"s{field_index}_{value_index}_{option_index}"
+                expression = _text_expression(
+                    alias,
+                    binding["column"], binding["data_type"])
+                match = f"UPPER({expression}) LIKE :{parameter} ESCAPE '\\'"
+                timestamp = _first_column(
+                    source_columns, *ENDPOINT_CONTEXT_SOURCES[source]["timestamp"])
+                recent = (f" AND {alias}.{timestamp} >= SYSTIMESTAMP - INTERVAL '2' DAY"
+                          if source != "endpoint" and timestamp else "")
+                branches.append(
+                    f"SELECT {alias}.{source_mac} AS match_mac, "
+                    f"{expression} AS match_value "
+                    f"FROM {binding['table']} {alias} "
+                    f"WHERE {alias}.{source_mac} IS NOT NULL{recent} AND {match}")
+        if not branches:
+            raise CLIError(f"endpoint field {field!r} has no MAC-correlatable source")
+        cte = f"matched_{field_index}"
+        union = " UNION ".join(dict.fromkeys(branches))
+        common_table_expressions.append(
+            f"{cte} AS (SELECT match_mac, MIN(match_value) AS match_value "
+            f"FROM ({union}) GROUP BY match_mac "
+            f"FETCH FIRST {ENDPOINT_SEARCH_CANDIDATE_LIMIT} ROWS ONLY)")
+        joins.append(f"JOIN {cte} m{field_index} ON m{field_index}.match_mac = e.{endpoint_mac}")
+        context_alias = f"MATCHED_CONTEXT_{field_index}"
+        matched_context_columns.append((field, context_alias))
+
+    select_expressions = [
+        (f"TO_CHAR(e.{column}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF TZH:TZM') AS {column}"
+         if "TIME ZONE" in data_type else f"e.{column}")
+        for column, data_type in endpoint_columns.items() if _searchable_datatype(data_type)
+    ]
+    select_expressions.extend(
+        f"m{index}.match_value AS {alias}"
+        for index, (_field, alias) in enumerate(matched_context_columns)
+    )
+    order_column = _first_column(endpoint_columns, "UPDATE_TIME", "CREATE_TIME", "HOSTNAME")
+    order = f" ORDER BY e.{order_column} DESC NULLS LAST" if order_column else ""
+    result_limit = ENDPOINT_SEARCH_CANDIDATE_LIMIT if all_rows else limit
+    sql = (
+        f"WITH {', '.join(common_table_expressions)} "
+        f"SELECT {', '.join(select_expressions)} FROM ENDPOINTS_DATA e "
+        f"{' '.join(joins)}{order} FETCH FIRST {result_limit} ROWS ONLY")
+    try:
+        result = dataconnect.query(sql, parameters)
+    except Exception as error:
+        raise CLIError(f"Data Connect endpoint search failed: {error}") from error
+    for row in result:
+        row["matched_filters"] = [f"{field}={pattern}" for field, pattern in criteria]
+        matched_context = {}
+        for field, alias in matched_context_columns:
+            value = row.pop(alias.lower(), None)
+            if value is None:
+                value = row.pop(alias, None)
+            matched_context[field] = value
+        row["matched_context"] = matched_context
+    return result
 
 
 def _dataconnect_report(args, client, dataconnect):
@@ -903,6 +1205,31 @@ def _dataconnect_schema(dataconnect, table=None):
 
 def _execute(args, client, cfg, dataconnect=None):
     command = args.command
+    if command == "endpoint-fields":
+        return _endpoint_fields(dataconnect, args.pattern)
+    if command == "endpoints":
+        criteria = _parse_endpoint_criteria(args.criteria)
+        if criteria and dataconnect is not None:
+            if args.filter:
+                raise CLIError(
+                    "friendly endpoint searches cannot be combined with advanced --filter")
+            return _dataconnect_endpoint_search(
+                dataconnect, criteria, args.limit, all_rows=args.all)
+        if criteria:
+            if len(criteria) != 1 or criteria[0][0] != "name":
+                raise CLIError(
+                    "attribute searches require Data Connect; configure ISE_DATACONNECT_* "
+                    "or use one endpoint name pattern")
+            friendly_filter = _glob_filter("name", criteria[0][1])
+            filters = list(args.filter)
+            if friendly_filter:
+                filters.append(friendly_filter)
+        else:
+            filters = args.filter
+        if client is None:
+            raise CLIError("plain endpoint inventory requires configured ERS credentials")
+        return _ers_rows(client, ERS_INVENTORIES[command], limit=args.limit,
+                         all_rows=args.all, filters=filters)
     if command == "health":
         health = client.health_check()
         result = [
@@ -920,14 +1247,8 @@ def _execute(args, client, cfg, dataconnect=None):
             raise CLIError("ISE returned no deployment-node response")
         return result
     if command in ERS_INVENTORIES:
-        filters = list(args.filter)
-        pattern = getattr(args, "pattern", None)
-        if pattern:
-            friendly_filter = _glob_filter("name", pattern)
-            if friendly_filter:
-                filters.append(friendly_filter)
         return _ers_rows(client, ERS_INVENTORIES[command], limit=args.limit,
-                         all_rows=args.all, filters=filters)
+                         all_rows=args.all, filters=args.filter)
     if command in OPENAPI_INVENTORIES:
         path, unwrap = OPENAPI_INVENTORIES[command]
         result = client.get_pan_api(path, api_name=f"cli_{command}", unwrap=unwrap)
@@ -1143,7 +1464,7 @@ class ISEShell(cmd.Cmd):
         if self.cfg is None:
             self.cfg = _load_config(self.env_file, require_rest=not dataconnect_only)
         if self.client is None and _rest_ready(self.cfg):
-            self.client = ISERestClient(self.cfg)
+            self.client = ISEOperatorClient(self.cfg)
         if self.client is None and not dataconnect_only:
             raise CLIError("ISE_HOST, ISE_MNT_HOST, ISE_USER, and ISE_PASS are required")
         if self.cfg is None:
@@ -1352,8 +1673,9 @@ class ISEShell(cmd.Cmd):
             return [] if positionals else self._quote_values(
                 self._endpoint_values(prefix), prefix)
         if command == "endpoints":
-            return [] if positionals or "*" in prefix else self._quote_values(
-                self._endpoint_values(prefix), prefix)
+            return self._endpoint_search_values(prefix, include_legacy=not positionals)
+        if command == "endpoint-fields":
+            return [] if positionals else self._endpoint_field_name_values(prefix)
         if command == "schema":
             return [] if positionals else list(COMMAND_SCHEMAS)
         if command == "dataconnect-schema":
@@ -1374,6 +1696,40 @@ class ISEShell(cmd.Cmd):
         matches = self._matching((str(field).lower() for field in fields), field_prefix)
         lead = f"{selected}," if separator else ""
         return [lead + match for match in matches]
+
+    def _endpoint_field_name_values(self, prefix=""):
+        def load():
+            values = set(ENDPOINT_FIELD_ALIASES)
+            try:
+                self._completion_runtime("endpoint-fields")
+                values.update(row["field"] for row in _endpoint_fields(self.dataconnect))
+            except Exception:
+                pass
+            return sorted(values, key=str.casefold)
+
+        values = self._cached_completion(("endpoint-field-names",), load)
+        return self._matching(values, prefix)
+
+    def _endpoint_search_values(self, prefix, *, include_legacy=False):
+        if "=" not in prefix:
+            fields = [field + "=" for field in self._endpoint_field_name_values(prefix)]
+            if include_legacy and prefix:
+                fields.extend(self._quote_values(self._endpoint_values(prefix), prefix))
+            return fields
+        field, value_prefix = prefix.split("=", 1)
+        normalized = (".".join(_field_alias(part) for part in field.split(".", 1))
+                      if "." in field else _field_alias(field))
+        candidates = list(ENDPOINT_FIELD_ALIASES.get(normalized, ()))
+        if not candidates and "." in normalized:
+            source, column = normalized.split(".", 1)
+            if source in ENDPOINT_CONTEXT_SOURCES:
+                candidates = [(source, column.replace("-", "_").upper())]
+        values = []
+        for source, column in candidates:
+            table = ENDPOINT_CONTEXT_SOURCES[source]["table"]
+            values.extend(self._dc_values(table, column, value_prefix))
+        return [shlex.quote(f"{field}={value}") for value in values
+                if str(value).casefold().startswith(value_prefix.casefold())]
 
     @staticmethod
     def _get_paths(family):
@@ -1446,16 +1802,24 @@ class ISEShell(cmd.Cmd):
     def _like_prefix(prefix):
         return prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
-    def _dc_values(self, table, column, prefix):
+    def _dc_values(self, table, column, prefix, *, min_prefix=COMPLETION_MIN_LIVE_PREFIX):
+        if len(prefix.strip()) < min_prefix:
+            return ()
         key = ("dc", table, column, prefix.casefold())
 
         def load():
             self._completion_runtime("dataconnect-schema")
             if self.dataconnect is None:
                 return ()
+            source = next((spec for spec in ENDPOINT_CONTEXT_SOURCES.values()
+                           if spec["table"] == table), None)
+            timestamp = source["timestamp"][0] if source and table != "ENDPOINTS_DATA" else ""
+            recent = (f" AND {timestamp} >= SYSTIMESTAMP - INTERVAL '2' DAY"
+                      if timestamp else "")
             sql = (
                 f"SELECT DISTINCT {column} AS value FROM {table} "
-                f"WHERE {column} IS NOT NULL AND UPPER({column}) LIKE :prefix ESCAPE '\\' "
+                f"WHERE {column} IS NOT NULL{recent} "
+                f"AND UPPER({column}) LIKE :prefix ESCAPE '\\' "
                 f"FETCH FIRST {COMPLETION_LIMIT} ROWS ONLY")
             rows = self.dataconnect.query(
                 sql, {"prefix": self._like_prefix(prefix.upper())})
@@ -1464,6 +1828,8 @@ class ISEShell(cmd.Cmd):
         return self._cached_completion(key, load)
 
     def _endpoint_values(self, prefix):
+        if len(prefix.strip()) < COMPLETION_MIN_LIVE_PREFIX:
+            return ()
         key = ("endpoints", prefix.casefold())
 
         def load():
@@ -1492,7 +1858,7 @@ class ISEShell(cmd.Cmd):
             known.update(value for key, value in report.items()
                          if key in ("table", "condition_table"))
             known.update(report.get("tables", {}).values())
-        live = self._dc_values("USER_TAB_COLUMNS", "TABLE_NAME", prefix)
+        live = self._dc_values("USER_TAB_COLUMNS", "TABLE_NAME", prefix, min_prefix=1)
         return sorted(known | set(live), key=str.casefold)
 
     def _node_values(self, prefix):
@@ -1537,7 +1903,7 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdo
             dataconnect_only = args.command in DATACONNECT_COMMANDS
             cfg = _load_config(args.env_file, require_rest=not dataconnect_only)
             if _rest_ready(cfg):
-                client = ISERestClient(cfg)
+                client = ISEOperatorClient(cfg)
         elif cfg is None:
             cfg = getattr(client, "cfg", None)
         if (dataconnect is None and cfg is not None

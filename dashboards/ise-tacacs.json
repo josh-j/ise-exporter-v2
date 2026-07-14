@@ -1,90 +1,536 @@
 {
-  "annotations": {"list": []},
+  "annotations": {
+    "list": []
+  },
   "description": "Device Administration configuration and bounded per-account TACACS activity for Cisco ISE 3.3 Patch 11.",
   "editable": true,
   "graphTooltip": 1,
   "panels": [
     {
-      "id": 1, "type": "row", "title": "Device Administration Account Health", "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
-    },
-    {
-      "id": 2, "type": "stat", "title": "Internal Accounts",
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
-      "targets": [{"expr": "ise_tacacs_internal_users_total or vector(0)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
-    },
-    {
-      "id": 3, "type": "stat", "title": "Suspected Unused",
-      "description": "Enabled accounts whose account object has not changed within the configured review period. Review hint, not proof of last use.",
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
-      "targets": [{"expr": "sum(ise_tacacs_suspected_unused_internal_user) or vector(0)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
-    },
-    {
-      "id": 4, "type": "stat", "title": "Data Connect Activity Up",
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
-      "targets": [{"expr": "ise_tacacs_dataconnect_up or vector(0)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
-      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}]}, "overrides": []}
-    },
-    {
-      "id": 5, "type": "stat", "title": "Recent TACACS Events",
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
-      "targets": [{"expr": "sum(ise_tacacs_account_authentication_events) + sum(ise_tacacs_account_authorization_events) + sum(ise_tacacs_accounting_events) or vector(0)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
-    },
-    {
-      "id": 6, "type": "table", "title": "Internal Account Inventory",
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 5},
-      "targets": [{"expr": "ise_tacacs_internal_user_info", "format": "table", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
-      "options": {"showHeader": true},
-      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true, "Value": true}}}]
-    },
-    {
-      "id": 7, "type": "table", "title": "Account Hygiene Review Queue",
-      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 5},
+      "id": 90,
+      "type": "stat",
+      "title": "Configuration Dataset",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
-        {"expr": "ise_tacacs_suspected_unused_internal_user", "format": "table", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_tacacs_internal_user_hygiene_risk", "format": "table", "instant": true, "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {
+          "expr": "max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
       ],
-      "options": {"showHeader": true}
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
     },
     {
-      "id": 8, "type": "bargauge", "title": "Authentication by Account and Result",
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 14},
-      "targets": [{"expr": "sort_desc(sum by (username, status, device) (ise_tacacs_account_authentication_events))", "legendFormat": "{{username}} / {{status}} / {{device}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
+      "id": 91,
+      "type": "stat",
+      "title": "Activity Dataset",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
     },
     {
-      "id": 9, "type": "table", "title": "Authorization Policy, Profile, Command Set and Account",
-      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 14},
-      "targets": [{"expr": "sort_desc(ise_tacacs_account_authorization_events)", "format": "table", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
-      "options": {"showHeader": true}
+      "id": 92,
+      "type": "stat",
+      "title": "Configuration Collection Age",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"tacacs_config\",source=\"rest\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 7200
+              },
+              {
+                "color": "red",
+                "value": 10800
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
-      "id": 10, "type": "table", "title": "Accounting Commands by Account and Device",
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 23},
-      "targets": [{"expr": "sort_desc(ise_tacacs_accounting_events)", "format": "table", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
-      "options": {"showHeader": true}
+      "id": 93,
+      "type": "stat",
+      "title": "Activity Collection Age",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"tacacs_activity\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 600
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
-      "id": 11, "type": "table", "title": "Last TACACS Evidence by Account",
+      "id": 1,
+      "type": "row",
+      "title": "Device Administration Account Health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Internal Accounts",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_internal_users_total or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Suspected Unused",
+      "description": "Enabled accounts whose account object has not changed within the configured review period. Review hint, not proof of last use.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(ise_tacacs_suspected_unused_internal_user) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Data Connect Activity Up",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Recent TACACS Events",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(ise_tacacs_events_total) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Internal Account Inventory",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_internal_user_info",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "Value": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Account Hygiene Review Queue",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_suspected_unused_internal_user",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_tacacs_internal_user_hygiene_risk",
+          "format": "table",
+          "instant": true,
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Authentication by Account and Result",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (username, status, device) (ise_tacacs_account_authentication_events))",
+          "legendFormat": "{{username}} / {{status}} / {{device}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Authorization Policy, Profile, Command Set and Account",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(ise_tacacs_account_authorization_events)",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Accounting Command Families by Account and Device",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(ise_tacacs_accounting_events)",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Last TACACS Evidence by Account",
       "description": "Seconds since the most recent authentication, authorization, or accounting record in the bounded Data Connect views.",
-      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 23},
-      "targets": [{"expr": "time() - ise_tacacs_account_last_seen_timestamp", "format": "table", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
-      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "options": {"showHeader": true}
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "targets": [
+        {
+          "expr": "time() - ise_tacacs_account_last_seen_timestamp",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
     },
     {
-      "id": 12, "type": "bargauge", "title": "Configured Device Admin Objects",
-      "gridPos": {"h": 7, "w": 24, "x": 0, "y": 32},
-      "targets": [{"expr": "ise_tacacs_policy_objects_total", "legendFormat": "{{object_type}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
+      "id": 12,
+      "type": "bargauge",
+      "title": "Configured Device Admin Objects",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_policy_objects_total",
+          "legendFormat": "{{object_type}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
     }
   ],
   "refresh": "1m",
   "schemaVersion": 39,
-  "tags": ["ise", "tacacs", "device-admin", "dataconnect"],
-  "templating": {"list": []},
-  "time": {"from": "now-2d", "to": "now"},
+  "tags": [
+    "ise",
+    "tacacs",
+    "device-admin",
+    "dataconnect"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-2d",
+    "to": "now"
+  },
   "timezone": "browser",
   "title": "ISE / TACACS Device Administration",
   "uid": "ise-tacacs",
   "version": 1,
-  "__inputs": [{"name": "DS_PROMETHEUS", "label": "Prometheus", "type": "datasource", "pluginId": "prometheus", "pluginName": "Prometheus"}]
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ]
 }

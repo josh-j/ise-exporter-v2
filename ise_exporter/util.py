@@ -177,11 +177,17 @@ def normalize_agent_version(value):
 def parse_ise_date(date_str):
     if not date_str:
         return None
+    text = str(date_str).strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+    except ValueError:
+        pass
     for fmt in ("%a %b %d %H:%M:%S UTC %Y", "%a %b %d %H:%M:%S %Y", "%a %b %d %H:%M:%S %Z %Y"):
         try:
-            dt = datetime.strptime(date_str, fmt)
+            dt = datetime.strptime(text, fmt)
             return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
         except ValueError:
             continue
-    logger.debug("Could not parse date: %s", date_str)
+    logger.debug("Could not parse date: %s", text)
     return None

@@ -78,6 +78,25 @@ def test_summary_excludes_password(monkeypatch):
     assert cfg.dataconnect_host == "mnt1.example.mil"
 
 
+def test_rest_and_mnt_tls_are_verified_by_default_with_independent_overrides(monkeypatch):
+    for name in ("ISE_REST_SSL_VERIFY", "ISE_REST_CA_BUNDLE",
+                 "ISE_MNT_SSL_VERIFY", "ISE_MNT_CA_BUNDLE"):
+        monkeypatch.delenv(name, raising=False)
+    cfg = Config.from_env()
+    assert cfg.rest_ssl_verify is True
+    assert cfg.mnt_ssl_verify is True
+
+    monkeypatch.setenv("ISE_REST_SSL_VERIFY", "false")
+    monkeypatch.setenv("ISE_REST_CA_BUNDLE", "/ca/rest.pem")
+    monkeypatch.setenv("ISE_MNT_SSL_VERIFY", "true")
+    monkeypatch.setenv("ISE_MNT_CA_BUNDLE", "/ca/mnt.pem")
+    cfg = Config.from_env()
+    assert cfg.rest_ssl_verify is False
+    assert cfg.rest_ca_bundle == "/ca/rest.pem"
+    assert cfg.mnt_ssl_verify is True
+    assert cfg.mnt_ca_bundle == "/ca/mnt.pem"
+
+
 def test_env_example_is_parseable_ise33_80k_production_profile():
     path = Path(__file__).parents[1] / ".env.example"
     values = dotenv_values(path, interpolate=False)
@@ -86,6 +105,8 @@ def test_env_example_is_parseable_ise33_80k_production_profile():
     assert values["ISE_DATACONNECT_MAX_GROUPS"] == "5000"
     assert values["ISE_DATACONNECT_SERVICE"] == "cpm10"
     assert values["ISE_DATACONNECT_SSL_VERIFY"] == "true"
+    assert values["ISE_REST_SSL_VERIFY"] == "true"
+    assert values["ISE_MNT_SSL_VERIFY"] == "true"
     # systemd EnvironmentFile= does not support trailing inline comments; keeping
     # comments on their own lines prevents them becoming part of numeric/boolean values.
     assignments = [line for line in path.read_text().splitlines()

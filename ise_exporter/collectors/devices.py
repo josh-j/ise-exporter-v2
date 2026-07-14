@@ -1,18 +1,20 @@
-"""devices collector (port of collect_device_metrics). Enumerates ERS network
-devices, derives device-type / location / ops-owner from the Network Device Group
-hierarchy, and refreshes the shared `mappings` dict (keyed by NAD IP) that
-sessions / authz / streaming join against for their labels."""
+"""Collect bounded-cardinality network-device inventory from ERS."""
 import logging
 from collections import defaultdict
-from ipaddress import ip_address, ip_network
 
 from .. import metrics
-from ..util import clear_metric
+from ..snapshots import replace_metric_snapshot
 from . import observe, CollectorFailed
 
 logger = logging.getLogger(__name__)
 
 _cache = None
+_METRICS = (
+    metrics.ise_network_devices_total,
+    metrics.ise_network_devices_by_location,
+    metrics.ise_network_devices_by_ops_owner,
+    metrics.ise_network_devices_by_type,
+)
 
 
 def _device_cache(cfg):
@@ -50,36 +52,21 @@ def _classify(det):
     return name, ip, device_type, location, ops_owner
 
 
-def _nad_networks(det, name, location, ops_owner):
-    networks = []
-    for entry in det.get("NetworkDeviceIPList", []):
-        raw_ip = entry.get("ipaddress", entry.get("ipAddress"))
-        if not raw_ip:
-            continue
-        mask = entry.get("mask", 32)
-        try:
-            network = ip_network(f"{raw_ip}/{mask}", strict=False)
-        except (TypeError, ValueError):
-            logger.warning("Devices: ignoring invalid NAD IP entry %r/%r for %s",
-                           raw_ip, mask, name)
-            continue
-        networks.append((network, name, location, ops_owner))
-    return networks
-
-
-def collect(client, cfg, mappings):
+def collect(client, cfg):
     with observe("devices"):
         devices = client.get_ers("/config/networkdevice", {"size": 100},
                                  get_all=True, api_name="ers_devices")
-        if not devices:
-            raise CollectorFailed("no network devices returned")
-        metrics.ise_network_devices_total.set(len(devices))
+        if devices is None:
+            raise CollectorFailed("network device inventory request failed")
+        if not isinstance(devices, list):
+            raise CollectorFailed("network device inventory response was not a list")
 
         if not cfg.collect_device_details:
+            replace_metric_snapshot(
+                _METRICS, (lambda: metrics.ise_network_devices_total.set(len(devices)),))
             return
 
         cache = _device_cache(cfg)
-        ops_map, host_map, loc_map, network_map = {}, {}, {}, []
         loc_counts = defaultdict(int)
         ops_counts = defaultdict(int)
         type_counts = defaultdict(int)
@@ -93,59 +80,22 @@ def collect(client, cfg, mappings):
                 raw = client.get_ers(f"/config/networkdevice/{dev_id}", api_name="ers_device_detail")
                 det = raw.get("NetworkDevice") if raw else None
                 if not det:
-                    continue
+                    raise CollectorFailed(f"network device detail request failed for {dev_id}")
                 cache.set(dev_id, det)
 
-            name, ip, device_type, location, ops_owner = _classify(det)
-            ops_map[ip] = ops_owner
-            host_map[ip] = name
-            loc_map[ip] = location
-            network_map.extend(_nad_networks(det, name, location, ops_owner))
+            _name, _ip, device_type, location, ops_owner = _classify(det)
             loc_counts[location] += 1
             ops_counts[ops_owner] += 1
             type_counts[device_type] += 1
 
-        # replace shared mappings wholesale (drops devices removed since last cycle).
-        # Rebind each key atomically rather than clear()+update(), so the streamer
-        # thread reading mappings["hostname"] never observes a half-empty dict.
-        mappings["ops_owner"] = ops_map
-        mappings["hostname"] = host_map
-        mappings["location"] = loc_map
-        mappings["networks"] = network_map
+        def publish():
+            metrics.ise_network_devices_total.set(len(devices))
+            for key, value in loc_counts.items():
+                metrics.ise_network_devices_by_location.labels(location=key).set(value)
+            for key, value in ops_counts.items():
+                metrics.ise_network_devices_by_ops_owner.labels(ops_owner=key).set(value)
+            for key, value in type_counts.items():
+                metrics.ise_network_devices_by_type.labels(device_type=key).set(value)
 
-        clear_metric(metrics.ise_network_devices_by_location)
-        clear_metric(metrics.ise_network_devices_by_ops_owner)
-        clear_metric(metrics.ise_network_devices_by_type)
-        for k, v in loc_counts.items():
-            metrics.ise_network_devices_by_location.labels(location=k).set(v)
-        for k, v in ops_counts.items():
-            metrics.ise_network_devices_by_ops_owner.labels(ops_owner=k).set(v)
-        for k, v in type_counts.items():
-            metrics.ise_network_devices_by_type.labels(device_type=k).set(v)
+        replace_metric_snapshot(_METRICS, (publish,))
         logger.info("Devices: %d total, %d locations", len(devices), len(loc_counts))
-
-
-def nad_labels(mappings, nas_ip, name_hint=None, loc_hint=None):
-    """(hostname, location, ops_owner) for a NAD IP, honoring per-session hints
-    when the session payload carries its own device name / location."""
-    hostname = name_hint or mappings["hostname"].get(nas_ip)
-    location = loc_hint or mappings["location"].get(nas_ip)
-    ops_owner = mappings["ops_owner"].get(nas_ip)
-
-    if ops_owner is None:
-        try:
-            addr = ip_address(nas_ip)
-        except (TypeError, ValueError):
-            addr = None
-        if addr is not None:
-            for network, net_name, net_location, net_owner in mappings.get("networks", []):
-                if addr in network:
-                    hostname = hostname or net_name
-                    location = location or net_location
-                    ops_owner = net_owner
-                    break
-
-    hostname = hostname or nas_ip or "unknown"
-    location = location or "Unknown"
-    ops_owner = ops_owner or "unknown"
-    return hostname, location, ops_owner

@@ -8,11 +8,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from .. import metrics
-from ..util import clear_metric, normalize_bool_label
+from ..util import normalize_bool_label
 from . import CollectorFailed, observe
+from .dataconnect_common import replace_snapshot
 
 
 _CONFIG_METRICS = (
+    metrics.ise_tacacs_internal_users_total,
+    metrics.ise_tacacs_internal_user_detail_coverage,
     metrics.ise_tacacs_internal_user_info,
     metrics.ise_tacacs_internal_user_created_timestamp,
     metrics.ise_tacacs_internal_user_modified_timestamp,
@@ -26,6 +29,10 @@ _ACTIVITY_METRICS = (
     metrics.ise_tacacs_account_authorization_events,
     metrics.ise_tacacs_accounting_events,
     metrics.ise_tacacs_account_last_seen_timestamp,
+    metrics.ise_tacacs_events_total,
+    metrics.ise_tacacs_topk_groups_returned,
+    metrics.ise_tacacs_topk_groups_total,
+    metrics.ise_tacacs_topk_truncated,
 )
 
 
@@ -47,84 +54,150 @@ def _label(value):
     return text or "none"
 
 
+_FAILURE_CLASS_SQL = """CASE
+    WHEN TRIM(failure_reason) IS NULL THEN 'none'
+    WHEN LOWER(failure_reason) LIKE '%password%'
+      OR LOWER(failure_reason) LIKE '%credential%'
+      OR LOWER(failure_reason) LIKE '%authentication failed%' THEN 'credentials'
+    WHEN LOWER(failure_reason) LIKE '%identity store%'
+      OR LOWER(failure_reason) LIKE '%user not found%'
+      OR LOWER(failure_reason) LIKE '%unknown user%' THEN 'identity_store'
+    WHEN LOWER(failure_reason) LIKE '%denied%'
+      OR LOWER(failure_reason) LIKE '%reject%'
+      OR LOWER(failure_reason) LIKE '%policy%'
+      OR LOWER(failure_reason) LIKE '%not permitted%' THEN 'policy_denied'
+    WHEN LOWER(failure_reason) LIKE '%timeout%'
+      OR LOWER(failure_reason) LIKE '%timed out%'
+      OR LOWER(failure_reason) LIKE '%no response%' THEN 'timeout'
+    WHEN LOWER(failure_reason) LIKE '%protocol%'
+      OR LOWER(failure_reason) LIKE '%tacacs%' THEN 'protocol'
+    ELSE 'other' END"""
+
+_COMMAND_FAMILY_SQL = """CASE
+    WHEN TRIM(command) IS NULL THEN 'none'
+    WHEN LOWER(TRIM(command)) IN
+      ('show', 'configure', 'interface', 'router', 'clear', 'debug',
+       'copy', 'write', 'ping', 'traceroute', 'terminal', 'no')
+      THEN LOWER(TRIM(command))
+    ELSE 'other' END"""
+
+
 def _collect_dataconnect(dataconnect, cfg):
     limit = max(1, int(getattr(cfg, "dataconnect_max_groups", 5000)))
     queries = {
+        "authentication_summary": f"""
+            SELECT NVL(SUM(hits), 0) AS total_events, COUNT(*) AS total_groups FROM (
+                SELECT COUNT(*) AS hits
+                FROM tacacs_authentication_last_two_days
+                GROUP BY username, status, device_name, authentication_policy,
+                         identity_store, {_FAILURE_CLASS_SQL}
+            )
+        """,
         "authentication": f"""
             SELECT username, status, device_name, authentication_policy,
-                   identity_store, failure_reason, COUNT(*) AS hits,
+                   identity_store, {_FAILURE_CLASS_SQL} AS failure_class, COUNT(*) AS hits,
                    MAX(epoch_time) AS last_seen
             FROM tacacs_authentication_last_two_days
             GROUP BY username, status, device_name, authentication_policy,
-                     identity_store, failure_reason
+                     identity_store, {_FAILURE_CLASS_SQL}
             ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "authorization_summary": """
+            SELECT NVL(SUM(hits), 0) AS total_events, COUNT(*) AS total_groups FROM (
+                SELECT COUNT(*) AS hits
+                FROM tacacs_authorization_last_two_days
+                GROUP BY username, status, device_name, authorization_policy,
+                         shell_profile, matched_command_set
+            )
         """,
         "authorization": f"""
             SELECT username, status, device_name, authorization_policy,
-                   shell_profile, matched_command_set, command_from_device,
+                   shell_profile, matched_command_set,
                    COUNT(*) AS hits, MAX(epoch_time) AS last_seen
             FROM tacacs_authorization_last_two_days
             GROUP BY username, status, device_name, authorization_policy,
-                     shell_profile, matched_command_set, command_from_device
+                     shell_profile, matched_command_set
             ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
+        """,
+        "accounting_summary": f"""
+            SELECT NVL(SUM(hits), 0) AS total_events, COUNT(*) AS total_groups FROM (
+                SELECT COUNT(*) AS hits
+                FROM tacacs_accounting_last_two_days
+                GROUP BY username, status, device_name, {_COMMAND_FAMILY_SQL}
+            )
         """,
         "accounting": f"""
             SELECT username, status, device_name,
-                   TRIM(command || ' ' || command_args) AS command,
+                   {_COMMAND_FAMILY_SQL} AS command_family,
                    COUNT(*) AS hits, MAX(epoch_time) AS last_seen
             FROM tacacs_accounting_last_two_days
-            GROUP BY username, status, device_name,
-                     TRIM(command || ' ' || command_args)
+            GROUP BY username, status, device_name, {_COMMAND_FAMILY_SQL}
             ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
         """,
     }
     rows = {kind: dataconnect.query(sql) for kind, sql in queries.items()}
 
-    for metric in _ACTIVITY_METRICS:
-        clear_metric(metric)
+    def publish():
+        last_seen = {}
+        for row in rows["authentication"]:
+            username = _label(row.get("username"))
+            metrics.ise_tacacs_account_authentication_events.labels(
+                username=username,
+                status=_label(row.get("status")),
+                device=_label(row.get("device_name")),
+                policy=_label(row.get("authentication_policy")),
+                identity_store=_label(row.get("identity_store")),
+                failure_class=_label(row.get("failure_class")),
+            ).set(int(row.get("hits") or 0))
+            last_seen[(username, "authentication")] = max(
+                last_seen.get((username, "authentication"), 0),
+                int(row.get("last_seen") or 0))
 
-    last_seen = {}
-    for row in rows["authentication"]:
-        username = _label(row.get("username"))
-        metrics.ise_tacacs_account_authentication_events.labels(
-            username=username,
-            status=_label(row.get("status")),
-            device=_label(row.get("device_name")),
-            policy=_label(row.get("authentication_policy")),
-            identity_store=_label(row.get("identity_store")),
-            failure_reason=_label(row.get("failure_reason")),
-        ).set(int(row.get("hits") or 0))
-        last_seen[(username, "authentication")] = max(
-            last_seen.get((username, "authentication"), 0), int(row.get("last_seen") or 0))
+        for row in rows["authorization"]:
+            username = _label(row.get("username"))
+            metrics.ise_tacacs_account_authorization_events.labels(
+                username=username,
+                status=_label(row.get("status")),
+                device=_label(row.get("device_name")),
+                policy=_label(row.get("authorization_policy")),
+                shell_profile=_label(row.get("shell_profile")),
+                command_set=_label(row.get("matched_command_set")),
+            ).set(int(row.get("hits") or 0))
+            last_seen[(username, "authorization")] = max(
+                last_seen.get((username, "authorization"), 0),
+                int(row.get("last_seen") or 0))
 
-    for row in rows["authorization"]:
-        username = _label(row.get("username"))
-        metrics.ise_tacacs_account_authorization_events.labels(
-            username=username,
-            status=_label(row.get("status")),
-            device=_label(row.get("device_name")),
-            policy=_label(row.get("authorization_policy")),
-            shell_profile=_label(row.get("shell_profile")),
-            command_set=_label(row.get("matched_command_set")),
-            command=_label(row.get("command_from_device")),
-        ).set(int(row.get("hits") or 0))
-        last_seen[(username, "authorization")] = max(
-            last_seen.get((username, "authorization"), 0), int(row.get("last_seen") or 0))
+        for row in rows["accounting"]:
+            username = _label(row.get("username"))
+            metrics.ise_tacacs_accounting_events.labels(
+                username=username,
+                status=_label(row.get("status")),
+                device=_label(row.get("device_name")),
+                command_family=_label(row.get("command_family")),
+            ).set(int(row.get("hits") or 0))
+            last_seen[(username, "accounting")] = max(
+                last_seen.get((username, "accounting"), 0),
+                int(row.get("last_seen") or 0))
 
-    for row in rows["accounting"]:
-        username = _label(row.get("username"))
-        metrics.ise_tacacs_accounting_events.labels(
-            username=username,
-            status=_label(row.get("status")),
-            device=_label(row.get("device_name")),
-            command=_label(row.get("command")),
-        ).set(int(row.get("hits") or 0))
-        last_seen[(username, "accounting")] = max(
-            last_seen.get((username, "accounting"), 0), int(row.get("last_seen") or 0))
+        for (username, event_type), timestamp in last_seen.items():
+            metrics.ise_tacacs_account_last_seen_timestamp.labels(
+                username=username, event_type=event_type).set(timestamp)
 
-    for (username, event_type), timestamp in last_seen.items():
-        metrics.ise_tacacs_account_last_seen_timestamp.labels(
-            username=username, event_type=event_type).set(timestamp)
+        for event_type in ("authentication", "authorization", "accounting"):
+            summary_rows = rows[f"{event_type}_summary"]
+            summary = summary_rows[0] if summary_rows else {}
+            total_events = int(summary.get("total_events") or 0)
+            total_groups = int(summary.get("total_groups") or 0)
+            returned = len(rows[event_type])
+            metrics.ise_tacacs_events_total.labels(event_type=event_type).set(total_events)
+            metrics.ise_tacacs_topk_groups_returned.labels(
+                event_type=event_type).set(returned)
+            metrics.ise_tacacs_topk_groups_total.labels(
+                event_type=event_type).set(total_groups)
+            metrics.ise_tacacs_topk_truncated.labels(
+                event_type=event_type).set(returned < total_groups)
+
+    replace_snapshot(_ACTIVITY_METRICS, (publish,))
 
 
 def collect_config(client, cfg):
@@ -134,34 +207,30 @@ def collect_config(client, cfg):
             api_name="ers_tacacs_internal_users")
         policy_sets = client.get_pan_api(
             "/policy/device-admin/policy-set", api_name="tacacs_policy_sets")
-        if resources is None and policy_sets is None:
-            raise CollectorFailed("no TACACS internal-user or Device Admin policy data")
-
-        resources = resources or []
+        if not isinstance(resources, list):
+            raise CollectorFailed("TACACS internal-user inventory request failed")
+        if not isinstance(policy_sets, list):
+            raise CollectorFailed("Device Admin policy-set request failed")
         limit = max(0, getattr(cfg, "tacacs_internal_user_max", 1000))
         selected = resources[:limit] if limit else []
 
         def fetch(resource):
             user_id = resource.get("id") if isinstance(resource, dict) else None
             if not user_id:
-                return None
+                raise CollectorFailed("internal-user inventory row has no id")
             result = client.get_ers(
                 f"/config/internaluser/{user_id}", api_name="ers_tacacs_internal_user_detail")
-            detail = ((result or {}).get("InternalUser")
-                      if isinstance(result, dict) else None)
-            # The list row still contains a useful name/id when the per-user GET is
-            # forbidden or transiently fails. Keep inventory panels populated and
-            # expose detail coverage instead of silently dropping the account.
+            detail = (result.get("InternalUser") if isinstance(result, dict) else None)
+            if not isinstance(detail, dict):
+                raise CollectorFailed(f"internal-user detail request failed for {user_id}")
             merged = dict(resource) if isinstance(resource, dict) else {}
-            if isinstance(detail, dict):
-                merged.update(detail)
-                merged["_detail_fetched"] = True
+            merged.update(detail)
+            merged["_detail_fetched"] = True
             return merged or None
 
         with ThreadPoolExecutor(max_workers=max(1, getattr(cfg, "max_workers", 10))) as pool:
             users = [user for user in pool.map(fetch, selected) if isinstance(user, dict)]
 
-        policy_sets = policy_sets if isinstance(policy_sets, list) else []
         auth_rows = []
         authz_rows = []
         for policy_set in policy_sets:
@@ -174,62 +243,67 @@ def collect_config(client, cfg):
             authorization = client.get_pan_api(
                 f"/policy/device-admin/policy-set/{policy_id}/authorization",
                 api_name="tacacs_authorization_rules")
-            auth_rows.extend((policy_set, row) for row in (authentication or [])
+            if not isinstance(authentication, list) or not isinstance(authorization, list):
+                raise CollectorFailed(
+                    f"Device Admin rules request failed for policy set {policy_id}")
+            auth_rows.extend((policy_set, row) for row in authentication
                              if isinstance(row, dict))
-            authz_rows.extend((policy_set, row) for row in (authorization or [])
+            authz_rows.extend((policy_set, row) for row in authorization
                               if isinstance(row, dict))
 
         command_sets = client.get_pan_api(
             "/policy/device-admin/command-sets", api_name="tacacs_command_sets")
         shell_profiles = client.get_pan_api(
             "/policy/device-admin/shell-profiles", api_name="tacacs_shell_profiles")
+        if not isinstance(command_sets, list) or not isinstance(shell_profiles, list):
+            raise CollectorFailed("Device Admin object inventory request failed")
 
-        for metric in _CONFIG_METRICS:
-            clear_metric(metric)
-        metrics.ise_tacacs_internal_users_total.set(len(resources))
         detail_count = sum(user.get("_detail_fetched") is True for user in users)
-        metrics.ise_tacacs_internal_user_detail_coverage.set(
-            detail_count / len(selected) if selected else 1.0)
-
         review_days = max(1, getattr(cfg, "tacacs_unused_account_days", 180))
         cutoff = datetime.now(timezone.utc).timestamp() - review_days * 86400
-        for user in users:
-            username = str(user.get("name") or "unknown")
-            enabled = normalize_bool_label(user.get("enabled"))
-            metrics.ise_tacacs_internal_user_info.labels(
-                username=username,
-                enabled=enabled,
-                password_never_expires=normalize_bool_label(user.get("passwordNeverExpires")),
-                change_password=normalize_bool_label(user.get("changePassword")),
-                identity_store=str(user.get("passwordIDStore") or "unknown"),
-            ).set(1)
-            password_never_expires = normalize_bool_label(user.get("passwordNeverExpires"))
-            if enabled == "true" and password_never_expires == "true":
-                metrics.ise_tacacs_internal_user_hygiene_risk.labels(
-                    username=username, risk="password_never_expires").set(1)
-            if normalize_bool_label(user.get("changePassword")) == "true":
-                metrics.ise_tacacs_internal_user_hygiene_risk.labels(
-                    username=username, risk="change_password_required").set(1)
-            for field, metric in (
-                    ("dateCreated", metrics.ise_tacacs_internal_user_created_timestamp),
-                    ("dateModified", metrics.ise_tacacs_internal_user_modified_timestamp)):
-                timestamp = _timestamp(user.get(field))
-                if timestamp is not None:
-                    metric.labels(username=username).set(timestamp)
-            modified = _timestamp(user.get("dateModified"))
-            if enabled == "true" and modified is not None and modified < cutoff:
-                metrics.ise_tacacs_suspected_unused_internal_user.labels(
-                    username=username, reason=f"object_not_modified_{review_days}d").set(1)
-
         object_counts = {
             "policy_sets": len(policy_sets),
             "authentication_rules": len(auth_rows),
             "authorization_rules": len(authz_rows),
-            "command_sets": len(command_sets) if isinstance(command_sets, list) else 0,
-            "shell_profiles": len(shell_profiles) if isinstance(shell_profiles, list) else 0,
+            "command_sets": len(command_sets),
+            "shell_profiles": len(shell_profiles),
         }
-        for object_type, count in object_counts.items():
-            metrics.ise_tacacs_policy_objects_total.labels(object_type=object_type).set(count)
+
+        def publish():
+            metrics.ise_tacacs_internal_users_total.set(len(resources))
+            metrics.ise_tacacs_internal_user_detail_coverage.set(
+                detail_count / len(selected) if selected else 1.0)
+            for user in users:
+                username = str(user.get("name") or "unknown")
+                enabled = normalize_bool_label(user.get("enabled"))
+                password_never_expires = normalize_bool_label(user.get("passwordNeverExpires"))
+                change_password = normalize_bool_label(user.get("changePassword"))
+                metrics.ise_tacacs_internal_user_info.labels(
+                    username=username, enabled=enabled,
+                    password_never_expires=password_never_expires,
+                    change_password=change_password,
+                    identity_store=str(user.get("passwordIDStore") or "unknown")).set(1)
+                if enabled == "true" and password_never_expires == "true":
+                    metrics.ise_tacacs_internal_user_hygiene_risk.labels(
+                        username=username, risk="password_never_expires").set(1)
+                if change_password == "true":
+                    metrics.ise_tacacs_internal_user_hygiene_risk.labels(
+                        username=username, risk="change_password_required").set(1)
+                for field, metric in (
+                        ("dateCreated", metrics.ise_tacacs_internal_user_created_timestamp),
+                        ("dateModified", metrics.ise_tacacs_internal_user_modified_timestamp)):
+                    timestamp = _timestamp(user.get(field))
+                    if timestamp is not None:
+                        metric.labels(username=username).set(timestamp)
+                modified = _timestamp(user.get("dateModified"))
+                if enabled == "true" and modified is not None and modified < cutoff:
+                    metrics.ise_tacacs_suspected_unused_internal_user.labels(
+                        username=username, reason=f"object_not_modified_{review_days}d").set(1)
+            for object_type, count in object_counts.items():
+                metrics.ise_tacacs_policy_objects_total.labels(
+                    object_type=object_type).set(count)
+
+        replace_snapshot(_CONFIG_METRICS, (publish,))
 
 
 def collect_activity(dataconnect, cfg):

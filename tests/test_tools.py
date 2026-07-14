@@ -54,3 +54,21 @@ def test_install_script_supports_ubuntu_noble_with_standard_packages():
     assert "ubuntu-24.04" in workflow
     assert "sudo ./deploy/install.sh" in workflow
     assert "import ise_exporter, oracledb, requests" in workflow
+
+
+def test_fresh_install_never_starts_placeholder_configuration():
+    root = Path(__file__).parents[1]
+    script = (root / "deploy/install.sh").read_text()
+    workflow = (root / ".github/workflows/ubuntu-noble-install.yml").read_text()
+
+    assert 'systemctl enable "$SERVICE_NAME"' in script
+    assert 'systemctl enable --now "$SERVICE_NAME"' not in script
+    assert 'PLACEHOLDER_CONFIG=0' in script
+    assert 'ISE_DATACONNECT_PASSWORD=changeme' in script
+    assert 'systemctl stop "$SERVICE_NAME"' in script
+    assert 'restarting active $SERVICE_NAME (upgrade)' in script
+    assert 'preserving operator-selected stopped state' in script
+    assert 'intentionally NOT running' in script
+    assert 'systemctl is-enabled --quiet ise-exporter' in workflow
+    assert 'systemctl is-active --quiet ise-exporter' in workflow
+    assert 'property=NRestarts' in workflow

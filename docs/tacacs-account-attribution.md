@@ -53,10 +53,13 @@ ISE_DATACONNECT_MAX_GROUPS=5000
 The collector emits snapshot gauges for the two-day views:
 
 - `ise_tacacs_account_authentication_events` by account, status, NAD, policy,
-  identity store, and failure reason.
+  identity store, and bounded failure class.
 - `ise_tacacs_account_authorization_events` by account, status, NAD, policy,
-  shell profile, command set, and command.
-- `ise_tacacs_accounting_events` by account, status, NAD, and command.
+  shell profile, and command set.
+- `ise_tacacs_accounting_events` by account, status, NAD, and bounded command family.
+- `ise_tacacs_events_total` provides exact per-view event totals even when the
+  dimensional top-K is truncated. Raw failure text and complete commands remain
+  available through `ise-cli tacacs-activity`; they are intentionally not labels.
 - `ise_tacacs_account_last_seen_timestamp` by account and event type.
 - `ise_tacacs_dataconnect_up` for query health.
 

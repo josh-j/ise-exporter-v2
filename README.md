@@ -68,14 +68,18 @@ Ubuntu packages and puts PyPI dependencies in an isolated venv:
 ```bash
 sudo ./deploy/install.sh
 sudoedit /etc/ise-exporter/ise-exporter.env
-sudo systemctl restart ise-exporter
 sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --dataconnect-check
+sudo systemctl start ise-exporter
 curl --fail --silent http://127.0.0.1:9618/metrics | head
 ```
 
 It installs `ise-cli` in `/usr/local/bin` for all local users while keeping the
 environment file and CA material restricted. Re-running the installer upgrades
-the application without overwriting configuration. Full details are in the
+the application without overwriting configuration. A fresh installation is
+enabled but intentionally left stopped because the seeded file contains example
+hosts and passwords. The installer also refuses to start or restart the unit
+while those placeholders remain. Once configured, re-running the installer
+restarts an active service and preserves an intentionally stopped service. Full details are in the
 [Ubuntu Noble guide](docs/ubuntu-noble.md).
 
 ## Development and containers
@@ -106,7 +110,10 @@ MAC formats, IP addresses, hostnames, and ERS ids; Data Connect is preferred for
 IP/hostname inventory resolution and bounded RADIUS, posture, PSN, and TACACS
 reports. Each curl probe supports `--schema-only`, which needs no credentials or
 network. The Secure Client probe calls the same MnT diagnostic path and parser as
-the CLI; it does not participate in exporter collection.
+the CLI; it does not participate in exporter collection. Within the shell,
+`endpoints FIELD=PATTERN` provides schema-aware searches across endpoint inventory
+and recent authorization, location, accounting, error, and posture context;
+`endpoint-fields` lists the fields actually available from the connected ISE schema.
 
 Additional references:
 

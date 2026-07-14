@@ -29,6 +29,18 @@ jobs:
           test -L /usr/local/bin/ise-cli
           sudo systemd-analyze verify /etc/systemd/system/ise-exporter.service
 
+      - name: Verify safe fresh-install lifecycle
+        run: |
+          sudo systemctl is-enabled --quiet ise-exporter
+          if sudo systemctl is-active --quiet ise-exporter; then
+            echo "fresh install unexpectedly started with placeholder configuration" >&2
+            exit 1
+          fi
+          test "$(sudo systemctl show ise-exporter --property=NRestarts --value)" = 0
+          sudo grep -q '^ISE_HOST=pan1\.example\.mil$' /etc/ise-exporter/ise-exporter.env
+          sudo grep -q '^ISE_PASS=changeme$' /etc/ise-exporter/ise-exporter.env
+          sudo grep -q '^ISE_DATACONNECT_PASSWORD=changeme$' /etc/ise-exporter/ise-exporter.env
+
       - name: Show service logs on failure
         if: failure()
         run: sudo journalctl -u ise-exporter --no-pager -n 200

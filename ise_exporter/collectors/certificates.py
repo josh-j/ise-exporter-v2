@@ -6,34 +6,78 @@ import logging
 from datetime import datetime, timezone
 
 from .. import metrics
-from ..util import clear_metric, parse_ise_date
+from ..snapshots import replace_metric_snapshot
+from ..util import parse_ise_date
 from . import observe, CollectorFailed
 from .nodes import get_nodes
 
 logger = logging.getLogger(__name__)
 
+_METRICS = (
+    metrics.ise_certificate_expiry_days,
+    metrics.ise_certificates_expiring_soon,
+    metrics.ise_certificate_expired,
+    metrics.ise_certificate_key_size_bits,
+    metrics.ise_certificate_weak_signature,
+    metrics.ise_certificate_self_signed,
+    metrics.ise_certificate_binding,
+    metrics.ise_certificate_issuer_present_in_trust_store,
+)
 
-def collect(client, cfg, mappings):
+_ROLE_TOKENS = {
+    "admin": ("admin",),
+    "eap": ("eap",),
+    "radius_dtls": ("radius", "dtls"),
+    "portal": ("portal",),
+    "saml": ("saml",),
+    "ise_auth": ("ise auth", "authentication within ise"),
+    "client_auth": ("client auth",),
+    "cisco_services": ("cisco services",),
+}
+
+
+def _roles(value):
+    text = str(value or "").casefold()
+    return [role for role, tokens in _ROLE_TOKENS.items()
+            if any(token in text for token in tokens)] or ["none"]
+
+
+def _issuer_matches(issuer, trusted_subjects):
+    value = str(issuer or "").strip().casefold()
+    return bool(value and any(value == subject or value in subject
+                              for subject in trusted_subjects))
+
+
+def collect(client, cfg):
     with observe("certificates"):
         nodes = get_nodes(client, cfg)   # reuse the deployment collector's recent fetch
         if not nodes:
             raise CollectorFailed("no deployment node list for cert scan")
-        clear_metric(metrics.ise_certificate_expiry_days)
         now = datetime.now(timezone.utc)
         counts = {"exp_30": 0, "exp_60": 0, "exp_90": 0, "expired": 0}
+        rows = []
 
         def process(cert, hostname, cert_type):
+            if not isinstance(cert, dict):
+                raise CollectorFailed(f"invalid {cert_type} certificate response")
             expiry = parse_ise_date(cert.get("expirationDate", ""))
             if not expiry:
-                return
+                raise CollectorFailed(f"{cert_type} certificate has invalid expirationDate")
             if expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
             days = (expiry - now).days
-            metrics.ise_certificate_expiry_days.labels(
-                hostname=hostname,
-                cert_name=cert.get("friendlyName", cert.get("id", "unknown")),
-                cert_type=cert_type,
-                usage=cert.get("usedBy", cert.get("trustedFor", "unknown"))).set(days)
+            rows.append({
+                "hostname": hostname,
+                "name": cert.get("friendlyName", cert.get("id", "unknown")),
+                "type": cert_type,
+                "usage": cert.get("usedBy", cert.get("trustedFor", "unknown")),
+                "days": days,
+                "key_size": int(cert.get("keySize") or 0),
+                "signature": str(cert.get("signatureAlgorithm") or "").casefold(),
+                "self_signed": bool(cert.get("selfSigned", False)),
+                "issuer": cert.get("issuedBy", ""),
+                "subject": cert.get("subject", cert.get("issuedTo", "")),
+            })
             # cumulative thresholds: a cert expiring in 10 days counts in 30/60/90,
             # matching the "expiring within N days" reading of the metric
             if days < 0:
@@ -51,17 +95,48 @@ def collect(client, cfg, mappings):
             if not hostname:
                 continue
             certs = client.get_pan_api(f"/certs/system-certificate/{hostname}", api_name="pan_sys_certs")
-            if certs:
-                for cert in (certs if isinstance(certs, list) else [certs]):
-                    process(cert, hostname, "system")
+            if certs is None:
+                raise CollectorFailed(f"system certificate request failed for {hostname}")
+            for cert in (certs if isinstance(certs, list) else [certs]):
+                process(cert, hostname, "system")
 
         trusted = client.get_pan_api("/certs/trusted-certificate", api_name="pan_trusted_certs")
-        if trusted:
-            for cert in (trusted if isinstance(trusted, list) else [trusted]):
-                process(cert, "trust_store", "trusted")
+        if trusted is None:
+            raise CollectorFailed("trusted certificate request failed")
+        for cert in (trusted if isinstance(trusted, list) else [trusted]):
+            process(cert, "trust_store", "trusted")
 
-        metrics.ise_certificates_expiring_soon.labels(threshold_days="30").set(counts["exp_30"])
-        metrics.ise_certificates_expiring_soon.labels(threshold_days="60").set(counts["exp_60"])
-        metrics.ise_certificates_expiring_soon.labels(threshold_days="90").set(counts["exp_90"])
-        metrics.ise_certificate_expired.set(counts["expired"])
+        trusted_subjects = {
+            str(row["subject"] or "").strip().casefold()
+            for row in rows if row["type"] == "trusted" and row["subject"]}
+
+        def publish():
+            for row in rows:
+                metrics.ise_certificate_expiry_days.labels(
+                    hostname=row["hostname"], cert_name=row["name"], cert_type=row["type"],
+                    usage=str(row["usage"] or "unknown")).set(row["days"])
+                metrics.ise_certificate_key_size_bits.labels(
+                    hostname=row["hostname"], cert_name=row["name"],
+                    cert_type=row["type"]).set(row["key_size"])
+                metrics.ise_certificate_weak_signature.labels(
+                    hostname=row["hostname"], cert_name=row["name"],
+                    cert_type=row["type"]).set(
+                        int("sha1" in row["signature"] or "md5" in row["signature"]))
+                for role in _roles(row["usage"]):
+                    metrics.ise_certificate_binding.labels(
+                        hostname=row["hostname"], cert_name=row["name"],
+                        cert_type=row["type"], role=role).set(1)
+                if row["type"] == "system":
+                    metrics.ise_certificate_self_signed.labels(
+                        hostname=row["hostname"], cert_name=row["name"]).set(
+                            int(row["self_signed"]))
+                    metrics.ise_certificate_issuer_present_in_trust_store.labels(
+                        hostname=row["hostname"], cert_name=row["name"]).set(
+                            int(_issuer_matches(row["issuer"], trusted_subjects)))
+            for threshold in (30, 60, 90):
+                metrics.ise_certificates_expiring_soon.labels(
+                    threshold_days=str(threshold)).set(counts[f"exp_{threshold}"])
+            metrics.ise_certificate_expired.set(counts["expired"])
+
+        replace_metric_snapshot(_METRICS, (publish,))
         logger.info("Certificates: %d expiring <30d, %d expired", counts["exp_30"], counts["expired"])

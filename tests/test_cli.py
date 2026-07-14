@@ -83,6 +83,8 @@ class FakeDataConnect:
             return [{"id": "id-1", "endpoint_id": "epid:profile-1",
                      "mac_address": "AA:BB:CC:DD:EE:FF",
                      "endpoint_ip": "192.0.2.25", "hostname": "client-25.example.test"}]
+        if "select distinct table_name" in lowered:
+            return [{"value": "CUSTOM_REPORT_VIEW"}]
         if "from user_tab_columns" in lowered:
             return [{"column_name": name} for name in (
                 "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "DEVICE_NAME",
@@ -98,9 +100,50 @@ class FakeDataConnect:
 
 
 class CompletionDataConnect(FakeDataConnect):
+    schemas = {
+        "ENDPOINTS_DATA": (
+            ("ID", "VARCHAR2"), ("MAC_ADDRESS", "VARCHAR2"),
+            ("ENDPOINT_IP", "VARCHAR2"), ("HOSTNAME", "VARCHAR2"),
+            ("ENDPOINT_POLICY", "VARCHAR2"), ("IDENTITY_GROUP_ID", "VARCHAR2"),
+            ("UPDATE_TIME", "TIMESTAMP WITH TIME ZONE"),
+        ),
+        "RADIUS_AUTHENTICATIONS": (
+            ("TIMESTAMP", "TIMESTAMP WITH TIME ZONE"),
+            ("CALLING_STATION_ID", "VARCHAR2"), ("USERNAME", "VARCHAR2"),
+            ("AUTHORIZATION_POLICY", "VARCHAR2"), ("POLICY_SET_NAME", "VARCHAR2"),
+            ("LOCATION", "VARCHAR2"), ("DEVICE_NAME", "VARCHAR2"),
+            ("ISE_NODE", "VARCHAR2"),
+        ),
+        "RADIUS_ACCOUNTING": (
+            ("TIMESTAMP", "TIMESTAMP WITH TIME ZONE"),
+            ("CALLING_STATION_ID", "VARCHAR2"), ("USERNAME", "VARCHAR2"),
+            ("AUTHORIZATION_POLICY", "VARCHAR2"), ("DEVICE_NAME", "VARCHAR2"),
+        ),
+        "RADIUS_ERRORS_VIEW": (
+            ("TIMESTAMP", "TIMESTAMP WITH TIME ZONE"),
+            ("CALLING_STATION_ID", "VARCHAR2"), ("FAILURE_REASON", "VARCHAR2"),
+            ("NETWORK_DEVICE_NAME", "VARCHAR2"),
+        ),
+        "POSTURE_ASSESSMENT_BY_ENDPOINT": (
+            ("TIMESTAMP", "TIMESTAMP WITH TIME ZONE"),
+            ("ENDPOINT_MAC_ADDRESS", "VARCHAR2"),
+            ("POSTURE_STATUS", "VARCHAR2"), ("POSTURE_AGENT_VERSION", "VARCHAR2"),
+        ),
+    }
+
     def query(self, sql, parameters=None):
         self.calls.append((sql, parameters or {}))
         lowered = sql.lower()
+        if "select distinct table_name" in lowered:
+            return [{"value": "CUSTOM_REPORT_VIEW"}]
+        if "from user_tab_columns" in lowered:
+            table = (parameters or {}).get("table_name")
+            return [{"column_name": column, "data_type": data_type}
+                    for column, data_type in self.schemas.get(table, ())]
+        if "from endpoints_data e" in lowered:
+            return [{"id": "id-1", "mac_address": "AA:BB:CC:DD:EE:FF",
+                     "endpoint_ip": "192.0.2.25", "hostname": "LAB-WIN-001",
+                     "endpoint_policy": "Windows Workstations"}]
         if "select mac_address, endpoint_ip, hostname" in lowered:
             return [
                 {"mac_address": "AA:BB:CC:DD:EE:FF", "endpoint_ip": "192.0.2.25",
@@ -116,8 +159,6 @@ class CompletionDataConnect(FakeDataConnect):
             return [{"value": "alice"}, {"value": "alex admin"}]
         if "select distinct device_name" in lowered:
             return [{"value": "access-switch-01"}, {"value": "access switch 02"}]
-        if "select distinct table_name" in lowered:
-            return [{"value": "CUSTOM_REPORT_VIEW"}]
         return super().query(sql, parameters)
 
 
@@ -428,3 +469,69 @@ def test_repl_completion_offers_schema_tables_and_comma_select_fields():
     assert tables == ["CUSTOM_REPORT_VIEW "]
     assert shell.completion_candidates(
         "radius-auth --select timestamp,user") == ["timestamp,username"]
+
+
+def test_endpoint_context_search_joins_schema_discovered_sources(capsys):
+    dataconnect = CompletionDataConnect()
+
+    assert cli.main([
+        "endpoints", "name=LAB-*", "authorization-policy=Permit*",
+        "location=Berlin-*", "endpoint-policy=Windows*", "--limit", "25", "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert result[0]["hostname"] == "LAB-WIN-001"
+    assert result[0]["matched_filters"] == [
+        "name=LAB-*", "authorization-policy=Permit*", "location=Berlin-*",
+        "endpoint-policy=Windows*"]
+    assert set(result[0]["matched_context"]) == {
+        "name", "authorization-policy", "location", "endpoint-policy"}
+    sql, parameters = next(
+        (sql, parameters) for sql, parameters in dataconnect.calls
+        if "FROM ENDPOINTS_DATA e" in sql)
+    assert "RADIUS_AUTHENTICATIONS" in sql
+    assert "AUTHORIZATION_POLICY" in sql
+    assert "LOCATION" in sql
+    assert "ENDPOINT_POLICY" in sql
+    assert "MIN(match_value) AS match_value" in sql
+    assert "MATCHED_CONTEXT_0" in sql
+    assert "FETCH FIRST 25 ROWS ONLY" in sql
+    assert set(parameters.values()) == {"LAB-%", "PERMIT%", "BERLIN-%", "WINDOWS%"}
+
+
+def test_repeated_endpoint_field_values_are_or_and_distinct_fields_are_and(capsys):
+    dataconnect = CompletionDataConnect()
+
+    assert cli.main([
+        "endpoints", "location=Berlin*", "location=London*", "posture-status=Compliant",
+        "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+
+    sql = next(sql for sql, _parameters in dataconnect.calls
+               if "FROM ENDPOINTS_DATA e" in sql)
+    assert "RADIUS_AUTHENTICATIONS" in sql
+    assert "POSTURE_ASSESSMENT_BY_ENDPOINT" in sql
+    assert " UNION " in sql
+    assert "JOIN matched_0" in sql and "JOIN matched_1" in sql
+    assert "EXISTS" not in sql and "REPLACE(" not in sql
+    assert "FETCH FIRST 5000 ROWS ONLY" in sql
+
+
+def test_endpoint_fields_catalog_includes_every_searchable_qualified_column(capsys):
+    dataconnect = CompletionDataConnect()
+
+    assert cli.main(["endpoint-fields", "*policy*", "-o", "json"],
+                    dataconnect=dataconnect) == 0
+
+    fields = {row["field"] for row in json.loads(capsys.readouterr().out)}
+    assert {"authorization-policy", "endpoint-policy", "policy-set",
+            "auth.authorization-policy", "endpoint.endpoint-policy"}.issubset(fields)
+
+
+def test_endpoint_search_completion_offers_fields_and_live_context_values():
+    shell = cli.ISEShell(client=FakeClient(), dataconnect=CompletionDataConnect(),
+                         stdin=io.StringIO(), stdout=io.StringIO())
+
+    assert "authorization-policy=" in shell.completion_candidates("endpoints auth")
+    assert shell.completion_candidates("endpoints endpoint-policy=Win") == [
+        "'endpoint-policy=Windows Servers'", "'endpoint-policy=Windows Workstations'"]

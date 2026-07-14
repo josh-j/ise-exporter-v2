@@ -87,3 +87,37 @@ def test_connection_backoff_protects_dataconnect_account(monkeypatch):
         client.connect()
 
     assert attempts == 3
+
+
+def test_query_materializes_endpoint_clob_and_binary_fields(monkeypatch):
+    class Lob:
+        def __init__(self, value):
+            self.value = value
+
+        def read(self):
+            return self.value
+
+    class LobCursor(Cursor):
+        description = [types.SimpleNamespace(name="CUSTOM_ATTRIBUTES"),
+                       types.SimpleNamespace(name="PROBE_DATA")]
+
+        def fetchall(self):
+            return [(Lob('{"Ops Owner":"Campus Operations"}'), Lob(b"probe"))]
+
+    class LobConnection(Connection):
+        def cursor(self):
+            return LobCursor()
+
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: LobConnection())
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    assert dataconnect.DataConnectClient(cfg).query("SELECT fields FROM endpoints_data") == [{
+        "custom_attributes": '{"Ops Owner":"Campus Operations"}',
+        "probe_data": "base64:cHJvYmU=",
+    }]

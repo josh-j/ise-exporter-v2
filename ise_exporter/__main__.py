@@ -17,10 +17,12 @@ from dotenv import load_dotenv
 from prometheus_client import start_http_server
 
 from .config import Config
-from .clients.rest import ISERestClient
+from .clients.rest import ISEControlPlaneClient
 from .clients.dataconnect import DataConnectClient
 from .compatibility import ISECompatibilityError, validate_ise_compatibility
+from .dataconnect_schema import metadata_rows, validate_dataconnect_schema
 from .scheduler import PollScheduler
+from .snapshots import LockedCollectorRegistry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("ise_exporter")
@@ -40,9 +42,9 @@ def dataconnect_check(cfg):
         return 1
     client = DataConnectClient(cfg)
     try:
-        rows = client.query("SELECT COUNT(*) AS view_count FROM user_views")
-        count = int(rows[0]["view_count"]) if rows else 0
-        logger.info("Data Connect check passed: %d readable views", count)
+        schema = validate_dataconnect_schema(
+            client, include_tacacs=getattr(cfg, "collect_tacacs", True))
+        logger.info("Data Connect check passed: %d required reporting views", len(schema))
         return 0
     except Exception as exc:
         logger.error("Data Connect check failed: %s", exc)
@@ -59,19 +61,7 @@ def dataconnect_schema(cfg):
         return 1
     client = DataConnectClient(cfg)
     try:
-        rows = client.query("""
-            SELECT table_name, column_id, column_name, data_type, data_length, nullable
-            FROM user_tab_columns
-            WHERE table_name IN (
-                'RADIUS_AUTHENTICATIONS', 'RADIUS_ACCOUNTING', 'RADIUS_ERRORS_VIEW',
-                'POSTURE_ASSESSMENT_BY_ENDPOINT', 'POSTURE_ASSESSMENT_BY_CONDITION',
-                'ENDPOINTS_DATA', 'PROFILED_ENDPOINTS_SUMMARY',
-                'KEY_PERFORMANCE_METRICS', 'SYSTEM_SUMMARY', 'AAA_DIAGNOSTICS_VIEW',
-                'SYSTEM_DIAGNOSTICS_VIEW', 'TACACS_AUTHENTICATION_LAST_TWO_DAYS',
-                'TACACS_AUTHORIZATION_LAST_TWO_DAYS',
-                'TACACS_ACCOUNTING_LAST_TWO_DAYS')
-            ORDER BY table_name, column_id
-        """)
+        rows = metadata_rows(client)
         print(json.dumps(rows, indent=2, default=str))
         return 0
     except Exception as exc:
@@ -120,7 +110,7 @@ def main(argv=None):
         logger.error("Data Connect credentials are required for reporting collection")
         return 1
 
-    client = ISERestClient(cfg)
+    client = ISEControlPlaneClient(cfg)
     try:
         compatibility = validate_ise_compatibility(client)
     except ISECompatibilityError as exc:
@@ -130,15 +120,23 @@ def main(argv=None):
                 compatibility.ise_version, compatibility.patch_level,
                 ", ".join(compatibility.deployment_nodes))
 
+    dataconnect = DataConnectClient(cfg)
+    try:
+        schema = validate_dataconnect_schema(
+            dataconnect, include_tacacs=getattr(cfg, "collect_tacacs", True))
+    except Exception as exc:
+        dataconnect.close()
+        logger.error("Data Connect startup validation failed: %s", exc)
+        return 1
+    logger.info("validated %d Cisco ISE Data Connect reporting views", len(schema))
+
     shutdown = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: shutdown.set())
     signal.signal(signal.SIGINT, lambda *_: shutdown.set())
 
-    start_http_server(cfg.exporter_port)
+    start_http_server(cfg.exporter_port, registry=LockedCollectorRegistry())
     logger.info("metrics on :%d (REST/OpenAPI config + Data Connect reporting)",
                 cfg.exporter_port)
-
-    dataconnect = DataConnectClient(cfg)
     scheduler = PollScheduler(cfg, client, dataconnect=dataconnect)
 
     scheduler.loop(shutdown)   # blocks until SIGTERM/SIGINT

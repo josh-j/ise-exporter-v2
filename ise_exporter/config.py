@@ -50,6 +50,10 @@ class Config:
     ise_user: str = "ers.readonly"
     ise_pass: str = ""
     ers_port: int = 9060
+    rest_ca_bundle: str = ""
+    rest_ssl_verify: bool = True
+    mnt_ca_bundle: str = ""
+    mnt_ssl_verify: bool = True
     exporter_port: int = 9618
     scrape_interval: int = 120
     fast_interval: int = 60
@@ -96,6 +100,11 @@ class Config:
             ise_host=_s("ISE_HOST"), ise_mnt_host=_s("ISE_MNT_HOST"),
             ise_user=_s("ISE_USER", "ers.readonly"), ise_pass=_s("ISE_PASS"),
             ers_port=_i("ERS_PORT", 9060), exporter_port=_i("EXPORTER_PORT", 9618),
+            rest_ca_bundle=_s("ISE_REST_CA_BUNDLE"),
+            rest_ssl_verify=_b("ISE_REST_SSL_VERIFY", True),
+            mnt_ca_bundle=_s("ISE_MNT_CA_BUNDLE", _s("ISE_REST_CA_BUNDLE")),
+            mnt_ssl_verify=_b(
+                "ISE_MNT_SSL_VERIFY", _b("ISE_REST_SSL_VERIFY", True)),
             scrape_interval=_i("SCRAPE_INTERVAL", 120), fast_interval=_i("FAST_INTERVAL", 60),
             medium_interval=_i("MEDIUM_INTERVAL", 300), slow_interval=_i("SLOW_INTERVAL", 3600),
             max_workers=_i("MAX_WORKERS", 10),
