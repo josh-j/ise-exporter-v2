@@ -186,7 +186,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_dataconnect_diagnostic_events) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "expr": "(sum(ise_dataconnect_diagnostic_events_total) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {

@@ -16,6 +16,10 @@ _METRICS = (
     metrics.ise_dataconnect_node_memory_utilization_percent,
     metrics.ise_dataconnect_node_disk_utilization_percent,
     metrics.ise_dataconnect_diagnostic_events,
+    metrics.ise_dataconnect_diagnostic_events_total,
+    metrics.ise_dataconnect_diagnostic_topk_groups_returned,
+    metrics.ise_dataconnect_diagnostic_topk_groups_total,
+    metrics.ise_dataconnect_diagnostic_topk_truncated,
 )
 
 
@@ -43,19 +47,29 @@ def _queries(limit):
             ) WHERE row_num = 1
         """,
         "aaa_diagnostics": f"""
-            SELECT ise_node, message_severity, category, message_code,
-                   COUNT(*) AS events
-            FROM aaa_diagnostics_view
-            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
-            GROUP BY ise_node, message_severity, category, message_code
+            SELECT grouped_diagnostics.*,
+                   SUM(events) OVER () AS total_events,
+                   COUNT(*) OVER () AS total_groups
+            FROM (
+                SELECT ise_node, message_severity, category, message_code,
+                       COUNT(*) AS events
+                FROM aaa_diagnostics_view
+                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                GROUP BY ise_node, message_severity, category, message_code
+            ) grouped_diagnostics
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
         """,
         "system_diagnostics": f"""
-            SELECT ise_node, message_severity, category, message_code,
-                   COUNT(*) AS events
-            FROM system_diagnostics_view
-            WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
-            GROUP BY ise_node, message_severity, category, message_code
+            SELECT grouped_diagnostics.*,
+                   SUM(events) OVER () AS total_events,
+                   COUNT(*) OVER () AS total_groups
+            FROM (
+                SELECT ise_node, message_severity, category, message_code,
+                       COUNT(*) AS events
+                FROM system_diagnostics_view
+                WHERE timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY
+                GROUP BY ise_node, message_severity, category, message_code
+            ) grouped_diagnostics
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
         """,
     }
@@ -91,8 +105,11 @@ def collect(dataconnect, cfg):
             },
         } for row in rows["system"]]
         diagnostics = []
+        diagnostic_summaries = {}
         for source in ("aaa", "system"):
-            for row in rows[f"{source}_diagnostics"]:
+            source_rows = rows[f"{source}_diagnostics"]
+            diagnostic_summaries[source] = source_rows[0] if source_rows else {}
+            for row in source_rows:
                 diagnostics.append({
                     "source": source,
                     "node": label(row.get("ise_node")),
@@ -141,4 +158,22 @@ def collect(dataconnect, cfg):
                 category=row["category"], message_code=row["code"]).set(row["events"])
             for row in diagnostics
         )
+        for source, summary in diagnostic_summaries.items():
+            returned = len(rows[f"{source}_diagnostics"])
+            total_events = integer(summary.get("total_events"))
+            total_groups = integer(summary.get("total_groups"))
+            writers.extend((
+                lambda source=source, total_events=total_events:
+                    metrics.ise_dataconnect_diagnostic_events_total.labels(
+                        source=source).set(total_events),
+                lambda source=source, returned=returned:
+                    metrics.ise_dataconnect_diagnostic_topk_groups_returned.labels(
+                        source=source).set(returned),
+                lambda source=source, total_groups=total_groups:
+                    metrics.ise_dataconnect_diagnostic_topk_groups_total.labels(
+                        source=source).set(total_groups),
+                lambda source=source, returned=returned, total_groups=total_groups:
+                    metrics.ise_dataconnect_diagnostic_topk_truncated.labels(
+                        source=source).set(1 if returned < total_groups else 0),
+            ))
         replace_snapshot(_METRICS, writers)

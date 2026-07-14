@@ -334,9 +334,19 @@ def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
     assert 'dataset="dataconnect_freshness"' in panels[3]["targets"][0]["expr"]
     truncation = panels[4]["targets"][0]["expr"]
     for dataset in (
-            "dataconnect_radius", "dataconnect_posture", "dataconnect_endpoints"):
+            "dataconnect_radius", "dataconnect_posture", "dataconnect_endpoints",
+            "dataconnect_performance"):
         assert dataset in truncation
-    assert truncation.count("max(ise_dataset_up") == 3
+    assert truncation.count("max(ise_dataset_up") == 4
+
+
+def test_psn_diagnostic_headline_uses_exact_total_not_topk_breakdown():
+    dashboard = json.loads((DASHBOARDS / "ise-psn-troubleshooting.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 4)
+    expression = panel["targets"][0]["expr"]
+
+    assert "ise_dataconnect_diagnostic_events_total" in expression
+    assert "sum(ise_dataconnect_diagnostic_events)" not in expression
 
 
 def test_disconnected_node_stat_is_zero_when_all_nodes_are_healthy():

@@ -395,6 +395,19 @@ ise_dataconnect_diagnostic_events = Gauge(
     "ise_dataconnect_diagnostic_events",
     "Diagnostic events in the bounded Data Connect reporting window",
     ["source", "node", "severity", "category", "message_code"])
+ise_dataconnect_diagnostic_events_total = Gauge(
+    "ise_dataconnect_diagnostic_events_total",
+    "Exact diagnostic event total before the Data Connect top-K limit", ["source"])
+ise_dataconnect_diagnostic_topk_groups_returned = Gauge(
+    "ise_dataconnect_diagnostic_topk_groups_returned",
+    "Number of diagnostic groups exported after the Data Connect top-K limit", ["source"])
+ise_dataconnect_diagnostic_topk_groups_total = Gauge(
+    "ise_dataconnect_diagnostic_topk_groups_total",
+    "Exact number of diagnostic groups before the Data Connect top-K limit", ["source"])
+ise_dataconnect_diagnostic_topk_truncated = Gauge(
+    "ise_dataconnect_diagnostic_topk_truncated",
+    "Whether a diagnostic breakdown was truncated by its Data Connect top-K limit",
+    ["source"])
 
 # --- exporter self-observability ---
 ise_dataset_up = Gauge(

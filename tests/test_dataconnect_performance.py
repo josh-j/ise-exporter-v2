@@ -37,7 +37,8 @@ class DataConnect:
                      "diskspace_storedconfig": 15, "diskspace_tmp": 5,
                      "diskspace_runtime": 8}]
         return [{"ise_node": "psn-1", "message_severity": "WARN",
-                 "category": "RADIUS", "message_code": "5100", "events": 3}]
+                 "category": "RADIUS", "message_code": "5100", "events": 3,
+                 "total_events": 11, "total_groups": 4}]
 
 
 def test_collects_latest_node_samples_and_bounded_diagnostics():
@@ -57,5 +58,14 @@ def test_collects_latest_node_samples_and_bounded_diagnostics():
     assert _rows(metrics.ise_dataconnect_diagnostic_events,
                  "source", "message_code") == {
         ("aaa", "5100"): 3, ("system", "5100"): 3}
+    assert _rows(metrics.ise_dataconnect_diagnostic_events_total, "source") == {
+        ("aaa",): 11, ("system",): 11}
+    assert _rows(metrics.ise_dataconnect_diagnostic_topk_groups_returned, "source") == {
+        ("aaa",): 1, ("system",): 1}
+    assert _rows(metrics.ise_dataconnect_diagnostic_topk_groups_total, "source") == {
+        ("aaa",): 4, ("system",): 4}
+    assert _rows(metrics.ise_dataconnect_diagnostic_topk_truncated, "source") == {
+        ("aaa",): 1, ("system",): 1}
     assert all("INTERVAL '2' DAY" in sql for sql in client.sql)
     assert all("ROW_NUMBER()" in sql for sql in client.sql[:2])
+    assert all("SUM(events) OVER () AS total_events" in sql for sql in client.sql[2:])

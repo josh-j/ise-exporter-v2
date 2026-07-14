@@ -76,7 +76,7 @@
       "description": "Collector dimensional breakdowns where the configured top-K limit omits groups. Exact total metrics remain authoritative.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
       "targets": [{
-          "expr": "(count(ise_dataconnect_radius_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_posture_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_endpoint_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)))",
+          "expr": "(count(ise_dataconnect_radius_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_posture_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_endpoint_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_diagnostic_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)))",
         "instant": true,
         "refId": "A",
         "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
