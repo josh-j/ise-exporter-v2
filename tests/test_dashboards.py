@@ -180,6 +180,19 @@ def test_domain_dashboards_expose_authoritative_dataset_availability():
                 f"{name} has no visible availability query for {dataset}/{source}")
 
 
+def test_tacacs_unused_account_panels_require_activity_and_bound_retention():
+    dashboard = json.loads((DASHBOARDS / "ise-tacacs.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+    for panel_id in (3, 7):
+        expression = panels[panel_id]["targets"][0]["expr"]
+        assert "ise_tacacs_account_last_seen_timestamp" in expression
+        assert "ise_tacacs_unused_account_review_seconds" in expression
+        assert 'dataset="tacacs_config",source="rest"' in expression
+        assert 'dataset="tacacs_activity",source="dataconnect"' in expression
+    assert "three" in panels[7]["description"].lower()
+    assert "raw mnt history" in panels[3]["description"].lower()
+
+
 def test_domain_queries_do_not_mask_outages_as_unconditional_zero():
     violations = []
     for path in sorted(DASHBOARDS.glob("*.json")):

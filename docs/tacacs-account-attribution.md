@@ -23,20 +23,24 @@ Useful read-only queries are:
 
 ```sql
 SELECT username, status, device_name, COUNT(*) AS hits,
-       MAX(generated_time) AS last_seen
+       MAX(epoch_time) AS last_seen
 FROM tacacs_authentication_last_two_days
 GROUP BY username, status, device_name;
 
 SELECT username, authorization_policy, shell_profile, matched_command_set,
-       COUNT(*) AS hits, MAX(logged_time) AS last_seen
+       COUNT(*) AS hits, MAX(epoch_time) AS last_seen
 FROM tacacs_authorization_last_two_days
 GROUP BY username, authorization_policy, shell_profile, matched_command_set;
 ```
 
-The exporter API collector intentionally does not guess account usage from object
-modification dates or deployment-wide lifetime hit counts. The TACACS dashboard
-uses object age only as a clearly labelled review hint and shows bounded activity
-by account over the selected Grafana range.
+The exporter does not guess account usage from deployment-wide lifetime policy hit
+counts. Its hygiene queue combines internal-account object age with activity that
+the exporter has actually observed through Data Connect. Because ISE's efficient
+views roll over after two days, the private exporter state database retains only a
+high-water timestamp for authentication, authorization, and accounting for each
+currently configured internal account. At the default cap this is no more than
+3,000 scalar timestamps. External/AD usernames, raw rows, commands, and session
+history are not retained, so storage does not grow with an 80--200 GB MnT database.
 
 ## Exporter configuration
 
@@ -66,9 +70,13 @@ The collector emits snapshot gauges for the two-day views:
 - `ise_tacacs_events_total` provides exact per-view event totals even when the
   dimensional top-K is truncated. Raw failure text and complete commands remain
   available through `ise-cli tacacs-activity`; they are intentionally not labels.
-- `ise_tacacs_account_last_seen_timestamp` by account and event type.
+- `ise_tacacs_account_last_seen_timestamp` by account and event type. Current-view
+  accounts are exported directly; only internal-account high-water values survive
+  view rollover and exporter restart.
+- `ise_tacacs_unused_account_review_seconds` exposes the configured review period
+  used by the hygiene dashboard.
 - `ise_tacacs_dataconnect_up` for query health.
 
-These are bounded recent-evidence gauges, not monotonic lifetime counters. An
-account absent from the two-day views has no evidence in that window; that alone
-does not prove it is unused for a longer period.
+These are bounded evidence gauges, not raw history or monotonic event counters.
+An account remains a review candidate rather than proof of disuse: activity that
+predates the exporter's first observation cannot be reconstructed.

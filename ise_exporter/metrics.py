@@ -80,8 +80,11 @@ ise_tacacs_internal_user_modified_timestamp = Gauge(
     ["username"])
 ise_tacacs_suspected_unused_internal_user = Gauge(
     "ise_tacacs_suspected_unused_internal_user",
-    "Internal-user candidate for review based on account object age",
+    "Internal-user candidate for review based on account age and observed TACACS activity",
     ["username", "reason"])
+ise_tacacs_unused_account_review_seconds = Gauge(
+    "ise_tacacs_unused_account_review_seconds",
+    "Configured inactivity period before an internal TACACS account is reviewed")
 ise_tacacs_internal_user_hygiene_risk = Gauge(
     "ise_tacacs_internal_user_hygiene_risk", "Internal-user account hygiene review finding",
     ["username", "risk"])
@@ -104,7 +107,7 @@ ise_tacacs_accounting_events = Gauge(
     ["username", "status", "device", "command_family"])
 ise_tacacs_account_last_seen_timestamp = Gauge(
     "ise_tacacs_account_last_seen_timestamp",
-    "Most recent TACACS event timestamp from Data Connect",
+    "Most recent TACACS event timestamp observed through Data Connect; internal-account high-water values persist across view rollover",
     ["username", "event_type"])
 ise_tacacs_events_total = Gauge(
     "ise_tacacs_events_total", "Exact TACACS events in each Data Connect two-day view",

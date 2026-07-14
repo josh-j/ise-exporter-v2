@@ -142,6 +142,12 @@ next scheduled deadline instead of immediately repeating every reporting query.
 Stale, corrupt, or schema-incompatible snapshots are ignored and collected from
 ISE immediately.
 
+TACACS hygiene adds one deliberately smaller persistent record: at most three
+last-observed activity timestamps for each currently configured internal account,
+bounded by `TACACS_INTERNAL_USER_MAX`. It does not retain external identities, raw
+TACACS events, commands, sessions, or MnT rows. Its size therefore follows the
+small internal-account inventory rather than the MnT database or event volume.
+
 MnT metrics never contain MAC addresses, usernames, session IDs, raw
 `PostureReport`, or free-form attributes. Only bounded aggregate dimensions such
 as status, OS family, PSN, normalized agent version, policy/result, and numeric

@@ -218,7 +218,7 @@
       "id": 3,
       "type": "stat",
       "title": "Suspected Unused",
-      "description": "Enabled accounts whose account object has not changed within the configured review period. Review hint, not proof of last use.",
+      "description": "Enabled internal accounts with neither an object change nor exporter-observed TACACS activity inside the configured review period. Only three high-water timestamps per configured internal account are retained; raw MnT history is never copied.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -227,7 +227,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_tacacs_suspected_unused_internal_user) and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "expr": "(sum(ise_tacacs_suspected_unused_internal_user unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -343,6 +343,7 @@
       "id": 7,
       "type": "table",
       "title": "Account Hygiene Review Queue",
+      "description": "Unused-account candidates require current REST inventory and Data Connect activity collection. Activity retention is bounded to three timestamps per configured internal account, independent of MnT database size.",
       "gridPos": {
         "h": 9,
         "w": 12,
@@ -351,7 +352,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_suspected_unused_internal_user",
+          "expr": "(ise_tacacs_suspected_unused_internal_user unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -361,7 +362,7 @@
           }
         },
         {
-          "expr": "ise_tacacs_internal_user_hygiene_risk",
+          "expr": "ise_tacacs_internal_user_hygiene_risk and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
           "format": "table",
           "instant": true,
           "refId": "B",
@@ -539,7 +540,7 @@
   "timezone": "browser",
   "title": "ISE / TACACS Device Administration",
   "uid": "ise-tacacs",
-  "version": 1,
+  "version": 2,
   "__inputs": [
     {
       "name": "DS_PROMETHEUS",

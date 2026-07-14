@@ -1,4 +1,5 @@
 import types
+import time
 
 import pytest
 
@@ -60,7 +61,8 @@ def test_collects_tacacs_inventory_rules_and_suspected_unused_account():
         ("netadmin", "true"): 1.0}
     assert _rows(metrics.ise_tacacs_suspected_unused_internal_user,
                  "username", "reason") == {
-        ("netadmin", "object_not_modified_1d"): 1.0}
+        ("netadmin", "no_activity_or_change_1d"): 1.0}
+    assert metrics.ise_tacacs_unused_account_review_seconds._value.get() == 86400
     assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 1.0
     assert _rows(metrics.ise_tacacs_policy_objects_total, "object_type") == {
         ("policy_sets",): 1.0,
@@ -71,7 +73,7 @@ def test_collects_tacacs_inventory_rules_and_suspected_unused_account():
     }
 
 
-def test_account_not_flagged_when_device_admin_policy_has_hits():
+def test_account_not_flagged_when_account_object_is_recent():
     client = Client()
     original = client.get_pan_api
 
@@ -199,3 +201,55 @@ def test_collects_dataconnect_account_attribution():
         ("authorization",): 1.0,
         ("accounting",): 1.0,
     }
+
+
+def test_internal_last_seen_survives_view_rollover_and_restart(tmp_path):
+    state_path = str(tmp_path / "state.sqlite3")
+    cfg = types.SimpleNamespace(
+        dataconnect_max_groups=50, state_db_path=state_path,
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=1, max_workers=2)
+    tacacs.collect_config(Client(), cfg)
+    now = int(time.time())
+
+    class CurrentActivity:
+        def query(self, sql):
+            event_type = next(kind for kind in tacacs._EVENT_TYPES if f"tacacs_{kind}" in sql)
+            return [{
+                "username": "netadmin", "status": "Pass", "device_name": "switch-1",
+                "authentication_policy": "Default", "identity_store": "Internal Users",
+                "failure_class": "none", "authorization_policy": "Admins",
+                "shell_profile": "Privilege 15", "matched_command_set": "PermitAll",
+                "command_family": "show", "hits": 1, "last_seen": now,
+                "total_events": 1, "total_groups": 1, "event_type": event_type,
+            }, {
+                "username": "external-user", "status": "Pass", "device_name": "switch-1",
+                "authentication_policy": "Default", "identity_store": "Active Directory",
+                "failure_class": "none", "authorization_policy": "Admins",
+                "shell_profile": "Privilege 15", "matched_command_set": "PermitAll",
+                "command_family": "show", "hits": 1, "last_seen": now,
+                "total_events": 1, "total_groups": 2,
+            }]
+
+    tacacs.collect_activity(CurrentActivity(), cfg)
+    for metric in tacacs._ACTIVITY_METRICS:
+        clear_metric(metric)
+
+    class RolledOverViews:
+        def query(self, sql):
+            return []
+
+    tacacs.collect_activity(RolledOverViews(), cfg)
+
+    assert _rows(metrics.ise_tacacs_account_last_seen_timestamp,
+                 "username", "event_type") == {
+        ("netadmin", "authentication"): float(now),
+        ("netadmin", "authorization"): float(now),
+        ("netadmin", "accounting"): float(now),
+    }
+    assert all(row[0] != "external-user" for row in _rows(
+        metrics.ise_tacacs_account_last_seen_timestamp, "username", "event_type"))
+
+    for metric in tacacs._CONFIG_METRICS:
+        clear_metric(metric)
+    tacacs.collect_config(Client(), cfg)
+    assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []

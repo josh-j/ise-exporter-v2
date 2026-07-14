@@ -6,8 +6,11 @@ totals look like current traffic and cannot provide account attribution.
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import json
+import logging
 
 from .. import metrics
+from ..state import StateStore
 from ..util import normalize_bool_label
 from . import CollectorFailed, observe
 from .dataconnect_common import replace_snapshot
@@ -20,9 +23,82 @@ _CONFIG_METRICS = (
     metrics.ise_tacacs_internal_user_created_timestamp,
     metrics.ise_tacacs_internal_user_modified_timestamp,
     metrics.ise_tacacs_suspected_unused_internal_user,
+    metrics.ise_tacacs_unused_account_review_seconds,
     metrics.ise_tacacs_internal_user_hygiene_risk,
     metrics.ise_tacacs_policy_objects_total,
 )
+
+_INTERNAL_USERS_STATE = "tacacs.internal_users"
+_INTERNAL_LAST_SEEN_STATE = "tacacs.internal_last_seen"
+_EVENT_TYPES = ("authentication", "authorization", "accounting")
+logger = logging.getLogger(__name__)
+
+
+def _state_path(cfg):
+    return getattr(cfg, "state_db_path", ":memory:")
+
+
+def _load_json(store, key, default):
+    try:
+        value = json.loads(store.get_value(key, ""))
+    except (TypeError, ValueError):
+        return default
+    return value
+
+
+def _sync_internal_user_state(cfg, usernames):
+    """Persist only bounded internal-account names and their activity high water."""
+    usernames = sorted(set(usernames))
+    store = StateStore(_state_path(cfg))
+    try:
+        previous = _load_json(store, _INTERNAL_LAST_SEEN_STATE, {})
+        high_water = {
+            username: {
+                event_type: int(events[event_type])
+                for event_type in _EVENT_TYPES
+                if isinstance(events, dict) and event_type in events
+                and str(events[event_type]).isdigit()
+            }
+            for username in usernames
+            if isinstance(previous, dict) and isinstance(previous.get(username), dict)
+            for events in (previous[username],)
+        }
+        store.set_value(_INTERNAL_USERS_STATE, json.dumps(usernames, separators=(",", ":")),
+                        commit=False)
+        store.set_value(_INTERNAL_LAST_SEEN_STATE,
+                        json.dumps(high_water, separators=(",", ":")), commit=False)
+        store.db.commit()
+        return high_water
+    finally:
+        store.close()
+
+
+def _merge_internal_last_seen(cfg, observed):
+    """Merge at most three timestamps per configured internal account."""
+    store = StateStore(_state_path(cfg))
+    try:
+        usernames = _load_json(store, _INTERNAL_USERS_STATE, [])
+        internal = {str(value) for value in usernames if str(value).strip()} \
+            if isinstance(usernames, list) else set()
+        previous = _load_json(store, _INTERNAL_LAST_SEEN_STATE, {})
+        high_water = {}
+        for username in internal:
+            saved = previous.get(username, {}) if isinstance(previous, dict) else {}
+            high_water[username] = {
+                event_type: int(saved[event_type])
+                for event_type in _EVENT_TYPES
+                if isinstance(saved, dict) and event_type in saved
+                and str(saved[event_type]).isdigit()
+            }
+        for (username, event_type), timestamp in observed.items():
+            if username in internal and event_type in _EVENT_TYPES and timestamp > 0:
+                high_water[username][event_type] = max(
+                    high_water[username].get(event_type, 0), int(timestamp))
+        store.set_value(_INTERNAL_LAST_SEEN_STATE,
+                        json.dumps(high_water, separators=(",", ":")))
+        return high_water
+    finally:
+        store.close()
 
 _ACTIVITY_METRICS = (
     metrics.ise_tacacs_account_authentication_events,
@@ -132,9 +208,20 @@ def _collect_dataconnect(dataconnect, cfg):
     limit = max(1, min(2000, int(getattr(cfg, "dataconnect_max_groups", 2000))))
     queries = _activity_queries(limit)
     rows = {kind: dataconnect.query(sql) for kind, sql in queries.items()}
+    observed_last_seen = {}
+    for event_type, event_rows in rows.items():
+        for row in event_rows:
+            username = _label(row.get("username"))
+            observed_last_seen[(username, event_type)] = max(
+                observed_last_seen.get((username, event_type), 0),
+                int(row.get("last_seen") or 0))
+    try:
+        internal_last_seen = _merge_internal_last_seen(cfg, observed_last_seen)
+    except Exception as exc:
+        logger.warning("could not persist bounded TACACS activity high-water state: %s", exc)
+        internal_last_seen = {}
 
     def publish():
-        last_seen = {}
         for row in rows["authentication"]:
             username = _label(row.get("username"))
             metrics.ise_tacacs_account_authentication_events.labels(
@@ -145,9 +232,6 @@ def _collect_dataconnect(dataconnect, cfg):
                 identity_store=_label(row.get("identity_store")),
                 failure_class=_label(row.get("failure_class")),
             ).set(int(row.get("hits") or 0))
-            last_seen[(username, "authentication")] = max(
-                last_seen.get((username, "authentication"), 0),
-                int(row.get("last_seen") or 0))
 
         for row in rows["authorization"]:
             username = _label(row.get("username"))
@@ -159,9 +243,6 @@ def _collect_dataconnect(dataconnect, cfg):
                 shell_profile=_label(row.get("shell_profile")),
                 command_set=_label(row.get("matched_command_set")),
             ).set(int(row.get("hits") or 0))
-            last_seen[(username, "authorization")] = max(
-                last_seen.get((username, "authorization"), 0),
-                int(row.get("last_seen") or 0))
 
         for row in rows["accounting"]:
             username = _label(row.get("username"))
@@ -171,15 +252,16 @@ def _collect_dataconnect(dataconnect, cfg):
                 device=_label(row.get("device_name")),
                 command_family=_label(row.get("command_family")),
             ).set(int(row.get("hits") or 0))
-            last_seen[(username, "accounting")] = max(
-                last_seen.get((username, "accounting"), 0),
-                int(row.get("last_seen") or 0))
-
-        for (username, event_type), timestamp in last_seen.items():
+        published_last_seen = dict(observed_last_seen)
+        for username, events in internal_last_seen.items():
+            for event_type, timestamp in events.items():
+                published_last_seen[(username, event_type)] = max(
+                    published_last_seen.get((username, event_type), 0), timestamp)
+        for (username, event_type), timestamp in published_last_seen.items():
             metrics.ise_tacacs_account_last_seen_timestamp.labels(
                 username=username, event_type=event_type).set(timestamp)
 
-        for event_type in ("authentication", "authorization", "accounting"):
+        for event_type in _EVENT_TYPES:
             summary = rows[event_type][0] if rows[event_type] else {}
             total_events = int(summary.get("total_events") or 0)
             total_groups = int(summary.get("total_groups") or 0)
@@ -256,6 +338,12 @@ def collect_config(client, cfg):
         detail_count = sum(user.get("_detail_fetched") is True for user in users)
         review_days = max(1, getattr(cfg, "tacacs_unused_account_days", 180))
         cutoff = datetime.now(timezone.utc).timestamp() - review_days * 86400
+        usernames = [str(user.get("name") or "unknown") for user in users]
+        try:
+            internal_last_seen = _sync_internal_user_state(cfg, usernames)
+        except Exception as exc:
+            logger.warning("could not persist bounded TACACS internal-user state: %s", exc)
+            internal_last_seen = {}
         object_counts = {
             "policy_sets": len(policy_sets),
             "authentication_rules": len(auth_rows),
@@ -268,6 +356,7 @@ def collect_config(client, cfg):
             metrics.ise_tacacs_internal_users_total.set(len(resources))
             metrics.ise_tacacs_internal_user_detail_coverage.set(
                 detail_count / len(selected) if selected else 1.0)
+            metrics.ise_tacacs_unused_account_review_seconds.set(review_days * 86400)
             for user in users:
                 username = str(user.get("name") or "unknown")
                 enabled = normalize_bool_label(user.get("enabled"))
@@ -291,9 +380,12 @@ def collect_config(client, cfg):
                     if timestamp is not None:
                         metric.labels(username=username).set(timestamp)
                 modified = _timestamp(user.get("dateModified"))
-                if enabled == "true" and modified is not None and modified < cutoff:
+                latest_activity = max(internal_last_seen.get(username, {}).values(), default=0)
+                if (enabled == "true" and modified is not None and modified < cutoff
+                        and latest_activity < cutoff):
                     metrics.ise_tacacs_suspected_unused_internal_user.labels(
-                        username=username, reason=f"object_not_modified_{review_days}d").set(1)
+                        username=username,
+                        reason=f"no_activity_or_change_{review_days}d").set(1)
             for object_type, count in object_counts.items():
                 metrics.ise_tacacs_policy_objects_total.labels(
                     object_type=object_type).set(count)
