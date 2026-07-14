@@ -130,13 +130,13 @@ class Config:
     dataconnect_max_groups: int = 1000
     dataconnect_min_query_interval_ms: int = 2000
     dataconnect_max_duty_cycle_percent: float = 0.5
-    dataconnect_radius_interval: int = 900
-    dataconnect_performance_interval: int = 900
-    dataconnect_posture_interval: int = 3600
-    dataconnect_endpoints_interval: int = 43200
-    dataconnect_freshness_interval: int = 7200
-    dataconnect_nad_health_interval: int = 3600
-    dataconnect_tacacs_interval: int = 3600
+    dataconnect_radius_interval: int = 1800
+    dataconnect_performance_interval: int = 3600
+    dataconnect_posture_interval: int = 21600
+    dataconnect_endpoints_interval: int = 86400
+    dataconnect_freshness_interval: int = 43200
+    dataconnect_nad_health_interval: int = 21600
+    dataconnect_tacacs_interval: int = 21600
     dataconnect_shared_pacing_file: str = "/var/lib/ise-exporter/dataconnect.pacing"
     dataconnect_incremental_enabled: bool = True
     dataconnect_reconcile_interval: int = 86400
@@ -214,19 +214,19 @@ class Config:
             dataconnect_max_duty_cycle_percent=_bounded_f(
                 "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.5, 0.1, 2.0),
             dataconnect_radius_interval=_bounded_i(
-                "ISE_DATACONNECT_RADIUS_INTERVAL", 900, 900),
+                "ISE_DATACONNECT_RADIUS_INTERVAL", 1800, 900),
             dataconnect_performance_interval=_bounded_i(
-                "ISE_DATACONNECT_PERFORMANCE_INTERVAL", 900, 900),
+                "ISE_DATACONNECT_PERFORMANCE_INTERVAL", 3600, 900),
             dataconnect_posture_interval=_bounded_i(
-                "ISE_DATACONNECT_POSTURE_INTERVAL", 3600, 1800),
+                "ISE_DATACONNECT_POSTURE_INTERVAL", 21600, 1800),
             dataconnect_endpoints_interval=_bounded_i(
-                "ISE_DATACONNECT_ENDPOINTS_INTERVAL", 43200, 21600),
+                "ISE_DATACONNECT_ENDPOINTS_INTERVAL", 86400, 21600),
             dataconnect_freshness_interval=_bounded_i(
-                "ISE_DATACONNECT_FRESHNESS_INTERVAL", 7200, 3600),
+                "ISE_DATACONNECT_FRESHNESS_INTERVAL", 43200, 3600),
             dataconnect_nad_health_interval=_bounded_i(
-                "ISE_DATACONNECT_NAD_HEALTH_INTERVAL", 3600, 1800),
+                "ISE_DATACONNECT_NAD_HEALTH_INTERVAL", 21600, 1800),
             dataconnect_tacacs_interval=_bounded_i(
-                "ISE_DATACONNECT_TACACS_INTERVAL", 3600, 1800),
+                "ISE_DATACONNECT_TACACS_INTERVAL", 21600, 1800),
             dataconnect_shared_pacing_file=_s(
                 "ISE_DATACONNECT_SHARED_PACING_FILE",
                 "/var/lib/ise-exporter/dataconnect.pacing"),

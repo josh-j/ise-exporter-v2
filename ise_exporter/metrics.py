@@ -466,10 +466,7 @@ ise_dataconnect_query_cooldown_seconds = Gauge(
     "Latest global duty-cycle cooldown after a Data Connect statement", ["view"])
 ise_dataset_effective_interval_seconds = Gauge(
     "ise_dataset_effective_interval_seconds",
-    "Effective cadence after Data Connect duty-cycle protection", ["dataset", "source"])
-ise_dataconnect_load_backoff_seconds = Gauge(
-    "ise_dataconnect_load_backoff_seconds",
-    "Additional cadence imposed by Data Connect duty-cycle protection", ["dataset"])
+    "Scheduled collection cadence currently applied by the scheduler", ["dataset", "source"])
 ise_dataconnect_incremental_mode = Gauge(
     "ise_dataconnect_incremental_mode",
     "Whether a Data Connect domain used a small incremental window on its latest run",

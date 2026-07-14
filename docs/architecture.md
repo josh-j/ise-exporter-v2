@@ -86,12 +86,12 @@ Data Connect safety applies to the whole ISE deployment. Connecting to a
 secondary MnT does not imply that every exposed view is executed only on that
 node. Production defaults for up to 100,000 endpoints use one sequential
 connection, two-second statement pacing, a 0.5% adaptive query-duty-cycle ceiling,
-15-second statement timeouts, and independent 15-minute to 12-hour domain
+15-second statement timeouts, and independent 30-minute to 24-hour domain
 cadences. Summary and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate two-day scan.
-The steady-state workload ceiling is about 62 statements per hour after startup;
+The steady-state scheduled workload is about 23 statements per hour after startup;
 the safety gain is that six RADIUS statements scan only their new event window,
-while one inexpensive database-clock statement makes watermark boundaries exact,
+while one inexpensive database-clock statement makes watermark boundaries exact.
 The exporter and CLI also serialize through one persistent pacing gate so separate
 processes cannot bypass the cooldown. The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query

@@ -11,7 +11,7 @@ from ise_exporter.collectors import (
 from ise_exporter.config import Config
 
 
-def test_100k_default_profile_stays_below_65_scheduled_statements_per_hour():
+def test_100k_default_profile_stays_below_25_scheduled_statements_per_hour():
     cfg = Config()
     statements_per_run = {
         "radius": len(dataconnect_radius._queries(cfg.dataconnect_max_groups)),
@@ -53,5 +53,5 @@ def test_100k_default_profile_stays_below_65_scheduled_statements_per_hour():
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert reconciliation_statements_per_hour == pytest.approx(63.0)
-    assert steady_statements_per_hour == pytest.approx(63.0)
+    assert reconciliation_statements_per_hour == pytest.approx(22.6666667)
+    assert steady_statements_per_hour == pytest.approx(22.6666667)

@@ -85,17 +85,17 @@ class PollScheduler:
             "backup": ("rest", cfg.slow_interval, cfg.collect_backup_status),
             "patches": ("rest", cfg.slow_interval, cfg.collect_patches),
             "dataconnect_radius": (
-                "dataconnect", getattr(cfg, "dataconnect_radius_interval", 300), True),
+                "dataconnect", getattr(cfg, "dataconnect_radius_interval", 1800), True),
             "dataconnect_performance": (
-                "dataconnect", getattr(cfg, "dataconnect_performance_interval", 300), True),
+                "dataconnect", getattr(cfg, "dataconnect_performance_interval", 3600), True),
             "dataconnect_posture": (
-                "dataconnect", getattr(cfg, "dataconnect_posture_interval", 900), True),
+                "dataconnect", getattr(cfg, "dataconnect_posture_interval", 21600), True),
             "dataconnect_endpoints": (
-                "dataconnect", getattr(cfg, "dataconnect_endpoints_interval", 21600), True),
+                "dataconnect", getattr(cfg, "dataconnect_endpoints_interval", 86400), True),
             "dataconnect_freshness": (
-                "dataconnect", getattr(cfg, "dataconnect_freshness_interval", 3600), True),
+                "dataconnect", getattr(cfg, "dataconnect_freshness_interval", 43200), True),
             "dataconnect_nad_health": (
-                "dataconnect", getattr(cfg, "dataconnect_nad_health_interval", 900), True),
+                "dataconnect", getattr(cfg, "dataconnect_nad_health_interval", 21600), True),
             "mnt_active_posture": (
                 "mnt", getattr(cfg, "mnt_active_posture_interval", cfg.medium_interval),
                 getattr(cfg, "collect_mnt_active_posture", True)),
@@ -105,7 +105,7 @@ class PollScheduler:
             "pxgrid_streaming": ("pxgrid", cfg.slow_interval, False),
             "tacacs_config": ("rest", cfg.slow_interval, cfg.collect_tacacs),
             "tacacs_activity": (
-                "dataconnect", getattr(cfg, "dataconnect_tacacs_interval", 900),
+                "dataconnect", getattr(cfg, "dataconnect_tacacs_interval", 21600),
                 cfg.collect_tacacs),
         }
 
@@ -119,13 +119,6 @@ class PollScheduler:
             metrics.ise_dataset_up.labels(dataset=name, source=source).set(0)
             metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(0)
             metrics.ise_collector_enabled.labels(collector=name).set(int(enabled))
-            if source == "dataconnect":
-                # The scheduler no longer adds a second load-derived delay on top
-                # of client statement pacing.  Publish the explicit zero at
-                # startup as well as after a query so restored datasets do not
-                # leave the load-safety panel with no series.
-                metrics.ise_dataconnect_load_backoff_seconds.labels(
-                    dataset=name).set(0)
 
     def _update_freshness(self, now):
         for name, (source, interval, enabled) in self.dataset_plan.items():
@@ -222,12 +215,6 @@ class PollScheduler:
                 collectors.record_failure(name, "unhandled_exception")
             completed = time.time()
             effective_interval = tier
-            if source == "dataconnect":
-                # DataConnectClient already enforces the shared cross-process
-                # statement duty cycle. Applying callback elapsed time again here
-                # double-throttles every dataset because elapsed includes those
-                # deliberate pacing sleeps.
-                metrics.ise_dataconnect_load_backoff_seconds.labels(dataset=name).set(0)
             metrics.ise_dataset_effective_interval_seconds.labels(
                 dataset=name, source=source).set(effective_interval)
             succeeded = collectors.outcome(name)

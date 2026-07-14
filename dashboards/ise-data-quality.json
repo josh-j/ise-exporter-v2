@@ -331,13 +331,12 @@
     {
       "id": 25,
       "type": "table",
-      "title": "Configured vs Effective Data Connect Cadence",
-      "description": "Effective cadence grows automatically when query time would exceed the configured duty-cycle ceiling.",
+      "title": "Data Connect Collection Cadence",
+      "description": "Scheduled domain cadence. The client applies the per-statement duty-cycle cooldown shown below; the scheduler does not apply that delay a second time.",
       "gridPos": {"h": 9, "w": 12, "x": 0, "y": 71},
       "targets": [
         {"expr": "ise_dataset_interval_seconds{source=\"dataconnect\"}", "format": "table", "instant": true, "refId": "Configured", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_dataset_effective_interval_seconds{source=\"dataconnect\"}", "format": "table", "instant": true, "refId": "Effective", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_dataconnect_load_backoff_seconds", "format": "table", "instant": true, "refId": "Added backoff", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "ise_dataset_effective_interval_seconds{source=\"dataconnect\"}", "format": "table", "instant": true, "refId": "Scheduled", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "options": {"showHeader": true}
