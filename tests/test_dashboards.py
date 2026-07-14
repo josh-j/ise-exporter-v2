@@ -78,6 +78,22 @@ def test_every_prometheus_target_uses_imported_datasource():
     assert not missing, "Prometheus datasource not wired: " + ", ".join(missing)
 
 
+def test_every_dashboard_defines_prometheus_variable_for_file_provisioning():
+    """File provisioning does not resolve __inputs like the import UI does."""
+    missing = []
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        variables = {
+            item.get("name"): item
+            for item in dashboard.get("templating", {}).get("list", [])
+        }
+        datasource = variables.get("DS_PROMETHEUS", {})
+        if datasource.get("type") != "datasource" or datasource.get("query") != "prometheus":
+            missing.append(path.name)
+
+    assert not missing, "Prometheus template variable missing: " + ", ".join(missing)
+
+
 def test_sessions_dashboard_exposes_accounting_derived_active_sessions():
     text = (DASHBOARDS / "ise-sessions-auth.json").read_text()
     assert "ise_dataconnect_radius_active_sessions" in text
