@@ -13,7 +13,7 @@ from .. import metrics
 from ..state import StateStore
 from ..util import normalize_bool_label
 from . import CollectorFailed, observe
-from .dataconnect_common import event_window_hours, replace_snapshot
+from .dataconnect_common import event_window_hours, group_limit, replace_snapshot
 
 
 _CONFIG_METRICS = (
@@ -219,7 +219,7 @@ def _activity_queries(limit, cutoff_epoch=None):
 
 
 def _collect_dataconnect(dataconnect, cfg):
-    limit = max(1, min(2000, int(getattr(cfg, "dataconnect_max_groups", 2000))))
+    limit = group_limit(cfg)
     window = event_window_hours(
         cfg, getattr(cfg, "dataconnect_tacacs_interval", 21600))
     cutoff = max(0, int(time.time()) - window * 3600)

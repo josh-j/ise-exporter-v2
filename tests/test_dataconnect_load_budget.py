@@ -1,3 +1,5 @@
+import types
+
 import pytest
 
 from ise_exporter.collectors import (
@@ -8,6 +10,7 @@ from ise_exporter.collectors import (
     dataconnect_radius,
     tacacs,
 )
+from ise_exporter.collectors.dataconnect_common import group_limit
 from ise_exporter.config import Config
 
 
@@ -62,3 +65,8 @@ def test_radius_reporting_limits_raw_authentication_view_to_needed_dimensions():
 
     assert raw == ["authentication", "latency"]
     assert summary == ["volume_summary", "failure_context"]
+
+
+def test_alternate_config_cannot_export_more_than_production_group_ceiling():
+    assert group_limit(types.SimpleNamespace(dataconnect_max_groups=999_999)) == 1000
+    assert len(tacacs._activity_queries(1000)) == 3

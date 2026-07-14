@@ -87,7 +87,10 @@ secondary MnT does not imply that every exposed view is executed only on that
 node. Production defaults for up to 100,000 endpoints use one sequential
 connection, two-second statement pacing, a 0.5% adaptive query-duty-cycle ceiling,
 15-second statement timeouts, and independent 30-minute to 24-hour domain
-cadences. Summary and top-group results share one Oracle aggregation wherever
+cadences. The client enforces two seconds and 0.5% as hard safety limits even
+when a CLI caller or alternate configuration object requests a more aggressive
+value; grouped output is likewise capped at 1,000 series per breakdown. Summary
+and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate event scan. Exact
 RADIUS volume, failure totals, and distinct endpoint/user counts come from Cisco's
 `RADIUS_AUTHENTICATION_SUMMARY` aggregate view, including failure class,
@@ -109,7 +112,9 @@ TACACS also runs every six hours and applies an `EPOCH_TIME` lower bound to
 Cisco's two-day views before grouping, so the view's retention does not become
 the exporter's scan size.
 The exporter and CLI also serialize through one persistent pacing gate so separate
-processes cannot bypass the cooldown. The former shared-tier design issued 1,437
+processes cannot bypass the cooldown. An empty pacing-path environment value is
+normalized back to the protected service-state path rather than disabling this
+guard. The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
 invocations before adaptive cooldown is considered.
 Data Connect runs on one dedicated serialized worker lane, while the single MnT

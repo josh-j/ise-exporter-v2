@@ -96,6 +96,23 @@ def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
     assert dataconnect._query_view("SELECT * FROM arbitrary_table") == "other"
 
 
+def test_client_cannot_relax_production_pressure_invariants():
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_min_query_interval_ms=1,
+        dataconnect_max_duty_cycle_percent=100,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    client = dataconnect.DataConnectClient(cfg)
+
+    assert client.min_query_interval == 2.0
+    assert client.max_duty_cycle == 0.5
+
+
 def test_schema_validation_is_not_mislabeled_as_reporting_activity():
     sql = """
         SELECT table_name, column_name

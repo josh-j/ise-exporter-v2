@@ -115,6 +115,12 @@ ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT=0.5
 ISE_DATACONNECT_SHARED_PACING_FILE=/var/lib/ise-exporter/dataconnect.pacing
 ```
 
+Two seconds between statements, a 0.5% duty cycle, and 1,000 grouped results are
+hard maximum-pressure boundaries. Environment overrides may make collection more
+conservative, but the exporter and `ise-cli` clamp attempts to make it more
+aggressive. This applies even when the configured Data Connect host is a secondary
+MnT because an exposed reporting view may still consume cluster-wide resources.
+
 MnT ActiveList has no pagination. The collector first calls the small ActiveCount
 endpoint and refuses ActiveList above 10,000 sessions by default, marking the
 dataset unavailable while retaining its last snapshot. At the production defaults,

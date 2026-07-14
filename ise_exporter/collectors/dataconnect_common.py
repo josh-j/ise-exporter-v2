@@ -23,7 +23,7 @@ def integer(value):
 
 
 def group_limit(cfg):
-    return max(1, min(2000, int(getattr(cfg, "dataconnect_max_groups", 2000))))
+    return max(1, min(1000, int(getattr(cfg, "dataconnect_max_groups", 1000))))
 
 
 def event_window_hours(cfg, interval_seconds):

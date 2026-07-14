@@ -87,9 +87,12 @@ class DataConnectClient:
         self.timeout = max(1, cfg.dataconnect_query_timeout)
         self.failure_threshold = max(1, getattr(cfg, "auth_failure_threshold", 3))
         self.failure_backoff = max(0, getattr(cfg, "auth_failure_backoff", 900))
+        # These are hard client invariants, not only environment-parser defaults.
+        # CLI/tests/extensions can construct a client from another config object;
+        # none may silently relax the production database-pressure ceiling.
         self.min_query_interval = max(
-            0.5, getattr(cfg, "dataconnect_min_query_interval_ms", 2000) / 1000.0)
-        self.max_duty_cycle = max(0.1, min(2.0, float(getattr(
+            2.0, getattr(cfg, "dataconnect_min_query_interval_ms", 2000) / 1000.0)
+        self.max_duty_cycle = max(0.1, min(0.5, float(getattr(
             cfg, "dataconnect_max_duty_cycle_percent", 0.5))))
         self.shared_pacing_file = str(getattr(
             cfg, "dataconnect_shared_pacing_file", "") or "")

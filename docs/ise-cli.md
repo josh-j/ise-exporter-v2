@@ -239,6 +239,8 @@ the same spirit as selecting properties from PowerCLI objects.
   must pass `--allow-active-list-scan` when that fallback is genuinely required.
 - Exporter and CLI Data Connect queries share a file-locked pacing deadline, so
   concurrent CLI processes cannot bypass the configured duty-cycle cooldown.
+  Setting the pacing-file environment value to an empty string does not disable
+  the gate; it restores the protected service-state default.
 - Tab completion uses only bounded inventory/metadata Data Connect views and REST
   configuration inventory by default. High-volume event-view value completion
   requires the global expensive-query opt-in; a result-row cap alone does not

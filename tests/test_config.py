@@ -170,9 +170,9 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     cfg = Config.from_env()
 
     assert cfg.dataconnect_query_timeout == 15
-    assert cfg.dataconnect_max_groups == 2000
-    assert cfg.dataconnect_min_query_interval_ms == 500
-    assert cfg.dataconnect_max_duty_cycle_percent == 2.0
+    assert cfg.dataconnect_max_groups == 1000
+    assert cfg.dataconnect_min_query_interval_ms == 2000
+    assert cfg.dataconnect_max_duty_cycle_percent == 0.5
     assert cfg.dataconnect_event_window_hours == 24
     assert cfg.dataconnect_radius_interval == 21600
     assert cfg.dataconnect_radius_active_interval == 900
@@ -187,3 +187,12 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.tacacs_internal_user_detail_max_requests == 250
     assert cfg.tacacs_internal_user_detail_ttl == 86400
     assert cfg.tacacs_internal_user_detail_request_interval_ms == 100
+
+
+def test_empty_shared_pacing_path_cannot_disable_cross_process_guard(monkeypatch):
+    monkeypatch.setenv("ISE_DATACONNECT_SHARED_PACING_FILE", "")
+
+    cfg = Config.from_env()
+
+    assert cfg.dataconnect_shared_pacing_file == \
+        "/var/lib/ise-exporter/dataconnect.pacing"

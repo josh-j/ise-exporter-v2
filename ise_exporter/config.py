@@ -224,11 +224,11 @@ class Config:
             dataconnect_query_timeout=_bounded_i(
                 "ISE_DATACONNECT_QUERY_TIMEOUT", 15, 5, 15),
             dataconnect_max_groups=_bounded_i(
-                "ISE_DATACONNECT_MAX_GROUPS", 1000, 1, 2000),
+                "ISE_DATACONNECT_MAX_GROUPS", 1000, 1, 1000),
             dataconnect_min_query_interval_ms=_bounded_i(
-                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 2000, 500),
+                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 2000, 2000),
             dataconnect_max_duty_cycle_percent=_bounded_f(
-                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.5, 0.1, 2.0),
+                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.5, 0.1, 0.5),
             dataconnect_event_window_hours=_bounded_i(
                 "ISE_DATACONNECT_EVENT_WINDOW_HOURS", 24, 1, 24),
             dataconnect_radius_interval=_bounded_i(
@@ -249,7 +249,8 @@ class Config:
                 "ISE_DATACONNECT_TACACS_INTERVAL", 21600, 1800),
             dataconnect_shared_pacing_file=_s(
                 "ISE_DATACONNECT_SHARED_PACING_FILE",
-                "/var/lib/ise-exporter/dataconnect.pacing"),
+                "/var/lib/ise-exporter/dataconnect.pacing")
+                or "/var/lib/ise-exporter/dataconnect.pacing",
             cli_production_safe=_b("ISE_CLI_PRODUCTION_SAFE", True),
             cli_allow_expensive=_b("ISE_CLI_ALLOW_EXPENSIVE", False),
             cli_max_rows=_bounded_i("ISE_CLI_MAX_ROWS", 1000, 100, 5000),
