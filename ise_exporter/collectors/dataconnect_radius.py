@@ -81,7 +81,9 @@ def _active_cte(stale_minutes):
             SELECT device_name, ise_node
             FROM latest_accounting
             WHERE row_num = 1
-              AND LOWER(NVL(acct_status_type, 'stop')) NOT LIKE '%stop%'
+              AND LOWER(TRIM(acct_status_type)) IN (
+                  'start', 'interim', 'interim-update', 'interim update', 'update'
+              )
               AND event_time >= SYSTIMESTAMP -
                   NUMTODSINTERVAL({stale_minutes}, 'MINUTE')
         )

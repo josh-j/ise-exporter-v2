@@ -136,6 +136,9 @@ def test_collects_bounded_aggregated_radius_metrics():
     assert "session_id" in active_sql
     assert "nas_ip_address" in active_sql
     assert "NUMTODSINTERVAL(60, 'MINUTE')" in active_sql
+    assert "LOWER(TRIM(acct_status_type)) IN" in active_sql
+    assert "'start', 'interim', 'interim-update', 'interim update', 'update'" in active_sql
+    assert "NOT LIKE '%stop%'" not in active_sql
 
 
 def test_latency_query_uses_one_matching_group_and_excludes_nulls():
