@@ -31,7 +31,7 @@ from rich.text import Text
 from .clients.dataconnect import DataConnectClient
 from .clients.rest import ISEOperatorClient
 from .config import Config
-from .dataconnect_schema import table_columns
+from .dataconnect_schema import metadata_rows, schema_by_table, table_columns
 from .util import (first_nonempty, is_mac, normalize_agent_version, normalize_mac,
                    normalize_posture,
                    parse_other_attr_string, parse_posture_report)
@@ -928,16 +928,22 @@ def _endpoint_field_bindings(dataconnect):
     """Discover searchable endpoint/context fields from the live ISE schema."""
     if dataconnect is None:
         raise CLIError("endpoint field search requires configured Data Connect credentials")
+    tables = tuple(dict.fromkeys(
+        spec["table"] for spec in ENDPOINT_CONTEXT_SOURCES.values()))
+    try:
+        # One catalog statement covers every fixed Patch 11 context view. At a
+        # deliberately tiny database duty cycle, issuing one query per view
+        # would multiply adaptive cooldown without providing fresher metadata.
+        schemas_by_table = schema_by_table(metadata_rows(dataconnect, tables))
+    except Exception as error:
+        raise CLIError(f"Data Connect endpoint schema lookup failed: {error}") from error
+
     schemas = {}
     for source, spec in ENDPOINT_CONTEXT_SOURCES.items():
-        try:
-            schemas[source] = _dataconnect_table_columns(dataconnect, spec["table"])
-        except Exception as error:
-            if source == "endpoint":
-                raise CLIError(
-                    f"Data Connect schema lookup failed for {spec['table']}: {error}") \
-                    from error
-            schemas[source] = {}
+        schemas[source] = schemas_by_table.get(spec["table"], {})
+        if source == "endpoint" and not schemas[source]:
+            raise CLIError(
+                f"Data Connect schema lookup failed for {spec['table']}: view unavailable")
         if (source != "endpoint" and not _first_column(
                 schemas[source], *spec["mac"])):
             # A view without an endpoint correlation key cannot safely participate

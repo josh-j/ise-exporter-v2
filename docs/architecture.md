@@ -105,6 +105,9 @@ other. Service shutdown interrupts pending query and detail pacing waits instead
 waiting for their full deadlines. Cold starts prioritize the bounded active-session,
 performance, and NAD-health datasets before historical reporting; duplicate due
 events are coalesced while a domain is queued or running.
+Cross-process lock acquisition is non-blocking and cancellation-aware, so a CLI
+process holding the shared pacing gate cannot strand exporter shutdown behind a
+kernel lock during a long adaptive cooldown.
 The Data Quality dashboard exposes per-view statement rate, p95 duration, rows
 returned, configured/effective cadence, pacing, and shared statement cooldown.
 The scheduler does not apply that cooldown a second time when calculating its

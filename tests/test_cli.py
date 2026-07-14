@@ -138,6 +138,13 @@ class CompletionDataConnect(FakeDataConnect):
             return [{"value": "CUSTOM_REPORT_VIEW"}]
         if "from user_tab_columns" in lowered:
             table = (parameters or {}).get("table_name")
+            if table is None and "table_name in" in lowered:
+                return [
+                    {"table_name": table_name, "column_name": column,
+                     "data_type": data_type}
+                    for table_name, columns in self.schemas.items()
+                    for column, data_type in columns
+                ]
             return [{"column_name": column, "data_type": data_type}
                     for column, data_type in self.schemas.get(table, ())]
         if "from endpoints_data e" in lowered:
@@ -599,6 +606,11 @@ def test_endpoint_context_search_joins_schema_discovered_sources(capsys):
     assert "LOWER(SUBSTR(m0.match_mac, 1, 2)" in sql
     assert "FETCH FIRST 25 ROWS ONLY" in sql
     assert set(parameters.values()) == {"LAB-%", "PERMIT%", "BERLIN-%", "WINDOWS%"}
+    schema_queries = [sql for sql, _parameters in dataconnect.calls
+                      if "FROM user_tab_columns" in sql]
+    assert len(schema_queries) == 1
+    assert all(spec["table"] in schema_queries[0]
+               for spec in cli.ENDPOINT_CONTEXT_SOURCES.values())
 
 
 def test_repeated_endpoint_field_values_are_or_and_distinct_fields_are_and(capsys):

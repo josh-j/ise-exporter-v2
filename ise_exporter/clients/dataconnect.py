@@ -129,7 +129,17 @@ class DataConnectClient:
                 path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o660)
             if os.fstat(descriptor).st_uid == os.geteuid():
                 os.fchmod(descriptor, 0o660)
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            # A blocking flock cannot be interrupted by threading.Event. That
+            # matters when another CLI process owns the gate through a long
+            # adaptive cooldown: service shutdown must not wait minutes for the
+            # kernel lock. Poll non-blocking acquisition through the same
+            # cancellable wait used by local pacing.
+            while True:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    self._wait(0.25)
             raw = os.read(descriptor, 64).decode("ascii", "ignore").strip()
             deadline = float(raw) if raw else 0.0
             remaining = deadline - time.time()

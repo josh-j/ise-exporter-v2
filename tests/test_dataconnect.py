@@ -1,3 +1,4 @@
+import fcntl
 import threading
 import types
 
@@ -153,6 +154,32 @@ def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path
     assert len(sleeps) == 1
     assert sleeps[0] > 0
     assert (tmp_path / "dataconnect.pacing").stat().st_mode & 0o777 == 0o660
+
+
+def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):
+    path = tmp_path / "dataconnect.pacing"
+    owner = path.open("w+")
+    fcntl.flock(owner.fileno(), fcntl.LOCK_EX)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_min_query_interval_ms=500,
+        dataconnect_shared_pacing_file=str(path),
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    shutdown = threading.Event()
+    shutdown.set()
+    client = dataconnect.DataConnectClient(cfg)
+    client.set_shutdown_event(shutdown)
+
+    try:
+        with pytest.raises(RuntimeError, match="cancelled during exporter shutdown"):
+            client._shared_gate()
+    finally:
+        fcntl.flock(owner.fileno(), fcntl.LOCK_UN)
+        owner.close()
 
 
 def test_shared_pacing_gate_acquisition_failure_is_counted(monkeypatch):
