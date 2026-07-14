@@ -18,7 +18,7 @@ Tab completion is context-aware. It completes commands, valid options, enum valu
 output/select fields, generic GET families and known paths, and Data Connect view
 names. Where credentials are configured, it also offers bounded,
 prefix-filtered endpoint identifiers, ISE nodes/PSNs, profiles, NADs, and usernames.
-Remote suggestions are capped at 25 rows and cached for 30 seconds; completion
+Remote suggestions are capped at 25 rows and cached for five minutes; completion
 failures are silent and never prevent command entry. Press Tab twice to display all
 matching choices.
 
@@ -115,10 +115,10 @@ before use with ERS or MnT.
 | `schema [COMMAND]` | Return API routes and contracts without credentials or network access |
 | `get FAMILY PATH` | Perform an explicit generic GET against `ers`, `openapi`, or `mnt` |
 
-Inventory commands return at most 100 rows by default. Use `--limit N` for a larger
-bounded query or `--all` to explicitly enumerate the complete inventory. On an
-100,000-endpoint deployment, prefer bounded queries and server-side filters during
-interactive work.
+Inventory commands return at most 100 rows by default and 1,000 rows without an
+explicit production-impact acknowledgement. Complete enumeration requires both
+`--all` and `--allow-expensive`. MnT ActiveList retrieval and leading-wildcard
+searches such as `*LAPTOP*` likewise require `--allow-expensive`.
 
 ### Friendly endpoint searches
 
@@ -138,6 +138,7 @@ with AND. Repeating one field supplies alternatives with OR:
 
 ```console
 ise> endpoints location=Berlin-* location=London-* posture-status=Compliant
+ise> endpoints '*LAPTOP*' --allow-expensive
 ```
 
 Searches run in Data Connect with bound values, a default 100-row limit, and a
@@ -188,7 +189,7 @@ ise-cli endpoint AA:BB:CC:DD:EE:FF --include-session --output json
 ise-cli endpoint aabb.ccdd.eeff
 ise-cli resolve 192.0.2.25 --output json
 ise-cli session client-25.example.test
-ise-cli sessions --limit 200 --output jsonl
+ise-cli sessions --limit 200 --allow-expensive --output jsonl
 ise-cli auth-status 192.0.2.25 --seconds 3600 --limit 50
 ise-cli secure-client client-25.example.test --include-all --output json
 ise-cli endpoint-report --profile Windows10-Workstation --limit 25
@@ -202,7 +203,7 @@ ise-cli certificates --node laba-ise-001
 ise-cli schema secure-client --output json
 ise-cli get ers /config/identitygroup --param size=25 --output json
 ise-cli get openapi /license/system/tier-state --no-unwrap --output json
-ise-cli get mnt /Session/ActiveList --output json
+ise-cli get mnt /Session/ActiveList --allow-expensive --output json
 ```
 
 Every data command supports `--output table|json|jsonl|csv` and `--select`.
@@ -215,6 +216,12 @@ the same spirit as selecting properties from PowerCLI objects.
 - Data Connect commands use fixed `SELECT` templates, discover available columns
   from Oracle metadata, bind user values, enforce two-day windows where a timestamp
   is available, and cap output at 5,000 rows.
+- The normal production ceiling is 1,000 rows. Higher limits, full inventories,
+  leading-wildcard scans, and MnT ActiveList require `--allow-expensive`.
+- MnT hostname/IP resolution does not silently download ActiveList; the operator
+  must pass `--allow-active-list-scan` when that fallback is genuinely required.
+- Exporter and CLI Data Connect queries share a file-locked pacing deadline, so
+  concurrent CLI processes cannot bypass the configured duty-cycle cooldown.
 - The generic command requires a family-relative path, rejects full URLs and `..`,
   and exposes no HTTP method flag.
 - Inventory enumeration is bounded unless `--all` is explicit.
@@ -231,4 +238,6 @@ The package and interpreter are globally readable/executable, but the shared
 `/etc/ise-exporter/ise-exporter.env`, Data Connect password, and certificate
 material remain restricted to `root:ise-exporter`. An operator can either supply
 their own environment/`--env-file` or be explicitly added to the `ise-exporter`
-group when reuse of the service account configuration is intended.
+group when reuse of the service account configuration and shared pacing gate is
+intended. A user who cannot access the configured pacing gate is refused rather
+than allowed to issue an uncoordinated Data Connect query.

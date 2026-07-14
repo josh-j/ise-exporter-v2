@@ -26,8 +26,32 @@ def _i(v, d):
         return d
 
 
+def _f(v, d):
+    raw = _s(v, None)
+    if not raw:
+        return d
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("%s=%r is not a valid number — defaulting to %s", v, raw, d)
+        return d
+
+
 def _bounded_i(v, d, minimum=None, maximum=None):
     value = _i(v, d)
+    bounded = value
+    if minimum is not None:
+        bounded = max(minimum, bounded)
+    if maximum is not None:
+        bounded = min(maximum, bounded)
+    if bounded != value:
+        logger.warning("%s=%s is outside the production-safe range — using %s",
+                       v, value, bounded)
+    return bounded
+
+
+def _bounded_f(v, d, minimum=None, maximum=None):
+    value = _f(v, d)
     bounded = value
     if minimum is not None:
         bounded = max(minimum, bounded)
@@ -103,19 +127,23 @@ class Config:
     # Connect can route work across ISE personas, so these limits protect the
     # deployment rather than assuming the secondary MnT absorbs every query.
     dataconnect_query_timeout: int = 15
-    dataconnect_max_groups: int = 2000
-    dataconnect_min_query_interval_ms: int = 250
-    dataconnect_max_duty_cycle_percent: int = 5
-    dataconnect_radius_interval: int = 300
-    dataconnect_performance_interval: int = 300
-    dataconnect_posture_interval: int = 900
-    dataconnect_endpoints_interval: int = 21600
-    dataconnect_freshness_interval: int = 3600
-    dataconnect_nad_health_interval: int = 900
-    dataconnect_tacacs_interval: int = 900
+    dataconnect_max_groups: int = 1000
+    dataconnect_min_query_interval_ms: int = 2000
+    dataconnect_max_duty_cycle_percent: float = 0.5
+    dataconnect_radius_interval: int = 900
+    dataconnect_performance_interval: int = 900
+    dataconnect_posture_interval: int = 3600
+    dataconnect_endpoints_interval: int = 43200
+    dataconnect_freshness_interval: int = 7200
+    dataconnect_nad_health_interval: int = 3600
+    dataconnect_tacacs_interval: int = 3600
+    dataconnect_shared_pacing_file: str = "/var/lib/ise-exporter/dataconnect.pacing"
     dataconnect_incremental_enabled: bool = True
     dataconnect_reconcile_interval: int = 86400
     dataconnect_max_backfill_seconds: int = 3600
+    cli_production_safe: bool = True
+    cli_allow_expensive: bool = False
+    cli_max_rows: int = 1000
     @property
     def dataconnect_ready(self) -> bool:
         return bool(self.dataconnect_host and self.dataconnect_user
@@ -180,29 +208,35 @@ class Config:
             dataconnect_query_timeout=_bounded_i(
                 "ISE_DATACONNECT_QUERY_TIMEOUT", 15, 5, 15),
             dataconnect_max_groups=_bounded_i(
-                "ISE_DATACONNECT_MAX_GROUPS", 2000, 1, 2000),
+                "ISE_DATACONNECT_MAX_GROUPS", 1000, 1, 2000),
             dataconnect_min_query_interval_ms=_bounded_i(
-                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 250, 100),
-            dataconnect_max_duty_cycle_percent=_bounded_i(
-                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 5, 1, 10),
+                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 2000, 500),
+            dataconnect_max_duty_cycle_percent=_bounded_f(
+                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.5, 0.1, 2.0),
             dataconnect_radius_interval=_bounded_i(
-                "ISE_DATACONNECT_RADIUS_INTERVAL", 300, 300),
+                "ISE_DATACONNECT_RADIUS_INTERVAL", 900, 900),
             dataconnect_performance_interval=_bounded_i(
-                "ISE_DATACONNECT_PERFORMANCE_INTERVAL", 300, 300),
+                "ISE_DATACONNECT_PERFORMANCE_INTERVAL", 900, 900),
             dataconnect_posture_interval=_bounded_i(
-                "ISE_DATACONNECT_POSTURE_INTERVAL", 900, 900),
+                "ISE_DATACONNECT_POSTURE_INTERVAL", 3600, 1800),
             dataconnect_endpoints_interval=_bounded_i(
-                "ISE_DATACONNECT_ENDPOINTS_INTERVAL", 21600, 21600),
+                "ISE_DATACONNECT_ENDPOINTS_INTERVAL", 43200, 21600),
             dataconnect_freshness_interval=_bounded_i(
-                "ISE_DATACONNECT_FRESHNESS_INTERVAL", 3600, 3600),
+                "ISE_DATACONNECT_FRESHNESS_INTERVAL", 7200, 3600),
             dataconnect_nad_health_interval=_bounded_i(
-                "ISE_DATACONNECT_NAD_HEALTH_INTERVAL", 900, 900),
+                "ISE_DATACONNECT_NAD_HEALTH_INTERVAL", 3600, 1800),
             dataconnect_tacacs_interval=_bounded_i(
-                "ISE_DATACONNECT_TACACS_INTERVAL", 900, 900),
+                "ISE_DATACONNECT_TACACS_INTERVAL", 3600, 1800),
+            dataconnect_shared_pacing_file=_s(
+                "ISE_DATACONNECT_SHARED_PACING_FILE",
+                "/var/lib/ise-exporter/dataconnect.pacing"),
             dataconnect_incremental_enabled=_b(
                 "ISE_DATACONNECT_INCREMENTAL_ENABLED", True),
             dataconnect_reconcile_interval=_bounded_i(
                 "ISE_DATACONNECT_RECONCILE_INTERVAL", 86400, 21600),
             dataconnect_max_backfill_seconds=_bounded_i(
                 "ISE_DATACONNECT_MAX_BACKFILL_SECONDS", 3600, 900, 21600),
+            cli_production_safe=_b("ISE_CLI_PRODUCTION_SAFE", True),
+            cli_allow_expensive=_b("ISE_CLI_ALLOW_EXPENSIVE", False),
+            cli_max_rows=_bounded_i("ISE_CLI_MAX_ROWS", 1000, 100, 5000),
         )

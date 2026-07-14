@@ -127,8 +127,8 @@ class PollScheduler:
             elapsed = max(0.0, time.monotonic() - started)
             effective_interval = tier
             if source == "dataconnect":
-                duty_cycle = max(1, min(10, getattr(
-                    self.cfg, "dataconnect_max_duty_cycle_percent", 5)))
+                duty_cycle = max(0.1, min(2.0, float(getattr(
+                    self.cfg, "dataconnect_max_duty_cycle_percent", 0.5))))
                 load_interval = math.ceil(elapsed * 100 / duty_cycle)
                 effective_interval = max(tier, load_interval)
                 metrics.ise_dataconnect_load_backoff_seconds.labels(dataset=name).set(

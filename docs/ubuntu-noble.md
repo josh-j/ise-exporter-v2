@@ -109,6 +109,9 @@ ISE_DATACONNECT_USER=dataconnect
 ISE_DATACONNECT_PASSWORD=use-a-secret-store
 ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-dataconnect-ca.pem
 ISE_DATACONNECT_SSL_VERIFY=true
+ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS=2000
+ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT=0.5
+ISE_DATACONNECT_SHARED_PACING_FILE=/var/lib/ise-exporter/dataconnect.pacing
 ```
 
 At the production defaults, the MnT collector deduplicates ActiveList MACs and
@@ -117,6 +120,8 @@ new/changed/rotating detail requests every 15 minutes with two paced workers.
 The systemd `StateDirectory` preserves cached details and incremental RADIUS
 aggregate windows across restarts. This bound is independent of the 100,000-endpoint
 inventory.
+Authorized `ise-cli` users must belong to the `ise-exporter` group so their Data
+Connect queries participate in the same serialized pacing gate as the service.
 The resulting metrics are current aggregate samples with coverage/truncation
 signals; they never expose endpoint identity, session identity, or raw/free-form
 attributes as Prometheus labels. Data Connect remains the historical posture and

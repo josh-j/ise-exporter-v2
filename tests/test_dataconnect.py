@@ -85,13 +85,45 @@ def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
     client.query("SELECT username FROM radius_authentications")
     client.query("SELECT username FROM radius_authentications")
 
-    assert sleeps == [pytest.approx(1.8)]
+    assert sleeps == [pytest.approx(19.8)]
     assert counter._value.get() == before + 2
     assert metrics.ise_dataconnect_query_rows.labels(
         view="radius_authentications")._value.get() == 1
     assert metrics.ise_dataconnect_query_cooldown_seconds.labels(
-        view="radius_authentications")._value.get() == pytest.approx(0.95)
+        view="radius_authentications")._value.get() == pytest.approx(9.95)
     assert dataconnect._query_view("SELECT * FROM arbitrary_table") == "other"
+
+
+def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path):
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: Connection())
+    monotonic = [0.0]
+
+    def tick():
+        value = monotonic[0]
+        monotonic[0] += 0.1
+        return value
+
+    monkeypatch.setattr(dataconnect.time, "monotonic", tick)
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+    sleeps = []
+    monkeypatch.setattr(dataconnect.time, "sleep", sleeps.append)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_min_query_interval_ms=500,
+        dataconnect_max_duty_cycle_percent=2,
+        dataconnect_shared_pacing_file=str(tmp_path / "dataconnect.pacing"),
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    dataconnect.DataConnectClient(cfg).query("SELECT username FROM radius_authentications")
+    dataconnect.DataConnectClient(cfg).query("SELECT username FROM radius_authentications")
+
+    assert len(sleeps) == 1
+    assert sleeps[0] > 0
+    assert (tmp_path / "dataconnect.pacing").stat().st_mode & 0o777 == 0o660
 
 
 def test_connection_backoff_protects_dataconnect_account(monkeypatch):

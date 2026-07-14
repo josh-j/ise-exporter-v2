@@ -32,6 +32,7 @@ def test_curl_probes_return_schema_without_credentials_or_network():
 
 def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     script = (Path(__file__).parents[1] / "deploy/install.sh").read_text()
+    unit = (Path(__file__).parents[1] / "deploy/ise-exporter.service").read_text()
 
     assert "CLI_LINK=/usr/local/bin/ise-cli" in script
     assert 'ln -sfn "$VENV/bin/ise-cli" "$CLI_LINK"' in script
@@ -40,8 +41,9 @@ def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     assert 'chmod 640 "$ENV_FILE"' in script
     assert 'chmod 750 "$CERTS_DIR"' in script
     assert 'STATE_DIR=/var/lib/ise-exporter' in script
-    assert 'install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$STATE_DIR"' in script
-    unit = (Path(__file__).parents[1] / "deploy/ise-exporter.service").read_text()
+    assert 'install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 770 "$STATE_DIR"' in script
+    assert "StateDirectoryMode=0770" in unit
+    assert "UMask=0007" in unit
     assert "StateDirectory=ise-exporter" in unit
 
 

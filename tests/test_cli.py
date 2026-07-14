@@ -189,8 +189,9 @@ def test_endpoints_are_bounded_and_paginated(capsys):
 ))
 def test_endpoints_wildcards_are_server_side_ers_filters(pattern, expected, capsys):
     client = FakeClient()
+    expensive = ["--allow-expensive"] if pattern.startswith("*") else []
 
-    assert cli.main(["endpoints", pattern, "--limit", "5", "-o", "json"],
+    assert cli.main(["endpoints", pattern, *expensive, "--limit", "5", "-o", "json"],
                     client=client) == 0
 
     assert client.calls[0][2]["filter"] == expected
@@ -201,6 +202,24 @@ def test_endpoints_rejects_complex_wildcard_without_enumerating():
 
     with pytest.raises(SystemExit):
         cli.main(["endpoints", "LAB-*-WIN"], client=client)
+
+    assert client.calls == []
+
+
+def test_leading_wildcard_requires_explicit_production_acknowledgement():
+    client = FakeClient()
+
+    with pytest.raises(SystemExit):
+        cli.main(["endpoints", "*LAPTOP*"], client=client)
+
+    assert client.calls == []
+
+
+def test_complete_inventory_requires_explicit_production_acknowledgement():
+    client = FakeClient()
+
+    with pytest.raises(SystemExit):
+        cli.main(["endpoints", "--all"], client=client)
 
     assert client.calls == []
 
@@ -238,7 +257,7 @@ def test_generic_get_is_read_only_and_routes_by_family(capsys):
     client = FakeClient()
 
     assert cli.main([
-        "get", "mnt", "/Session/ActiveList", "-o", "json"
+        "get", "mnt", "/Session/ActiveList", "--allow-expensive", "-o", "json"
     ], client=client) == 0
 
     assert json.loads(capsys.readouterr().out)["total"] == 2
@@ -255,7 +274,8 @@ def test_csv_and_select_produce_pipeline_friendly_output(capsys):
     client = FakeClient()
 
     assert cli.main([
-        "sessions", "--select", "calling_station_id,server", "-o", "csv"
+        "sessions", "--allow-expensive", "--select", "calling_station_id,server",
+        "-o", "csv"
     ], client=client) == 0
 
     assert capsys.readouterr().out.splitlines() == [
@@ -504,7 +524,7 @@ def test_repeated_endpoint_field_values_are_or_and_distinct_fields_are_and(capsy
 
     assert cli.main([
         "endpoints", "location=Berlin*", "location=London*", "posture-status=Compliant",
-        "-o", "json",
+        "--allow-expensive", "-o", "json",
     ], client=FakeClient(), dataconnect=dataconnect) == 0
 
     sql = next(sql for sql, _parameters in dataconnect.calls
@@ -514,7 +534,7 @@ def test_repeated_endpoint_field_values_are_or_and_distinct_fields_are_and(capsy
     assert " UNION " in sql
     assert "JOIN matched_0" in sql and "JOIN matched_1" in sql
     assert "EXISTS" not in sql and "REPLACE(" not in sql
-    assert "FETCH FIRST 5000 ROWS ONLY" in sql
+    assert "FETCH FIRST 100 ROWS ONLY" in sql
 
 
 def test_endpoint_fields_catalog_includes_every_searchable_qualified_column(capsys):

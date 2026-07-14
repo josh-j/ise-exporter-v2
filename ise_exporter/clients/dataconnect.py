@@ -5,6 +5,8 @@ only queries Cisco's bounded ``*_LAST_TWO_DAYS`` TACACS views and never mutates
 the database.
 """
 import base64
+import fcntl
+import os
 import ssl
 import time
 
@@ -70,14 +72,59 @@ class DataConnectClient:
         self.failure_threshold = max(1, getattr(cfg, "auth_failure_threshold", 3))
         self.failure_backoff = max(0, getattr(cfg, "auth_failure_backoff", 900))
         self.min_query_interval = max(
-            0.1, getattr(cfg, "dataconnect_min_query_interval_ms", 250) / 1000.0)
-        self.max_duty_cycle = max(1, min(10, getattr(
-            cfg, "dataconnect_max_duty_cycle_percent", 5)))
+            0.5, getattr(cfg, "dataconnect_min_query_interval_ms", 2000) / 1000.0)
+        self.max_duty_cycle = max(0.1, min(2.0, float(getattr(
+            cfg, "dataconnect_max_duty_cycle_percent", 0.5))))
+        self.shared_pacing_file = str(getattr(
+            cfg, "dataconnect_shared_pacing_file", "") or "")
         self._connection = None
         self._connect_failures = 0
         self._blocked_until = 0.0
         self._next_query_at = 0.0
         metrics.ise_dataconnect_query_pacing_seconds.set(self.min_query_interval)
+
+    def _shared_gate(self):
+        """Serialize and pace queries across exporter and CLI processes.
+
+        The installed service and authorized CLI operators share this small lock
+        file. Refusing an inaccessible configured gate is safer than silently
+        allowing parallel production queries.
+        """
+        if not self.shared_pacing_file:
+            return None
+        path = os.path.abspath(os.path.expanduser(self.shared_pacing_file))
+        try:
+            descriptor = os.open(
+                path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o660)
+            if os.fstat(descriptor).st_uid == os.geteuid():
+                os.fchmod(descriptor, 0o660)
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            raw = os.read(descriptor, 64).decode("ascii", "ignore").strip()
+            deadline = float(raw) if raw else 0.0
+            remaining = deadline - time.time()
+            if remaining > 0:
+                time.sleep(remaining)
+            return descriptor
+        except Exception as error:
+            try:
+                os.close(descriptor)
+            except (NameError, OSError):
+                pass
+            raise RuntimeError(
+                f"Data Connect shared pacing gate unavailable at {path}: {error}") from error
+
+    @staticmethod
+    def _release_shared_gate(descriptor, deadline):
+        if descriptor is None:
+            return
+        try:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            os.ftruncate(descriptor, 0)
+            os.write(descriptor, f"{deadline:.6f}\n".encode("ascii"))
+            os.fsync(descriptor)
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
 
     def _ssl_context(self):
         if not self.verify:
@@ -112,6 +159,7 @@ class DataConnectClient:
         remaining = self._next_query_at - time.monotonic()
         if remaining > 0:
             time.sleep(remaining)
+        shared_gate = self._shared_gate()
         started = time.monotonic()
         view = _query_view(sql)
         result = "error"
@@ -143,6 +191,7 @@ class DataConnectClient:
             cooldown = max(self.min_query_interval, duty_cycle_cooldown)
             metrics.ise_dataconnect_query_cooldown_seconds.labels(view=view).set(cooldown)
             self._next_query_at = finished + cooldown
+            self._release_shared_gate(shared_gate, time.time() + cooldown)
 
     def close(self):
         if self._connection is not None:

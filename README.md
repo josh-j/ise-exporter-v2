@@ -63,12 +63,12 @@ ISE_EXPORTER_STATE_DB=/var/lib/ise-exporter/state.sqlite3
 Values are parsed literally after the first `=`; `${NAME}` and additional `=`
 characters in passwords are preserved. Inline comments on integer values are
 not supported. The sample is production-oriented for up to 100,000 endpoints:
-database-side aggregation, collapsed summary/top-group scans, paced sequential
-queries, five-minute RADIUS/performance reporting, 15-minute posture/TACACS
-reporting, hourly source-freshness checks, and six-hour inventory state. A private
+database-side aggregation, collapsed summary/top-group scans, serialized two-second
+query pacing, 15-minute RADIUS/performance reporting, hourly posture/TACACS/NAD
+reporting, two-hour source-freshness checks, and 12-hour inventory state. A private
 SQLite cache survives restarts. MnT fetches at most 250 new or rotating endpoint
 details per 15-minute cycle, while cached active details retain dashboard coverage.
-RADIUS normally scans only its new five-minute event window and performs a full
+RADIUS normally scans only its new 15-minute event window and performs a full
 two-day reconciliation once per day.
 
 Before starting the service, verify the reporting connection:

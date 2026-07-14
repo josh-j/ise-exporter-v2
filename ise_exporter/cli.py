@@ -422,6 +422,16 @@ def build_parser(*, require_command=False):
         _add_output_args(sub)
         return sub
 
+    def expensive(sub):
+        sub.add_argument(
+            "--allow-expensive", action="store_true",
+            help="explicitly allow a broad production query or complete enumeration")
+
+    def active_scan(sub):
+        sub.add_argument(
+            "--allow-active-list-scan", action="store_true",
+            help="allow MnT ActiveList fallback when direct endpoint resolution fails")
+
     command("health", "check PAN/ERS, MnT, and configured Data Connect reachability")
     command("nodes", "list deployment nodes")
 
@@ -438,6 +448,7 @@ def build_parser(*, require_command=False):
                          help="maximum rows (default: 100)")
         sub.add_argument("--all", action="store_true",
                          help="explicitly enumerate every result")
+        expensive(sub)
         sub.add_argument("--filter", action="append", default=[],
                          help="ISE ERS filter expression; repeatable")
         if name == "endpoints":
@@ -451,29 +462,35 @@ def build_parser(*, require_command=False):
     sub = command("sessions", "list active MnT sessions")
     sub.add_argument("--limit", type=int, default=100)
     sub.add_argument("--all", action="store_true")
+    expensive(sub)
 
     sub = command("endpoint", "inspect an endpoint by MAC, IP, hostname, or ERS id")
     sub.add_argument("identifier")
     sub.add_argument("--id", action="store_true", help="identifier is an ERS endpoint id")
     sub.add_argument("--include-session", action="store_true",
                      help="also query MnT Session/MACAddress")
+    active_scan(sub)
 
     sub = command("resolve", "resolve a MAC, IP, hostname, or ERS id")
     sub.add_argument("identifier")
     sub.add_argument("--id", action="store_true", help="identifier is an ERS endpoint id")
+    active_scan(sub)
 
     sub = command("session", "inspect an active session by MAC, IP, hostname, or ERS id")
     sub.add_argument("identifier")
+    active_scan(sub)
 
     sub = command("auth-status", "show recent authentication status for an endpoint")
     sub.add_argument("identifier")
     sub.add_argument("--seconds", type=int, default=600)
     sub.add_argument("--limit", type=int, default=20)
+    active_scan(sub)
 
     sub = command("secure-client", "inspect Secure Client posture attributes for an endpoint")
     sub.add_argument("identifier")
     sub.add_argument("--include-all", action="store_true",
                      help="include every parsed other_attr_string field")
+    active_scan(sub)
 
     for name, help_text in (
         ("licenses", "show Smart Licensing tier state"),
@@ -497,6 +514,7 @@ def build_parser(*, require_command=False):
         sub = command(name, help_text)
         sub.add_argument("--limit", type=int, default=100,
                          help="maximum rows (default: 100)")
+        expensive(sub)
         return sub
 
     sub = report("radius-auth", "query recent RADIUS authentications from Data Connect")
@@ -545,6 +563,7 @@ def build_parser(*, require_command=False):
     sub.add_argument("path", help="family-relative path beginning with /")
     sub.add_argument("--param", action="append", default=[], metavar="KEY=VALUE")
     sub.add_argument("--all", action="store_true", help="follow ERS pagination")
+    expensive(sub)
     sub.add_argument("--no-unwrap", action="store_true",
                      help="keep the OpenAPI response envelope")
     return parser
@@ -566,6 +585,25 @@ def _load_config(env_file=None, *, require_rest=True):
 
 def _rest_ready(cfg):
     return bool(cfg and cfg.ise_host and cfg.ise_mnt_host and cfg.ise_user and cfg.ise_pass)
+
+
+def _require_expensive(args, cfg, reason):
+    production_safe = getattr(cfg, "cli_production_safe", True)
+    globally_allowed = getattr(cfg, "cli_allow_expensive", False)
+    explicitly_allowed = getattr(args, "allow_expensive", False)
+    if production_safe and not (globally_allowed or explicitly_allowed):
+        raise CLIError(
+            f"{reason}; rerun with --allow-expensive after confirming production impact")
+
+
+def _guard_row_limit(args, cfg):
+    maximum = int(getattr(cfg, "cli_max_rows", 1000))
+    if getattr(args, "limit", 0) > maximum:
+        _require_expensive(args, cfg, f"--limit above the production-safe maximum {maximum}")
+
+
+def _leading_wildcard(pattern):
+    return str(pattern).startswith(("*", "?"))
 
 
 def _params(items):
@@ -697,7 +735,7 @@ def _session_matches(session, identifier, kind):
     return False
 
 
-def _sessions_for_identifier(client, identifier, kind):
+def _sessions_for_identifier(client, identifier, kind, *, allow_active_scan=False):
     if kind == "mac":
         return _mnt_sessions(
             client, f"/Session/MACAddress/{normalize_mac(identifier)}", "cli_session_lookup")
@@ -705,11 +743,16 @@ def _sessions_for_identifier(client, identifier, kind):
         direct = _mnt_sessions(client, f"/Session/IPAddress/{identifier}", "cli_session_lookup")
         if direct:
             return direct
+    if not allow_active_scan:
+        raise CLIError(
+            "direct MnT lookup did not resolve the endpoint; ActiveList fallback is disabled "
+            "in production mode (use --allow-active-list-scan to request it explicitly)")
     active = _mnt_sessions(client, "/Session/ActiveList", "cli_session_resolve")
     return [session for session in active if _session_matches(session, identifier, kind)]
 
 
-def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None):
+def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None,
+                      *, allow_active_scan=False):
     original = str(identifier).strip()
     kind = _identifier_kind(original, by_id)
     endpoint = None
@@ -737,7 +780,8 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None):
                         if endpoint_id else matches[0])
             source = "ers"
         else:
-            sessions = _sessions_for_identifier(client, mac, kind)
+            sessions = _sessions_for_identifier(
+                client, mac, kind, allow_active_scan=allow_active_scan)
             source = "mnt" if sessions else "input"
     else:
         try:
@@ -764,7 +808,8 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None):
             if dc_candidates and endpoint is not candidate:
                 source = "dataconnect+ers"
         if not mac:
-            sessions = _sessions_for_identifier(client, original, kind)
+            sessions = _sessions_for_identifier(
+                client, original, kind, allow_active_scan=allow_active_scan)
             mac = _session_mac(sessions[0]) if sessions else ""
         if not mac and kind == "hostname":
             try:
@@ -772,7 +817,8 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None):
             except socket.gaierror:
                 addresses = []
             for address in addresses:
-                ip_sessions = _sessions_for_identifier(client, address, "ip")
+                ip_sessions = _sessions_for_identifier(
+                    client, address, "ip", allow_active_scan=allow_active_scan)
                 if ip_sessions:
                     sessions = ip_sessions
                     mac = _session_mac(ip_sessions[0])
@@ -813,10 +859,12 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None):
     }
 
 
-def _resolved_mac(client, identifier, dataconnect=None):
+def _resolved_mac(client, identifier, dataconnect=None, *, allow_active_scan=False):
     if is_mac(identifier):
         return normalize_mac(identifier)
-    resolved = _resolve_endpoint(client, identifier, dataconnect=dataconnect)
+    resolved = _resolve_endpoint(
+        client, identifier, dataconnect=dataconnect,
+        allow_active_scan=allow_active_scan)
     if not resolved["mac"]:
         raise CLIError(f"could not resolve {identifier!r} to a MAC address")
     return resolved["mac"]
@@ -1209,6 +1257,18 @@ def _execute(args, client, cfg, dataconnect=None):
         return _endpoint_fields(dataconnect, args.pattern)
     if command == "endpoints":
         criteria = _parse_endpoint_criteria(args.criteria)
+        _guard_row_limit(args, cfg)
+        if args.all:
+            _require_expensive(args, cfg, "complete endpoint enumeration is disabled")
+        broad_patterns = [pattern for _field, pattern in criteria
+                          if _leading_wildcard(pattern)]
+        if broad_patterns:
+            _require_expensive(
+                args, cfg,
+                f"leading-wildcard endpoint search {broad_patterns[0]!r} can scan a large view")
+        if any(".CONTAINS." in item.upper() or ".ENDSW." in item.upper()
+               for item in args.filter):
+            _require_expensive(args, cfg, "broad ERS CONTAINS/ENDSW filter is disabled")
         if criteria and dataconnect is not None:
             if args.filter:
                 raise CLIError(
@@ -1247,6 +1307,9 @@ def _execute(args, client, cfg, dataconnect=None):
             raise CLIError("ISE returned no deployment-node response")
         return result
     if command in ERS_INVENTORIES:
+        _guard_row_limit(args, cfg)
+        if args.all:
+            _require_expensive(args, cfg, "complete ERS inventory enumeration is disabled")
         return _ers_rows(client, ERS_INVENTORIES[command], limit=args.limit,
                          all_rows=args.all, filters=args.filter)
     if command in OPENAPI_INVENTORIES:
@@ -1256,15 +1319,18 @@ def _execute(args, client, cfg, dataconnect=None):
             raise CLIError(f"ISE returned no response for {command}")
         return result
     if command in DATACONNECT_REPORTS:
+        _guard_row_limit(args, cfg)
         return _dataconnect_report(args, client, dataconnect)
     if command == "dataconnect-schema":
         return _dataconnect_schema(dataconnect, args.table)
     if command == "sessions":
+        _require_expensive(args, cfg, "MnT ActiveList retrieval is disabled")
         rows = _mnt_sessions(client, "/Session/ActiveList", "cli_sessions")
         return rows if args.all else rows[:args.limit]
     if command == "endpoint":
         resolved = _resolve_endpoint(
-            client, args.identifier, args.id, dataconnect=dataconnect)
+            client, args.identifier, args.id, dataconnect=dataconnect,
+            allow_active_scan=args.allow_active_list_scan)
         detail = resolved["endpoint"]
         if detail is None:
             raise CLIError(f"endpoint detail unavailable for {args.identifier!r}")
@@ -1275,23 +1341,33 @@ def _execute(args, client, cfg, dataconnect=None):
                 client, f"/Session/MACAddress/{mac}", "cli_endpoint_session")) if mac else []
         return detail
     if command == "resolve":
-        return _resolve_endpoint(client, args.identifier, args.id, dataconnect=dataconnect)
+        return _resolve_endpoint(
+            client, args.identifier, args.id, dataconnect=dataconnect,
+            allow_active_scan=args.allow_active_list_scan)
     if command == "session":
         kind = _identifier_kind(args.identifier)
         if kind in ("mac", "ip"):
-            return _sessions_for_identifier(client, args.identifier, kind)
-        mac = _resolved_mac(client, args.identifier, dataconnect)
+            return _sessions_for_identifier(
+                client, args.identifier, kind,
+                allow_active_scan=args.allow_active_list_scan)
+        mac = _resolved_mac(
+            client, args.identifier, dataconnect,
+            allow_active_scan=args.allow_active_list_scan)
         return _mnt_sessions(client, f"/Session/MACAddress/{mac}", "cli_session")
     if command == "auth-status":
         if args.seconds < 1 or args.limit < 1:
             raise CLIError("--seconds and --limit must be at least 1")
-        mac = _resolved_mac(client, args.identifier, dataconnect)
+        mac = _resolved_mac(
+            client, args.identifier, dataconnect,
+            allow_active_scan=args.allow_active_list_scan)
         return _mnt_sessions(
             client, f"/AuthStatus/MACAddress/{mac}/{args.seconds}/{args.limit}/All",
             "cli_auth_status",
         )
     if command == "secure-client":
-        mac = _resolved_mac(client, args.identifier, dataconnect)
+        mac = _resolved_mac(
+            client, args.identifier, dataconnect,
+            allow_active_scan=args.allow_active_list_scan)
         return _secure_client(client, mac, args.include_all)
     if command == "certificates":
         if args.trusted_only and args.system_only:
@@ -1320,6 +1396,11 @@ def _execute(args, client, cfg, dataconnect=None):
         if not args.path.startswith("/") or "://" in args.path or ".." in args.path:
             raise CLIError("path must be family-relative, start with '/', and contain no '..'")
         params = _params(args.param)
+        if args.all:
+            _require_expensive(args, cfg, "generic ERS pagination is disabled")
+        if (args.family == "mnt"
+                and args.path.rstrip("/").casefold().endswith("/session/activelist")):
+            _require_expensive(args, cfg, "generic MnT ActiveList retrieval is disabled")
         if args.family == "ers":
             result = client.get_ers(args.path, params or None, get_all=args.all,
                                     api_name="cli_get_ers")

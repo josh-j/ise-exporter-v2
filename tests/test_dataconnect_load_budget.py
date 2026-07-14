@@ -1,3 +1,5 @@
+import pytest
+
 from ise_exporter.collectors import (
     dataconnect_endpoints,
     dataconnect_freshness,
@@ -9,7 +11,7 @@ from ise_exporter.collectors import (
 from ise_exporter.config import Config
 
 
-def test_100k_default_profile_stays_below_200_scheduled_statements_per_hour():
+def test_100k_default_profile_stays_below_65_scheduled_statements_per_hour():
     cfg = Config()
     statements_per_run = {
         "radius": len(dataconnect_radius._queries(cfg.dataconnect_max_groups)),
@@ -51,5 +53,5 @@ def test_100k_default_profile_stays_below_200_scheduled_statements_per_hour():
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert reconciliation_statements_per_hour == 187
-    assert steady_statements_per_hour == 187
+    assert reconciliation_statements_per_hour == pytest.approx(61.5)
+    assert steady_statements_per_hour == pytest.approx(61.5)

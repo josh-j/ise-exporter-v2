@@ -17,7 +17,8 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 StateDirectory=ise-exporter
-StateDirectoryMode=0750
+StateDirectoryMode=0770
+UMask=0007
 ReadOnlyPaths=/etc/ise-exporter
 AmbientCapabilities=
 

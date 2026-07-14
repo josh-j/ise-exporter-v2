@@ -151,7 +151,7 @@ def test_slow_dataconnect_collection_gets_duty_cycle_backoff(monkeypatch):
     monkeypatch.setattr(scheduler_module.time, "monotonic", lambda: next(monotonic))
     monkeypatch.setattr(scheduler_module.time, "time", lambda: 100.0)
     scheduler = PollScheduler(
-        _cfg(dataconnect_max_duty_cycle_percent=5), object(), object())
+        _cfg(dataconnect_max_duty_cycle_percent=0.5), object(), object())
 
     def succeed():
         with collectors.observe("dataconnect_radius"):
@@ -159,11 +159,11 @@ def test_slow_dataconnect_collection_gets_duty_cycle_backoff(monkeypatch):
 
     scheduler._run("dataconnect_radius", 100.0, 300, succeed)
 
-    assert scheduler.next_run["dataconnect_radius"] == 500.0
+    assert scheduler.next_run["dataconnect_radius"] == 4100.0
     assert metrics.ise_dataset_effective_interval_seconds.labels(
-        dataset="dataconnect_radius", source="dataconnect")._value.get() == 400
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 4000
     assert metrics.ise_dataconnect_load_backoff_seconds.labels(
-        dataset="dataconnect_radius")._value.get() == 100
+        dataset="dataconnect_radius")._value.get() == 3700
 
 
 def test_repeated_failures_use_slow_backoff(monkeypatch):

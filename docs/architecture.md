@@ -85,16 +85,17 @@ unbounded Prometheus labels.
 Data Connect safety applies to the whole ISE deployment. Connecting to a
 secondary MnT does not imply that every exposed view is executed only on that
 node. Production defaults for up to 100,000 endpoints use one sequential
-connection, 250ms statement pacing, a 5% adaptive query-duty-cycle ceiling,
-15-second statement timeouts, and independent five-minute to six-hour domain
+connection, two-second statement pacing, a 0.5% adaptive query-duty-cycle ceiling,
+15-second statement timeouts, and independent 15-minute to 12-hour domain
 cadences. Summary and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate two-day scan.
-The steady-state workload ceiling remains 187 statements per hour after startup;
+The steady-state workload ceiling is about 62 statements per hour after startup;
 the safety gain is that six RADIUS statements scan only their new event window,
 while one inexpensive database-clock statement makes watermark boundaries exact,
-excluding explicit operator CLI queries. The former shared-tier design issued
-1,437 statements per hour, so the 100k profile removes 87% of scheduled query
-invocations before the global duty-cycle cooldown is considered.
+The exporter and CLI also serialize through one persistent pacing gate so separate
+processes cannot bypass the cooldown. The former shared-tier design issued 1,437
+statements per hour, so the 100k profile removes more than 95% of scheduled query
+invocations before adaptive cooldown is considered.
 The Data Quality dashboard exposes per-view statement rate, p95 duration, rows
 returned, configured/effective cadence, pacing, and adaptive backoff. Before a
 100,000-endpoint rollout, capture an ISE AWR report as a baseline and repeat it

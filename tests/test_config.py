@@ -102,14 +102,14 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     values = dotenv_values(path, interpolate=False)
 
     assert values["MAX_WORKERS"] == "8"
-    assert values["ISE_DATACONNECT_MAX_GROUPS"] == "2000"
+    assert values["ISE_DATACONNECT_MAX_GROUPS"] == "1000"
     assert values["ISE_DATACONNECT_QUERY_TIMEOUT"] == "15"
-    assert values["ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS"] == "250"
-    assert values["ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT"] == "5"
-    assert values["ISE_DATACONNECT_RADIUS_INTERVAL"] == "300"
-    assert values["ISE_DATACONNECT_POSTURE_INTERVAL"] == "900"
-    assert values["ISE_DATACONNECT_ENDPOINTS_INTERVAL"] == "21600"
-    assert values["ISE_DATACONNECT_FRESHNESS_INTERVAL"] == "3600"
+    assert values["ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS"] == "2000"
+    assert values["ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT"] == "0.5"
+    assert values["ISE_DATACONNECT_RADIUS_INTERVAL"] == "900"
+    assert values["ISE_DATACONNECT_POSTURE_INTERVAL"] == "3600"
+    assert values["ISE_DATACONNECT_ENDPOINTS_INTERVAL"] == "43200"
+    assert values["ISE_DATACONNECT_FRESHNESS_INTERVAL"] == "7200"
     assert values["ISE_DATACONNECT_SERVICE"] == "cpm10"
     assert values["ISE_DATACONNECT_SSL_VERIFY"] == "true"
     assert values["ISE_REST_SSL_VERIFY"] == "true"
@@ -125,6 +125,11 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["ISE_DATACONNECT_INCREMENTAL_ENABLED"] == "true"
     assert values["ISE_DATACONNECT_RECONCILE_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_MAX_BACKFILL_SECONDS"] == "3600"
+    assert values["ISE_DATACONNECT_SHARED_PACING_FILE"] == \
+        "/var/lib/ise-exporter/dataconnect.pacing"
+    assert values["ISE_CLI_PRODUCTION_SAFE"] == "true"
+    assert values["ISE_CLI_ALLOW_EXPENSIVE"] == "false"
+    assert values["ISE_CLI_MAX_ROWS"] == "1000"
     # systemd EnvironmentFile= does not support trailing inline comments; keeping
     # comments on their own lines prevents them becoming part of numeric/boolean values.
     assignments = [line for line in path.read_text().splitlines()
@@ -153,12 +158,12 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
 
     assert cfg.dataconnect_query_timeout == 15
     assert cfg.dataconnect_max_groups == 2000
-    assert cfg.dataconnect_min_query_interval_ms == 100
-    assert cfg.dataconnect_max_duty_cycle_percent == 10
-    assert cfg.dataconnect_radius_interval == 300
-    assert cfg.dataconnect_performance_interval == 300
-    assert cfg.dataconnect_posture_interval == 900
+    assert cfg.dataconnect_min_query_interval_ms == 500
+    assert cfg.dataconnect_max_duty_cycle_percent == 2.0
+    assert cfg.dataconnect_radius_interval == 900
+    assert cfg.dataconnect_performance_interval == 900
+    assert cfg.dataconnect_posture_interval == 1800
     assert cfg.dataconnect_endpoints_interval == 21600
     assert cfg.dataconnect_freshness_interval == 3600
-    assert cfg.dataconnect_nad_health_interval == 900
-    assert cfg.dataconnect_tacacs_interval == 900
+    assert cfg.dataconnect_nad_health_interval == 1800
+    assert cfg.dataconnect_tacacs_interval == 1800
