@@ -343,3 +343,15 @@ def test_disconnected_node_stat_is_zero_when_all_nodes_are_healthy():
             in text)
     assert "sum(ise_deployment_status == bool 2)" not in text
     assert "sum(ise_deployment_status == 2)" not in text
+
+
+def test_overview_freshness_uses_each_datasets_published_effective_interval():
+    dashboard = json.loads((DASHBOARDS / "ise-overview.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 29)
+    expression = panel["targets"][0]["expr"]
+
+    assert "ise_dataset_last_success_timestamp" in expression
+    assert "on(dataset,source) ise_dataset_effective_interval_seconds" in expression
+    assert "/ 60" not in expression
+    assert "/ 300" not in expression
+    assert "/ 3600" not in expression

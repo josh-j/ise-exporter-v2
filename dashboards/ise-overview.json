@@ -347,7 +347,7 @@
       "id": 29, "type": "table", "title": "Dataset Freshness (collection periods)",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 56 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "((time() - ise_dataset_last_success_timestamp{dataset=~\"dataconnect_radius|dataconnect_performance\"}) / 60) or ((time() - ise_dataset_last_success_timestamp{dataset=~\"deployment|devices|dataconnect_posture|tacacs_activity\"}) / 300) or ((time() - ise_dataset_last_success_timestamp{dataset=~\"certificates|licensing|backup|patches|dataconnect_endpoints|tacacs_config\"}) / 3600)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(time() - ise_dataset_last_success_timestamp) / on(dataset,source) ise_dataset_effective_interval_seconds", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } }, "unit": "short",
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 3 }] } },
