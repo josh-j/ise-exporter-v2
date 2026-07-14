@@ -14,6 +14,7 @@ def _clear():
         clear_metric(metric)
     for metric in (
         metrics.ise_dataconnect_radius_authentication_events_total,
+        metrics.ise_dataconnect_radius_failure_events_total,
         metrics.ise_dataconnect_radius_accounting_events_total,
         metrics.ise_dataconnect_radius_active_sessions_total,
         metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds,
@@ -109,6 +110,7 @@ def test_collects_bounded_aggregated_radius_metrics():
     assert _rows(metrics.ise_dataconnect_radius_errors,
                  "message_code", "nad") == {("5440", "nad-1"): 3}
     assert metrics.ise_dataconnect_radius_authentication_events_total._value.get() == 107
+    assert metrics.ise_dataconnect_radius_failure_events_total._value.get() == 11
     assert metrics.ise_dataconnect_radius_distinct_endpoints_total._value.get() == 81
     assert metrics.ise_dataconnect_radius_distinct_users_total._value.get() == 54
     assert _rows(metrics.ise_dataconnect_radius_failure_events,

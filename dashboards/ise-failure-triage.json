@@ -120,7 +120,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(ise_dataconnect_radius_failure_events_total and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -150,7 +150,7 @@
       },
       "targets": [
         {
-          "expr": "(100 * sum(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) / clamp_min(sum(ise_dataconnect_radius_authentication_events), 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "((100 * ise_dataconnect_radius_failure_events_total / clamp_min(ise_dataconnect_radius_authentication_events_total, 1)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -172,7 +172,7 @@
       },
       "targets": [
         {
-          "expr": "count(count by (nad) (ise_dataconnect_radius_errors)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(count by (nad) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -238,7 +238,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_errors))",
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}))",
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -260,7 +260,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (nad, authentication_method) (ise_dataconnect_radius_errors))",
+          "expr": "sort_desc(sum by (nad, authentication_method) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}))",
           "legendFormat": "{{nad}} / {{authentication_method}}",
           "refId": "A",
           "datasource": {
@@ -305,7 +305,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ise_dataconnect_radius_errors{message_code=~\"12300|12321|12500|12501|12511|12625|22056\"}) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(sum(ise_dataconnect_radius_errors{message_code=~\"12300|12321|12500|12501|12511|12625|22056\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -319,7 +319,7 @@
       "id": 10,
       "type": "table",
       "title": "RADIUS Failure Work Queue",
-      "description": "One row per exported combination of code, NAD, authentication method, and PSN.",
+      "description": "One row per failed-authentication combination of NAD, method, protocol, policy set, and PSN. Error-code panels above remain sourced from the separate RADIUS errors view.",
       "gridPos": {
         "h": 12,
         "w": 24,
@@ -328,7 +328,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_radius_errors)",
+          "expr": "sort_desc(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})",
           "format": "table",
           "instant": true,
           "refId": "A",

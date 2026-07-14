@@ -27,14 +27,58 @@ def test_visible_table_footers_include_legacy_reducer():
     assert not missing, "visible table footer missing reducer: " + ", ".join(missing)
 
 
-def test_failure_work_queue_uses_dataconnect_error_dimensions():
+def test_failure_work_queue_uses_failed_authentication_dimensions():
     dashboard = json.loads((DASHBOARDS / "ise-failure-triage.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 10)
     work_queue = next(target for target in panel["targets"] if target["refId"] == "A")
 
-    assert "ise_dataconnect_radius_errors" in work_queue["expr"]
+    assert "ise_dataconnect_radius_authentication_events" in work_queue["expr"]
+    assert "status=~" in work_queue["expr"]
+    assert "ise_dataconnect_radius_errors" not in work_queue["expr"]
     assert work_queue["format"] == "table"
     assert work_queue["instant"] is True
+
+
+def test_failure_nad_panels_use_all_failed_authentications_not_sparse_error_view():
+    dashboard = json.loads((DASHBOARDS / "ise-failure-triage.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+
+    for panel_id in (6, 7):
+        expression = panels[panel_id]["targets"][0]["expr"]
+        assert "ise_dataconnect_radius_authentication_events" in expression
+        assert "status=~" in expression
+        assert "ise_dataconnect_radius_errors" not in expression
+
+
+def test_radius_headline_stats_use_exact_totals_not_topk_breakdowns():
+    expected = {
+        "ise-auth-troubleshooting.json": {
+            1: ("ise_dataconnect_radius_authentication_events_total",
+                "ise_dataconnect_radius_failure_events_total"),
+            2: ("ise_dataconnect_radius_failure_events_total",),
+        },
+        "ise-failure-triage.json": {
+            1: ("ise_dataconnect_radius_failure_events_total",),
+            2: ("ise_dataconnect_radius_authentication_events_total",
+                "ise_dataconnect_radius_failure_events_total"),
+        },
+        "ise-sessions-auth.json": {
+            2: ("ise_dataconnect_radius_authentication_events_total",),
+        },
+    }
+
+    for name, panel_contracts in expected.items():
+        dashboard = json.loads((DASHBOARDS / name).read_text())
+        panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+        for panel_id, exact_metrics in panel_contracts.items():
+            expression = panels[panel_id]["targets"][0]["expr"]
+            for metric in exact_metrics:
+                assert metric in expression
+            assert "sum(ise_dataconnect_radius_authentication_events" not in expression
+
+    for name in ("ise-auth-troubleshooting.json", "ise-failure-triage.json"):
+        text = (DASHBOARDS / name).read_text()
+        assert "ise_dataconnect_radius_failure_events_total" in text
 
 
 def test_dashboards_do_not_reference_removed_collection_planes():
@@ -144,6 +188,11 @@ def test_domain_queries_do_not_mask_outages_as_unconditional_zero():
                         "ise_dataset_up" in expression and "== 1" in expression):
                     violations.append(
                         f"{path.name}: panel {panel.get('id')} zero fallback is not up-gated")
+                if (path.name != "ise-data-quality.json"
+                        and "or on() (0 *" in expression
+                        and "and on()" not in expression.split(" or on() (0 *", 1)[0]):
+                    violations.append(
+                        f"{path.name}: panel {panel.get('id')} stale value is not up-gated")
 
     assert not violations, "outage-masking dashboard queries: " + ", ".join(violations)
 

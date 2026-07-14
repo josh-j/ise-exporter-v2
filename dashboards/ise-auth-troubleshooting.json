@@ -128,7 +128,7 @@
       },
       "targets": [
         {
-          "expr": "(100 * sum(ise_dataconnect_radius_authentication_events{status=~\"(?i)pass(ed)?|success\"}) / clamp_min(sum(ise_dataconnect_radius_authentication_events), 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "((100 * (ise_dataconnect_radius_authentication_events_total - ise_dataconnect_radius_failure_events_total) / clamp_min(ise_dataconnect_radius_authentication_events_total, 1)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -150,7 +150,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(ise_dataconnect_radius_failure_events_total and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -172,7 +172,7 @@
       },
       "targets": [
         {
-          "expr": "count(count by (message_code) (ise_dataconnect_radius_errors)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(count by (message_code) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -194,7 +194,7 @@
       },
       "targets": [
         {
-          "expr": "count(count by (nad) (ise_dataconnect_radius_errors)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(count by (nad) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {

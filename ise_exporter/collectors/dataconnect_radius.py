@@ -20,6 +20,7 @@ _METRICS = (
     metrics.ise_dataconnect_radius_distinct_endpoints_total,
     metrics.ise_dataconnect_radius_distinct_users_total,
     metrics.ise_dataconnect_radius_failure_events,
+    metrics.ise_dataconnect_radius_failure_events_total,
     metrics.ise_dataconnect_radius_response_time_seconds,
     metrics.ise_dataconnect_radius_response_time_samples,
     metrics.ise_dataconnect_radius_accounting_events,
@@ -479,6 +480,8 @@ def collect(dataconnect, cfg):
                 integer(identity_summary.get("distinct_endpoints"))),
             lambda: metrics.ise_dataconnect_radius_distinct_users_total.set(
                 integer(identity_summary.get("distinct_users"))),
+            lambda: metrics.ise_dataconnect_radius_failure_events_total.set(
+                integer(summaries["failure_context"].get("total_events"))),
             lambda: metrics.ise_dataconnect_radius_accounting_events_total.set(
                 integer(summaries["accounting"].get("total_events"))),
             lambda: metrics.ise_dataconnect_radius_active_sessions_total.set(

@@ -204,7 +204,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_internal_users_total or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "expr": "(ise_tacacs_internal_users_total and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -227,7 +227,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ise_tacacs_suspected_unused_internal_user) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "expr": "(sum(ise_tacacs_suspected_unused_internal_user) and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -291,7 +291,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ise_tacacs_events_total) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
+          "expr": "(sum(ise_tacacs_events_total) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {

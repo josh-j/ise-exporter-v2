@@ -142,7 +142,7 @@
       },
       "targets": [
         {
-          "expr": "count(ise_dataconnect_endpoints_by_profile) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(ise_dataconnect_endpoints_by_profile) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -164,7 +164,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_profiled_endpoint_group_memberships_total or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "expr": "(ise_dataconnect_profiled_endpoint_group_memberships_total and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {

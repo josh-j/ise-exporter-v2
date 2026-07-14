@@ -210,6 +210,9 @@ ise_dataconnect_radius_failure_events = Gauge(
     "ise_dataconnect_radius_failure_events",
     "Failed RADIUS authentications by bounded reason class, policy set, and location",
     ["failure_class", "policy_set", "location"])
+ise_dataconnect_radius_failure_events_total = Gauge(
+    "ise_dataconnect_radius_failure_events_total",
+    "Exact failed RADIUS authentication count in the Data Connect reporting window")
 ise_dataconnect_radius_response_time_seconds = Gauge(
     "ise_dataconnect_radius_response_time_seconds",
     "RADIUS response-time aggregate from Data Connect",
