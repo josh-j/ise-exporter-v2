@@ -101,10 +101,15 @@ class PollScheduler:
 
     def _update_freshness(self, now):
         for name, (source, interval, enabled) in self.dataset_plan.items():
-            last_success = self.last_success.get(name)
-            fresh = bool(enabled and last_success is not None
-                         and now - last_success <= 2 * interval)
-            metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(int(fresh))
+            self._update_dataset_freshness(name, now)
+
+    def _update_dataset_freshness(self, name, now):
+        """Publish freshness without waiting for the rest of a cycle to finish."""
+        source, interval, enabled = self.dataset_plan[name]
+        last_success = self.last_success.get(name)
+        fresh = bool(enabled and last_success is not None
+                     and now - last_success <= 2 * interval)
+        metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(int(fresh))
 
     def _due(self, name, now, tier):
         return now >= self.next_run.get(name, 0)
@@ -138,6 +143,12 @@ class PollScheduler:
                 self.last_run[name] = completed
                 self.last_success[name] = completed
                 self.next_run[name] = completed + effective_interval
+                self._update_dataset_freshness(name, completed)
+                if source == "dataconnect":
+                    logger.info(
+                        "Data Connect dataset %s collected successfully; next run in %ss",
+                        name, effective_interval,
+                    )
             else:
                 if collectors.failures(name) >= MAX_CONSECUTIVE_FAILURES:
                     retry = max(self.cfg.slow_interval, effective_interval)
@@ -148,6 +159,7 @@ class PollScheduler:
                 else:
                     retry = min(tier, getattr(self.cfg, "scrape_interval", tier))
                 self.next_run[name] = completed + retry
+                self._update_dataset_freshness(name, completed)
 
     def run_cycle(self):
         cfg, now = self.cfg, time.time()

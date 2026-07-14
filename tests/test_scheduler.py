@@ -131,7 +131,8 @@ def test_failed_dataconnect_attempt_never_retries_faster_than_five_minutes(monke
     assert len(attempts) == 2
 
 
-def test_success_schedules_from_completion_and_does_not_catch_up(monkeypatch):
+def test_success_schedules_from_completion_and_publishes_freshness(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
     monkeypatch.setattr(scheduler_module.time, "time", lambda: 400.0)
     scheduler = PollScheduler(_cfg(), object(), object())
 
@@ -144,6 +145,26 @@ def test_success_schedules_from_completion_and_does_not_catch_up(monkeypatch):
     assert scheduler.last_run["dataconnect_radius"] == 400.0
     assert scheduler.next_run["dataconnect_radius"] == 460.0
     assert scheduler.last_success["dataconnect_radius"] == 400.0
+    assert metrics.ise_dataset_fresh.labels(
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
+    assert "Data Connect dataset dataconnect_radius collected successfully" in caplog.text
+
+
+def test_completed_dataset_is_fresh_before_a_later_collector_returns(monkeypatch):
+    now = [400.0]
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: now[0])
+    scheduler = PollScheduler(_cfg(), object(), object())
+
+    def succeed():
+        with collectors.observe("dataconnect_radius"):
+            pass
+
+    scheduler._run("dataconnect_radius", 100.0, 60, succeed)
+
+    # A later collector can be slow or stuck; the completed Data Connect domain
+    # must already be visible as fresh instead of waiting for run_cycle() to end.
+    assert metrics.ise_dataset_fresh.labels(
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
 
 
 def test_dataconnect_statement_pacing_is_not_applied_again_by_scheduler(monkeypatch):
