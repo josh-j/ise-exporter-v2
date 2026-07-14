@@ -312,6 +312,30 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         assert metric in text
 
 
+def test_data_quality_dashboard_does_not_render_empty_views_as_epoch_old():
+    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 6)
+    expressions = {target["refId"]: target["expr"] for target in panel["targets"]}
+
+    assert "ise_dataconnect_view_newest_event_timestamp > 0" in expressions[
+        "Newest event age"]
+    assert "ise_dataconnect_view_rows > 0" in expressions["Window span"]
+
+
+def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
+    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+
+    assert "0 * (count(ise_dataset_up) > 0)" in panels[1]["targets"][0]["expr"]
+    assert "0 * (count(ise_dataset_up) > 0)" in panels[2]["targets"][0]["expr"]
+    assert 'dataset="dataconnect_freshness"' in panels[3]["targets"][0]["expr"]
+    truncation = panels[4]["targets"][0]["expr"]
+    for dataset in (
+            "dataconnect_radius", "dataconnect_posture", "dataconnect_endpoints"):
+        assert dataset in truncation
+    assert truncation.count("max(ise_dataset_up") == 3
+
+
 def test_disconnected_node_stat_is_zero_when_all_nodes_are_healthy():
     text = (DASHBOARDS / "ise-data-quality.json").read_text()
 

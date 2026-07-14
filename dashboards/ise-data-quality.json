@@ -34,7 +34,7 @@
       "description": "Enabled authoritative datasets whose latest collection attempt failed.",
       "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
       "targets": [{
-        "expr": "count((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1)) or on() (0 * (max(ise_dataset_up) == 1))",
+        "expr": "count((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1)) or on() (0 * (count(ise_dataset_up) > 0))",
         "instant": true,
         "refId": "A",
         "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
@@ -48,7 +48,7 @@
       "description": "Enabled datasets without a successful replacement inside twice their configured interval.",
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
       "targets": [{
-        "expr": "count((ise_dataset_fresh == 0) and on(dataset,source) (ise_dataset_enabled == 1)) or on() (0 * (max(ise_dataset_up) == 1))",
+        "expr": "count((ise_dataset_fresh == 0) and on(dataset,source) (ise_dataset_enabled == 1)) or on() (0 * (count(ise_dataset_up) > 0))",
         "instant": true,
         "refId": "A",
         "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
@@ -62,7 +62,7 @@
       "description": "Timestamped Data Connect views with no rows in the bounded two-day reporting window.",
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
       "targets": [{
-        "expr": "count(ise_dataconnect_view_rows == 0) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1))",
+        "expr": "count(ise_dataconnect_view_rows == 0) and on() (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)",
         "instant": true,
         "refId": "A",
         "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
@@ -76,7 +76,7 @@
       "description": "Collector dimensional breakdowns where the configured top-K limit omits groups. Exact total metrics remain authoritative.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
       "targets": [{
-          "expr": "count(ise_dataconnect_radius_topk_truncated == 1) + count(ise_dataconnect_posture_topk_truncated == 1) + count(ise_dataconnect_endpoint_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(ise_dataconnect_radius_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_posture_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_endpoint_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)))",
         "instant": true,
         "refId": "A",
         "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
@@ -108,8 +108,8 @@
       "gridPos": {"h": 12, "w": 24, "x": 0, "y": 15},
       "targets": [
         {"expr": "ise_dataconnect_view_rows", "format": "table", "instant": true, "refId": "Rows", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "time() - ise_dataconnect_view_newest_event_timestamp", "format": "table", "instant": true, "refId": "Newest event age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_dataconnect_view_newest_event_timestamp - ise_dataconnect_view_oldest_event_timestamp", "format": "table", "instant": true, "refId": "Window span", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "time() - (ise_dataconnect_view_newest_event_timestamp > 0)", "format": "table", "instant": true, "refId": "Newest event age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "(ise_dataconnect_view_newest_event_timestamp - ise_dataconnect_view_oldest_event_timestamp) and on(domain,view) (ise_dataconnect_view_rows > 0)", "format": "table", "instant": true, "refId": "Window span", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
       "options": {"showHeader": true}
