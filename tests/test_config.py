@@ -106,7 +106,8 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["ISE_DATACONNECT_QUERY_TIMEOUT"] == "15"
     assert values["ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS"] == "2000"
     assert values["ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT"] == "0.5"
-    assert values["ISE_DATACONNECT_RADIUS_INTERVAL"] == "1800"
+    assert values["ISE_DATACONNECT_RADIUS_INTERVAL"] == "86400"
+    assert values["ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL"] == "1800"
     assert values["ISE_DATACONNECT_PERFORMANCE_INTERVAL"] == "3600"
     assert values["ISE_DATACONNECT_POSTURE_INTERVAL"] == "21600"
     assert values["ISE_DATACONNECT_ENDPOINTS_INTERVAL"] == "86400"
@@ -125,9 +126,9 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["MNT_ACTIVE_POSTURE_REFRESH_TTL"] == "3600"
     assert values["MNT_ACTIVE_POSTURE_REQUEST_INTERVAL_MS"] == "500"
     assert values["ISE_EXPORTER_STATE_DB"] == "/var/lib/ise-exporter/state.sqlite3"
-    assert values["ISE_DATACONNECT_INCREMENTAL_ENABLED"] == "true"
-    assert values["ISE_DATACONNECT_RECONCILE_INTERVAL"] == "86400"
-    assert values["ISE_DATACONNECT_MAX_BACKFILL_SECONDS"] == "3600"
+    assert "ISE_DATACONNECT_INCREMENTAL_ENABLED" not in values
+    assert "ISE_DATACONNECT_RECONCILE_INTERVAL" not in values
+    assert "ISE_DATACONNECT_MAX_BACKFILL_SECONDS" not in values
     assert values["ISE_DATACONNECT_SHARED_PACING_FILE"] == \
         "/var/lib/ise-exporter/dataconnect.pacing"
     assert values["ISE_CLI_PRODUCTION_SAFE"] == "true"
@@ -147,6 +148,7 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
         "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS": "0",
         "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT": "99",
         "ISE_DATACONNECT_RADIUS_INTERVAL": "1",
+        "ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL": "1",
         "ISE_DATACONNECT_PERFORMANCE_INTERVAL": "1",
         "ISE_DATACONNECT_POSTURE_INTERVAL": "1",
         "ISE_DATACONNECT_ENDPOINTS_INTERVAL": "1",
@@ -163,7 +165,8 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.dataconnect_max_groups == 2000
     assert cfg.dataconnect_min_query_interval_ms == 500
     assert cfg.dataconnect_max_duty_cycle_percent == 2.0
-    assert cfg.dataconnect_radius_interval == 900
+    assert cfg.dataconnect_radius_interval == 21600
+    assert cfg.dataconnect_radius_active_interval == 900
     assert cfg.dataconnect_performance_interval == 900
     assert cfg.dataconnect_posture_interval == 1800
     assert cfg.dataconnect_endpoints_interval == 21600

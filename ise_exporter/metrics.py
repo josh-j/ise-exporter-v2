@@ -249,6 +249,15 @@ ise_dataconnect_radius_active_sessions_total = Gauge(
 ise_dataconnect_radius_active_session_stale_cutoff_seconds = Gauge(
     "ise_dataconnect_radius_active_session_stale_cutoff_seconds",
     "Maximum age of the latest non-stop accounting record counted as likely active")
+ise_dataconnect_radius_active_groups_returned = Gauge(
+    "ise_dataconnect_radius_active_groups_returned",
+    "Number of NAD and PSN active-session groups exported after the top-K limit")
+ise_dataconnect_radius_active_groups_total = Gauge(
+    "ise_dataconnect_radius_active_groups_total",
+    "Exact number of NAD and PSN active-session groups before the top-K limit")
+ise_dataconnect_radius_active_groups_truncated = Gauge(
+    "ise_dataconnect_radius_active_groups_truncated",
+    "Whether the active-session NAD and PSN breakdown was truncated")
 ise_dataconnect_radius_errors = Gauge(
     "ise_dataconnect_radius_errors",
     "RADIUS errors grouped by stable troubleshooting dimensions",
@@ -466,16 +475,3 @@ ise_dataconnect_query_cooldown_seconds = Gauge(
 ise_dataset_effective_interval_seconds = Gauge(
     "ise_dataset_effective_interval_seconds",
     "Scheduled collection cadence currently applied by the scheduler", ["dataset", "source"])
-ise_dataconnect_incremental_mode = Gauge(
-    "ise_dataconnect_incremental_mode",
-    "Whether a Data Connect domain used a small incremental window on its latest run",
-    ["domain"])
-ise_dataconnect_incremental_window_seconds = Gauge(
-    "ise_dataconnect_incremental_window_seconds",
-    "Size of the latest incremental Data Connect event window", ["domain"])
-ise_dataconnect_reconciliation_age_seconds = Gauge(
-    "ise_dataconnect_reconciliation_age_seconds",
-    "Age of the latest full Data Connect reconciliation", ["domain"])
-ise_dataconnect_incremental_reconciliations_total = Counter(
-    "ise_dataconnect_incremental_reconciliations_total",
-    "Full Data Connect reconciliations by domain", ["domain"])

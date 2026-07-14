@@ -130,7 +130,8 @@ class Config:
     dataconnect_max_groups: int = 1000
     dataconnect_min_query_interval_ms: int = 2000
     dataconnect_max_duty_cycle_percent: float = 0.5
-    dataconnect_radius_interval: int = 1800
+    dataconnect_radius_interval: int = 86400
+    dataconnect_radius_active_interval: int = 1800
     dataconnect_performance_interval: int = 3600
     dataconnect_posture_interval: int = 21600
     dataconnect_endpoints_interval: int = 86400
@@ -138,9 +139,6 @@ class Config:
     dataconnect_nad_health_interval: int = 21600
     dataconnect_tacacs_interval: int = 21600
     dataconnect_shared_pacing_file: str = "/var/lib/ise-exporter/dataconnect.pacing"
-    dataconnect_incremental_enabled: bool = True
-    dataconnect_reconcile_interval: int = 86400
-    dataconnect_max_backfill_seconds: int = 3600
     cli_production_safe: bool = True
     cli_allow_expensive: bool = False
     cli_max_rows: int = 1000
@@ -214,7 +212,9 @@ class Config:
             dataconnect_max_duty_cycle_percent=_bounded_f(
                 "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.5, 0.1, 2.0),
             dataconnect_radius_interval=_bounded_i(
-                "ISE_DATACONNECT_RADIUS_INTERVAL", 1800, 900),
+                "ISE_DATACONNECT_RADIUS_INTERVAL", 86400, 21600),
+            dataconnect_radius_active_interval=_bounded_i(
+                "ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL", 1800, 900),
             dataconnect_performance_interval=_bounded_i(
                 "ISE_DATACONNECT_PERFORMANCE_INTERVAL", 3600, 900),
             dataconnect_posture_interval=_bounded_i(
@@ -230,12 +230,6 @@ class Config:
             dataconnect_shared_pacing_file=_s(
                 "ISE_DATACONNECT_SHARED_PACING_FILE",
                 "/var/lib/ise-exporter/dataconnect.pacing"),
-            dataconnect_incremental_enabled=_b(
-                "ISE_DATACONNECT_INCREMENTAL_ENABLED", True),
-            dataconnect_reconcile_interval=_bounded_i(
-                "ISE_DATACONNECT_RECONCILE_INTERVAL", 86400, 21600),
-            dataconnect_max_backfill_seconds=_bounded_i(
-                "ISE_DATACONNECT_MAX_BACKFILL_SECONDS", 3600, 900, 21600),
             cli_production_safe=_b("ISE_CLI_PRODUCTION_SAFE", True),
             cli_allow_expensive=_b("ISE_CLI_ALLOW_EXPENSIVE", False),
             cli_max_rows=_bounded_i("ISE_CLI_MAX_ROWS", 1000, 100, 5000),

@@ -153,7 +153,10 @@ def test_sessions_dashboard_exposes_accounting_derived_active_sessions():
 def test_domain_dashboards_expose_authoritative_dataset_availability():
     expected = {
         "ise-auth-troubleshooting.json": {("dataconnect_radius", "dataconnect")},
-        "ise-sessions-auth.json": {("dataconnect_radius", "dataconnect")},
+        "ise-sessions-auth.json": {
+            ("dataconnect_radius", "dataconnect"),
+            ("dataconnect_radius_active", "dataconnect"),
+        },
         "ise-failure-triage.json": {("dataconnect_radius", "dataconnect")},
         "ise-endpoint-profiles.json": {("dataconnect_endpoints", "dataconnect")},
         "ise-endpoints-devices.json": {("dataconnect_endpoints", "dataconnect")},
@@ -325,10 +328,18 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_mnt_active_posture_cache_entries",
         "ise_mnt_active_posture_refresh_deferred",
         "ise_mnt_active_posture_cache_oldest_age_seconds",
-        "ise_dataconnect_incremental_mode",
-        "ise_dataconnect_reconciliation_age_seconds",
+        "ise_dataconnect_radius_active_groups_truncated",
     ):
         assert metric in text
+
+
+def test_sessions_dashboard_gates_active_count_on_active_dataset():
+    dashboard = json.loads((DASHBOARDS / "ise-sessions-auth.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 3)
+    expression = panel["targets"][0]["expr"]
+
+    assert 'dataset="dataconnect_radius_active"' in expression
+    assert 'dataset="dataconnect_radius",' not in expression
 
 
 def test_data_quality_dashboard_does_not_render_empty_views_as_epoch_old():
@@ -351,10 +362,25 @@ def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
     assert 'dataset="dataconnect_freshness"' in panels[3]["targets"][0]["expr"]
     truncation = panels[4]["targets"][0]["expr"]
     for dataset in (
-            "dataconnect_radius", "dataconnect_posture", "dataconnect_endpoints",
+            "dataconnect_radius", "dataconnect_radius_active",
+            "dataconnect_posture", "dataconnect_endpoints",
             "dataconnect_performance"):
         assert dataset in truncation
-    assert truncation.count("max(ise_dataset_up") == 4
+    # The active-session term has an explicit available-zero fallback, so its
+    # dataset gate appears twice; all other top-K terms already use count-or-zero.
+    assert truncation.count("max(ise_dataset_up") == 6
+
+
+def test_sessions_dashboard_collection_age_thresholds_match_domain_cadences():
+    dashboard = json.loads((DASHBOARDS / "ise-sessions-auth.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 91)
+
+    defaults = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
+    assert [step["value"] for step in defaults] == [None, 129600, 172800]
+    active = panel["fieldConfig"]["overrides"][0]
+    assert active["matcher"] == {"id": "byFrameRefID", "options": "Active sessions"}
+    steps = active["properties"][0]["value"]["steps"]
+    assert [step["value"] for step in steps] == [None, 2700, 3600]
 
 
 def test_data_quality_domain_panels_do_not_publish_stale_values_during_outages():
@@ -377,11 +403,16 @@ def test_data_quality_domain_panels_do_not_publish_stale_values_during_outages()
         30: "mnt_active_posture",
         31: "mnt_active_posture",
         32: "mnt_active_posture",
-        33: "dataconnect_radius",
+        33: ("dataconnect_radius", "dataconnect_radius_active"),
     }
 
-    for panel_id, dataset in ownership.items():
-        for target in panels[panel_id]["targets"]:
+    for panel_id, datasets in ownership.items():
+        if isinstance(datasets, str):
+            datasets = (datasets,)
+        targets = panels[panel_id]["targets"]
+        expected = datasets if len(datasets) > 1 else datasets * len(targets)
+        assert len(targets) == len(expected)
+        for target, dataset in zip(targets, expected, strict=True):
             expression = target["expr"]
             assert f'dataset="{dataset}"' in expression, (panel_id, expression)
             assert "ise_dataset_up" in expression, (panel_id, expression)

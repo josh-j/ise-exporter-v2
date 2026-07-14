@@ -21,7 +21,16 @@
         {
           "expr": "max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"})",
           "instant": true,
-          "refId": "A",
+          "refId": "Reporting",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "Active sessions",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -77,7 +86,16 @@
         {
           "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"dataconnect_radius\",source=\"dataconnect\"})",
           "instant": true,
-          "refId": "A",
+          "refId": "Reporting",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "Active sessions",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -96,16 +114,45 @@
               },
               {
                 "color": "yellow",
-                "value": 120
+                "value": 129600
               },
               {
                 "color": "red",
-                "value": 180
+                "value": 172800
               }
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "Active sessions"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 2700
+                    },
+                    {
+                      "color": "red",
+                      "value": 3600
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -156,7 +203,7 @@
       },
       "targets": [
         {
-          "expr": "(ise_dataconnect_radius_active_sessions_total and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(ise_dataconnect_radius_active_sessions_total and on() (max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {

@@ -35,7 +35,7 @@ def _reset_collector_runtime_state():
 def test_collection_plan_has_one_writer_per_reporting_domain(monkeypatch):
     ran = []
     modules = (
-        "deployment", "devices", "dataconnect_radius", "dataconnect_performance",
+        "deployment", "devices", "dataconnect_performance",
         "dataconnect_posture", "dataconnect_endpoints", "dataconnect_freshness",
         "nad_health", "mnt_active_posture",
     )
@@ -44,6 +44,14 @@ def test_collection_plan_has_one_writer_per_reporting_domain(monkeypatch):
             getattr(scheduler_module, name), "collect",
             lambda *args, _name=name, **kwargs: ran.append(_name),
         )
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_reporting",
+        lambda *args, **kwargs: ran.append("dataconnect_radius"),
+    )
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_active",
+        lambda *args, **kwargs: ran.append("dataconnect_radius_active"),
+    )
     monkeypatch.setattr(
         scheduler_module.tacacs, "collect_config",
         lambda *args, **kwargs: ran.append("tacacs_config"),
@@ -55,7 +63,9 @@ def test_collection_plan_has_one_writer_per_reporting_domain(monkeypatch):
 
     PollScheduler(_cfg(), client=object(), dataconnect=object(), mnt=object()).run_cycle()
 
-    assert set(ran) == {*modules, "tacacs_config", "tacacs_activity"}
+    assert set(ran) == {
+        *modules, "dataconnect_radius", "dataconnect_radius_active",
+        "tacacs_config", "tacacs_activity"}
     assert len(ran) == len(set(ran))
 
 
@@ -65,11 +75,15 @@ def test_scheduler_uses_only_the_dedicated_mnt_client(monkeypatch):
             raise AssertionError("MnT must not participate in exporter collection")
 
     for name in (
-        "deployment", "devices", "dataconnect_radius", "dataconnect_performance",
+        "deployment", "devices", "dataconnect_performance",
         "dataconnect_posture", "dataconnect_endpoints", "dataconnect_freshness",
         "nad_health",
     ):
         monkeypatch.setattr(getattr(scheduler_module, name), "collect", lambda *a, **k: None)
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_reporting", lambda *a, **k: None)
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_active", lambda *a, **k: None)
 
     seen = []
     monkeypatch.setattr(
@@ -83,10 +97,14 @@ def test_scheduler_uses_only_the_dedicated_mnt_client(monkeypatch):
 
 
 def test_disabled_control_plane_collectors_do_not_run(monkeypatch):
-    for name in ("deployment", "devices", "dataconnect_radius", "dataconnect_performance",
+    for name in ("deployment", "devices", "dataconnect_performance",
                  "dataconnect_posture", "dataconnect_endpoints", "dataconnect_freshness",
                  "nad_health"):
         monkeypatch.setattr(getattr(scheduler_module, name), "collect", lambda *a, **k: None)
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_reporting", lambda *a, **k: None)
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_active", lambda *a, **k: None)
     monkeypatch.setattr(scheduler_module.mnt_active_posture, "collect", lambda *a, **k: None)
     for name in ("certificates", "licensing", "backup", "patches"):
         monkeypatch.setattr(
@@ -207,7 +225,9 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     assert metrics.ise_collector_enabled.labels(collector="certificates")._value.get() == 0
     assert metrics.ise_dataset_up.labels(dataset="certificates", source="rest")._value.get() == 0
     assert metrics.ise_dataset_interval_seconds.labels(
-        dataset="dataconnect_radius", source="dataconnect")._value.get() == 1800
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 86400
+    assert metrics.ise_dataset_interval_seconds.labels(
+        dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 1800
     assert metrics.ise_dataset_enabled.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     assert metrics.ise_dataset_enabled.labels(
@@ -215,10 +235,10 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     assert metrics.ise_collector_enabled.labels(collector="pxgrid_streaming")._value.get() == 0
 
     scheduler.last_success["dataconnect_radius"] = 100.0
-    scheduler._update_freshness(3699.0)
+    scheduler._update_freshness(172899.0)
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
-    scheduler._update_freshness(3701.0)
+    scheduler._update_freshness(172901.0)
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 0
 
@@ -261,13 +281,14 @@ def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
     assert queried == []
 
 
-def test_restart_contract_preserves_radius_incremental_telemetry():
-    families = scheduler_module._PERSISTED_DATACONNECT_METRICS[
-        "dataconnect_radius"]
+def test_restart_contract_keeps_radius_reporting_and_active_snapshots_disjoint():
+    reporting = scheduler_module._PERSISTED_DATACONNECT_METRICS["dataconnect_radius"]
+    active = scheduler_module._PERSISTED_DATACONNECT_METRICS[
+        "dataconnect_radius_active"]
 
-    assert metrics.ise_dataconnect_incremental_mode in families
-    assert metrics.ise_dataconnect_incremental_window_seconds in families
-    assert metrics.ise_dataconnect_reconciliation_age_seconds in families
+    assert set(reporting) == set(scheduler_module.dataconnect_radius._REPORTING_METRICS)
+    assert set(active) == set(scheduler_module.dataconnect_radius._ACTIVE_METRICS)
+    assert not set(reporting) & set(active)
 
 
 def test_stale_dataconnect_snapshot_is_not_restored(monkeypatch, tmp_path):

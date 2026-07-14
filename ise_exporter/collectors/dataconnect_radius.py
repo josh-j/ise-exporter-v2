@@ -1,20 +1,16 @@
-"""RADIUS reporting-plane collection from Cisco ISE Data Connect.
+"""Exact RADIUS reporting and bounded current-session collection from Data Connect.
 
-All event queries are explicitly bounded to the last two days and aggregate in
-Oracle before returning data.  Usernames, MAC addresses, session IDs, free-form
+Historical event queries are explicitly bounded to the last two days and run on
+a slow reporting cadence. A separate query reconstructs only current likely-active
+sessions on a shorter cadence. Usernames, MAC addresses, session IDs, free-form
 failure text, and other unbounded values never become Prometheus labels.
 """
-from datetime import datetime, timedelta, timezone
-import json
-import time
-
 from .. import metrics
-from ..state import StateStore
 from . import observe
 from .dataconnect_common import group_limit, integer, label, number, replace_snapshot
 
 
-_METRICS = (
+_REPORTING_METRICS = (
     metrics.ise_dataconnect_radius_authentication_events,
     metrics.ise_dataconnect_radius_authentication_events_total,
     metrics.ise_dataconnect_radius_distinct_endpoints_total,
@@ -27,9 +23,6 @@ _METRICS = (
     metrics.ise_dataconnect_radius_accounting_events_total,
     metrics.ise_dataconnect_radius_accounting_event_type_total,
     metrics.ise_dataconnect_radius_accounting_session_seconds,
-    metrics.ise_dataconnect_radius_active_sessions,
-    metrics.ise_dataconnect_radius_active_sessions_total,
-    metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds,
     metrics.ise_dataconnect_radius_errors,
     metrics.ise_dataconnect_radius_errors_total,
     metrics.ise_dataconnect_radius_topk_groups_returned,
@@ -37,6 +30,17 @@ _METRICS = (
     metrics.ise_dataconnect_radius_topk_groups_total_exact,
     metrics.ise_dataconnect_radius_topk_truncated,
 )
+
+_ACTIVE_METRICS = (
+    metrics.ise_dataconnect_radius_active_sessions,
+    metrics.ise_dataconnect_radius_active_sessions_total,
+    metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds,
+    metrics.ise_dataconnect_radius_active_groups_returned,
+    metrics.ise_dataconnect_radius_active_groups_total,
+    metrics.ise_dataconnect_radius_active_groups_truncated,
+)
+
+_METRICS = _REPORTING_METRICS + _ACTIVE_METRICS
 
 _FAILURE_CLASS_SQL = """CASE
     WHEN TRIM(failure_reason) IS NULL THEN 'unspecified'
@@ -205,205 +209,17 @@ def _queries(limit, stale_minutes=60):
     }
 
 
-_ROLLUP_DATASETS = (
-    "authentication", "failure_context", "latency", "accounting",
-    "accounting_sessions", "errors",
-)
-
-_GROUP_KEYS = {
-    "authentication": (
-        "status", "authentication_method", "authentication_protocol", "device_name",
-        "policy_set_name", "ise_node"),
-    "failure_context": ("failure_class", "policy_set_name", "location"),
-    "latency": ("status", "device_name", "ise_node"),
-    "accounting": ("acct_status_type", "device_name", "authorization_policy", "ise_node"),
-    "accounting_sessions": ("device_name", "ise_node"),
-    "errors": (
-        "message_code", "network_device_name", "authentication_method", "ise_node"),
-}
-
-_ORDER_FIELDS = {
-    "authentication": "events",
-    "failure_context": "events",
-    "latency": "samples",
-    "accounting": "events",
-    "accounting_sessions": "max_session_seconds",
-    "errors": "events",
-}
+def _reporting_queries(limit):
+    return {name: sql for name, sql in _queries(limit).items()
+            if name != "active_sessions"}
 
 
-def _window_queries(limit, stale_minutes=60):
-    queries = _queries(limit, stale_minutes)
-    windowed = {}
-    for name in _ROLLUP_DATASETS:
-        sql = queries[name].replace(
-            "timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY",
-            "timestamp >= :window_start AND timestamp < :window_end")
-        windowed[name] = sql
-    return windowed
-
-
-def _merge_rollups(snapshots, limit):
-    merged = {}
-    for dataset in _ROLLUP_DATASETS:
-        groups = {}
-        total_events = 0
-        total_groups = 0
-        total_groups_exact = True
-        accounting_start_events = 0
-        accounting_stop_events = 0
-        for snapshot in snapshots.get(dataset, []):
-            rows = snapshot["rows"]
-            if rows:
-                total_events += integer(rows[0].get("total_events"))
-                window_groups = integer(rows[0].get("total_groups"))
-                total_groups = max(total_groups, window_groups)
-                if len(rows) < window_groups:
-                    total_groups_exact = False
-                if dataset == "accounting":
-                    accounting_start_events += integer(rows[0].get("start_events"))
-                    accounting_stop_events += integer(rows[0].get("stop_events"))
-            for row in rows:
-                key = tuple(str(row.get(name) or "") for name in _GROUP_KEYS[dataset])
-                if key not in groups:
-                    groups[key] = dict(row)
-                    continue
-                current = groups[key]
-                if dataset in ("authentication", "failure_context", "accounting", "errors"):
-                    current["events"] = integer(current.get("events")) + integer(
-                        row.get("events"))
-                elif dataset == "latency":
-                    old_samples = integer(current.get("samples"))
-                    new_samples = integer(row.get("samples"))
-                    samples = old_samples + new_samples
-                    weighted = (number(current.get("avg_response_ms")) * old_samples
-                                + number(row.get("avg_response_ms")) * new_samples)
-                    current["samples"] = samples
-                    current["avg_response_ms"] = weighted / samples if samples else 0
-                    current["max_response_ms"] = max(
-                        number(current.get("max_response_ms")),
-                        number(row.get("max_response_ms")))
-                elif dataset == "accounting_sessions":
-                    old_samples = integer(current.get("samples"))
-                    new_samples = integer(row.get("samples"))
-                    samples = old_samples + new_samples
-                    weighted = (number(current.get("avg_session_seconds")) * old_samples
-                                + number(row.get("avg_session_seconds")) * new_samples)
-                    current["samples"] = samples
-                    current["avg_session_seconds"] = weighted / samples if samples else 0
-                    current["max_session_seconds"] = max(
-                        number(current.get("max_session_seconds")),
-                        number(row.get("max_session_seconds")))
-        values = sorted(
-            groups.values(), key=lambda row: number(row.get(_ORDER_FIELDS[dataset])),
-            reverse=True)[:limit]
-        total_groups = max(total_groups, len(groups))
-        if not total_events and dataset in (
-                "authentication", "failure_context", "accounting", "errors"):
-            total_events = sum(integer(row.get("events")) for row in groups.values())
-        for row in values:
-            if dataset in ("authentication", "failure_context", "accounting", "errors"):
-                row["total_events"] = total_events
-            if dataset == "accounting":
-                row["start_events"] = accounting_start_events
-                row["stop_events"] = accounting_stop_events
-            row["total_groups"] = total_groups
-            row["total_groups_exact"] = int(total_groups_exact)
-        merged[dataset] = values
-    return merged
-
-
-def _incremental_rows(dataconnect, cfg, limit, stale_minutes):
-    """Use daily reconciliation plus small persisted aggregate windows."""
-    now = time.time()
-    reconcile_interval = int(getattr(cfg, "dataconnect_reconcile_interval", 86400))
-    max_backfill = int(getattr(cfg, "dataconnect_max_backfill_seconds", 3600))
-    store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
-    try:
-        clock_rows = dataconnect.query(
-            "SELECT SYS_EXTRACT_UTC(SYSTIMESTAMP) AS db_now FROM dual")
-        db_now = clock_rows[0].get("db_now") if clock_rows else None
-        if not isinstance(db_now, datetime):
-            raise RuntimeError("Data Connect did not return its database clock")
-        if db_now.tzinfo is not None:
-            db_now = db_now.astimezone(timezone.utc).replace(tzinfo=None)
-        db_epoch = db_now.replace(tzinfo=timezone.utc).timestamp()
-        last_reconcile = float(store.get_value("radius.last_reconcile", 0) or 0)
-        last_end = float(store.get_value("radius.last_window_end", 0) or 0)
-        reconcile = (not last_end or now - last_reconcile >= reconcile_interval
-                     or db_epoch - last_end > max_backfill)
-        if reconcile:
-            window_start = db_now.replace(tzinfo=timezone.utc) - timedelta(days=2)
-            window_start = window_start.replace(tzinfo=None)
-            rows = {
-                name: dataconnect.query(sql, {
-                    "window_start": window_start, "window_end": db_now,
-                })
-                for name, sql in _window_queries(limit, stale_minutes).items()
-            }
-            identity_sql = _queries(limit, stale_minutes)["identity_summary"].replace(
-                "timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY",
-                "timestamp >= :window_start AND timestamp < :window_end")
-            rows["identity_summary"] = dataconnect.query(identity_sql, {
-                "window_start": window_start, "window_end": db_now,
-            })
-            rows["active_sessions"] = dataconnect.query(
-                _queries(limit, stale_minutes)["active_sessions"])
-            snapshots = {
-                name: {"start": db_epoch - 172800, "end": db_epoch, "rows": rows[name]}
-                for name in _ROLLUP_DATASETS
-            }
-            store.replace_dataconnect_rollups(snapshots, values={
-                "radius.last_reconcile": now,
-                "radius.last_window_end": db_epoch,
-                "radius.identity_summary": json.dumps(rows["identity_summary"]),
-            })
-            metrics.ise_dataconnect_incremental_reconciliations_total.labels(
-                domain="radius").inc()
-            metrics.ise_dataconnect_incremental_mode.labels(domain="radius").set(0)
-            metrics.ise_dataconnect_reconciliation_age_seconds.labels(domain="radius").set(0)
-            return rows
-
-        start = last_end
-        start_value = datetime.fromtimestamp(start, timezone.utc).replace(tzinfo=None)
-        rows = {
-            name: dataconnect.query(sql, {
-                "window_start": start_value, "window_end": db_now,
-            })
-            for name, sql in _window_queries(limit, stale_minutes).items()
-        }
-        store.append_dataconnect_rollups({
-            name: {"start": start, "end": db_epoch, "rows": rows[name]}
-            for name in _ROLLUP_DATASETS
-        }, values={"radius.last_window_end": db_epoch})
-        store.prune_dataconnect_rollups(db_epoch - 172800)
-        snapshots = store.dataconnect_snapshots(_ROLLUP_DATASETS, db_epoch - 172800)
-        merged = _merge_rollups(snapshots, limit)
-        identity = json.loads(store.get_value("radius.identity_summary", "[]"))
-        merged["identity_summary"] = identity if isinstance(identity, list) else []
-        merged["active_sessions"] = dataconnect.query(
-            _queries(limit, stale_minutes)["active_sessions"])
-        metrics.ise_dataconnect_incremental_mode.labels(domain="radius").set(1)
-        metrics.ise_dataconnect_incremental_window_seconds.labels(domain="radius").set(
-            db_epoch - start)
-        metrics.ise_dataconnect_reconciliation_age_seconds.labels(domain="radius").set(
-            max(0, now - last_reconcile))
-        return merged
-    finally:
-        store.close()
-
-
-def collect(dataconnect, cfg):
-    """Atomically replace the bounded RADIUS reporting snapshot."""
+def collect_reporting(dataconnect, cfg):
+    """Atomically replace an exact two-day RADIUS reporting snapshot."""
     with observe("dataconnect_radius"):
         limit = group_limit(cfg)
-        stale_minutes = max(5, min(1440, int(getattr(
-            cfg, "dataconnect_active_session_stale_minutes", 60))))
-        if getattr(cfg, "dataconnect_incremental_enabled", False):
-            rows = _incremental_rows(dataconnect, cfg, limit, stale_minutes)
-        else:
-            rows = {name: dataconnect.query(sql)
-                    for name, sql in _queries(limit, stale_minutes).items()}
+        rows = {name: dataconnect.query(sql)
+                for name, sql in _reporting_queries(limit).items()}
         summaries = {name: (values[0] if values else {}) for name, values in rows.items()}
         auth = [{
             "status": label(row.get("status")),
@@ -436,11 +252,6 @@ def collect(dataconnect, cfg):
             "avg": number(row.get("avg_session_seconds")),
             "max": number(row.get("max_session_seconds")),
         } for row in rows["accounting_sessions"]]
-        active_sessions = [{
-            "nad": label(row.get("device_name")),
-            "psn": label(row.get("ise_node")),
-            "sessions": integer(row.get("sessions")),
-        } for row in rows["active_sessions"]]
         errors = [{
             "code": label(row.get("message_code")),
             "nad": label(row.get("network_device_name")),
@@ -480,9 +291,6 @@ def collect(dataconnect, cfg):
                 writers.append(lambda row=row, stat=stat:
                     metrics.ise_dataconnect_radius_accounting_session_seconds.labels(
                         stat=stat, nad=row["nad"], psn=row["psn"]).set(row[stat]))
-        for row in active_sessions:
-            writers.append(lambda row=row: metrics.ise_dataconnect_radius_active_sessions.labels(
-                nad=row["nad"], psn=row["psn"]).set(row["sessions"]))
         for row in errors:
             writers.append(lambda row=row: metrics.ise_dataconnect_radius_errors.labels(
                 message_code=row["code"], nad=row["nad"],
@@ -510,10 +318,6 @@ def collect(dataconnect, cfg):
             lambda: metrics.ise_dataconnect_radius_accounting_event_type_total.labels(
                 event_type="stop").set(
                     integer(summaries["accounting"].get("stop_events"))),
-            lambda: metrics.ise_dataconnect_radius_active_sessions_total.set(
-                integer(summaries["active_sessions"].get("total_sessions"))),
-            lambda: metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds.set(
-                stale_minutes * 60),
             lambda: metrics.ise_dataconnect_radius_errors_total.set(
                 integer(summaries["errors"].get("total_events"))),
         ))
@@ -522,7 +326,6 @@ def collect(dataconnect, cfg):
             "latency": (len(latency), summaries["latency"]),
             "accounting": (len(accounting), summaries["accounting"]),
             "accounting_sessions": (len(accounting_sessions), summaries["accounting_sessions"]),
-            "active_sessions": (len(active_sessions), summaries["active_sessions"]),
             "errors": (len(errors), summaries["errors"]),
             "failure_context": (len(failure_context), summaries["failure_context"]),
         }
@@ -545,4 +348,37 @@ def collect(dataconnect, cfg):
                         breakdown=breakdown).set(
                             1 if not total_exact or returned < total else 0),
             ))
-        replace_snapshot(_METRICS, writers)
+        replace_snapshot(_REPORTING_METRICS, writers)
+
+
+def collect_active(dataconnect, cfg):
+    """Atomically replace the current bounded active-session reconstruction."""
+    with observe("dataconnect_radius_active"):
+        limit = group_limit(cfg)
+        stale_minutes = max(5, min(1440, int(getattr(
+            cfg, "dataconnect_active_session_stale_minutes", 60))))
+        values = dataconnect.query(_queries(limit, stale_minutes)["active_sessions"])
+        summary = values[0] if values else {}
+        active_sessions = [{
+            "nad": label(row.get("device_name")),
+            "psn": label(row.get("ise_node")),
+            "sessions": integer(row.get("sessions")),
+        } for row in values]
+        total_groups = integer(summary.get("total_groups"))
+        writers = [
+            lambda row=row: metrics.ise_dataconnect_radius_active_sessions.labels(
+                nad=row["nad"], psn=row["psn"]).set(row["sessions"])
+            for row in active_sessions
+        ]
+        writers.extend((
+            lambda: metrics.ise_dataconnect_radius_active_sessions_total.set(
+                integer(summary.get("total_sessions"))),
+            lambda: metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds.set(
+                stale_minutes * 60),
+            lambda: metrics.ise_dataconnect_radius_active_groups_returned.set(
+                len(active_sessions)),
+            lambda: metrics.ise_dataconnect_radius_active_groups_total.set(total_groups),
+            lambda: metrics.ise_dataconnect_radius_active_groups_truncated.set(
+                int(len(active_sessions) < total_groups)),
+        ))
+        replace_snapshot(_ACTIVE_METRICS, writers)

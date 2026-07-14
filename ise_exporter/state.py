@@ -35,20 +35,16 @@ class StateStore:
             )
         """)
         self.db.execute("""
-            CREATE TABLE IF NOT EXISTS dataconnect_rollup (
-                dataset TEXT NOT NULL,
-                window_start REAL NOT NULL,
-                window_end REAL NOT NULL,
-                rows_json TEXT NOT NULL,
-                PRIMARY KEY (dataset, window_start, window_end)
-            )
-        """)
-        self.db.execute("""
             CREATE TABLE IF NOT EXISTS exporter_state (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             )
         """)
+        # Versions before the reporting/active split cached RADIUS aggregate
+        # windows here. They are neither needed nor read anymore; remove the
+        # obsolete history during upgrade instead of retaining an abandoned
+        # local copy of MnT-derived data indefinitely.
+        self.db.execute("DROP TABLE IF EXISTS dataconnect_rollup")
         self.db.commit()
         if self.path != ":memory:":
             os.chmod(self.path, 0o600)
@@ -154,51 +150,3 @@ class StateStore:
             "updated_at": float(updated_at), "payload": payload,
         }, separators=(",", ":"), allow_nan=False)
         self.set_value(f"dataset_snapshot.{dataset}", value)
-
-    def dataconnect_snapshots(self, datasets, cutoff):
-        result = {dataset: [] for dataset in datasets}
-        for dataset in datasets:
-            rows = self.db.execute("""
-                SELECT window_start, window_end, rows_json
-                FROM dataconnect_rollup
-                WHERE dataset=? AND window_end>?
-                ORDER BY window_start
-            """, (dataset, float(cutoff)))
-            for row in rows:
-                try:
-                    values = json.loads(row["rows_json"])
-                except (TypeError, ValueError):
-                    continue
-                if isinstance(values, list):
-                    result[dataset].append({
-                        "start": float(row["window_start"]),
-                        "end": float(row["window_end"]),
-                        "rows": values,
-                    })
-        return result
-
-    def replace_dataconnect_rollups(self, snapshots, values=None):
-        for dataset in snapshots:
-            self.db.execute("DELETE FROM dataconnect_rollup WHERE dataset=?", (dataset,))
-        self.append_dataconnect_rollups(snapshots, values=values, commit=False)
-        self.db.commit()
-
-    def append_dataconnect_rollups(self, snapshots, values=None, *, commit=True):
-        for dataset, snapshot in snapshots.items():
-            self.db.execute("""
-                INSERT OR REPLACE INTO dataconnect_rollup
-                    (dataset, window_start, window_end, rows_json)
-                VALUES (?, ?, ?, ?)
-            """, (
-                dataset, float(snapshot["start"]), float(snapshot["end"]),
-                json.dumps(snapshot["rows"], separators=(",", ":"), default=str),
-            ))
-        for key, value in (values or {}).items():
-            self.set_value(key, value, commit=False)
-        if commit:
-            self.db.commit()
-
-    def prune_dataconnect_rollups(self, cutoff):
-        self.db.execute(
-            "DELETE FROM dataconnect_rollup WHERE window_end<=?", (float(cutoff),))
-        self.db.commit()

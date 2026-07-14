@@ -76,7 +76,7 @@
       "description": "Collector dimensional breakdowns where the configured top-K limit omits groups. Exact total metrics remain authoritative.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
       "targets": [{
-          "expr": "(count(ise_dataconnect_radius_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_posture_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_endpoint_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_diagnostic_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)))",
+          "expr": "(count(ise_dataconnect_radius_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) + ((ise_dataconnect_radius_active_groups_truncated and on() (max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_posture_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_endpoint_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))) + (count(ise_dataconnect_diagnostic_topk_truncated == 1) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)))",
         "instant": true,
         "refId": "A",
         "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
@@ -260,7 +260,7 @@
       "id": 29,
       "type": "row",
       "title": "Persistent Collection Cache",
-      "description": "Restart-persistent MnT detail caching and incremental Data Connect reconciliation.",
+      "description": "Restart-persistent MnT detail caching and bounded Data Connect metric snapshots.",
       "collapsed": false,
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 57}
     },
@@ -293,12 +293,12 @@
     {
       "id": 33,
       "type": "stat",
-      "title": "RADIUS Incremental / Reconciliation Age",
-      "description": "Mode 1 is a small new-event window; mode 0 is a full two-day reconciliation.",
+      "title": "RADIUS Reporting / Active Age",
+      "description": "Exact historical reporting and bounded current-session reconstruction have independent collection ages.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 58},
       "targets": [
-        {"expr": "ise_dataconnect_incremental_mode{domain=\"radius\"} and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)", "instant": true, "legendFormat": "incremental mode", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_dataconnect_reconciliation_age_seconds{domain=\"radius\"} and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)", "instant": true, "legendFormat": "reconciliation age", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "(time() - ise_dataset_last_success_timestamp{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)", "instant": true, "legendFormat": "reporting age", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "(time() - ise_dataset_last_success_timestamp{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1)", "instant": true, "legendFormat": "active age", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ]
     },
     {

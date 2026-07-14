@@ -89,9 +89,11 @@ connection, two-second statement pacing, a 0.5% adaptive query-duty-cycle ceilin
 15-second statement timeouts, and independent 30-minute to 24-hour domain
 cadences. Summary and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate two-day scan.
-The steady-state scheduled workload is about 23 statements per hour after startup;
-the safety gain is that six RADIUS statements scan only their new event window,
-while one inexpensive database-clock statement makes watermark boundaries exact.
+The steady-state scheduled workload is about 9 statements per hour after startup.
+Exact two-day RADIUS reporting runs daily, while a disjoint active-session query
+scans only its configured stale window every 30 minutes. No historical windows
+are merged locally, so a reconciliation baseline cannot silently grow into a
+three-day reporting window.
 The exporter and CLI also serialize through one persistent pacing gate so separate
 processes cannot bypass the cooldown. The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
@@ -127,15 +129,13 @@ rotation. Production defaults allow 250 requests per 15-minute cycle, two worker
 details rather than creating a cold-start burst. Coverage, cache age, deferred
 refreshes, candidate count, and truncation qualify every sample.
 
-RADIUS uses the same SQLite state store for identity-free aggregate windows.
-After a full two-day seed, normal runs query only events newer than the previous
-watermark, merge those bounded aggregates locally, and query active accounting
-state directly. A daily full reconciliation repairs late-arriving rows; a gap
-larger than the configured safe backfill limit also forces reconciliation instead
-of silently losing data. The database stores aggregate rows, not raw RADIUS
-identities or credentials.
+RADIUS history is not accumulated in SQLite. The daily reporting collection
+recomputes an exact, bounded two-day aggregate from Data Connect and persists only
+the resulting bounded Prometheus snapshot. Current active-session reconstruction
+is a separate, one-query dataset with its own 30-minute cadence and snapshot.
+Neither path stores raw RADIUS identities, credentials, events, or session rows.
 
-Successful Data Connect domains also store their complete bounded Prometheus
+Successful Data Connect domains store their complete bounded Prometheus
 gauge snapshots and completion timestamps in that private database. A restart
 atomically rehydrates compatible, still-fresh snapshots and retains each domain's
 next scheduled deadline instead of immediately repeating every reporting query.

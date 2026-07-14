@@ -1,5 +1,4 @@
 import types
-from datetime import datetime, timezone
 
 import pytest
 
@@ -73,24 +72,12 @@ class DataConnect:
                  "events": 3, "total_events": 12, "total_groups": 3}]
 
 
-class IncrementalDataConnect(DataConnect):
-    def __init__(self, epoch):
-        super().__init__()
-        self.parameters = []
-        self.epoch = epoch
-
-    def query(self, sql, parameters=None):
-        self.parameters.append(parameters)
-        if "SYS_EXTRACT_UTC" in sql:
-            self.sql.append(sql)
-            return [{"db_now": datetime.fromtimestamp(
-                self.epoch, timezone.utc).replace(tzinfo=None)}]
-        return super().query(sql)
-
-
 def test_collects_bounded_aggregated_radius_metrics():
     client = DataConnect()
-    dataconnect_radius.collect(client, types.SimpleNamespace(dataconnect_max_groups=25))
+    cfg = types.SimpleNamespace(dataconnect_max_groups=25)
+    dataconnect_radius.collect_reporting(client, cfg)
+    assert len(client.sql) == 7
+    dataconnect_radius.collect_active(client, cfg)
 
     assert len(client.sql) == 8
     assert sum("INTERVAL '2' DAY" in sql for sql in client.sql) == 7
@@ -131,6 +118,9 @@ def test_collects_bounded_aggregated_radius_metrics():
                  "breakdown")[("authentication",)] == 1
     assert _rows(metrics.ise_dataconnect_radius_topk_truncated,
                  "breakdown")[("authentication",)] == 1
+    assert metrics.ise_dataconnect_radius_active_groups_returned._value.get() == 1
+    assert metrics.ise_dataconnect_radius_active_groups_total._value.get() == 1
+    assert metrics.ise_dataconnect_radius_active_groups_truncated._value.get() == 0
 
     active_sql = next(sql for sql in client.sql
                       if "select device_name, ise_node, count(*) as sessions" in sql.lower())
@@ -163,50 +153,22 @@ def test_query_failure_preserves_previous_snapshot():
                 raise RuntimeError("database unavailable")
             return super().query(sql)
 
-    dataconnect_radius.collect(Broken(), types.SimpleNamespace(dataconnect_max_groups=25))
+    dataconnect_radius.collect_reporting(
+        Broken(), types.SimpleNamespace(dataconnect_max_groups=25))
 
     assert _rows(metrics.ise_dataconnect_radius_errors,
                  "message_code", "nad") == {("old", "old"): 9}
 
 
-def test_incremental_rollups_survive_restart_and_scan_only_new_window(tmp_path, monkeypatch):
-    now = [1_784_000_000.0]
-    monkeypatch.setattr(dataconnect_radius.time, "time", lambda: now[0])
-    cfg = types.SimpleNamespace(
-        dataconnect_max_groups=25,
-        dataconnect_incremental_enabled=True,
-        dataconnect_reconcile_interval=86400,
-        dataconnect_max_backfill_seconds=3600,
-        state_db_path=str(tmp_path / "state.sqlite3"),
-    )
+def test_reporting_and_active_snapshots_have_disjoint_metric_families():
+    cfg = types.SimpleNamespace(dataconnect_max_groups=25)
+    dataconnect_radius.collect_reporting(DataConnect(), cfg)
+    reporting_before = _rows(
+        metrics.ise_dataconnect_radius_authentication_events,
+        "authentication_method", "nad")
 
-    initial = IncrementalDataConnect(now[0])
-    dataconnect_radius.collect(initial, cfg)
-    assert len(initial.sql) == 9
-    assert sum(parameters is not None for parameters in initial.parameters) == 7
-    assert metrics.ise_dataconnect_incremental_mode.labels(domain="radius")._value.get() == 0
-
-    now[0] += 300
-    restarted = IncrementalDataConnect(now[0])
-    dataconnect_radius.collect(restarted, cfg)
-
-    assert len(restarted.sql) == 8
-    assert sum(parameters is not None for parameters in restarted.parameters) == 6
-    assert not any("count(distinct calling_station_id)" in sql.lower()
-                   for sql in restarted.sql)
-    assert all(":window_start" in sql and ":window_end" in sql
-               for sql, parameters in zip(restarted.sql, restarted.parameters)
-               if parameters is not None)
-    assert metrics.ise_dataconnect_incremental_mode.labels(domain="radius")._value.get() == 1
-    assert metrics.ise_dataconnect_incremental_window_seconds.labels(
-        domain="radius")._value.get() == 300
-    assert metrics.ise_dataconnect_radius_authentication_events_total._value.get() == 214
-    assert _rows(metrics.ise_dataconnect_radius_accounting_event_type_total,
-                 "event_type") == {("start",): 240, ("stop",): 160}
+    dataconnect_radius.collect_active(DataConnect(), cfg)
     assert _rows(metrics.ise_dataconnect_radius_authentication_events,
-                 "authentication_method", "nad") == {
-        ("MSCHAPv2", "nad-1"): 14, ("EAP-TLS", "nad-1"): 6}
-    assert _rows(metrics.ise_dataconnect_radius_topk_groups_total_exact,
-                 "breakdown")[("authentication",)] == 0
-    assert _rows(metrics.ise_dataconnect_radius_topk_truncated,
-                 "breakdown")[("authentication",)] == 1
+                 "authentication_method", "nad") == reporting_before
+    assert _rows(metrics.ise_dataconnect_radius_active_sessions, "nad", "psn") == {
+        ("nad-1", "psn-1"): 12}

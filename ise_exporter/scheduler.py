@@ -33,14 +33,8 @@ logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
 
 _PERSISTED_DATACONNECT_METRICS = {
-    # RADIUS collection mode is part of the operator-visible snapshot.  Without
-    # these gauges a restart restores the RADIUS data but leaves the Data Quality
-    # dashboard blank until the next (deliberately infrequent) database query.
-    "dataconnect_radius": dataconnect_radius._METRICS + (
-        metrics.ise_dataconnect_incremental_mode,
-        metrics.ise_dataconnect_incremental_window_seconds,
-        metrics.ise_dataconnect_reconciliation_age_seconds,
-    ),
+    "dataconnect_radius": dataconnect_radius._REPORTING_METRICS,
+    "dataconnect_radius_active": dataconnect_radius._ACTIVE_METRICS,
     "dataconnect_performance": dataconnect_performance._METRICS,
     "dataconnect_posture": dataconnect_posture._METRICS,
     "dataconnect_endpoints": dataconnect_endpoints._METRICS,
@@ -85,7 +79,10 @@ class PollScheduler:
             "backup": ("rest", cfg.slow_interval, cfg.collect_backup_status),
             "patches": ("rest", cfg.slow_interval, cfg.collect_patches),
             "dataconnect_radius": (
-                "dataconnect", getattr(cfg, "dataconnect_radius_interval", 1800), True),
+                "dataconnect", getattr(cfg, "dataconnect_radius_interval", 86400), True),
+            "dataconnect_radius_active": (
+                "dataconnect", getattr(
+                    cfg, "dataconnect_radius_active_interval", 1800), True),
             "dataconnect_performance": (
                 "dataconnect", getattr(cfg, "dataconnect_performance_interval", 3600), True),
             "dataconnect_posture": (
@@ -265,9 +262,13 @@ class PollScheduler:
             self._run("patches", now, cfg.slow_interval,
                       lambda: patches.collect(self.client, cfg))
 
-        # Data Connect reporting plane. Each domain owns disjoint metric families.
+        # Exact historical reporting and current active-session reconstruction
+        # have disjoint metric families and independent production-safe cadences.
         self._run("dataconnect_radius", now, self.dataset_plan["dataconnect_radius"][1],
-                  lambda: dataconnect_radius.collect(self.dataconnect, cfg))
+                  lambda: dataconnect_radius.collect_reporting(self.dataconnect, cfg))
+        self._run("dataconnect_radius_active", now,
+                  self.dataset_plan["dataconnect_radius_active"][1],
+                  lambda: dataconnect_radius.collect_active(self.dataconnect, cfg))
         self._run("dataconnect_performance", now,
                   self.dataset_plan["dataconnect_performance"][1],
                   lambda: dataconnect_performance.collect(self.dataconnect, cfg))
