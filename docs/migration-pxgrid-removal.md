@@ -105,7 +105,7 @@ pxGrid; it does not.
   panels and expose MnT sample quality.
 - [x] Add explicit “dataset unavailable” and “last successful snapshot age”
   panels to the global exporter-health dashboard.
-- [ ] Verify every dashboard in a browser against live Patch 11 data, including
+- [x] Verify every dashboard in a browser against live Patch 11 data, including
   empty-data and Data Connect outage cases.
 - [x] Remove dashboard variables and joins that depend on deprecated session or
   endpoint identity labels.
@@ -121,7 +121,7 @@ pxGrid; it does not.
   prerequisites.
 - [x] Preserve configuration and certificate directories across idempotent
   installer upgrades.
-- [ ] Exercise the final package and systemd unit on a clean Ubuntu Noble VM,
+- [x] Exercise the final package and systemd unit on a clean Ubuntu Noble VM,
   including a real Data Connect TLS connection to the lab.
 - [x] Document offline wheelhouse installation for production networks without
   direct PyPI access.
@@ -145,7 +145,7 @@ pxGrid; it does not.
 - [x] Run the Ubuntu Noble installation CI job.
 - [x] Run the complete live-lab collection cycle against `laba-ise-001` and
   confirm all enabled collectors report success.
-- [ ] Verify Prometheus queries and every Grafana dashboard against the live
+- [x] Verify Prometheus queries and every Grafana dashboard against the live
   exporter.
 - [x] Confirm a repository-wide search has no unrelated assistant-vendor references.
 - [x] Commit the complete migration as one reviewed change and push the tracking
