@@ -63,9 +63,10 @@ It creates:
 - `/usr/local/bin/ise-cli` for all local users;
 - `/etc/systemd/system/ise-exporter.service`.
 
-The exporter needs outbound HTTPS to the PAN for REST/OpenAPI and TCPS port
-2484 to the MnT node for Data Connect. Port 9618 must be reachable by Prometheus
-if it runs on another host.
+The exporter needs outbound HTTPS to the PAN for REST/OpenAPI, HTTPS to
+`ISE_MNT_HOST` when bounded active posture is enabled, and TCPS port 2484 to the
+MnT node for Data Connect. Port 9618 must be reachable by Prometheus if it runs
+on another host.
 
 ## Data Connect prerequisites
 
@@ -84,9 +85,14 @@ enabled. Install the PEM chain under `/etc/ise-exporter/certs`, owned by
 ```dotenv
 ISE_REST_SSL_VERIFY=true
 ISE_REST_CA_BUNDLE=/etc/ise-exporter/certs/ise-rest-ca.pem
-# MnT is used only by explicit ise-cli diagnostics and may use another CA.
+# MnT serves bounded current active posture and explicit CLI diagnostics.
+ISE_MNT_HOST=mnt1.example.mil
 ISE_MNT_SSL_VERIFY=true
 ISE_MNT_CA_BUNDLE=/etc/ise-exporter/certs/ise-mnt-ca.pem
+COLLECT_MNT_ACTIVE_POSTURE=true
+MNT_ACTIVE_POSTURE_INTERVAL=300
+MNT_ACTIVE_POSTURE_MAX_SESSIONS=1000
+MNT_ACTIVE_POSTURE_WORKERS=8
 ISE_DATACONNECT_HOST=mnt1.example.mil
 ISE_DATACONNECT_PORT=2484
 ISE_DATACONNECT_SERVICE=cpm10
@@ -95,6 +101,14 @@ ISE_DATACONNECT_PASSWORD=use-a-secret-store
 ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-dataconnect-ca.pem
 ISE_DATACONNECT_SSL_VERIFY=true
 ```
+
+At the production defaults, the MnT collector deduplicates ActiveList MACs and
+requests details for at most 1,000 currently active endpoints every five minutes
+with eight workers. This bound is independent of the 80,000-endpoint inventory.
+The resulting metrics are current aggregate samples with coverage/truncation
+signals; they never expose endpoint identity, session identity, or raw/free-form
+attributes as Prometheus labels. Data Connect remains the historical posture and
+reporting source.
 
 ISE accepts a Data Connect password lifetime of 1 through 3650 days and defaults
 to 90 days. Rotate the password before expiry and restart the exporter. More than

@@ -14,6 +14,8 @@ def _cfg(**overrides):
         collect_backup_status=False,
         collect_patches=False,
         collect_tacacs=True,
+        collect_mnt_active_posture=True,
+        mnt_active_posture_interval=300,
         fast_interval=60,
         medium_interval=300,
         slow_interval=3600,
@@ -34,7 +36,7 @@ def test_collection_plan_has_one_writer_per_reporting_domain(monkeypatch):
     modules = (
         "deployment", "devices", "dataconnect_radius", "dataconnect_performance",
         "dataconnect_posture", "dataconnect_endpoints", "dataconnect_freshness",
-        "nad_health",
+        "nad_health", "mnt_active_posture",
     )
     for name in modules:
         monkeypatch.setattr(
@@ -50,13 +52,13 @@ def test_collection_plan_has_one_writer_per_reporting_domain(monkeypatch):
         lambda *args, **kwargs: ran.append("tacacs_activity"),
     )
 
-    PollScheduler(_cfg(), client=object(), dataconnect=object()).run_cycle()
+    PollScheduler(_cfg(), client=object(), dataconnect=object(), mnt=object()).run_cycle()
 
     assert set(ran) == {*modules, "tacacs_config", "tacacs_activity"}
     assert len(ran) == len(set(ran))
 
 
-def test_scheduler_never_calls_mnt(monkeypatch):
+def test_scheduler_uses_only_the_dedicated_mnt_client(monkeypatch):
     class Client:
         def get_mnt_xml(self, *args, **kwargs):
             raise AssertionError("MnT must not participate in exporter collection")
@@ -68,7 +70,15 @@ def test_scheduler_never_calls_mnt(monkeypatch):
     ):
         monkeypatch.setattr(getattr(scheduler_module, name), "collect", lambda *a, **k: None)
 
-    PollScheduler(_cfg(collect_tacacs=False), Client(), object()).run_cycle()
+    seen = []
+    monkeypatch.setattr(
+        scheduler_module.mnt_active_posture, "collect",
+        lambda client, cfg: seen.append(client),
+    )
+    mnt = object()
+
+    PollScheduler(_cfg(collect_tacacs=False), Client(), object(), mnt=mnt).run_cycle()
+    assert seen == [mnt]
 
 
 def test_disabled_control_plane_collectors_do_not_run(monkeypatch):
@@ -76,6 +86,7 @@ def test_disabled_control_plane_collectors_do_not_run(monkeypatch):
                  "dataconnect_posture", "dataconnect_endpoints", "dataconnect_freshness",
                  "nad_health"):
         monkeypatch.setattr(getattr(scheduler_module, name), "collect", lambda *a, **k: None)
+    monkeypatch.setattr(scheduler_module.mnt_active_posture, "collect", lambda *a, **k: None)
     for name in ("certificates", "licensing", "backup", "patches"):
         monkeypatch.setattr(
             getattr(scheduler_module, name), "collect",

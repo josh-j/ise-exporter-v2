@@ -1,7 +1,7 @@
 # Architecture and collection boundaries
 
-`ise-exporter` has one deliberately narrow compatibility target and two runtime
-collection planes. It is not a general-purpose exporter for every Cisco ISE
+`ise-exporter` has one deliberately narrow compatibility target and three runtime
+collection boundaries. It is not a general-purpose exporter for every Cisco ISE
 release.
 
 ## Supported ISE contract
@@ -27,7 +27,7 @@ contract is changed. The exporter uses supported remote interfaces only; it
 never requires SSH, an appliance shell, database-table access, or root access
 to ISE.
 
-## Two-plane runtime
+## Three-boundary runtime
 
 ```text
                          +-----------------------+
@@ -36,10 +36,12 @@ PAN ERS/OpenAPI -------->| platform/configuration|---+
                                                      +--> Prometheus metrics
                          +-----------------------+   |
 MnT Data Connect ------->| monitoring/reporting  |---+
-                         +-----------------------+
+                         +-----------------------+   |
+                                                     |
+MnT XML (bounded) ------>| current active posture|---+
 ```
 
-The planes have fixed ownership. A collector does not inspect another
+The boundaries have fixed ownership. A collector does not inspect another
 collector's metrics, choose a source dynamically, or fall back to a transport
 with different semantics.
 
@@ -60,7 +62,7 @@ authentication, posture, session, or performance reporting.
 
 ### Data Connect reporting plane
 
-Data Connect owns monitoring and reporting state:
+Data Connect owns historical monitoring and reporting state:
 
 - RADIUS authentication, errors, response latency, and accounting;
 - endpoint inventory and profiling aggregates;
@@ -75,27 +77,49 @@ event history, and capped by `ISE_DATACONNECT_MAX_GROUPS`. Endpoint identities,
 session IDs, raw posture reports, and free-form failure text must not become
 unbounded Prometheus labels.
 
+### Bounded MnT active-session plane
+
+MnT XML owns only a current, bounded active-session dataset:
+
+- ActiveList session and unique endpoint candidate counts;
+- posture status, applicability, assessment state, OS, and Secure Client version;
+- posture policy passed/failed aggregates parsed from `PostureReport`; and
+- numeric authentication-step and total-authentication latency aggregates.
+
+The collector deduplicates active MACs and fetches no more than
+`MNT_ACTIVE_POSTURE_MAX_SESSIONS` endpoint details per
+`MNT_ACTIVE_POSTURE_INTERVAL`, using at most `MNT_ACTIVE_POSTURE_WORKERS` workers.
+The production defaults are 1,000 details, five minutes, and eight workers. This
+fills the ISE 3.3 Patch 11 current-posture gap without an unbounded fan-out across
+an 80,000-endpoint inventory. Coverage, candidate count, selected count, and a
+truncation flag qualify every sample.
+
+MnT metrics never contain MAC addresses, usernames, session IDs, raw
+`PostureReport`, or free-form attributes. Only bounded aggregate dimensions such
+as status, OS family, PSN, normalized agent version, policy/result, and numeric
+step code are labels.
+
 ### No pxGrid runtime
 
 pxGrid is not part of the architecture. There is no pxGrid client,
 certificate credential, account activation, snapshot, WebSocket subscription,
-topic consumer, or live-event overlay in the exporter runtime. Current-session
-reporting is derived from Data Connect accounting data and therefore has the
-freshness and completeness of the accounting records supplied by the NADs.
+topic consumer, or live-event overlay in the exporter runtime. Likely-active
+session counts are reconstructed from Data Connect accounting and therefore
+have the freshness and completeness of the records supplied by the NADs.
+Current active posture is the separate bounded MnT sample described above.
 
-### No MnT metric runtime
+### MnT CLI diagnostics are separate
 
-The legacy MnT XML API is not a metric source. It must not be called by the
-scheduler or any metric collector. MnT XML remains available only in `ise-cli`
-and the curl probes as an explicit, read-only troubleshooting surface for an
-operator inspecting a particular session, authentication, or Secure Client
-record.
+The scheduled MnT collector above is the only MnT metric source. MnT commands in
+`ise-cli` and the curl probes remain explicit, read-only operator actions for
+inspecting a particular session, authentication, or Secure Client record. They
+do not read, update, or broaden the scheduled runtime snapshot.
 
 The CLI also exposes bounded, curated Data Connect reports and uses
 `ENDPOINTS_DATA` as its preferred IP/hostname resolver. Those queries are
 operator-initiated and do not change metric ownership: REST/OpenAPI still owns
-configuration detail, Data Connect owns reporting, and MnT remains a live
-diagnostic fallback.
+configuration detail, Data Connect owns historical reporting, and MnT remains a
+live diagnostic fallback within CLI resolution only.
 
 ## One-owner dataset matrix
 
@@ -111,7 +135,8 @@ diagnostic fallback.
 | RADIUS authentication, failures, and latency | Reporting | Data Connect | fast |
 | RADIUS accounting and session duration | Reporting | Data Connect | fast |
 | Endpoint inventory and profiling | Reporting | Data Connect | slow |
-| Posture and Secure Client | Reporting | Data Connect | medium |
+| Historical posture and Secure Client | Reporting | Data Connect | medium |
+| Current active-session posture and latency sample | Current state | MnT XML | configured, default medium |
 | PSN performance and diagnostics | Reporting | Data Connect | fast |
 | TACACS account and command activity | Reporting | Data Connect | medium |
 
@@ -123,7 +148,7 @@ they emit distinct metric families and never substitute for one another.
 
 - Failure of one dataset records collector failure without changing ownership.
 - The exporter retries the same authoritative source at its configured cadence;
-  it never switches to pxGrid, MnT XML, or per-endpoint ERS fan-out.
+  it never switches between Data Connect, MnT XML, pxGrid, or per-endpoint ERS.
 - A reporting-plane failure must not be represented as a valid empty snapshot.
 - Successful grouped query results replace their metric snapshot atomically so
   removed groups do not linger.
@@ -131,7 +156,7 @@ they emit distinct metric families and never substitute for one another.
 - Failure of the exact-version startup check prevents the metrics server from
   starting against an unsupported appliance.
 
-## Ubuntu Noble and Data Connect requirements
+## Ubuntu Noble, Data Connect, and MnT requirements
 
 Ubuntu Server 24.04 LTS (Noble Numbat) is the native production target. The
 installer uses standard Ubuntu packages for Python, virtual environments,
@@ -157,6 +182,12 @@ The hostname must match the Admin certificate. Data Connect credentials and CA
 material are read by the unprivileged `ise-exporter` service account. No ISE
 root credential or appliance filesystem access is used.
 
+The optional bounded MnT dataset requires HTTPS from Ubuntu to
+`ISE_MNT_HOST`, the same read-only ISE API credential, and the MnT Admin issuing
+CA through `ISE_MNT_CA_BUNDLE`. Disable `COLLECT_MNT_ACTIVE_POSTURE` when current
+active posture is not required; historical Data Connect posture remains
+independent.
+
 On a fresh Ubuntu installation, the systemd unit is enabled but not started.
 The operator must replace the seeded example hosts and passwords, install the CA
 chain, and pass `ise-exporter --dataconnect-check` before explicitly starting the
@@ -168,6 +199,6 @@ already active; an intentionally stopped service remains stopped.
 
 Configuration selects domains and intervals, not competing transports. Normal
 production operation always uses REST/OpenAPI for the control plane and Data
-Connect for the reporting plane. If Data Connect is unavailable, reporting
-datasets are unavailable; they do not silently acquire different definitions
-from legacy APIs.
+Connect for historical reporting, with bounded MnT XML optionally owning current
+active posture. If a source is unavailable, its datasets are unavailable; they
+do not silently acquire different definitions from another boundary.

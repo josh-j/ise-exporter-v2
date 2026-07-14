@@ -282,11 +282,15 @@ class ISEControlPlaneClient(ISERestClient):
         super().__init__(cfg, include_control=True, include_mnt=False)
 
 
-class MnTDiagnosticsClient(ISERestClient):
-    """MnT XML transport used only by explicit operator diagnostics."""
+class MnTActiveSessionClient(ISERestClient):
+    """MnT XML transport scoped to active-session detail and diagnostics."""
 
     def __init__(self, cfg):
         super().__init__(cfg, include_control=False, include_mnt=True)
+
+
+class MnTDiagnosticsClient(MnTActiveSessionClient):
+    """Compatibility name used by explicit operator diagnostics."""
 
 
 class ISEOperatorClient:

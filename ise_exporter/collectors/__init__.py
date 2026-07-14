@@ -20,7 +20,11 @@ _outcomes = {}
 
 
 def source(name):
-    return "dataconnect" if name.startswith("dataconnect_") or name == "tacacs_activity" else "rest"
+    if name.startswith("dataconnect_") or name == "tacacs_activity":
+        return "dataconnect"
+    if name.startswith("mnt_"):
+        return "mnt"
+    return "rest"
 
 
 class CollectorFailed(Exception):

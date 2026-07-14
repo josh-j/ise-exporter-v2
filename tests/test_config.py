@@ -107,6 +107,10 @@ def test_env_example_is_parseable_ise33_80k_production_profile():
     assert values["ISE_DATACONNECT_SSL_VERIFY"] == "true"
     assert values["ISE_REST_SSL_VERIFY"] == "true"
     assert values["ISE_MNT_SSL_VERIFY"] == "true"
+    assert values["COLLECT_MNT_ACTIVE_POSTURE"] == "true"
+    assert values["MNT_ACTIVE_POSTURE_INTERVAL"] == "300"
+    assert values["MNT_ACTIVE_POSTURE_MAX_SESSIONS"] == "1000"
+    assert values["MNT_ACTIVE_POSTURE_WORKERS"] == "8"
     # systemd EnvironmentFile= does not support trailing inline comments; keeping
     # comments on their own lines prevents them becoming part of numeric/boolean values.
     assignments = [line for line in path.read_text().splitlines()

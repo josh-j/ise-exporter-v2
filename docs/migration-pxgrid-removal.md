@@ -1,4 +1,4 @@
-# pxGrid removal and two-plane migration roadmap
+# pxGrid removal and explicit-boundary migration roadmap
 
 This checklist tracks the migration from overlapping ERS, MnT, and pxGrid
 collectors to the exact ISE 3.3.0.430 Patch 11 architecture documented in
@@ -19,15 +19,18 @@ collectors to the exact ISE 3.3.0.430 Patch 11 architecture documented in
 ## Runtime boundaries
 
 - [x] Establish REST/OpenAPI as the sole platform/configuration plane.
-- [x] Establish Data Connect as the sole monitoring/reporting plane.
+- [x] Establish Data Connect as the sole historical monitoring/reporting plane.
+- [x] Establish one bounded MnT current active-session posture/latency dataset
+  with separate metric ownership, coverage, and truncation signals.
 - [x] Use an immutable scheduler plan rather than runtime source selection.
 - [x] Prohibit collector-to-collector metric inspection and semantic fallback.
 - [x] Require usable Data Connect configuration for normal exporter startup.
-- [x] Keep MnT XML outside the metric scheduler and collectors.
+- [x] Keep MnT XML outside general reporting; permit only the explicitly bounded
+  active-posture collector and operator-initiated CLI diagnostics.
 - [x] Add first-class dataset availability and snapshot-age metrics so every
   dashboard can distinguish unavailable data from a legitimate zero.
-- [x] Add an integration assertion that no normal exporter run calls an MnT XML
-  path.
+- [x] Add integration assertions that the control client cannot call MnT and the
+  scheduler passes only the dedicated MnT client to active-posture collection.
 
 ## pxGrid removal
 
@@ -62,6 +65,18 @@ collectors to the exact ISE 3.3.0.430 Patch 11 architecture documented in
 - [x] Document accounting-data expectations for NAD Start, Interim-Update, and
   Stop records now that pxGrid is not available for live session transitions.
 
+## Bounded MnT current-state ownership
+
+- [x] Limit MnT runtime ownership to current active-session posture, Secure
+  Client version, posture policy result, and latency aggregates.
+- [x] Deduplicate active endpoint MACs and cap detail requests independently of
+  total endpoint inventory.
+- [x] Export detail coverage, source-field coverage, candidate count, and
+  truncation so an 80,000-endpoint deployment can interpret the bounded sample.
+- [x] Exclude MAC, username, session ID, raw posture report, and free-form text
+  from Prometheus labels.
+- [x] Keep MnT CLI calls operator initiated and separate from scheduler state.
+
 ## REST/OpenAPI control-plane ownership
 
 - [x] Retain deployment, node status, persona/service, and PAN HA collection.
@@ -69,8 +84,8 @@ collectors to the exact ISE 3.3.0.430 Patch 11 architecture documented in
 - [x] Retain certificate, licensing, backup, version, and patch collection.
 - [x] Separate TACACS configuration metrics from Data Connect activity metrics.
 - [x] Eliminate ERS endpoint-detail crawling from the metric runtime.
-- [x] Eliminate MnT per-MAC authentication and session fan-out from the metric
-  runtime.
+- [x] Eliminate unbounded MnT per-MAC authentication/session fan-out; retain only
+  the capped active-posture detail budget.
 - [x] Review remaining REST collectors against the captured Patch 11 OpenAPI
   schemas and remove parameters or routes not present in that exact release.
 
@@ -79,8 +94,10 @@ collectors to the exact ISE 3.3.0.430 Patch 11 architecture documented in
 - [x] Give the Data Connect domains distinct metric families with one writer
   per family.
 - [x] Atomically replace successful Data Connect grouped snapshots.
-- [x] Convert all Grafana dashboards from removed pxGrid, MnT, session, authz,
-  endpoint-attribute, and model metrics to the new one-owner metric families.
+- [x] Convert Grafana dashboards from removed pxGrid and legacy overlapping MnT,
+  session, authz, endpoint-attribute, and model metrics to one-owner families.
+- [x] Separate current bounded MnT panels from historical Data Connect posture
+  panels and expose MnT sample quality.
 - [x] Add explicit “dataset unavailable” and “last successful snapshot age”
   panels to the global exporter-health dashboard.
 - [ ] Verify every dashboard in a browser against live Patch 11 data, including

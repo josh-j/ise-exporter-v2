@@ -26,9 +26,10 @@ ise> radius-auth --identifier client-25.example.test --limit 20
 ise> quit
 ```
 
-The exporter metric runtime does not use MnT XML. Its reporting plane is Data
-Connect, while MnT commands in this CLI are explicit, operator-initiated diagnostics
-for inspecting individual session, authentication, or Secure Client records.
+The exporter runtime uses MnT XML only for its separately bounded current
+active-session posture/latency dataset. MnT commands in this CLI remain explicit,
+operator-initiated diagnostics for inspecting individual session, authentication,
+or Secure Client records; they do not access or modify that scheduled snapshot.
 
 ## Configuration and routing
 
@@ -45,7 +46,7 @@ API routing is fixed by family:
 |---|---|---|
 | ERS | `ISE_HOST` | `https://HOST:ERS_PORT/ers` |
 | OpenAPI | `ISE_HOST` | `https://HOST/api/v1` |
-| MnT XML diagnostics only | `ISE_MNT_HOST` | `https://HOST/admin/API/mnt` |
+| MnT XML CLI diagnostics | `ISE_MNT_HOST` | `https://HOST/admin/API/mnt` |
 | Data Connect reporting | `ISE_DATACONNECT_HOST` | Oracle TCPS, service `cpm10` by default |
 
 Collection ownership is explicit:
@@ -53,8 +54,14 @@ Collection ownership is explicit:
 - Data Connect is preferred for reporting, and for IP/hostname lookup through
   `ENDPOINTS_DATA` without bulk ERS enumeration.
 - ERS/OpenAPI supplies configuration inventory and detailed endpoint objects.
-- MnT is used only for operator-requested live session, auth-status, and Secure
-  Client diagnostics, or as a resolution fallback when no inventory row exists.
+- Within the CLI, MnT is used only for operator-requested live session,
+  auth-status, and Secure Client diagnostics, or as a resolution fallback when
+  no inventory row exists.
+
+This table describes CLI ownership. In the exporter process, a dedicated MnT
+client uses only ActiveList and bounded per-MAC session details to publish
+identity-free current posture and latency aggregates. It is not a CLI fallback
+and does not replace Data Connect historical reports.
 
 ## Endpoint identifiers
 

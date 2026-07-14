@@ -1,8 +1,9 @@
 """Immutable collection plan for the exporter runtime.
 
-REST/OpenAPI owns platform and configuration state; Data Connect owns
-monitoring/reporting datasets. There is no runtime source fallback and no
-collector reads another collector's metrics to decide ownership.
+REST/OpenAPI owns platform and configuration state; Data Connect owns historical
+monitoring/reporting datasets; MnT owns one bounded current-session posture
+snapshot. There is no runtime source fallback and no collector reads another
+collector's metrics to decide ownership.
 """
 import logging
 import time
@@ -19,6 +20,7 @@ from .collectors import (
     deployment,
     devices,
     licensing,
+    mnt_active_posture,
     nad_health,
     patches,
     tacacs,
@@ -38,17 +40,19 @@ def _next_deadline(deadline, now, interval):
 
 
 class PollScheduler:
-    def __init__(self, cfg, client, dataconnect=None):
+    def __init__(self, cfg, client, dataconnect=None, mnt=None):
         self.cfg = cfg
         self.client = client
         self.dataconnect = dataconnect
+        self.mnt = mnt
         self.last_run = {}
         self.last_attempt = {}
         self.next_run = {}
         self.last_success = {}
         self.dataset_plan = self._dataset_plan()
         self._initialize_dataset_state()
-        logger.info("collection plan: REST/OpenAPI=platform/config DataConnect=reporting")
+        logger.info("collection plan: REST/OpenAPI=platform/config "
+                    "DataConnect=historical-reporting MnT=bounded-active-posture")
 
     def _dataset_plan(self):
         cfg = self.cfg
@@ -65,6 +69,9 @@ class PollScheduler:
             "dataconnect_endpoints": ("dataconnect", cfg.slow_interval, True),
             "dataconnect_freshness": ("dataconnect", cfg.medium_interval, True),
             "dataconnect_nad_health": ("dataconnect", cfg.medium_interval, True),
+            "mnt_active_posture": (
+                "mnt", getattr(cfg, "mnt_active_posture_interval", cfg.medium_interval),
+                getattr(cfg, "collect_mnt_active_posture", True)),
             # Explicitly observable removal: no client, callback, or metric family
             # exists, but operators can distinguish intentional disablement from
             # a missing collector registration.
@@ -153,6 +160,13 @@ class PollScheduler:
                   lambda: dataconnect_freshness.collect(self.dataconnect, cfg))
         self._run("dataconnect_nad_health", now, cfg.medium_interval,
                   lambda: nad_health.collect(self.client, self.dataconnect, cfg))
+
+        # MnT owns only a bounded current active-endpoint posture snapshot. It
+        # never writes or substitutes for Data Connect historical metrics.
+        if getattr(cfg, "collect_mnt_active_posture", True):
+            interval = getattr(cfg, "mnt_active_posture_interval", cfg.medium_interval)
+            self._run("mnt_active_posture", now, interval,
+                      lambda: mnt_active_posture.collect(self.mnt, cfg))
 
         # TACACS configuration is REST-owned; activity is Data Connect-owned in
         # standard mode. The collector exposes distinct metric families for each.

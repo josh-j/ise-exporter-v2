@@ -90,7 +90,10 @@ def test_domain_dashboards_expose_authoritative_dataset_availability():
         "ise-failure-triage.json": {("dataconnect_radius", "dataconnect")},
         "ise-endpoint-profiles.json": {("dataconnect_endpoints", "dataconnect")},
         "ise-endpoints-devices.json": {("dataconnect_endpoints", "dataconnect")},
-        "ise-secureclient.json": {("dataconnect_posture", "dataconnect")},
+        "ise-secureclient.json": {
+            ("mnt_active_posture", "mnt"),
+            ("dataconnect_posture", "dataconnect"),
+        },
         "ise-psn-troubleshooting.json": {("dataconnect_performance", "dataconnect")},
         "ise-tacacs.json": {
             ("tacacs_config", "rest"),
@@ -129,14 +132,54 @@ def test_domain_queries_do_not_mask_outages_as_unconditional_zero():
     assert not violations, "outage-masking dashboard queries: " + ", ".join(violations)
 
 
-def test_posture_dashboard_does_not_claim_group_sums_are_distinct_endpoint_totals():
+def test_secureclient_dashboard_separates_active_mnt_from_historical_dataconnect():
     dashboard = json.loads((DASHBOARDS / "ise-secureclient.json").read_text())
     panels = {panel["title"]: panel for panel in _panels(dashboard["panels"])}
 
-    assert "Posture Compliance" not in panels
-    assert "Assessed Endpoints" not in panels
-    for title in ("Assessment-Group Compliance Share", "Assessment-Group Sum"):
-        assert "not a global distinct" in panels[title]["description"]
+    active_contracts = {
+        "Active Posture Status (MnT)": "ise_mnt_active_posture_endpoints",
+        "Active Secure Client / Posture Agent Versions (MnT)":
+            "ise_mnt_active_secure_client_endpoints",
+        "Active Endpoints by OS (MnT)": "sum by (os) (ise_mnt_active_posture_endpoints)",
+        "Active Endpoints by PSN (MnT)": "sum by (psn, status)",
+        "Active Posture Policies: Passed vs Failed (MnT)":
+            "ise_mnt_active_posture_policy_results",
+        "Failed Active Posture Policies (MnT)": "ise_mnt_active_posture_policy_results",
+    }
+    for title, expected_metric in active_contracts.items():
+        expressions = " ".join(target["expr"] for target in panels[title]["targets"])
+        assert expected_metric in expressions
+        assert "ise_dataconnect_" not in expressions
+
+    historical = (
+        "Historical Policy/Condition Results (Data Connect)",
+        "Historical Failed Conditions (Data Connect)",
+        "Historical Posture Failure Work Queue (Data Connect)",
+        "Historical Assessments by Agent Version (Data Connect)",
+        "Historical Assessments by OS (Data Connect)",
+        "Historical Assessments by PSN (Data Connect)",
+    )
+    for title in historical:
+        expressions = " ".join(target["expr"] for target in panels[title]["targets"])
+        assert "ise_dataconnect_posture_" in expressions
+        assert "ise_mnt_active_" not in expressions
+
+
+def test_secureclient_dashboard_exposes_mnt_sample_quality():
+    dashboard = json.loads((DASHBOARDS / "ise-secureclient.json").read_text())
+    text = " ".join(
+        target["expr"]
+        for panel in _panels(dashboard["panels"])
+        for target in panel.get("targets", [])
+    )
+    for metric in (
+        "ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}",
+        "ise_dataset_last_success_timestamp{dataset=\"mnt_active_posture\",source=\"mnt\"}",
+        "ise_mnt_active_posture_detail_coverage_ratio",
+        "ise_mnt_active_posture_detail_truncated",
+        "ise_mnt_active_posture_field_coverage_ratio",
+    ):
+        assert metric in text
 
 
 def _exported_metric_names():
@@ -192,5 +235,8 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_dataconnect_view_rows",
         "ise_dataconnect_view_newest_event_timestamp",
         "ise_dataconnect_view_oldest_event_timestamp",
+        "ise_mnt_active_posture_detail_coverage_ratio",
+        "ise_mnt_active_posture_detail_truncated",
+        "ise_mnt_active_posture_field_coverage_ratio",
     ):
         assert metric in text

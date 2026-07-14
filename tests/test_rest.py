@@ -10,6 +10,7 @@ from ise_exporter.clients.rest import (
     ISEControlPlaneClient,
     ISEOperatorClient,
     ISERestClient,
+    MnTActiveSessionClient,
     MnTDiagnosticsClient,
 )
 
@@ -41,9 +42,11 @@ def test_runtime_and_diagnostics_clients_do_not_construct_the_other_plane():
         ise_host="h", ise_mnt_host="m", ers_port=9060, ise_user="u", ise_pass="p")
     control = ISEControlPlaneClient(cfg)
     diagnostics = MnTDiagnosticsClient(cfg)
+    active = MnTActiveSessionClient(cfg)
     operator = ISEOperatorClient(cfg)
     assert control.session is not None and control.mnt_session is None
     assert diagnostics.session is None and diagnostics.mnt_session is not None
+    assert active.session is None and active.mnt_session is not None
     assert operator.control.mnt_session is None
     assert operator.mnt.session is None
 

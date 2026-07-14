@@ -119,6 +119,61 @@ ise_tacacs_topk_truncated = Gauge(
     "ise_tacacs_topk_truncated", "Whether TACACS groups were truncated by the top-K limit",
     ["event_type"])
 
+# --- MnT bounded active-session posture plane ---
+# These are current, bounded samples from MnT Session detail. They intentionally
+# do not populate Data Connect's historical posture metric families.
+ise_mnt_active_sessions_total = Gauge(
+    "ise_mnt_active_sessions_total", "Active sessions reported by the MnT ActiveList")
+ise_mnt_active_posture_candidate_endpoints_total = Gauge(
+    "ise_mnt_active_posture_candidate_endpoints_total",
+    "Unique valid active MAC addresses eligible for bounded MnT detail lookup")
+ise_mnt_active_posture_detail_requests = Gauge(
+    "ise_mnt_active_posture_detail_requests",
+    "Unique active endpoints selected for bounded MnT detail lookup")
+ise_mnt_active_posture_detail_endpoints = Gauge(
+    "ise_mnt_active_posture_detail_endpoints",
+    "Selected active endpoints whose MnT session detail was collected")
+ise_mnt_active_posture_detail_coverage_ratio = Gauge(
+    "ise_mnt_active_posture_detail_coverage_ratio",
+    "Successful MnT session-detail lookups divided by selected endpoints")
+ise_mnt_active_posture_detail_truncated = Gauge(
+    "ise_mnt_active_posture_detail_truncated",
+    "Whether active endpoint detail lookup was limited by the configured bound")
+ise_mnt_active_posture_field_coverage_ratio = Gauge(
+    "ise_mnt_active_posture_field_coverage_ratio",
+    "Fraction of collected MnT details containing a useful source field", ["field"])
+ise_mnt_active_posture_endpoints = Gauge(
+    "ise_mnt_active_posture_endpoints",
+    "Collected active endpoints grouped by current MnT posture status, agent OS, and PSN",
+    ["status", "os", "psn"])
+ise_mnt_active_posture_applicable_endpoints = Gauge(
+    "ise_mnt_active_posture_applicable_endpoints",
+    "Collected active endpoints grouped by posture-applicable state", ["applicable"])
+ise_mnt_active_posture_assessment_endpoints = Gauge(
+    "ise_mnt_active_posture_assessment_endpoints",
+    "Collected active endpoints grouped by current posture assessment status", ["status"])
+ise_mnt_active_secure_client_endpoints = Gauge(
+    "ise_mnt_active_secure_client_endpoints",
+    "Collected active endpoints grouped by normalized Secure Client posture-agent version",
+    ["agent_version"])
+ise_mnt_active_posture_policy_results = Gauge(
+    "ise_mnt_active_posture_policy_results",
+    "Posture policy rollups parsed from collected active endpoint PostureReport fields",
+    ["policy", "result"])
+ise_mnt_active_step_latency_seconds = Gauge(
+    "ise_mnt_active_step_latency_seconds",
+    "Bounded MnT active-session step latency aggregate by numeric ISE step code",
+    ["step", "stat"])
+ise_mnt_active_step_latency_samples = Gauge(
+    "ise_mnt_active_step_latency_samples",
+    "Number of valid bounded MnT latency samples by numeric ISE step code", ["step"])
+ise_mnt_active_total_authentication_latency_seconds = Gauge(
+    "ise_mnt_active_total_authentication_latency_seconds",
+    "Bounded MnT active-session TotalAuthenLatency aggregate", ["stat"])
+ise_mnt_active_total_authentication_latency_samples = Gauge(
+    "ise_mnt_active_total_authentication_latency_samples",
+    "Number of valid bounded MnT TotalAuthenLatency samples")
+
 # --- Data Connect reporting plane ---
 # These metrics are populated only by the Data Connect domain collectors.  REST
 # and legacy MnT collectors must not write them, which keeps ownership and

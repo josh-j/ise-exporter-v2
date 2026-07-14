@@ -69,6 +69,10 @@ class Config:
     collect_backup_status: bool = True
     collect_patches: bool = True
     collect_tacacs: bool = True
+    collect_mnt_active_posture: bool = True
+    mnt_active_posture_interval: int = 300
+    mnt_active_posture_max_sessions: int = 1000
+    mnt_active_posture_workers: int = 8
     tacacs_internal_user_max: int = 1000
     tacacs_unused_account_days: int = 180
     dataconnect_host: str = ""
@@ -89,6 +93,7 @@ class Config:
         """Secret-redacted one-liner of the toggles/paths that most commonly cause
         silent misconfiguration. Log this once at startup — ise_pass is excluded."""
         return (f"collect_tacacs={self.collect_tacacs} "
+                f"collect_mnt_active_posture={self.collect_mnt_active_posture} "
                 f"dataconnect_ready={self.dataconnect_ready} "
                 f"ise_host={self.ise_host!r} ise_mnt_host={self.ise_mnt_host!r} "
                 f"ise_user={self.ise_user!r}")
@@ -117,6 +122,11 @@ class Config:
             collect_backup_status=_b("COLLECT_BACKUP_STATUS", True),
             collect_patches=_b("COLLECT_PATCHES", True),
             collect_tacacs=_b("COLLECT_TACACS", True),
+            collect_mnt_active_posture=_b("COLLECT_MNT_ACTIVE_POSTURE", True),
+            mnt_active_posture_interval=_i("MNT_ACTIVE_POSTURE_INTERVAL", 300),
+            mnt_active_posture_max_sessions=_i(
+                "MNT_ACTIVE_POSTURE_MAX_SESSIONS", 1000),
+            mnt_active_posture_workers=_i("MNT_ACTIVE_POSTURE_WORKERS", 8),
             tacacs_internal_user_max=_i("TACACS_INTERNAL_USER_MAX", 1000),
             tacacs_unused_account_days=_i("TACACS_UNUSED_ACCOUNT_DAYS", 180),
             dataconnect_host=_s("ISE_DATACONNECT_HOST", _s("ISE_MNT_HOST")),

@@ -1,8 +1,7 @@
-"""Entrypoint for the explicit two-plane collection architecture.
+"""Entrypoint for the explicit collection-plane architecture.
 
 REST/OpenAPI owns appliance and configuration state. Data Connect owns reporting
-datasets. MnT exists only in separate operator diagnostics and never participates
-in the metric runtime.
+datasets. MnT owns only a bounded current active-session posture snapshot.
 """
 import os
 import sys
@@ -17,7 +16,7 @@ from dotenv import load_dotenv
 from prometheus_client import start_http_server
 
 from .config import Config
-from .clients.rest import ISEControlPlaneClient
+from .clients.rest import ISEControlPlaneClient, MnTActiveSessionClient
 from .clients.dataconnect import DataConnectClient
 from .compatibility import ISECompatibilityError, validate_ise_compatibility
 from .dataconnect_schema import metadata_rows, validate_dataconnect_schema
@@ -109,6 +108,9 @@ def main(argv=None):
     if not cfg.dataconnect_ready:
         logger.error("Data Connect credentials are required for reporting collection")
         return 1
+    if cfg.collect_mnt_active_posture and not cfg.ise_mnt_host:
+        logger.error("ISE_MNT_HOST is required when COLLECT_MNT_ACTIVE_POSTURE=true")
+        return 1
 
     client = ISEControlPlaneClient(cfg)
     try:
@@ -129,15 +131,17 @@ def main(argv=None):
         logger.error("Data Connect startup validation failed: %s", exc)
         return 1
     logger.info("validated %d Cisco ISE Data Connect reporting views", len(schema))
+    mnt = MnTActiveSessionClient(cfg) if cfg.collect_mnt_active_posture else None
 
     shutdown = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: shutdown.set())
     signal.signal(signal.SIGINT, lambda *_: shutdown.set())
 
     start_http_server(cfg.exporter_port, registry=LockedCollectorRegistry())
-    logger.info("metrics on :%d (REST/OpenAPI config + Data Connect reporting)",
+    logger.info("metrics on :%d (REST/OpenAPI config + Data Connect reporting + "
+                "bounded MnT active posture)",
                 cfg.exporter_port)
-    scheduler = PollScheduler(cfg, client, dataconnect=dataconnect)
+    scheduler = PollScheduler(cfg, client, dataconnect=dataconnect, mnt=mnt)
 
     scheduler.loop(shutdown)   # blocks until SIGTERM/SIGINT
     if dataconnect is not None:

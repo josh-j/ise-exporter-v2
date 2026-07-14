@@ -212,6 +212,50 @@
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
       "options": {"showHeader": true}
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "MnT Active Posture Dataset",
+      "description": "Availability of the bounded current active-session posture collector.",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 45},
+      "targets": [{"expr": "max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}]}, "overrides": []}
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "MnT Active Snapshot Age",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 45},
+      "targets": [{"expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"mnt_active_posture\",source=\"mnt\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 600}, {"color": "red", "value": 900}]}}, "overrides": []}
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "MnT Detail Coverage",
+      "description": "Successful detail lookups divided by selected active endpoints.",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 45},
+      "targets": [{"expr": "ise_mnt_active_posture_detail_coverage_ratio", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []}
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "MnT Detail Truncated",
+      "description": "1 means candidate active endpoints exceeded the configured detail-request bound.",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 45},
+      "targets": [{"expr": "ise_mnt_active_posture_detail_truncated", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "COMPLETE", "color": "green"}, "1": {"text": "TRUNCATED", "color": "yellow"}}}]}, "overrides": []}
+    },
+    {
+      "id": 21,
+      "type": "bargauge",
+      "title": "MnT Active Posture Field Coverage",
+      "description": "Fraction of collected active endpoint details containing each posture source field.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 49},
+      "targets": [{"expr": "ise_mnt_active_posture_field_coverage_ratio", "legendFormat": "{{field}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []}
     }
   ],
   "templating": {
