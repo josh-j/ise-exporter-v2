@@ -171,6 +171,9 @@ rotation. Production defaults allow 250 requests per 15-minute cycle, two worker
 500ms request pacing, and a one-hour refresh target. A restart reuses valid cached
 details rather than creating a cold-start burst. Coverage, cache age, deferred
 refreshes, candidate count, and truncation qualify every sample.
+Persisted rows contain only bounded posture, agent, PSN, and latency inputs needed
+to reconstruct these metrics. Usernames, addresses, authorization results, and the
+rest of the MnT session-detail response are discarded before storage.
 
 RADIUS history is not accumulated in SQLite. The daily reporting collection
 recomputes an exact, bounded recent-window aggregate from Data Connect and persists only

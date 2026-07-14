@@ -1,3 +1,5 @@
+import json
+import sqlite3
 import threading
 import types
 
@@ -50,6 +52,8 @@ class MnT:
             "AA:BB:CC:DD:EE:01": {
                 "execution_steps": "1001,1002,not-a-code",
                 "acs_server": "laba-ise-001",
+                "username": "must-not-enter-cache",
+                "framed_ip_address": "192.0.2.10",
                 "other_attr_string": (
                     "PostureAgentVersion=Posture Agent for Windows 5.1.18.314:!:"
                     "PostureApplicable=Yes:!:PostureAssessmentStatus=NotApplicable:!:"
@@ -221,3 +225,12 @@ def test_persistent_cache_bounds_cold_start_and_survives_restart(tmp_path):
     assert metrics.ise_mnt_active_posture_cache_entries._value.get() == 2
     assert metrics.ise_mnt_active_posture_detail_coverage_ratio._value.get() == 1
     assert (tmp_path / "state.sqlite3").stat().st_mode & 0o077 == 0
+
+    db = sqlite3.connect(tmp_path / "state.sqlite3")
+    cached = [json.loads(row[0]) for row in db.execute(
+        "SELECT detail_json FROM mnt_posture_cache")]
+    db.close()
+    assert cached
+    assert all("username" not in detail for detail in cached)
+    assert all("framed_ip_address" not in detail for detail in cached)
+    assert any(detail.get("posture_report") for detail in cached)

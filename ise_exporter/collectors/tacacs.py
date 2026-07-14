@@ -77,7 +77,7 @@ def _sync_internal_user_state(cfg, usernames):
                         commit=False)
         store.set_value(_INTERNAL_LAST_SEEN_STATE,
                         json.dumps(high_water, separators=(",", ":")), commit=False)
-        store.db.commit()
+        store.commit()
         return high_water
     finally:
         store.close()

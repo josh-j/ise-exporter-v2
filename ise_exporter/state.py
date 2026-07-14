@@ -17,8 +17,10 @@ import time
 class StateStore:
     def __init__(self, path):
         self.path = str(path or ":memory:")
+        self._file_path = None
         if self.path != ":memory:":
             target = Path(self.path)
+            self._file_path = target
             target.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
         self.db = sqlite3.connect(self.path, timeout=5)
         self.db.row_factory = sqlite3.Row
@@ -53,11 +55,24 @@ class StateStore:
         # obsolete history during upgrade instead of retaining an abandoned
         # local copy of MnT-derived data indefinitely.
         self.db.execute("DROP TABLE IF EXISTS dataconnect_rollup")
+        self.commit()
+
+    def _secure_files(self):
+        """Keep SQLite's database, WAL, and shared-memory files private."""
+        if self._file_path is None:
+            return
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.chmod(f"{self._file_path}{suffix}", 0o600)
+            except FileNotFoundError:
+                pass
+
+    def commit(self):
         self.db.commit()
-        if self.path != ":memory:":
-            os.chmod(self.path, 0o600)
+        self._secure_files()
 
     def close(self):
+        self._secure_files()
         self.db.close()
 
     def posture_entries(self, macs):
@@ -117,7 +132,7 @@ class StateStore:
                 self.db.execute("DELETE FROM mnt_posture_cache WHERE last_seen < ?", (now,))
         else:
             self.db.execute("DELETE FROM mnt_posture_cache")
-        self.db.commit()
+        self.commit()
 
     def posture_count(self):
         return int(self.db.execute(
@@ -179,7 +194,7 @@ class StateStore:
                     "DELETE FROM tacacs_internal_user_cache WHERE last_seen < ?", (now,))
         else:
             self.db.execute("DELETE FROM tacacs_internal_user_cache")
-        self.db.commit()
+        self.commit()
 
     def tacacs_user_count(self):
         return int(self.db.execute(
@@ -196,7 +211,7 @@ class StateStore:
             ON CONFLICT(key) DO UPDATE SET value=excluded.value
         """, (key, str(value)))
         if commit:
-            self.db.commit()
+            self.commit()
 
     def dataset_snapshot(self, dataset):
         raw = self.get_value(f"dataset_snapshot.{dataset}")

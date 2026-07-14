@@ -177,6 +177,53 @@ def _detail(client, mac, pacer=None):
     return sessions[0]
 
 
+def _bounded_text(value, limit):
+    text = str(value or "").strip()
+    return text[:limit] if text else ""
+
+
+def _compact_detail(detail):
+    """Retain only bounded inputs needed to rebuild current posture metrics.
+
+    MnT session detail includes identity and authorization fields unrelated to
+    this collector. Persisting the whole response would turn a load-reduction
+    cache into an unnecessary second copy of current session data.
+    """
+    raw_other = first_nonempty(detail, "other_attr_string", "otherAttrString")
+    attrs = parse_other_attr_string(raw_other)
+    fields = {
+        "posture_status": _value(detail, attrs, "posture_status", "PostureStatus"),
+        "posture_assessment_status": _value(
+            detail, attrs, "posture_assessment_status", "PostureAssessmentStatus"),
+        "posture_applicable": _value(
+            detail, attrs, "posture_applicable", "PostureApplicable"),
+        "posture_report": _value(detail, attrs, "posture_report", "PostureReport"),
+        "posture_agent_version": first_nonempty(attrs, *SECURECLIENT_VERSION_KEYS)
+            or _value(detail, attrs, "posture_agent_version", "PostureAgentVersion"),
+        "server": _value(detail, attrs, "server", "acs_server", "ise_node", "Server"),
+        "execution_steps": _value(
+            detail, attrs, "execution_steps", "ExecutionSteps", "Steps"),
+        "step_latency": _value(detail, attrs, "step_latency", "StepLatency"),
+        "total_authen_latency": _value(
+            detail, attrs, "total_authen_latency", "TotalAuthenLatency",
+            "total_authentication_latency", "TotalAuthenticationLatency"),
+    }
+    limits = {
+        "posture_report": 65_536,
+        "execution_steps": 16_384,
+        "step_latency": 16_384,
+        "posture_agent_version": 512,
+        "server": 128,
+    }
+    compact = {
+        key: text for key, value in fields.items()
+        if (text := _bounded_text(value, limits.get(key, 1024)))
+    }
+    if raw_other:
+        compact["other_attr_string_present"] = True
+    return compact
+
+
 def _bounded_details(client, macs, workers, request_interval=0):
     if not macs:
         return {}
@@ -224,7 +271,7 @@ def _aggregate(details):
     for detail in details:
         raw_other = first_nonempty(detail, "other_attr_string", "otherAttrString")
         attrs = parse_other_attr_string(raw_other)
-        if raw_other:
+        if raw_other or detail.get("other_attr_string_present"):
             coverage["other_attr_string"] += 1
 
         posture_status = _value(detail, attrs, "posture_status", "PostureStatus")
@@ -345,7 +392,8 @@ def collect(client, cfg):
             fetched = _bounded_details(
                 client, planned, workers, request_interval=request_interval)
             for mac, detail in fetched.items():
-                store.put_posture(mac, signatures[mac], detail, now=now)
+                store.put_posture(
+                    mac, signatures[mac], _compact_detail(detail), now=now)
             store.finish_posture_cycle(selected, now=now)
             current = store.posture_entries(selected)
         finally:

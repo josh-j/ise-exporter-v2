@@ -1,6 +1,23 @@
 import sqlite3
+import stat
 
 from ise_exporter.state import StateStore
+
+
+def test_database_and_live_wal_sidecars_are_private(tmp_path):
+    path = tmp_path / "state.sqlite3"
+    store = StateStore(path)
+    store.set_value("sensitive", "cached ISE material")
+
+    modes = {
+        candidate.name: stat.S_IMODE(candidate.stat().st_mode)
+        for candidate in tmp_path.iterdir()
+    }
+
+    assert modes["state.sqlite3"] == 0o600
+    assert modes["state.sqlite3-wal"] == 0o600
+    assert modes["state.sqlite3-shm"] == 0o600
+    store.close()
 
 
 def test_upgrade_removes_obsolete_dataconnect_rollup_history(tmp_path):

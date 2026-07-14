@@ -132,6 +132,8 @@ new/changed/rotating detail requests every 15 minutes with two paced workers.
 The systemd `StateDirectory` preserves cached active-posture details and compatible
 Data Connect metric snapshots across restarts. It does not store RADIUS event rows
 or locally merged historical windows.
+The exporter forces the SQLite database and its live WAL/shared-memory sidecars to
+mode `0600`; this remains true if an operator chooses a non-systemd state path.
 Fresh restored domains retain their normal query deadlines instead of creating a
 database burst after a service restart. This bound is independent of the
 100,000-endpoint inventory.
