@@ -8,6 +8,7 @@ snapshot or the new one.
 """
 from __future__ import annotations
 
+import math
 from threading import RLock
 
 from prometheus_client import REGISTRY
@@ -66,3 +67,85 @@ def replace_metric_snapshot(metric_families, writers):
                 else:
                     metric.set(previous)
             raise
+
+
+def serialize_metric_snapshot(metric_families):
+    """Return a JSON-safe copy of gauge families at one scrape boundary."""
+    families = tuple(dict.fromkeys(metric_families))
+    payload = {"version": 1, "metrics": {}}
+    with snapshot_lock:
+        for metric in families:
+            name = getattr(metric, "_name", "")
+            if not name or name in payload["metrics"]:
+                raise TypeError(f"unsupported or duplicate metric family {metric!r}")
+            if hasattr(metric, "_metrics"):
+                samples = [
+                    {"labels": list(labels), "value": child._value.get()}
+                    for labels, child in metric._metrics.items()
+                ]
+                payload["metrics"][name] = {
+                    "labelnames": list(metric._labelnames), "samples": samples,
+                }
+            elif hasattr(metric, "_value"):
+                payload["metrics"][name] = {
+                    "labelnames": [],
+                    "samples": [{"labels": [], "value": metric._value.get()}],
+                }
+            else:
+                raise TypeError(f"unsupported metric family {metric!r}")
+    return payload
+
+
+def restore_metric_snapshot(metric_families, payload):
+    """Atomically restore a complete, versioned gauge snapshot."""
+    families = tuple(dict.fromkeys(metric_families))
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise ValueError("unsupported metric snapshot version")
+    stored = payload.get("metrics")
+    if not isinstance(stored, dict):
+        raise ValueError("metric snapshot has no metric map")
+
+    prepared = []
+    expected_names = {getattr(metric, "_name", "") for metric in families}
+    if set(stored) != expected_names:
+        raise ValueError("metric snapshot families do not match this exporter revision")
+    for metric in families:
+        item = stored[metric._name]
+        labelnames = list(getattr(metric, "_labelnames", ()))
+        if not isinstance(item, dict) or item.get("labelnames") != labelnames:
+            raise ValueError(f"metric snapshot labels changed for {metric._name}")
+        samples = item.get("samples")
+        if not isinstance(samples, list):
+            raise ValueError(f"metric snapshot samples are invalid for {metric._name}")
+        values = []
+        for sample in samples:
+            if not isinstance(sample, dict) or not isinstance(sample.get("labels"), list):
+                raise ValueError(f"metric snapshot sample is invalid for {metric._name}")
+            labels = sample["labels"]
+            if len(labels) != len(labelnames):
+                raise ValueError(f"metric snapshot label count changed for {metric._name}")
+            if any(not isinstance(label, str) for label in labels):
+                raise ValueError(f"metric snapshot label is invalid for {metric._name}")
+            try:
+                value = float(sample["value"])
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValueError(
+                    f"metric snapshot value is invalid for {metric._name}") from error
+            if not math.isfinite(value):
+                raise ValueError(f"metric snapshot value is invalid for {metric._name}")
+            values.append((labels, value))
+        if not labelnames and len(values) != 1:
+            raise ValueError(f"scalar metric snapshot is invalid for {metric._name}")
+        prepared.append((metric, values))
+
+    writers = []
+    for metric, values in prepared:
+        if getattr(metric, "_labelnames", ()):
+            writers.extend(
+                lambda metric=metric, labels=labels, value=value:
+                    metric.labels(*labels).set(value)
+                for labels, value in values
+            )
+        else:
+            writers.append(lambda metric=metric, value=values[0][1]: metric.set(value))
+    replace_metric_snapshot(families, writers)

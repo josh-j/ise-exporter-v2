@@ -132,6 +132,29 @@ class StateStore:
         if commit:
             self.db.commit()
 
+    def dataset_snapshot(self, dataset):
+        raw = self.get_value(f"dataset_snapshot.{dataset}")
+        if not raw:
+            return None
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(value, dict):
+            return None
+        try:
+            updated_at = float(value["updated_at"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        payload = value.get("payload")
+        return (updated_at, payload) if isinstance(payload, dict) else None
+
+    def replace_dataset_snapshot(self, dataset, updated_at, payload):
+        value = json.dumps({
+            "updated_at": float(updated_at), "payload": payload,
+        }, separators=(",", ":"), allow_nan=False)
+        self.set_value(f"dataset_snapshot.{dataset}", value)
+
     def dataconnect_snapshots(self, datasets, cutoff):
         result = {dataset: [] for dataset in datasets}
         for dataset in datasets:

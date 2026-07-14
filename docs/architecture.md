@@ -135,6 +135,13 @@ larger than the configured safe backfill limit also forces reconciliation instea
 of silently losing data. The database stores aggregate rows, not raw RADIUS
 identities or credentials.
 
+Successful Data Connect domains also store their complete bounded Prometheus
+gauge snapshots and completion timestamps in that private database. A restart
+atomically rehydrates compatible, still-fresh snapshots and retains each domain's
+next scheduled deadline instead of immediately repeating every reporting query.
+Stale, corrupt, or schema-incompatible snapshots are ignored and collected from
+ISE immediately.
+
 MnT metrics never contain MAC addresses, usernames, session IDs, raw
 `PostureReport`, or free-form attributes. Only bounded aggregate dimensions such
 as status, OS family, PSN, normalized agent version, policy/result, and numeric

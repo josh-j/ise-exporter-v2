@@ -6,6 +6,8 @@ from prometheus_client import CollectorRegistry, Gauge
 from ise_exporter.snapshots import (
     LockedCollectorRegistry,
     replace_metric_snapshot,
+    restore_metric_snapshot,
+    serialize_metric_snapshot,
     snapshot_lock,
 )
 
@@ -74,3 +76,47 @@ def test_locked_registry_waits_for_snapshot_publication_boundary():
         assert not completed.wait(0.05)
     thread.join(1)
     assert completed.is_set()
+
+
+def test_metric_snapshot_round_trip_restores_labelled_and_scalar_gauges():
+    registry = CollectorRegistry()
+    labelled = Gauge("persisted_labelled", "test", ["key"], registry=registry)
+    scalar = Gauge("persisted_scalar", "test", registry=registry)
+    labelled.labels(key="first").set(3)
+    labelled.labels(key="second").set(4)
+    scalar.set(9)
+    payload = serialize_metric_snapshot((labelled, scalar))
+
+    labelled._metrics.clear()
+    labelled.labels(key="wrong").set(99)
+    scalar.set(0)
+    restore_metric_snapshot((labelled, scalar), payload)
+
+    assert {(sample.labels["key"], sample.value) for sample in labelled.collect()[0].samples} == {
+        ("first", 3), ("second", 4)}
+    assert scalar._value.get() == 9
+
+
+def test_metric_snapshot_rejects_schema_drift_without_mutating_metrics():
+    registry = CollectorRegistry()
+    metric = Gauge("persisted_schema", "test", ["key"], registry=registry)
+    metric.labels(key="current").set(7)
+    payload = serialize_metric_snapshot((metric,))
+    payload["metrics"]["persisted_schema"]["labelnames"] = ["changed"]
+
+    with pytest.raises(ValueError, match="labels changed"):
+        restore_metric_snapshot((metric,), payload)
+
+    assert {(sample.labels["key"], sample.value) for sample in metric.collect()[0].samples} == {
+        ("current", 7)}
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), "not-a-number"])
+def test_metric_snapshot_rejects_invalid_values(invalid):
+    registry = CollectorRegistry()
+    metric = Gauge("persisted_invalid", "test", registry=registry)
+    payload = serialize_metric_snapshot((metric,))
+    payload["metrics"]["persisted_invalid"]["samples"][0]["value"] = invalid
+
+    with pytest.raises(ValueError, match="value is invalid"):
+        restore_metric_snapshot((metric,), payload)

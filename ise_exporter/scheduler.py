@@ -6,9 +6,12 @@ snapshot. There is no runtime source fallback and no collector reads another
 collector's metrics to decide ownership.
 """
 import logging
+import math
 import time
 
 from . import collectors, metrics
+from .state import StateStore
+from .snapshots import restore_metric_snapshot, serialize_metric_snapshot
 from .collectors import (
     backup,
     certificates,
@@ -28,6 +31,16 @@ from .collectors import (
 
 logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
+
+_PERSISTED_DATACONNECT_METRICS = {
+    "dataconnect_radius": dataconnect_radius._METRICS,
+    "dataconnect_performance": dataconnect_performance._METRICS,
+    "dataconnect_posture": dataconnect_posture._METRICS,
+    "dataconnect_endpoints": dataconnect_endpoints._METRICS,
+    "dataconnect_freshness": dataconnect_freshness._METRICS,
+    "dataconnect_nad_health": nad_health._METRICS,
+    "tacacs_activity": tacacs._ACTIVITY_METRICS,
+}
 
 
 def _next_deadline(deadline, now, interval):
@@ -51,6 +64,7 @@ class PollScheduler:
         self.last_success = {}
         self.dataset_plan = self._dataset_plan()
         self._initialize_dataset_state()
+        self._restore_dataconnect_state()
         logger.info("collection plan: REST/OpenAPI=platform/config "
                     "DataConnect=historical-reporting MnT=bounded-active-posture")
 
@@ -111,6 +125,72 @@ class PollScheduler:
                      and now - last_success <= 2 * interval)
         metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(int(fresh))
 
+    def _state_store(self):
+        return StateStore(getattr(self.cfg, "state_db_path", ":memory:"))
+
+    def _restore_dataconnect_state(self):
+        now = time.time()
+        try:
+            store = self._state_store()
+        except Exception as error:
+            logger.warning("could not open restart-persistent dataset state: %s", error)
+            return
+        try:
+            for name, families in _PERSISTED_DATACONNECT_METRICS.items():
+                source, interval, enabled = self.dataset_plan[name]
+                if not enabled:
+                    continue
+                snapshot = store.dataset_snapshot(name)
+                if snapshot is None:
+                    continue
+                updated_at, payload = snapshot
+                if not math.isfinite(updated_at) or updated_at <= 0 or updated_at > now + 300:
+                    logger.warning("ignoring invalid %s snapshot timestamp", name)
+                    continue
+                if now - updated_at > 2 * interval:
+                    logger.info("ignoring stale %s snapshot; collecting immediately", name)
+                    continue
+                try:
+                    restore_metric_snapshot(families, payload)
+                except (TypeError, ValueError) as error:
+                    logger.warning("ignoring incompatible %s snapshot: %s", name, error)
+                    continue
+                self.last_run[name] = updated_at
+                self.last_success[name] = updated_at
+                self.next_run[name] = updated_at + interval
+                metrics.ise_dataset_up.labels(dataset=name, source=source).set(int(enabled))
+                metrics.ise_dataset_last_success_timestamp.labels(
+                    dataset=name, source=source).set(updated_at)
+                metrics.ise_last_successful_scrape.labels(collector=name).set(updated_at)
+                self._update_dataset_freshness(name, now)
+                logger.info(
+                    "restored Data Connect dataset %s; next run in %.0fs",
+                    name, max(0, self.next_run[name] - now),
+                )
+        except Exception as error:
+            logger.warning("could not read restart-persistent dataset state: %s", error)
+        finally:
+            try:
+                store.close()
+            except Exception as error:
+                logger.warning("could not close restart-persistent dataset state: %s", error)
+
+    def _persist_dataconnect_state(self, name, completed):
+        families = _PERSISTED_DATACONNECT_METRICS.get(name)
+        if families is None:
+            return
+        try:
+            payload = serialize_metric_snapshot(families)
+            store = self._state_store()
+            try:
+                store.replace_dataset_snapshot(name, completed, payload)
+            finally:
+                store.close()
+        except Exception as error:
+            # Collection remains successful. Persistence is a load optimization;
+            # a later restart safely falls back to querying the source again.
+            logger.warning("could not persist %s snapshot: %s", name, error)
+
     def _due(self, name, now, tier):
         return now >= self.next_run.get(name, 0)
 
@@ -143,6 +223,8 @@ class PollScheduler:
                 self.last_run[name] = completed
                 self.last_success[name] = completed
                 self.next_run[name] = completed + effective_interval
+                if source == "dataconnect":
+                    self._persist_dataconnect_state(name, completed)
                 self._update_dataset_freshness(name, completed)
                 if source == "dataconnect":
                     logger.info(

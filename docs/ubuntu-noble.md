@@ -117,9 +117,11 @@ ISE_DATACONNECT_SHARED_PACING_FILE=/var/lib/ise-exporter/dataconnect.pacing
 At the production defaults, the MnT collector deduplicates ActiveList MACs and
 tracks at most 1,000 currently active endpoints and performs no more than 250
 new/changed/rotating detail requests every 15 minutes with two paced workers.
-The systemd `StateDirectory` preserves cached details and incremental RADIUS
-aggregate windows across restarts. This bound is independent of the 100,000-endpoint
-inventory.
+The systemd `StateDirectory` preserves cached details, incremental RADIUS
+aggregate windows, and compatible Data Connect metric snapshots across restarts.
+Fresh restored domains retain their normal query deadlines instead of creating a
+database burst after a service restart. This bound is independent of the
+100,000-endpoint inventory.
 Authorized `ise-cli` users must belong to the `ise-exporter` group so their Data
 Connect queries participate in the same serialized pacing gate as the service.
 The resulting metrics are current aggregate samples with coverage/truncation
