@@ -26,14 +26,21 @@ _STATUS_KEY = """LOWER(REPLACE(REPLACE(REPLACE(
     TRIM(posture_status), '-', ''), '_', ''), ' ', ''))"""
 
 
+def _normalized_mac(column):
+    """Oracle expression for format-insensitive MAC identity matching."""
+    return (f"UPPER(REPLACE(REPLACE(REPLACE(TRIM({column}), ':', ''), "
+            "'-', ''), '.', ''))")
+
+
 def _latest_posture_cte():
-    return """
+    posture_mac = _normalized_mac("endpoint_mac_address")
+    return f"""
         WITH ranked_posture AS (
             SELECT p.*,
                    ROW_NUMBER() OVER (
                        PARTITION BY CASE
                            WHEN TRIM(endpoint_mac_address) IS NOT NULL
-                               THEN 'mac:' || TRIM(endpoint_mac_address)
+                               THEN 'mac:' || {posture_mac}
                            WHEN TRIM(session_id) IS NOT NULL
                                THEN 'session:' || TRIM(session_id)
                            ELSE 'row:' || TO_CHAR(id)
@@ -50,15 +57,17 @@ def _latest_posture_cte():
 
 def _queries(limit):
     latest = _latest_posture_cte()
+    posture_mac = _normalized_mac("p.endpoint_mac_address")
+    inventory_mac = _normalized_mac("e.mac_address")
     return {
-        "coverage": latest + """
+        "coverage": latest + f"""
             SELECT COUNT(*) AS eligible_endpoints,
                    SUM(CASE WHEN p.endpoint_mac_address IS NOT NULL THEN 1 ELSE 0 END)
                        AS recently_assessed,
                    SUM(CASE WHEN p.endpoint_mac_address IS NULL THEN 1 ELSE 0 END)
                        AS without_recent_assessment
             FROM endpoints_data e
-            LEFT JOIN latest_posture p ON p.endpoint_mac_address = e.mac_address
+            LEFT JOIN latest_posture p ON {posture_mac} = {inventory_mac}
             WHERE NVL(e.posture_applicable, 0) = 1
         """,
         "endpoints": latest + f"""

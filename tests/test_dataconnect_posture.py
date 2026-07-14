@@ -93,5 +93,8 @@ def test_posture_uses_latest_endpoint_state_and_explicit_failure_statuses():
 
     assert "ROW_NUMBER() OVER" in queries["endpoints"]
     assert "PARTITION BY CASE" in queries["endpoints"]
+    assert "'mac:' || UPPER(REPLACE(REPLACE(REPLACE(" in queries["endpoints"]
+    assert "p.endpoint_mac_address = e.mac_address" not in queries["coverage"]
+    assert queries["coverage"].count("UPPER(REPLACE(REPLACE(REPLACE(") >= 3
     assert "failure_reason" not in queries["failures"].lower()
     assert "('noncompliant', 'failed', 'error')" in queries["failures"]
