@@ -9,11 +9,16 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
+import json
 import math
 import re
+from threading import Lock
+import time
 
 from .. import metrics
 from ..snapshots import replace_metric_snapshot
+from ..state import StateStore
 from ..util import (
     SECURECLIENT_VERSION_KEYS,
     first_nonempty,
@@ -47,6 +52,11 @@ _METRICS = (
     metrics.ise_mnt_active_posture_detail_endpoints,
     metrics.ise_mnt_active_posture_detail_coverage_ratio,
     metrics.ise_mnt_active_posture_detail_truncated,
+    metrics.ise_mnt_active_posture_cache_entries,
+    metrics.ise_mnt_active_posture_cache_hits,
+    metrics.ise_mnt_active_posture_cache_misses,
+    metrics.ise_mnt_active_posture_refresh_deferred,
+    metrics.ise_mnt_active_posture_cache_oldest_age_seconds,
     metrics.ise_mnt_active_posture_field_coverage_ratio,
     metrics.ise_mnt_active_posture_endpoints,
     metrics.ise_mnt_active_posture_applicable_endpoints,
@@ -120,7 +130,23 @@ def _agent_os(agent):
             "linux": "Linux", "android": "Android", "ios": "iOS"}[value]
 
 
-def _detail(client, mac):
+class _RequestPacer:
+    def __init__(self, interval_seconds):
+        self.interval = max(0.0, float(interval_seconds))
+        self.next_at = 0.0
+        self.lock = Lock()
+
+    def wait(self):
+        with self.lock:
+            remaining = self.next_at - time.monotonic()
+            if remaining > 0:
+                time.sleep(remaining)
+            self.next_at = time.monotonic() + self.interval
+
+
+def _detail(client, mac, pacer=None):
+    if pacer is not None:
+        pacer.wait()
     payload = client.get_mnt_xml(
         f"/Session/MACAddress/{mac}", api_name="mnt_active_posture_detail")
     if not isinstance(payload, dict):
@@ -131,20 +157,38 @@ def _detail(client, mac):
     return sessions[0]
 
 
-def _bounded_details(client, macs, workers):
+def _bounded_details(client, macs, workers, request_interval=0):
     if not macs:
-        return []
-    results = []
+        return {}
+    results = {}
+    pacer = _RequestPacer(request_interval)
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(macs)))) as executor:
-        futures = {executor.submit(_detail, client, mac): mac for mac in macs}
+        futures = {executor.submit(_detail, client, mac, pacer): mac for mac in macs}
         for future in as_completed(futures):
             try:
                 detail = future.result()
             except Exception:
                 detail = None
             if detail is not None:
-                results.append(detail)
+                results[futures[future]] = detail
     return results
+
+
+def _session_signature(row):
+    """Stable active-session identity without persisting it as a metric label."""
+    keys = (
+        "audit_session_id", "auditSessionId", "session_id", "sessionId",
+        "acct_session_id", "acctSessionId", "acs_server", "acsServer",
+        "authentication_method", "authenticationMethod", "authen_time", "authenTime",
+    )
+    material = {key: row.get(key) for key in keys if row.get(key) not in (None, "")}
+    if not material:
+        # Do not hash the whole ActiveList row: elapsed-time fields can change
+        # every poll and would defeat the request budget. If this appliance omits
+        # session IDs, the normal oldest-first rotation refreshes the endpoint.
+        material = {"mac": _active_mac(row)}
+    encoded = json.dumps(material, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def _aggregate(details):
@@ -231,13 +275,62 @@ def collect(client, cfg):
             active_total = len(rows)
         # Preserve ActiveList order while avoiding duplicate detail requests for
         # endpoints with more than one active session.
-        candidates = list(dict.fromkeys(mac for row in rows if (mac := _active_mac(row))))
+        active_rows = {}
+        for row in rows:
+            if isinstance(row, dict) and (mac := _active_mac(row)):
+                active_rows.setdefault(mac, row)
+        candidates = list(active_rows)
         limit = max(0, int(getattr(cfg, "mnt_active_posture_max_sessions", 1000)))
         selected = candidates[:limit]
-        workers = max(1, int(getattr(cfg, "mnt_active_posture_workers", 8)))
-        details = _bounded_details(client, selected, workers)
-        if selected and not details:
-            raise CollectorFailed("all selected MnT session-detail lookups failed")
+        workers = max(1, int(getattr(cfg, "mnt_active_posture_workers", 2)))
+        request_budget = max(1, int(getattr(
+            cfg, "mnt_active_posture_max_requests_per_cycle", len(selected) or 1)))
+        refresh_ttl = max(1, int(getattr(cfg, "mnt_active_posture_refresh_ttl", 3600)))
+        interval = max(1, int(getattr(cfg, "mnt_active_posture_interval", 900)))
+        request_interval = max(0, int(getattr(
+            cfg, "mnt_active_posture_request_interval_ms", 0))) / 1000.0
+        now = time.time()
+
+        store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
+        try:
+            cached = store.posture_entries(selected)
+            signatures = {mac: _session_signature(active_rows[mac]) for mac in selected}
+            mandatory = [mac for mac in selected if mac not in cached
+                         or cached[mac]["signature"] != signatures[mac]]
+            unchanged = [mac for mac in selected if mac in cached
+                         and cached[mac]["signature"] == signatures[mac]]
+            oldest = sorted(unchanged, key=lambda mac: cached[mac]["updated_at"])
+            expired = [mac for mac in oldest
+                       if now - cached[mac]["updated_at"] >= refresh_ttl]
+            rotation_target = math.ceil(len(selected) * interval / refresh_ttl)
+            refresh = list(dict.fromkeys(mandatory + expired + oldest[:rotation_target]))
+            planned = refresh[:request_budget]
+            deferred = max(0, len(refresh) - len(planned))
+            fetched = _bounded_details(
+                client, planned, workers, request_interval=request_interval)
+            for mac, detail in fetched.items():
+                store.put_posture(mac, signatures[mac], detail, now=now)
+            store.finish_posture_cycle(selected, now=now)
+            current = store.posture_entries(selected)
+        finally:
+            store.close()
+
+        # Never publish a detail from an older session.  An unchanged cached
+        # response remains usable if its best-effort refresh failed.
+        usable = {
+            mac: entry for mac, entry in current.items()
+            if entry["signature"] == signatures[mac]
+        }
+        if selected and not usable:
+            raise CollectorFailed("no current or cached MnT session details available")
+        details = [usable[mac]["detail"] for mac in selected if mac in usable]
+        cache_hits = sum(1 for mac in selected if mac in cached
+                         and cached[mac]["signature"] == signatures[mac]
+                         and mac not in fetched)
+        cache_misses = sum(1 for mac in selected if mac not in cached)
+        oldest_age = max(
+            (max(0.0, now - entry["updated_at"]) for entry in usable.values()),
+            default=0.0)
 
         aggregates = _aggregate(details)
         (statuses, applicable, assessments, agents, policies, coverage,
@@ -246,12 +339,17 @@ def collect(client, cfg):
             lambda: metrics.ise_mnt_active_sessions_total.set(active_total),
             lambda: metrics.ise_mnt_active_posture_candidate_endpoints_total.set(
                 len(candidates)),
-            lambda: metrics.ise_mnt_active_posture_detail_requests.set(len(selected)),
+            lambda: metrics.ise_mnt_active_posture_detail_requests.set(len(planned)),
             lambda: metrics.ise_mnt_active_posture_detail_endpoints.set(len(details)),
             lambda: metrics.ise_mnt_active_posture_detail_coverage_ratio.set(
                 len(details) / len(selected) if selected else 1),
             lambda: metrics.ise_mnt_active_posture_detail_truncated.set(
                 int(len(selected) < len(candidates))),
+            lambda: metrics.ise_mnt_active_posture_cache_entries.set(len(usable)),
+            lambda: metrics.ise_mnt_active_posture_cache_hits.set(cache_hits),
+            lambda: metrics.ise_mnt_active_posture_cache_misses.set(cache_misses),
+            lambda: metrics.ise_mnt_active_posture_refresh_deferred.set(deferred),
+            lambda: metrics.ise_mnt_active_posture_cache_oldest_age_seconds.set(oldest_age),
         ]
         writers.extend(
             lambda field=field: metrics.ise_mnt_active_posture_field_coverage_ratio.labels(

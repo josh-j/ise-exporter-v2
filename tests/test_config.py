@@ -117,7 +117,14 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["COLLECT_MNT_ACTIVE_POSTURE"] == "true"
     assert values["MNT_ACTIVE_POSTURE_INTERVAL"] == "900"
     assert values["MNT_ACTIVE_POSTURE_MAX_SESSIONS"] == "1000"
-    assert values["MNT_ACTIVE_POSTURE_WORKERS"] == "4"
+    assert values["MNT_ACTIVE_POSTURE_WORKERS"] == "2"
+    assert values["MNT_ACTIVE_POSTURE_MAX_REQUESTS_PER_CYCLE"] == "250"
+    assert values["MNT_ACTIVE_POSTURE_REFRESH_TTL"] == "3600"
+    assert values["MNT_ACTIVE_POSTURE_REQUEST_INTERVAL_MS"] == "500"
+    assert values["ISE_EXPORTER_STATE_DB"] == "/var/lib/ise-exporter/state.sqlite3"
+    assert values["ISE_DATACONNECT_INCREMENTAL_ENABLED"] == "true"
+    assert values["ISE_DATACONNECT_RECONCILE_INTERVAL"] == "86400"
+    assert values["ISE_DATACONNECT_MAX_BACKFILL_SECONDS"] == "3600"
     # systemd EnvironmentFile= does not support trailing inline comments; keeping
     # comments on their own lines prevents them becoming part of numeric/boolean values.
     assignments = [line for line in path.read_text().splitlines()

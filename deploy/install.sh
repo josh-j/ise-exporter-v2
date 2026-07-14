@@ -13,6 +13,7 @@ SOURCE_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 INSTALL_DIR=/opt/ise-exporter
 CONFIG_DIR=/etc/ise-exporter
 CERTS_DIR="$CONFIG_DIR/certs"
+STATE_DIR=/var/lib/ise-exporter
 ENV_FILE="$CONFIG_DIR/ise-exporter.env"
 SERVICE_USER=ise-exporter
 SERVICE_NAME=ise-exporter
@@ -96,6 +97,7 @@ echo "==> ensuring directories"
 # restricted to root + the service group.
 install -d -o root -g root -m 755 "$INSTALL_DIR"
 install -d -o root -g "$SERVICE_USER" -m 750 "$CONFIG_DIR" "$CERTS_DIR"
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$STATE_DIR"
 
 # --- venv + package (install or upgrade in place) ---------------------
 VENV="$INSTALL_DIR/.venv"

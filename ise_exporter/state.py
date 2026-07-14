@@ -1,0 +1,181 @@
+"""Small durable SQLite state store for load-reducing collector caches.
+
+The database is exporter-private and may contain endpoint/session material copied
+from MnT responses.  Callers must place it in a service-owned, non-world-readable
+state directory.  SQLite is part of the Python standard library, which keeps the
+Ubuntu Noble installation free of additional database dependencies.
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import sqlite3
+import time
+
+
+class StateStore:
+    def __init__(self, path):
+        self.path = str(path or ":memory:")
+        if self.path != ":memory:":
+            target = Path(self.path)
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
+        self.db = sqlite3.connect(self.path, timeout=5)
+        self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA busy_timeout = 5000")
+        self.db.execute("PRAGMA journal_mode = WAL")
+        self.db.execute("PRAGMA synchronous = NORMAL")
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS mnt_posture_cache (
+                mac TEXT PRIMARY KEY,
+                session_signature TEXT NOT NULL,
+                detail_json TEXT NOT NULL,
+                updated_at REAL NOT NULL,
+                last_seen REAL NOT NULL
+            )
+        """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS dataconnect_rollup (
+                dataset TEXT NOT NULL,
+                window_start REAL NOT NULL,
+                window_end REAL NOT NULL,
+                rows_json TEXT NOT NULL,
+                PRIMARY KEY (dataset, window_start, window_end)
+            )
+        """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS exporter_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+        self.db.commit()
+        if self.path != ":memory:":
+            os.chmod(self.path, 0o600)
+
+    def close(self):
+        self.db.close()
+
+    def posture_entries(self, macs):
+        macs = tuple(dict.fromkeys(macs))
+        if not macs:
+            return {}
+        rows = {}
+        # Stay below SQLite's normal bind-variable limit for the production cap.
+        for offset in range(0, len(macs), 500):
+            chunk = macs[offset:offset + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in self.db.execute(
+                    f"SELECT * FROM mnt_posture_cache WHERE mac IN ({placeholders})", chunk):
+                try:
+                    detail = json.loads(row["detail_json"])
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(detail, dict):
+                    rows[row["mac"]] = {
+                        "signature": row["session_signature"],
+                        "detail": detail,
+                        "updated_at": float(row["updated_at"]),
+                    }
+        return rows
+
+    def put_posture(self, mac, signature, detail, now=None):
+        now = time.time() if now is None else float(now)
+        self.db.execute("""
+            INSERT INTO mnt_posture_cache
+                (mac, session_signature, detail_json, updated_at, last_seen)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(mac) DO UPDATE SET
+                session_signature=excluded.session_signature,
+                detail_json=excluded.detail_json,
+                updated_at=excluded.updated_at,
+                last_seen=excluded.last_seen
+        """, (mac, signature, json.dumps(detail, separators=(",", ":")), now, now))
+
+    def finish_posture_cycle(self, active_macs, now=None):
+        now = time.time() if now is None else float(now)
+        active_macs = tuple(dict.fromkeys(active_macs))
+        if active_macs:
+            for offset in range(0, len(active_macs), 500):
+                chunk = active_macs[offset:offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                self.db.execute(
+                    f"UPDATE mnt_posture_cache SET last_seen=? WHERE mac IN ({placeholders})",
+                    (now, *chunk))
+            placeholders = ",".join("?" for _ in active_macs)
+            if len(active_macs) <= 500:
+                self.db.execute(
+                    f"DELETE FROM mnt_posture_cache WHERE mac NOT IN ({placeholders})",
+                    active_macs)
+            else:
+                # All active rows were just marked.  A strict older-than cutoff
+                # avoids a single statement with more than SQLite's bind limit.
+                self.db.execute("DELETE FROM mnt_posture_cache WHERE last_seen < ?", (now,))
+        else:
+            self.db.execute("DELETE FROM mnt_posture_cache")
+        self.db.commit()
+
+    def posture_count(self):
+        return int(self.db.execute(
+            "SELECT COUNT(*) FROM mnt_posture_cache").fetchone()[0])
+
+    def get_value(self, key, default=None):
+        row = self.db.execute(
+            "SELECT value FROM exporter_state WHERE key=?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def set_value(self, key, value, *, commit=True):
+        self.db.execute("""
+            INSERT INTO exporter_state(key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """, (key, str(value)))
+        if commit:
+            self.db.commit()
+
+    def dataconnect_snapshots(self, datasets, cutoff):
+        result = {dataset: [] for dataset in datasets}
+        for dataset in datasets:
+            rows = self.db.execute("""
+                SELECT window_start, window_end, rows_json
+                FROM dataconnect_rollup
+                WHERE dataset=? AND window_end>?
+                ORDER BY window_start
+            """, (dataset, float(cutoff)))
+            for row in rows:
+                try:
+                    values = json.loads(row["rows_json"])
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(values, list):
+                    result[dataset].append({
+                        "start": float(row["window_start"]),
+                        "end": float(row["window_end"]),
+                        "rows": values,
+                    })
+        return result
+
+    def replace_dataconnect_rollups(self, snapshots, values=None):
+        for dataset in snapshots:
+            self.db.execute("DELETE FROM dataconnect_rollup WHERE dataset=?", (dataset,))
+        self.append_dataconnect_rollups(snapshots, values=values, commit=False)
+        self.db.commit()
+
+    def append_dataconnect_rollups(self, snapshots, values=None, *, commit=True):
+        for dataset, snapshot in snapshots.items():
+            self.db.execute("""
+                INSERT OR REPLACE INTO dataconnect_rollup
+                    (dataset, window_start, window_end, rows_json)
+                VALUES (?, ?, ?, ?)
+            """, (
+                dataset, float(snapshot["start"]), float(snapshot["end"]),
+                json.dumps(snapshot["rows"], separators=(",", ":"), default=str),
+            ))
+        for key, value in (values or {}).items():
+            self.set_value(key, value, commit=False)
+        if commit:
+            self.db.commit()
+
+    def prune_dataconnect_rollups(self, cutoff):
+        self.db.execute(
+            "DELETE FROM dataconnect_rollup WHERE window_end<=?", (float(cutoff),))
+        self.db.commit()

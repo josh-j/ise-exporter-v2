@@ -30,9 +30,16 @@ def test_100k_default_profile_stays_below_200_scheduled_statements_per_hour():
         "tacacs": cfg.dataconnect_tacacs_interval,
     }
 
-    statements_per_hour = sum(
+    reconciliation_statements_per_hour = sum(
         count * 3600 / intervals[name]
         for name, count in statements_per_run.items()
+    )
+    # Database clock + six small rollup windows + current active sessions.
+    steady_radius = len(dataconnect_radius._ROLLUP_DATASETS) + 2
+    steady_statements_per_hour = (
+        reconciliation_statements_per_hour
+        - statements_per_run["radius"] * 3600 / intervals["radius"]
+        + steady_radius * 3600 / intervals["radius"]
     )
 
     assert statements_per_run == {
@@ -44,4 +51,5 @@ def test_100k_default_profile_stays_below_200_scheduled_statements_per_hour():
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == 187
+    assert reconciliation_statements_per_hour == 187
+    assert steady_statements_per_hour == 187

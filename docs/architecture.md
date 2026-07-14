@@ -89,7 +89,9 @@ connection, 250ms statement pacing, a 5% adaptive query-duty-cycle ceiling,
 15-second statement timeouts, and independent five-minute to six-hour domain
 cadences. Summary and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate two-day scan.
-The default scheduled workload ceiling is 187 statements per hour after startup,
+The steady-state workload ceiling remains 187 statements per hour after startup;
+the safety gain is that six RADIUS statements scan only their new event window,
+while one inexpensive database-clock statement makes watermark boundaries exact,
 excluding explicit operator CLI queries. The former shared-tier design issued
 1,437 statements per hour, so the 100k profile removes 87% of scheduled query
 invocations before the global duty-cycle cooldown is considered.
@@ -112,13 +114,22 @@ MnT XML owns only a current, bounded active-session dataset:
 - posture policy passed/failed aggregates parsed from `PostureReport`; and
 - numeric authentication-step and total-authentication latency aggregates.
 
-The collector deduplicates active MACs and fetches no more than
-`MNT_ACTIVE_POSTURE_MAX_SESSIONS` endpoint details per
-`MNT_ACTIVE_POSTURE_INTERVAL`, using at most `MNT_ACTIVE_POSTURE_WORKERS` workers.
-The production defaults are 1,000 details, 15 minutes, and four workers. This
-fills the ISE 3.3 Patch 11 current-posture gap without an unbounded fan-out across
-a 100,000-endpoint inventory. Coverage, candidate count, selected count, and a
-truncation flag qualify every sample.
+The collector deduplicates active MACs and tracks no more than
+`MNT_ACTIVE_POSTURE_MAX_SESSIONS` endpoints. Details are stored in the private
+`ISE_EXPORTER_STATE_DB`; departed sessions are removed immediately, new or changed
+sessions are prioritized, and unchanged sessions are refreshed in oldest-first
+rotation. Production defaults allow 250 requests per 15-minute cycle, two workers,
+500ms request pacing, and a one-hour refresh target. A restart reuses valid cached
+details rather than creating a cold-start burst. Coverage, cache age, deferred
+refreshes, candidate count, and truncation qualify every sample.
+
+RADIUS uses the same SQLite state store for identity-free aggregate windows.
+After a full two-day seed, normal runs query only events newer than the previous
+watermark, merge those bounded aggregates locally, and query active accounting
+state directly. A daily full reconciliation repairs late-arriving rows; a gap
+larger than the configured safe backfill limit also forces reconciliation instead
+of silently losing data. The database stores aggregate rows, not raw RADIUS
+identities or credentials.
 
 MnT metrics never contain MAC addresses, usernames, session IDs, raw
 `PostureReport`, or free-form attributes. Only bounded aggregate dimensions such

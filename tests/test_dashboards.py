@@ -254,5 +254,10 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_mnt_active_posture_detail_coverage_ratio",
         "ise_mnt_active_posture_detail_truncated",
         "ise_mnt_active_posture_field_coverage_ratio",
+        "ise_mnt_active_posture_cache_entries",
+        "ise_mnt_active_posture_refresh_deferred",
+        "ise_mnt_active_posture_cache_oldest_age_seconds",
+        "ise_dataconnect_incremental_mode",
+        "ise_dataconnect_reconciliation_age_seconds",
     ):
         assert metric in text

@@ -16,6 +16,8 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+StateDirectory=ise-exporter
+StateDirectoryMode=0750
 ReadOnlyPaths=/etc/ise-exporter
 AmbientCapabilities=
 

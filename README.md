@@ -55,7 +55,9 @@ ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer
 COLLECT_MNT_ACTIVE_POSTURE=true
 MNT_ACTIVE_POSTURE_INTERVAL=900
 MNT_ACTIVE_POSTURE_MAX_SESSIONS=1000
-MNT_ACTIVE_POSTURE_WORKERS=4
+MNT_ACTIVE_POSTURE_WORKERS=2
+MNT_ACTIVE_POSTURE_MAX_REQUESTS_PER_CYCLE=250
+ISE_EXPORTER_STATE_DB=/var/lib/ise-exporter/state.sqlite3
 ```
 
 Values are parsed literally after the first `=`; `${NAME}` and additional `=`
@@ -63,9 +65,11 @@ characters in passwords are preserved. Inline comments on integer values are
 not supported. The sample is production-oriented for up to 100,000 endpoints:
 database-side aggregation, collapsed summary/top-group scans, paced sequential
 queries, five-minute RADIUS/performance reporting, 15-minute posture/TACACS
-reporting, hourly source-freshness checks, and six-hour inventory state. The MnT
-bound means a 100,000-endpoint deployment performs at most 1,000 active endpoint
-detail requests per 15-minute cycle, rather than a deployment-wide fan-out.
+reporting, hourly source-freshness checks, and six-hour inventory state. A private
+SQLite cache survives restarts. MnT fetches at most 250 new or rotating endpoint
+details per 15-minute cycle, while cached active details retain dashboard coverage.
+RADIUS normally scans only its new five-minute event window and performs a full
+two-day reconciliation once per day.
 
 Before starting the service, verify the reporting connection:
 

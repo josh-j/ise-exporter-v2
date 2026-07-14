@@ -39,6 +39,10 @@ def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     assert 'chmod -R a+rX "$VENV"' in script
     assert 'chmod 640 "$ENV_FILE"' in script
     assert 'chmod 750 "$CERTS_DIR"' in script
+    assert 'STATE_DIR=/var/lib/ise-exporter' in script
+    assert 'install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$STATE_DIR"' in script
+    unit = (Path(__file__).parents[1] / "deploy/ise-exporter.service").read_text()
+    assert "StateDirectory=ise-exporter" in unit
 
 
 def test_install_script_supports_ubuntu_noble_with_standard_packages():

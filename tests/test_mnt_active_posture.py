@@ -147,3 +147,27 @@ def test_valid_empty_active_list_publishes_an_empty_snapshot():
     assert metrics.ise_mnt_active_sessions_total._value.get() == 0
     assert metrics.ise_mnt_active_posture_detail_coverage_ratio._value.get() == 1
     assert not _rows(metrics.ise_mnt_active_posture_endpoints, "status")
+
+
+def test_persistent_cache_bounds_cold_start_and_survives_restart(tmp_path):
+    cfg = _cfg(
+        state_db_path=str(tmp_path / "state.sqlite3"),
+        mnt_active_posture_max_requests_per_cycle=1,
+        mnt_active_posture_refresh_ttl=3600,
+        mnt_active_posture_interval=900,
+        mnt_active_posture_request_interval_ms=0,
+    )
+
+    first = MnT()
+    mnt_active_posture.collect(first, cfg)
+    assert len([path for path, _ in first.calls if "MACAddress" in path]) == 1
+    assert metrics.ise_mnt_active_posture_detail_endpoints._value.get() == 1
+    assert metrics.ise_mnt_active_posture_refresh_deferred._value.get() == 1
+
+    second = MnT()
+    mnt_active_posture.collect(second, cfg)
+    assert len([path for path, _ in second.calls if "MACAddress" in path]) == 1
+    assert metrics.ise_mnt_active_posture_detail_endpoints._value.get() == 2
+    assert metrics.ise_mnt_active_posture_cache_entries._value.get() == 2
+    assert metrics.ise_mnt_active_posture_detail_coverage_ratio._value.get() == 1
+    assert (tmp_path / "state.sqlite3").stat().st_mode & 0o077 == 0

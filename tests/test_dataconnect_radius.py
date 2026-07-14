@@ -1,4 +1,5 @@
 import types
+from datetime import datetime, timezone
 
 import pytest
 
@@ -68,6 +69,21 @@ class DataConnect:
         return [{"message_code": "5440", "network_device_name": "nad-1",
                  "authentication_method": "MSCHAPv2", "ise_node": "psn-1",
                  "events": 3, "total_events": 12, "total_groups": 3}]
+
+
+class IncrementalDataConnect(DataConnect):
+    def __init__(self, epoch):
+        super().__init__()
+        self.parameters = []
+        self.epoch = epoch
+
+    def query(self, sql, parameters=None):
+        self.parameters.append(parameters)
+        if "SYS_EXTRACT_UTC" in sql:
+            self.sql.append(sql)
+            return [{"db_now": datetime.fromtimestamp(
+                self.epoch, timezone.utc).replace(tzinfo=None)}]
+        return super().query(sql)
 
 
 def test_collects_bounded_aggregated_radius_metrics():
@@ -140,3 +156,40 @@ def test_query_failure_preserves_previous_snapshot():
 
     assert _rows(metrics.ise_dataconnect_radius_errors,
                  "message_code", "nad") == {("old", "old"): 9}
+
+
+def test_incremental_rollups_survive_restart_and_scan_only_new_window(tmp_path, monkeypatch):
+    now = [1_784_000_000.0]
+    monkeypatch.setattr(dataconnect_radius.time, "time", lambda: now[0])
+    cfg = types.SimpleNamespace(
+        dataconnect_max_groups=25,
+        dataconnect_incremental_enabled=True,
+        dataconnect_reconcile_interval=86400,
+        dataconnect_max_backfill_seconds=3600,
+        state_db_path=str(tmp_path / "state.sqlite3"),
+    )
+
+    initial = IncrementalDataConnect(now[0])
+    dataconnect_radius.collect(initial, cfg)
+    assert len(initial.sql) == 9
+    assert sum(parameters is not None for parameters in initial.parameters) == 7
+    assert metrics.ise_dataconnect_incremental_mode.labels(domain="radius")._value.get() == 0
+
+    now[0] += 300
+    restarted = IncrementalDataConnect(now[0])
+    dataconnect_radius.collect(restarted, cfg)
+
+    assert len(restarted.sql) == 8
+    assert sum(parameters is not None for parameters in restarted.parameters) == 6
+    assert not any("count(distinct calling_station_id)" in sql.lower()
+                   for sql in restarted.sql)
+    assert all(":window_start" in sql and ":window_end" in sql
+               for sql, parameters in zip(restarted.sql, restarted.parameters)
+               if parameters is not None)
+    assert metrics.ise_dataconnect_incremental_mode.labels(domain="radius")._value.get() == 1
+    assert metrics.ise_dataconnect_incremental_window_seconds.labels(
+        domain="radius")._value.get() == 300
+    assert metrics.ise_dataconnect_radius_authentication_events_total._value.get() == 214
+    assert _rows(metrics.ise_dataconnect_radius_authentication_events,
+                 "authentication_method", "nad") == {
+        ("MSCHAPv2", "nad-1"): 14, ("EAP-TLS", "nad-1"): 6}

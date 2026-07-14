@@ -68,6 +68,7 @@ class Config:
     mnt_ca_bundle: str = ""
     mnt_ssl_verify: bool = True
     exporter_port: int = 9618
+    state_db_path: str = "/var/lib/ise-exporter/state.sqlite3"
     scrape_interval: int = 120
     fast_interval: int = 60
     medium_interval: int = 300
@@ -83,9 +84,12 @@ class Config:
     collect_patches: bool = True
     collect_tacacs: bool = True
     collect_mnt_active_posture: bool = True
-    mnt_active_posture_interval: int = 300
+    mnt_active_posture_interval: int = 900
     mnt_active_posture_max_sessions: int = 1000
-    mnt_active_posture_workers: int = 8
+    mnt_active_posture_workers: int = 2
+    mnt_active_posture_max_requests_per_cycle: int = 250
+    mnt_active_posture_refresh_ttl: int = 3600
+    mnt_active_posture_request_interval_ms: int = 500
     tacacs_internal_user_max: int = 1000
     tacacs_unused_account_days: int = 180
     dataconnect_host: str = ""
@@ -109,6 +113,9 @@ class Config:
     dataconnect_freshness_interval: int = 3600
     dataconnect_nad_health_interval: int = 900
     dataconnect_tacacs_interval: int = 900
+    dataconnect_incremental_enabled: bool = True
+    dataconnect_reconcile_interval: int = 86400
+    dataconnect_max_backfill_seconds: int = 3600
     @property
     def dataconnect_ready(self) -> bool:
         return bool(self.dataconnect_host and self.dataconnect_user
@@ -130,6 +137,7 @@ class Config:
             ise_host=_s("ISE_HOST"), ise_mnt_host=_s("ISE_MNT_HOST"),
             ise_user=_s("ISE_USER", "ers.readonly"), ise_pass=_s("ISE_PASS"),
             ers_port=_i("ERS_PORT", 9060), exporter_port=_i("EXPORTER_PORT", 9618),
+            state_db_path=_s("ISE_EXPORTER_STATE_DB", "/var/lib/ise-exporter/state.sqlite3"),
             rest_ca_bundle=_s("ISE_REST_CA_BUNDLE"),
             rest_ssl_verify=_b("ISE_REST_SSL_VERIFY", True),
             mnt_ca_bundle=_s("ISE_MNT_CA_BUNDLE", _s("ISE_REST_CA_BUNDLE")),
@@ -148,10 +156,18 @@ class Config:
             collect_patches=_b("COLLECT_PATCHES", True),
             collect_tacacs=_b("COLLECT_TACACS", True),
             collect_mnt_active_posture=_b("COLLECT_MNT_ACTIVE_POSTURE", True),
-            mnt_active_posture_interval=_i("MNT_ACTIVE_POSTURE_INTERVAL", 300),
-            mnt_active_posture_max_sessions=_i(
-                "MNT_ACTIVE_POSTURE_MAX_SESSIONS", 1000),
-            mnt_active_posture_workers=_i("MNT_ACTIVE_POSTURE_WORKERS", 8),
+            mnt_active_posture_interval=_bounded_i(
+                "MNT_ACTIVE_POSTURE_INTERVAL", 900, 900),
+            mnt_active_posture_max_sessions=_bounded_i(
+                "MNT_ACTIVE_POSTURE_MAX_SESSIONS", 1000, 1, 1000),
+            mnt_active_posture_workers=_bounded_i(
+                "MNT_ACTIVE_POSTURE_WORKERS", 2, 1, 4),
+            mnt_active_posture_max_requests_per_cycle=_bounded_i(
+                "MNT_ACTIVE_POSTURE_MAX_REQUESTS_PER_CYCLE", 250, 1, 250),
+            mnt_active_posture_refresh_ttl=_bounded_i(
+                "MNT_ACTIVE_POSTURE_REFRESH_TTL", 3600, 900),
+            mnt_active_posture_request_interval_ms=_bounded_i(
+                "MNT_ACTIVE_POSTURE_REQUEST_INTERVAL_MS", 500, 250),
             tacacs_internal_user_max=_i("TACACS_INTERNAL_USER_MAX", 1000),
             tacacs_unused_account_days=_i("TACACS_UNUSED_ACCOUNT_DAYS", 180),
             dataconnect_host=_s("ISE_DATACONNECT_HOST", _s("ISE_MNT_HOST")),
@@ -183,4 +199,10 @@ class Config:
                 "ISE_DATACONNECT_NAD_HEALTH_INTERVAL", 900, 900),
             dataconnect_tacacs_interval=_bounded_i(
                 "ISE_DATACONNECT_TACACS_INTERVAL", 900, 900),
+            dataconnect_incremental_enabled=_b(
+                "ISE_DATACONNECT_INCREMENTAL_ENABLED", True),
+            dataconnect_reconcile_interval=_bounded_i(
+                "ISE_DATACONNECT_RECONCILE_INTERVAL", 86400, 21600),
+            dataconnect_max_backfill_seconds=_bounded_i(
+                "ISE_DATACONNECT_MAX_BACKFILL_SECONDS", 3600, 900, 21600),
         )

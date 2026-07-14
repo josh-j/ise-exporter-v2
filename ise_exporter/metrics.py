@@ -139,6 +139,21 @@ ise_mnt_active_posture_detail_coverage_ratio = Gauge(
 ise_mnt_active_posture_detail_truncated = Gauge(
     "ise_mnt_active_posture_detail_truncated",
     "Whether active endpoint detail lookup was limited by the configured bound")
+ise_mnt_active_posture_cache_entries = Gauge(
+    "ise_mnt_active_posture_cache_entries",
+    "Active endpoint details retained in the restart-persistent MnT cache")
+ise_mnt_active_posture_cache_hits = Gauge(
+    "ise_mnt_active_posture_cache_hits",
+    "Active endpoint details served from the persistent cache in the latest cycle")
+ise_mnt_active_posture_cache_misses = Gauge(
+    "ise_mnt_active_posture_cache_misses",
+    "Selected active endpoints without a cached detail in the latest cycle")
+ise_mnt_active_posture_refresh_deferred = Gauge(
+    "ise_mnt_active_posture_refresh_deferred",
+    "Endpoint detail refreshes deferred by the per-cycle request budget")
+ise_mnt_active_posture_cache_oldest_age_seconds = Gauge(
+    "ise_mnt_active_posture_cache_oldest_age_seconds",
+    "Age of the oldest cached active endpoint detail used in the current snapshot")
 ise_mnt_active_posture_field_coverage_ratio = Gauge(
     "ise_mnt_active_posture_field_coverage_ratio",
     "Fraction of collected MnT details containing a useful source field", ["field"])
@@ -429,3 +444,16 @@ ise_dataset_effective_interval_seconds = Gauge(
 ise_dataconnect_load_backoff_seconds = Gauge(
     "ise_dataconnect_load_backoff_seconds",
     "Additional cadence imposed by Data Connect duty-cycle protection", ["dataset"])
+ise_dataconnect_incremental_mode = Gauge(
+    "ise_dataconnect_incremental_mode",
+    "Whether a Data Connect domain used a small incremental window on its latest run",
+    ["domain"])
+ise_dataconnect_incremental_window_seconds = Gauge(
+    "ise_dataconnect_incremental_window_seconds",
+    "Size of the latest incremental Data Connect event window", ["domain"])
+ise_dataconnect_reconciliation_age_seconds = Gauge(
+    "ise_dataconnect_reconciliation_age_seconds",
+    "Age of the latest full Data Connect reconciliation", ["domain"])
+ise_dataconnect_incremental_reconciliations_total = Counter(
+    "ise_dataconnect_incremental_reconciliations_total",
+    "Full Data Connect reconciliations by domain", ["domain"])

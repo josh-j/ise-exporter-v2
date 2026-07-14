@@ -4,7 +4,12 @@ All event queries are explicitly bounded to the last two days and aggregate in
 Oracle before returning data.  Usernames, MAC addresses, session IDs, free-form
 failure text, and other unbounded values never become Prometheus labels.
 """
+from datetime import datetime, timedelta, timezone
+import json
+import time
+
 from .. import metrics
+from ..state import StateStore
 from . import observe
 from .dataconnect_common import group_limit, integer, label, number, replace_snapshot
 
@@ -154,6 +159,7 @@ def _queries(limit, stale_minutes=60):
             SELECT grouped_sessions.*, COUNT(*) OVER () AS total_groups
             FROM (
                 SELECT device_name, ise_node,
+                       COUNT(acct_session_time) AS samples,
                        AVG(acct_session_time) AS avg_session_seconds,
                        MAX(acct_session_time) AS max_session_seconds
                 FROM radius_accounting
@@ -191,14 +197,192 @@ def _queries(limit, stale_minutes=60):
     }
 
 
+_ROLLUP_DATASETS = (
+    "authentication", "failure_context", "latency", "accounting",
+    "accounting_sessions", "errors",
+)
+
+_GROUP_KEYS = {
+    "authentication": (
+        "status", "authentication_method", "authentication_protocol", "device_name",
+        "policy_set_name", "ise_node"),
+    "failure_context": ("failure_class", "policy_set_name", "location"),
+    "latency": ("status", "device_name", "ise_node"),
+    "accounting": ("acct_status_type", "device_name", "authorization_policy", "ise_node"),
+    "accounting_sessions": ("device_name", "ise_node"),
+    "errors": (
+        "message_code", "network_device_name", "authentication_method", "ise_node"),
+}
+
+_ORDER_FIELDS = {
+    "authentication": "events",
+    "failure_context": "events",
+    "latency": "samples",
+    "accounting": "events",
+    "accounting_sessions": "max_session_seconds",
+    "errors": "events",
+}
+
+
+def _window_queries(limit, stale_minutes=60):
+    queries = _queries(limit, stale_minutes)
+    windowed = {}
+    for name in _ROLLUP_DATASETS:
+        sql = queries[name].replace(
+            "timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY",
+            "timestamp >= :window_start AND timestamp < :window_end")
+        windowed[name] = sql
+    return windowed
+
+
+def _merge_rollups(snapshots, limit):
+    merged = {}
+    for dataset in _ROLLUP_DATASETS:
+        groups = {}
+        total_events = 0
+        total_groups = 0
+        for snapshot in snapshots.get(dataset, []):
+            rows = snapshot["rows"]
+            if rows:
+                total_events += integer(rows[0].get("total_events"))
+                total_groups = max(total_groups, integer(rows[0].get("total_groups")))
+            for row in rows:
+                key = tuple(str(row.get(name) or "") for name in _GROUP_KEYS[dataset])
+                if key not in groups:
+                    groups[key] = dict(row)
+                    continue
+                current = groups[key]
+                if dataset in ("authentication", "failure_context", "accounting", "errors"):
+                    current["events"] = integer(current.get("events")) + integer(
+                        row.get("events"))
+                elif dataset == "latency":
+                    old_samples = integer(current.get("samples"))
+                    new_samples = integer(row.get("samples"))
+                    samples = old_samples + new_samples
+                    weighted = (number(current.get("avg_response_ms")) * old_samples
+                                + number(row.get("avg_response_ms")) * new_samples)
+                    current["samples"] = samples
+                    current["avg_response_ms"] = weighted / samples if samples else 0
+                    current["max_response_ms"] = max(
+                        number(current.get("max_response_ms")),
+                        number(row.get("max_response_ms")))
+                elif dataset == "accounting_sessions":
+                    old_samples = integer(current.get("samples"))
+                    new_samples = integer(row.get("samples"))
+                    samples = old_samples + new_samples
+                    weighted = (number(current.get("avg_session_seconds")) * old_samples
+                                + number(row.get("avg_session_seconds")) * new_samples)
+                    current["samples"] = samples
+                    current["avg_session_seconds"] = weighted / samples if samples else 0
+                    current["max_session_seconds"] = max(
+                        number(current.get("max_session_seconds")),
+                        number(row.get("max_session_seconds")))
+        values = sorted(
+            groups.values(), key=lambda row: number(row.get(_ORDER_FIELDS[dataset])),
+            reverse=True)[:limit]
+        total_groups = max(total_groups, len(groups))
+        if not total_events and dataset in (
+                "authentication", "failure_context", "accounting", "errors"):
+            total_events = sum(integer(row.get("events")) for row in groups.values())
+        for row in values:
+            if dataset in ("authentication", "failure_context", "accounting", "errors"):
+                row["total_events"] = total_events
+            row["total_groups"] = total_groups
+        merged[dataset] = values
+    return merged
+
+
+def _incremental_rows(dataconnect, cfg, limit, stale_minutes):
+    """Use daily reconciliation plus small persisted aggregate windows."""
+    now = time.time()
+    reconcile_interval = int(getattr(cfg, "dataconnect_reconcile_interval", 86400))
+    max_backfill = int(getattr(cfg, "dataconnect_max_backfill_seconds", 3600))
+    store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
+    try:
+        clock_rows = dataconnect.query(
+            "SELECT SYS_EXTRACT_UTC(SYSTIMESTAMP) AS db_now FROM dual")
+        db_now = clock_rows[0].get("db_now") if clock_rows else None
+        if not isinstance(db_now, datetime):
+            raise RuntimeError("Data Connect did not return its database clock")
+        if db_now.tzinfo is not None:
+            db_now = db_now.astimezone(timezone.utc).replace(tzinfo=None)
+        db_epoch = db_now.replace(tzinfo=timezone.utc).timestamp()
+        last_reconcile = float(store.get_value("radius.last_reconcile", 0) or 0)
+        last_end = float(store.get_value("radius.last_window_end", 0) or 0)
+        reconcile = (not last_end or now - last_reconcile >= reconcile_interval
+                     or db_epoch - last_end > max_backfill)
+        if reconcile:
+            window_start = db_now.replace(tzinfo=timezone.utc) - timedelta(days=2)
+            window_start = window_start.replace(tzinfo=None)
+            rows = {
+                name: dataconnect.query(sql, {
+                    "window_start": window_start, "window_end": db_now,
+                })
+                for name, sql in _window_queries(limit, stale_minutes).items()
+            }
+            identity_sql = _queries(limit, stale_minutes)["identity_summary"].replace(
+                "timestamp >= SYSTIMESTAMP - INTERVAL '2' DAY",
+                "timestamp >= :window_start AND timestamp < :window_end")
+            rows["identity_summary"] = dataconnect.query(identity_sql, {
+                "window_start": window_start, "window_end": db_now,
+            })
+            rows["active_sessions"] = dataconnect.query(
+                _queries(limit, stale_minutes)["active_sessions"])
+            snapshots = {
+                name: {"start": db_epoch - 172800, "end": db_epoch, "rows": rows[name]}
+                for name in _ROLLUP_DATASETS
+            }
+            store.replace_dataconnect_rollups(snapshots, values={
+                "radius.last_reconcile": now,
+                "radius.last_window_end": db_epoch,
+                "radius.identity_summary": json.dumps(rows["identity_summary"]),
+            })
+            metrics.ise_dataconnect_incremental_reconciliations_total.labels(
+                domain="radius").inc()
+            metrics.ise_dataconnect_incremental_mode.labels(domain="radius").set(0)
+            metrics.ise_dataconnect_reconciliation_age_seconds.labels(domain="radius").set(0)
+            return rows
+
+        start = last_end
+        start_value = datetime.fromtimestamp(start, timezone.utc).replace(tzinfo=None)
+        rows = {
+            name: dataconnect.query(sql, {
+                "window_start": start_value, "window_end": db_now,
+            })
+            for name, sql in _window_queries(limit, stale_minutes).items()
+        }
+        store.append_dataconnect_rollups({
+            name: {"start": start, "end": db_epoch, "rows": rows[name]}
+            for name in _ROLLUP_DATASETS
+        }, values={"radius.last_window_end": db_epoch})
+        store.prune_dataconnect_rollups(db_epoch - 172800)
+        snapshots = store.dataconnect_snapshots(_ROLLUP_DATASETS, db_epoch - 172800)
+        merged = _merge_rollups(snapshots, limit)
+        identity = json.loads(store.get_value("radius.identity_summary", "[]"))
+        merged["identity_summary"] = identity if isinstance(identity, list) else []
+        merged["active_sessions"] = dataconnect.query(
+            _queries(limit, stale_minutes)["active_sessions"])
+        metrics.ise_dataconnect_incremental_mode.labels(domain="radius").set(1)
+        metrics.ise_dataconnect_incremental_window_seconds.labels(domain="radius").set(
+            db_epoch - start)
+        metrics.ise_dataconnect_reconciliation_age_seconds.labels(domain="radius").set(
+            max(0, now - last_reconcile))
+        return merged
+    finally:
+        store.close()
+
+
 def collect(dataconnect, cfg):
     """Atomically replace the bounded RADIUS reporting snapshot."""
     with observe("dataconnect_radius"):
         limit = group_limit(cfg)
         stale_minutes = max(5, min(1440, int(getattr(
             cfg, "dataconnect_active_session_stale_minutes", 60))))
-        rows = {name: dataconnect.query(sql)
-                for name, sql in _queries(limit, stale_minutes).items()}
+        if getattr(cfg, "dataconnect_incremental_enabled", False):
+            rows = _incremental_rows(dataconnect, cfg, limit, stale_minutes)
+        else:
+            rows = {name: dataconnect.query(sql)
+                    for name, sql in _queries(limit, stale_minutes).items()}
         summaries = {name: (values[0] if values else {}) for name, values in rows.items()}
         auth = [{
             "status": label(row.get("status")),
