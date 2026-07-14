@@ -169,6 +169,43 @@ def test_schema_is_network_and_credential_free(capsys):
     assert schema["method"] == "GET"
 
 
+def test_health_reports_reachability_and_authentication(capsys):
+    assert cli.main(["health", "-o", "json"], client=FakeClient()) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows == [
+        {"authenticated": True, "host": "pan.example.mil", "http_status": 0,
+         "reachable": True, "service": "PAN/ERS"},
+        {"authenticated": False, "host": "mnt.example.mil", "http_status": 0,
+         "reachable": False, "service": "MnT"},
+    ]
+
+
+def test_health_works_with_only_dataconnect_configuration(capsys):
+    cfg = types.SimpleNamespace(
+        ise_host="", ise_mnt_host="", ise_user="", ise_pass="",
+        dataconnect_host="mnt.example.mil", dataconnect_ready=True)
+    class HealthyDataConnect(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            if "COUNT(*)" in sql:
+                return [{"view_count": 14}]
+            return super().query(sql, parameters)
+
+    dataconnect = HealthyDataConnect()
+    assert cli.main(["health", "-o", "json"], cfg=cfg, dataconnect=dataconnect) == 0
+    assert json.loads(capsys.readouterr().out) == [{
+        "authenticated": True, "host": "mnt.example.mil", "http_status": 0,
+        "reachable": True, "service": "Data Connect"}]
+
+
+def test_sessions_rejects_nonpositive_limit_before_network_access(capsys):
+    client = FakeClient()
+    assert cli.main(["sessions", "--allow-expensive", "--limit", "0"], client=client) == 2
+    assert client.calls == []
+    error = capsys.readouterr().err
+    assert error == "ise-cli: error: --limit must be at least 1\n"
+    assert "usage:" not in error
+
+
 def test_endpoints_are_bounded_and_paginated(capsys):
     client = FakeClient()
 
@@ -181,27 +218,21 @@ def test_endpoints_are_bounded_and_paginated(capsys):
     assert [call[2]["size"] for call in calls] == [100, 25]
 
 
-@pytest.mark.parametrize(("pattern", "expected"), (
-    ("LAB-*", "name.STARTSW.LAB-"),
-    ("*-WIN", "name.ENDSW.-WIN"),
-    ("*LAPTOP*", "name.CONTAINS.LAPTOP"),
-    ("LAB-001", "name.EQ.LAB-001"),
-))
-def test_endpoints_wildcards_are_server_side_ers_filters(pattern, expected, capsys):
+@pytest.mark.parametrize("pattern", ("LAB-*", "*-WIN", "*LAPTOP*", "LAB-001"))
+def test_endpoint_name_search_requires_dataconnect_on_ise_33(pattern):
     client = FakeClient()
     expensive = ["--allow-expensive"] if pattern.startswith("*") else []
 
-    assert cli.main(["endpoints", pattern, *expensive, "--limit", "5", "-o", "json"],
-                    client=client) == 0
+    assert cli.main(["endpoints", pattern, *expensive, "--limit", "5"],
+                    client=client) == 2
 
-    assert client.calls[0][2]["filter"] == expected
+    assert client.calls == []
 
 
 def test_endpoints_rejects_complex_wildcard_without_enumerating():
     client = FakeClient()
 
-    with pytest.raises(SystemExit):
-        cli.main(["endpoints", "LAB-*-WIN"], client=client)
+    assert cli.main(["endpoints", "LAB-*-WIN"], client=client) == 2
 
     assert client.calls == []
 
@@ -209,8 +240,7 @@ def test_endpoints_rejects_complex_wildcard_without_enumerating():
 def test_leading_wildcard_requires_explicit_production_acknowledgement():
     client = FakeClient()
 
-    with pytest.raises(SystemExit):
-        cli.main(["endpoints", "*LAPTOP*"], client=client)
+    assert cli.main(["endpoints", "*LAPTOP*"], client=client) == 2
 
     assert client.calls == []
 
@@ -218,8 +248,7 @@ def test_leading_wildcard_requires_explicit_production_acknowledgement():
 def test_complete_inventory_requires_explicit_production_acknowledgement():
     client = FakeClient()
 
-    with pytest.raises(SystemExit):
-        cli.main(["endpoints", "--all"], client=client)
+    assert cli.main(["endpoints", "--all"], client=client) == 2
 
     assert client.calls == []
 
@@ -266,8 +295,7 @@ def test_generic_get_is_read_only_and_routes_by_family(capsys):
 
 def test_generic_get_rejects_full_urls_and_parent_traversal():
     for path in ("https://other.example/api", "/Session/../config"):
-        with pytest.raises(SystemExit):
-            cli.main(["get", "mnt", path], client=FakeClient())
+        assert cli.main(["get", "mnt", path], client=FakeClient()) == 2
 
 
 def test_csv_and_select_produce_pipeline_friendly_output(capsys):
@@ -369,6 +397,43 @@ def test_hostname_is_resolved_for_secure_client_via_dataconnect(capsys):
     assert json.loads(capsys.readouterr().out)["mac"] == "AA:BB:CC:DD:EE:FF"
     assert client.calls[-1] == (
         "mnt", "/Session/MACAddress/AA:BB:CC:DD:EE:FF", "cli_secure_client")
+
+
+def test_mac_required_commands_reject_ambiguous_hostname_resolution():
+    class AmbiguousDataConnect(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            if "from endpoints_data" in sql.lower():
+                return [
+                    {"id": "id-1", "mac_address": "AA:BB:CC:DD:EE:01",
+                     "hostname": "duplicate"},
+                    {"id": "id-2", "mac_address": "AA:BB:CC:DD:EE:02",
+                     "hostname": "duplicate"},
+                ]
+            return super().query(sql, parameters)
+
+    client = FakeClient()
+    assert cli.main(["secure-client", "duplicate"], client=client,
+                    dataconnect=AmbiguousDataConnect()) == 2
+    assert not [call for call in client.calls if call[0] == "mnt"]
+
+
+def test_endpoint_resolution_preserves_dataconnect_failure_context():
+    class BrokenDataConnect(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            raise RuntimeError("shared pacing gate unavailable")
+
+    with pytest.raises(cli.CLIError, match="shared pacing gate unavailable"):
+        cli._resolve_endpoint(
+            FakeClient(), "client.example", dataconnect=BrokenDataConnect())
+
+
+def test_endpoint_fields_preserves_required_schema_failure_context():
+    class BrokenSchemaDataConnect(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            raise RuntimeError("ORA-01017 invalid credentials")
+
+    with pytest.raises(cli.CLIError, match="ORA-01017 invalid credentials"):
+        cli._endpoint_fields(BrokenSchemaDataConnect())
 
 
 def test_session_by_ip_uses_direct_mnt_ip_route(capsys):

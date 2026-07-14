@@ -252,7 +252,11 @@ def test_unverified_https_warning_is_suppressed_for_health_checks():
         status_code = 200
 
     class Session:
+        def __init__(self):
+            self.calls = []
+
         def get(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
             warnings.warn("unverified health request", InsecureRequestWarning)
             return Response()
 
@@ -260,6 +264,31 @@ def test_unverified_https_warning_is_suppressed_for_health_checks():
     client.mnt_session = Session()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        assert client.health_check() == {"pan": True, "mnt": True}
+        assert client.health_check() == {
+            "pan": {"reachable": True, "authenticated": True, "http_status": 200},
+            "mnt": {"reachable": True, "authenticated": True, "http_status": 200},
+        }
 
     assert not [item for item in caught if issubclass(item.category, InsecureRequestWarning)]
+    assert client.session.calls[0][0][0].endswith("/ers/config/networkdevice")
+    assert client.session.calls[0][1]["params"] == {"size": 1, "page": 1}
+    assert client.mnt_session.calls[0][0][0].endswith("/Session/ActiveCount")
+
+
+def test_health_check_does_not_report_auth_failure_as_healthy():
+    client = ISERestClient.__new__(ISERestClient)
+    client.host = "pan.example"
+    client.mnt_host = "mnt.example"
+    client.cfg = types.SimpleNamespace(ers_port=9060)
+
+    class Response:
+        status_code = 401
+
+    class Session:
+        def get(self, *args, **kwargs):
+            return Response()
+
+    client.session = Session()
+    client.mnt_session = Session()
+    expected = {"reachable": True, "authenticated": False, "http_status": 401}
+    assert client.health_check() == {"pan": expected, "mnt": expected}

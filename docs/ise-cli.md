@@ -86,11 +86,16 @@ Resolution uses Data Connect first for IP/hostname, then live MnT session data
 MAC is canonicalized as `AA:BB:CC:DD:EE:FF`
 before use with ERS or MnT.
 
+`resolve` reports `candidate_count` and `ambiguous` when an identifier maps to
+multiple inventory rows. Commands that require one MAC (`session`, `auth-status`,
+`secure-client`, and filtered reports) refuse an ambiguous hostname instead of
+silently choosing a different endpoint; rerun with the intended MAC or ERS ID.
+
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `health` | Check PAN/ERS and MnT reachability independently |
+| `health` | Check reachability and authentication independently for PAN/ERS, MnT, and configured Data Connect |
 | `nodes` | List deployment nodes from OpenAPI |
 | `nads` | List Network Access Devices from ERS |
 | `endpoints [[FIELD=]PATTERN ...]` | Search endpoints by inventory and recent context attributes |
@@ -175,11 +180,12 @@ with a qualified name such as `endpoint.endpoint-policy`,
 field names and distinct live values. If a view or column does not exist on the
 target ISE 3.3 Patch 11 deployment, it is not advertised.
 
-When Data Connect is unavailable, one bare endpoint-name pattern still falls back to
-the ERS server-side `EQ`, `STARTSW`, `ENDSW`, or `CONTAINS` filter. Attribute searches
-require Data Connect because ERS does not own authorization, accounting, or posture
-context. In a normal OS shell, quote wildcard arguments so the local shell does not
-expand them.
+Endpoint name and attribute searches require Data Connect. ISE 3.3 Patch 11's ERS
+endpoint collection rejects the `name` filter, and ERS does not own authorization,
+accounting, or posture context. Without Data Connect, `endpoints` still provides a
+bounded unfiltered ERS inventory and accepts explicitly supplied advanced filters
+that the appliance supports. In a normal OS shell, quote wildcard arguments so the
+local shell does not expand them.
 
 ## Examples
 
@@ -240,6 +246,12 @@ the same spirit as selecting properties from PowerCLI objects.
 The standalone scripts under `tools/curl_*` remain useful for comparing raw API
 responses with the normalized CLI output.
 
+`health` uses a one-row ERS request and MnT `Session/ActiveCount`, not an
+unauthenticated landing page or the expensive session list. Its `reachable` field
+distinguishes network routing from `authenticated`; `http_status` exposes rejected
+REST credentials without printing them. Data Connect-only installations can run
+`health` without configuring REST/MnT.
+
 ## System-wide installation
 
 `sudo ./deploy/install.sh` installs `/usr/local/bin/ise-cli` for every local user.
@@ -250,3 +262,8 @@ their own environment/`--env-file` or be explicitly added to the `ise-exporter`
 group when reuse of the service account configuration and shared pacing gate is
 intended. A user who cannot access the configured pacing gate is refused rather
 than allowed to issue an uncoordinated Data Connect query.
+
+On NixOS, put authorized users and the service in a dedicated operator group and
+pre-create the shared runtime pacing file as group-writable. Do not point the CLI
+at a `DynamicUser` state directory under `/var/lib/private`, which normal operator
+sessions cannot traverse.

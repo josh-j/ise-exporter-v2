@@ -287,6 +287,7 @@ DATACONNECT_REPORTS = {
 
 DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {
     "dataconnect-schema", "endpoint-fields", "endpoints"}
+REST_OPTIONAL_COMMANDS = DATACONNECT_COMMANDS | {"health", "schema"}
 
 ENDPOINT_CONTEXT_SOURCES = {
     "endpoint": {
@@ -616,24 +617,6 @@ def _params(items):
     return result
 
 
-def _glob_filter(field, pattern):
-    """Translate a simple operator glob into an ISE server-side filter."""
-    guidance = ("search supports NAME, PREFIX-*, *-SUFFIX, or *TEXT* "
-                "(advanced users can use --filter)")
-    if not pattern or "?" in pattern or pattern.count("*") > 2:
-        raise CLIError(guidance)
-    if pattern == "*":
-        return None
-    starts = pattern.startswith("*")
-    ends = pattern.endswith("*")
-    value = pattern.strip("*")
-    if "*" in value or not value:
-        raise CLIError(guidance)
-    operator = ("CONTAINS" if starts and ends else "ENDSW" if starts
-                else "STARTSW" if ends else "EQ")
-    return f"{field}.{operator}.{value}"
-
-
 def _ers_rows(client, path, *, limit=100, all_rows=False, filters=()):
     if limit < 1:
         raise CLIError("--limit must be at least 1")
@@ -763,6 +746,7 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None,
     resolved_ip = ""
     resolved_hostname = ""
     candidates = []
+    dataconnect_error = None
 
     if kind == "id":
         endpoint_id = original
@@ -786,7 +770,8 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None,
     else:
         try:
             dc_candidates = _dataconnect_endpoint_candidates(dataconnect, original, kind)
-        except Exception:
+        except Exception as error:
+            dataconnect_error = error
             dc_candidates = []
         candidates = dc_candidates
         if candidates:
@@ -808,8 +793,15 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None,
             if dc_candidates and endpoint is not candidate:
                 source = "dataconnect+ers"
         if not mac:
-            sessions = _sessions_for_identifier(
-                client, original, kind, allow_active_scan=allow_active_scan)
+            try:
+                sessions = _sessions_for_identifier(
+                    client, original, kind, allow_active_scan=allow_active_scan)
+            except CLIError as error:
+                if dataconnect_error is not None:
+                    raise CLIError(
+                        f"Data Connect endpoint resolution failed: {dataconnect_error}; "
+                        f"MnT fallback also failed: {error}") from dataconnect_error
+                raise
             mac = _session_mac(sessions[0]) if sessions else ""
         if not mac and kind == "hostname":
             try:
@@ -840,6 +832,10 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None,
             mac = normalize_mac(endpoint_mac)
         endpoint_id = endpoint_id or _field(endpoint, "id")
     if endpoint is None and not sessions:
+        if dataconnect_error is not None:
+            raise CLIError(
+                f"Data Connect endpoint resolution failed: {dataconnect_error}") \
+                from dataconnect_error
         raise CLIError(f"endpoint not found for {kind} {original!r}")
 
     return {
@@ -865,6 +861,10 @@ def _resolved_mac(client, identifier, dataconnect=None, *, allow_active_scan=Fal
     resolved = _resolve_endpoint(
         client, identifier, dataconnect=dataconnect,
         allow_active_scan=allow_active_scan)
+    if resolved["ambiguous"]:
+        raise CLIError(
+            f"{identifier!r} matches {resolved['candidate_count']} endpoint records; "
+            "run resolve to inspect them, then use an exact MAC address or ERS id")
     if not resolved["mac"]:
         raise CLIError(f"could not resolve {identifier!r} to a MAC address")
     return resolved["mac"]
@@ -928,7 +928,11 @@ def _endpoint_field_bindings(dataconnect):
     for source, spec in ENDPOINT_CONTEXT_SOURCES.items():
         try:
             schemas[source] = _dataconnect_table_columns(dataconnect, spec["table"])
-        except Exception:
+        except Exception as error:
+            if source == "endpoint":
+                raise CLIError(
+                    f"Data Connect schema lookup failed for {spec['table']}: {error}") \
+                    from error
             schemas[source] = {}
         if (source != "endpoint" and not _first_column(
                 schemas[source], *spec["mac"])):
@@ -1234,6 +1238,10 @@ def _dataconnect_report(args, client, dataconnect):
             matches = _dataconnect_endpoint_candidates(dataconnect, value, kind)
             if not matches:
                 raise CLIError(f"endpoint not found for hostname {value!r}")
+            if len(matches) > 1:
+                raise CLIError(
+                    f"hostname {value!r} matches {len(matches)} endpoint records; "
+                    "use an exact MAC address or ERS id")
             value = _field(matches[0], "mac_address", "mac")
             kind = "mac"
         elif kind == "id":
@@ -1358,14 +1366,10 @@ def _execute(args, client, cfg, dataconnect=None):
             return _dataconnect_endpoint_search(
                 dataconnect, criteria, args.limit, all_rows=args.all)
         if criteria:
-            if len(criteria) != 1 or criteria[0][0] != "name":
-                raise CLIError(
-                    "attribute searches require Data Connect; configure ISE_DATACONNECT_* "
-                    "or use one endpoint name pattern")
-            friendly_filter = _glob_filter("name", criteria[0][1])
-            filters = list(args.filter)
-            if friendly_filter:
-                filters.append(friendly_filter)
+            raise CLIError(
+                "endpoint name and attribute searches require Data Connect on ISE 3.3 "
+                "Patch 11 because its ERS endpoint collection rejects name filters; "
+                "configure ISE_DATACONNECT_* or list bounded ERS inventory without a pattern")
         else:
             filters = args.filter
         if client is None:
@@ -1373,15 +1377,27 @@ def _execute(args, client, cfg, dataconnect=None):
         return _ers_rows(client, ERS_INVENTORIES[command], limit=args.limit,
                          all_rows=args.all, filters=filters)
     if command == "health":
-        health = client.health_check()
-        result = [
-            {"service": "PAN/ERS", "host": cfg.ise_host, "reachable": health["pan"]},
-            {"service": "MnT", "host": cfg.ise_mnt_host, "reachable": health["mnt"]},
-        ]
+        result = []
+        if client is not None:
+            health = client.health_check()
+            for service, host, key in (
+                    ("PAN/ERS", cfg.ise_host, "pan"),
+                    ("MnT", cfg.ise_mnt_host, "mnt")):
+                status = health[key]
+                if isinstance(status, dict):
+                    result.append({"service": service, "host": host, **status})
+                else:
+                    # Compatibility for injected/test clients using the old bool shape.
+                    result.append({"service": service, "host": host,
+                                   "reachable": bool(status),
+                                   "authenticated": bool(status), "http_status": 0})
         dataconnect_reachable = _dataconnect_health(dataconnect)
         if dataconnect_reachable is not None:
             result.append({"service": "Data Connect", "host": cfg.dataconnect_host,
-                           "reachable": dataconnect_reachable})
+                           "reachable": dataconnect_reachable,
+                           "authenticated": dataconnect_reachable, "http_status": 0})
+        if not result:
+            raise CLIError("no REST/MnT or Data Connect credentials are configured")
         return result
     if command == "nodes":
         result = client.get_pan_api("/deployment/node", api_name="cli_nodes")
@@ -1407,6 +1423,8 @@ def _execute(args, client, cfg, dataconnect=None):
         return _dataconnect_schema(dataconnect, args.table)
     if command == "sessions":
         _require_expensive(args, cfg, "MnT ActiveList retrieval is disabled")
+        if args.limit < 1:
+            raise CLIError("--limit must be at least 1")
         rows = _mnt_sessions(client, "/Session/ActiveList", "cli_sessions")
         return rows if args.all else rows[:args.limit]
     if command == "endpoint":
@@ -1623,7 +1641,7 @@ class ISEShell(cmd.Cmd):
     def _runtime(self, command):
         if command == "schema":
             return
-        dataconnect_only = command in DATACONNECT_COMMANDS
+        dataconnect_only = command in REST_OPTIONAL_COMMANDS
         if self.cfg is None:
             self.cfg = _load_config(self.env_file, require_rest=not dataconnect_only)
         if self.client is None and _rest_ready(self.cfg):
@@ -2063,8 +2081,9 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdo
             shell.close()
     try:
         if client is None and args.command != "schema":
-            dataconnect_only = args.command in DATACONNECT_COMMANDS
-            cfg = _load_config(args.env_file, require_rest=not dataconnect_only)
+            dataconnect_only = args.command in REST_OPTIONAL_COMMANDS
+            if cfg is None:
+                cfg = _load_config(args.env_file, require_rest=not dataconnect_only)
             if _rest_ready(cfg):
                 client = ISEOperatorClient(cfg)
         elif cfg is None:
@@ -2076,7 +2095,8 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdo
         render(result, args.output, args.select, stream=stdout)
         return 0
     except CLIError as error:
-        parser.error(str(error))
+        print(f"ise-cli: error: {error}", file=sys.stderr)
+        return 2
     finally:
         if dataconnect is not None:
             dataconnect.close()

@@ -257,29 +257,38 @@ class ISERestClient:
         return {"total": 1 if detail else 0, "sessions": [detail] if detail else []}
 
     def health_check(self):
-        health = {"pan": False, "mnt": False}
+        def probe(session, url, *, params=None):
+            result = {"reachable": False, "authenticated": False, "http_status": 0}
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", InsecureRequestWarning)
+                    response = session.get(
+                        url, params=params, timeout=5, allow_redirects=False)
+                result["reachable"] = True
+                result["http_status"] = response.status_code
+                result["authenticated"] = 200 <= response.status_code < 400
+            except Exception as error:
+                logger.debug("health probe failed for %s: %s", url, error)
+            return result
+
+        health = {
+            "pan": {"reachable": False, "authenticated": False, "http_status": 0},
+            "mnt": {"reachable": False, "authenticated": False, "http_status": 0},
+        }
         if self.session is not None:
-            try:
-                # Health probes intentionally accept any non-5xx response as
-                # reachability. Keep explicitly disabled lab TLS from leaking an
-                # urllib3 warning into ise-cli's JSON/CSV output, just as _request
-                # does for normal API calls.
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", InsecureRequestWarning)
-                    r = self.session.get(f"https://{self.host}:{self.cfg.ers_port}/ers",
-                                         timeout=5, allow_redirects=False)
-                health["pan"] = r.status_code < 500
-            except Exception as e:
-                logger.debug("PAN health check failed: %s", e)
+            # A real one-row ERS resource request verifies both routing and the
+            # supplied credentials without enumerating inventory.
+            health["pan"] = probe(
+                self.session,
+                f"https://{self.host}:{self.cfg.ers_port}/ers/config/networkdevice",
+                params={"size": 1, "page": 1},
+            )
         if self.mnt_session is not None:
-            try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", InsecureRequestWarning)
-                    r = self.mnt_session.get(
-                        f"https://{self.mnt_host}/admin", timeout=5, allow_redirects=False)
-                health["mnt"] = r.status_code < 500
-            except Exception as e:
-                logger.debug("MnT health check failed: %s", e)
+            # ActiveCount is authenticated but does not return ActiveList rows.
+            health["mnt"] = probe(
+                self.mnt_session,
+                f"https://{self.mnt_host}/admin/API/mnt/Session/ActiveCount",
+            )
         return health
 
 
