@@ -27,6 +27,11 @@ contract is changed. The exporter uses supported remote interfaces only; it
 never requires SSH, an appliance shell, database-table access, or root access
 to ISE.
 
+The hostname, version, patch, service, listener, and certificate statements in
+this document were reconciled with the
+[2026-07-14 rooted-appliance snapshot](rooted-ise-ground-truth.md). Root evidence
+validates the lab environment; it is not an exporter interface.
+
 ## Three-boundary runtime
 
 ```text
@@ -107,6 +112,10 @@ topic consumer, or live-event overlay in the exporter runtime. Likely-active
 session counts are reconstructed from Data Connect accounting and therefore
 have the freshness and completeness of the records supplied by the NADs.
 Current active posture is the separate bounded MnT sample described above.
+The rooted appliance currently has pxGrid Direct running, but its port `8910`
+certificate still identifies the pre-rename host `ise01.ise.lab`. That confirms
+why appliance service health and usable client connectivity are different
+questions, and it does not justify adding pxGrid back to the exporter.
 
 ### MnT CLI diagnostics are separate
 

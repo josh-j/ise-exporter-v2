@@ -20,6 +20,9 @@ collector has its own metric families and never writes Data Connect history.
 Separate MnT commands in `ise-cli` and curl probes remain operator-initiated
 diagnostics. No ISE shell, SSH, root access, or Oracle Instant Client is required.
 See [architecture](docs/architecture.md) for ownership and failure semantics.
+The lab claims in this repository are cross-checked against the
+[current rooted-appliance snapshot](docs/rooted-ise-ground-truth.md); the
+exporter itself still uses supported remote interfaces only.
 
 ## ISE prerequisites
 
@@ -133,6 +136,7 @@ and recent authorization, location, accounting, error, and posture context;
 
 Additional references:
 
+- [Rooted ISE ground truth](docs/rooted-ise-ground-truth.md)
 - [Migration roadmap](docs/migration-pxgrid-removal.md)
 - [TACACS account attribution](docs/tacacs-account-attribution.md)
 - [CLI and schema probes](docs/ise-cli.md)

@@ -4,6 +4,11 @@
 selected MnT XML diagnostics. It provides a PowerCLI-like surface for discovery,
 troubleshooting, reporting, and automation without exposing write operations.
 
+For lab-specific appliance version, service, listener, and TLS facts, use the
+[rooted ISE ground-truth snapshot](rooted-ise-ground-truth.md). CLI output remains
+authoritative for the supported remote API or reporting query it actually runs;
+it must not be used to infer rooted process state.
+
 Running `ise-cli` without a subcommand enters an interactive shell. `?` lists
 commands, `help COMMAND` shows command-specific options, and `exit`, `quit`, or
 Ctrl-D leave the shell. Interactive history is retained in

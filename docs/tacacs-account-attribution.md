@@ -4,6 +4,11 @@ ISE's Device Admin policy OpenAPI returns cumulative `hitCounts` without a
 username. The exporter intentionally omits these misleading lifetime counters;
 account attribution comes from bounded Data Connect activity.
 
+The [rooted lab snapshot](rooted-ise-ground-truth.md) confirms that TACACS+ TCP
+`49` and Data Connect TCP `2484` are listening on the current appliance. Listener
+state does not establish account activity; the bounded Data Connect views below
+remain the reporting authority.
+
 ISE 3.3 exposes the required account evidence through the read-only Data Connect
 service on the MnT node. For production queries, use the performance-oriented
 two-day views:

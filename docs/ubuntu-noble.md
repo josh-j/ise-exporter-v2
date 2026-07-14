@@ -6,6 +6,11 @@ The deployment uses Ubuntu's standard `python3`, `python3-venv`,
 dependencies are isolated under `/opt/ise-exporter/.venv`; the installer never
 uses `sudo pip` or changes Ubuntu's externally managed system Python.
 
+The production host requirements below were reconciled with the lab's
+[rooted ISE snapshot](rooted-ise-ground-truth.md), including live listeners on
+Admin/OpenAPI HTTPS, MnT/ERS, and Data Connect TCPS. Root access to ISE is never
+required by the Ubuntu service.
+
 The `oracledb` dependency uses its pure network thin mode. TACACS and other Data
 Connect collectors therefore do not require Oracle Instant Client, an Oracle apt
 repository, a compiler, or database development headers.

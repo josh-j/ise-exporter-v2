@@ -2,6 +2,11 @@
 
 These dashboards target **Cisco ISE 3.3 Patch 11**. Their ownership boundaries match the exporter architecture:
 
+The lab version and active appliance services/listeners were independently
+checked against the [rooted ISE snapshot](../docs/rooted-ise-ground-truth.md).
+Dashboard values still come only from Prometheus; rooted state is validation
+evidence, not a hidden Grafana data source.
+
 - Data Connect owns bounded monitoring and reporting datasets: RADIUS, posture, endpoints, profiling, PSN performance, diagnostics, and TACACS activity.
 - REST/OpenAPI owns appliance and configuration state: deployment, certificates, licenses, backups, patches, network devices, and Device Administration configuration.
 - Exporter self-observability owns request, scrape, duration, freshness, and failure metrics.

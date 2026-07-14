@@ -1,7 +1,9 @@
 # Cisco ISE API Schemas
 
 This directory contains the OpenAPI schemas captured from the lab ISE node used
-for exporter development.
+for exporter development. The capture metadata below is intentionally
+historical. The same VM has since been renamed and moved; see the
+[current rooted-appliance snapshot](../rooted-ise-ground-truth.md).
 
 Capture source:
 
@@ -11,6 +13,15 @@ Capture source:
 - Patch: `11`
 - Captured at: `2026-07-11T15:11:02+02:00`
 - Index endpoint: `GET /api/swagger-resources`
+
+Current appliance identity verified at `2026-07-14T05:25:38Z`:
+
+- Host: `laba-ise-001` / `laba-ise-001.ise.lab`
+- Address: `10.200.30.10`
+- Cisco ISE version: `3.3.0.430`, Patch `11`
+
+The schema files remain the July 11 capture. Renaming or moving a node does not
+retroactively change an artifact's provenance.
 
 The raw resource index is in [`swagger-resources.json`](swagger-resources.json).
 Each group schema is stored under [`openapi/`](openapi/), with a machine-readable
@@ -60,10 +71,12 @@ From a host that can reach the lab ISE node and read the UI admin secret:
 
 ```sh
 pw=$(sudo cat /run/secrets/lab_ise_ui_admin_pw)
-curl -sk -u "admin:$pw" https://10.81.0.10/api/swagger-resources
-curl -sk -u "admin:$pw" --get \
+curl --fail --silent --show-error --cacert /path/to/ise-admin-ca.pem \
+  -u "admin:$pw" https://laba-ise-001.ise.lab/api/swagger-resources
+curl --fail --silent --show-error --cacert /path/to/ise-admin-ca.pem \
+  -u "admin:$pw" --get \
   --data-urlencode "group=Policy" \
-  https://10.81.0.10/api/v3/api-docs
+  https://laba-ise-001.ise.lab/api/v3/api-docs
 ```
 
 For a full refresh, iterate the `.name` values from `swagger-resources.json` and

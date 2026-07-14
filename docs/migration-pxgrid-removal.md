@@ -4,6 +4,11 @@ This checklist tracks the migration from overlapping ERS, MnT, and pxGrid
 collectors to the exact ISE 3.3.0.430 Patch 11 architecture documented in
 [`architecture.md`](architecture.md).
 
+The final boundaries were checked against the
+[current rooted appliance](rooted-ise-ground-truth.md). The appliance still runs
+pxGrid Direct, but that is deliberately separate from whether this exporter uses
+pxGrid; it does not.
+
 ## Compatibility contract
 
 - [x] Define `3.3.0.430` Patch `11` as the only supported Cisco ISE release.
