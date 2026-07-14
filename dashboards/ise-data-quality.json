@@ -183,7 +183,7 @@
       "title": "Disconnected ISE Nodes",
       "description": "Deployment nodes currently reporting a disconnected state.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 31},
-      "targets": [{"expr": "sum(ise_deployment_status == 2)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "sum(ise_deployment_status == bool 2)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []}
     },
     {

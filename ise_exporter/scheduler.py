@@ -33,7 +33,14 @@ logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
 
 _PERSISTED_DATACONNECT_METRICS = {
-    "dataconnect_radius": dataconnect_radius._METRICS,
+    # RADIUS collection mode is part of the operator-visible snapshot.  Without
+    # these gauges a restart restores the RADIUS data but leaves the Data Quality
+    # dashboard blank until the next (deliberately infrequent) database query.
+    "dataconnect_radius": dataconnect_radius._METRICS + (
+        metrics.ise_dataconnect_incremental_mode,
+        metrics.ise_dataconnect_incremental_window_seconds,
+        metrics.ise_dataconnect_reconciliation_age_seconds,
+    ),
     "dataconnect_performance": dataconnect_performance._METRICS,
     "dataconnect_posture": dataconnect_posture._METRICS,
     "dataconnect_endpoints": dataconnect_endpoints._METRICS,
@@ -112,6 +119,13 @@ class PollScheduler:
             metrics.ise_dataset_up.labels(dataset=name, source=source).set(0)
             metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(0)
             metrics.ise_collector_enabled.labels(collector=name).set(int(enabled))
+            if source == "dataconnect":
+                # The scheduler no longer adds a second load-derived delay on top
+                # of client statement pacing.  Publish the explicit zero at
+                # startup as well as after a query so restored datasets do not
+                # leave the load-safety panel with no series.
+                metrics.ise_dataconnect_load_backoff_seconds.labels(
+                    dataset=name).set(0)
 
     def _update_freshness(self, now):
         for name, (source, interval, enabled) in self.dataset_plan.items():

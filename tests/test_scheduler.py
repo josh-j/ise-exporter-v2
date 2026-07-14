@@ -262,6 +262,24 @@ def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
     assert queried == []
 
 
+def test_restart_contract_preserves_radius_incremental_telemetry():
+    families = scheduler_module._PERSISTED_DATACONNECT_METRICS[
+        "dataconnect_radius"]
+
+    assert metrics.ise_dataconnect_incremental_mode in families
+    assert metrics.ise_dataconnect_incremental_window_seconds in families
+    assert metrics.ise_dataconnect_reconciliation_age_seconds in families
+
+
+def test_dataconnect_load_backoff_exists_before_first_due_query():
+    scheduler = PollScheduler(_cfg(), object(), object())
+
+    for dataset, (source, _interval, _enabled) in scheduler.dataset_plan.items():
+        if source == "dataconnect":
+            assert metrics.ise_dataconnect_load_backoff_seconds.labels(
+                dataset=dataset)._value.get() == 0
+
+
 def test_stale_dataconnect_snapshot_is_not_restored(monkeypatch, tmp_path):
     registry = CollectorRegistry()
     persisted = Gauge("stale_persisted", "test", registry=registry)

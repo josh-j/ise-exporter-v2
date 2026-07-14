@@ -261,3 +261,10 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_dataconnect_reconciliation_age_seconds",
     ):
         assert metric in text
+
+
+def test_disconnected_node_stat_is_zero_when_all_nodes_are_healthy():
+    text = (DASHBOARDS / "ise-data-quality.json").read_text()
+
+    assert "sum(ise_deployment_status == bool 2)" in text
+    assert "sum(ise_deployment_status == 2)" not in text
