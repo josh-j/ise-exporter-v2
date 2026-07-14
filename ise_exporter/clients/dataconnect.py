@@ -39,11 +39,14 @@ _QUERY_VIEWS = (
 def _query_view(sql):
     """Return a bounded metric label; never put arbitrary SQL into Prometheus."""
     normalized = str(sql or "").lower()
+    # Schema validation embeds every reporting view name in an IN clause. Classify
+    # metadata access before scanning those literals or startup looks like a real
+    # query against whichever reporting view happens to appear first.
+    if "user_tab_columns" in normalized:
+        return "schema_metadata"
     for view in _QUERY_VIEWS:
         if view in normalized:
             return view
-    if "user_tab_columns" in normalized:
-        return "schema_metadata"
     return "other"
 
 

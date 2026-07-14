@@ -169,6 +169,17 @@ def test_schema_is_network_and_credential_free(capsys):
     assert schema["method"] == "GET"
 
 
+def test_health_schema_describes_authenticated_probe_paths_and_output(capsys):
+    assert cli.main(["schema", "health", "--output", "json"]) == 0
+    schema = json.loads(capsys.readouterr().out)
+    assert schema["paths"] == [
+        "/ers/config/networkdevice?size=1&page=1",
+        "/admin/API/mnt/Session/ActiveCount",
+    ]
+    assert schema["fields"] == [
+        "service", "host", "reachable", "authenticated", "http_status"]
+
+
 def test_health_reports_reachability_and_authentication(capsys):
     assert cli.main(["health", "-o", "json"], client=FakeClient()) == 0
     rows = json.loads(capsys.readouterr().out)

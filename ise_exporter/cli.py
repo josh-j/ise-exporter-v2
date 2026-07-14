@@ -41,7 +41,11 @@ COMMAND_SCHEMAS = {
     "health": {
         "api": "ERS + MnT + optional Data Connect",
         "host_env": ["ISE_HOST", "ISE_MNT_HOST", "ISE_DATACONNECT_HOST"],
-        "method": "GET + SELECT", "paths": ["/ers", "/admin"],
+        "method": "GET + SELECT", "paths": [
+            "/ers/config/networkdevice?size=1&page=1",
+            "/admin/API/mnt/Session/ActiveCount",
+        ],
+        "fields": ["service", "host", "reachable", "authenticated", "http_status"],
     },
     "endpoints": {
         "api": "Data Connect + ERS", "host_env": ["ISE_DATACONNECT_HOST", "ISE_HOST"],
@@ -433,7 +437,7 @@ def build_parser(*, require_command=False):
             "--allow-active-list-scan", action="store_true",
             help="allow MnT ActiveList fallback when direct endpoint resolution fails")
 
-    command("health", "check PAN/ERS, MnT, and configured Data Connect reachability")
+    command("health", "check PAN/ERS, MnT, and Data Connect reachability and authentication")
     command("nodes", "list deployment nodes")
 
     for name, help_text in (

@@ -94,6 +94,17 @@ def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
     assert dataconnect._query_view("SELECT * FROM arbitrary_table") == "other"
 
 
+def test_schema_validation_is_not_mislabeled_as_reporting_activity():
+    sql = """
+        SELECT table_name, column_name
+        FROM user_tab_columns
+        WHERE table_name IN ('TACACS_AUTHENTICATION_LAST_TWO_DAYS',
+                             'RADIUS_AUTHENTICATIONS')
+    """
+
+    assert dataconnect._query_view(sql) == "schema_metadata"
+
+
 def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path):
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: Connection())
     monotonic = [0.0]
