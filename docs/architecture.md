@@ -122,8 +122,11 @@ active-posture dataset runs on its own non-overlapping lane. Long adaptive coold
 and paced endpoint-detail cycles therefore cannot delay REST/OpenAPI health or each
 other. Service shutdown interrupts pending query and detail pacing waits instead of
 waiting for their full deadlines. Cold starts prioritize the bounded active-session,
-performance, and NAD-health datasets before historical reporting; duplicate due
-events are coalesced while a domain is queued or running.
+performance, and NAD-health datasets before historical reporting. The queue keeps
+that priority after startup as domains become due again, so daily endpoint inventory
+and the multi-view freshness probe cannot strand current operational data behind a
+long low-duty-cycle backlog. Duplicate due events are coalesced while a domain is
+queued or running; priority never introduces concurrent database statements.
 The REST-owned network-device collector passes its latest successful in-memory
 inventory to NAD activity correlation. The Data Connect worker never performs an
 ERS request, never repeats the NAD enumeration, and refuses to publish NAD health

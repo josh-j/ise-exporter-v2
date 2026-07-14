@@ -230,6 +230,43 @@ def test_dataconnect_worker_serializes_domains_and_deduplicates_queued_runs():
     scheduler._stop_dataconnect_worker()
 
 
+def test_dataconnect_backlog_prioritizes_operational_domains():
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    shutdown = threading.Event()
+    first_started = threading.Event()
+    release_first = threading.Event()
+    order = []
+    scheduler._start_dataconnect_worker(shutdown)
+
+    def run(name, *, block=False):
+        def callback():
+            with collectors.observe(name):
+                order.append(name)
+                if block:
+                    first_started.set()
+                    assert release_first.wait(1)
+        return callback
+
+    # Hold the worker so the following two jobs are definitely both queued.
+    scheduler._run_dataconnect(
+        "dataconnect_endpoints", 86400,
+        run("dataconnect_endpoints", block=True))
+    assert first_started.wait(1)
+    scheduler._run_dataconnect(
+        "dataconnect_freshness", 43200, run("dataconnect_freshness"))
+    scheduler._run_dataconnect(
+        "dataconnect_performance", 3600, run("dataconnect_performance"))
+
+    release_first.set()
+    scheduler._dataconnect_queue.join()
+
+    assert order == [
+        "dataconnect_endpoints", "dataconnect_performance", "dataconnect_freshness"]
+    shutdown.set()
+    scheduler._stop_dataconnect_worker()
+
+
 def test_paced_mnt_lane_does_not_block_rest_and_deduplicates_cycles():
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, request_timeout=1), object(), object(), mnt=object())

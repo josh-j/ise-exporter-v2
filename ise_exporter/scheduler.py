@@ -5,6 +5,7 @@ monitoring/reporting datasets; MnT owns one bounded current-session posture
 snapshot. There is no runtime source fallback and no collector reads another
 collector's metrics to decide ownership.
 """
+import itertools
 import logging
 import math
 import queue
@@ -34,6 +35,21 @@ from .collectors.dataconnect_common import event_window_hours
 
 logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
+
+# Lower values run first whenever more than one due domain is waiting. This does
+# not add query concurrency or preempt an atomic collector; it prevents daily
+# inventory/freshness work from keeping current operational health behind a cold-
+# start backlog under a deliberately low Data Connect duty-cycle ceiling.
+_DATACONNECT_PRIORITY = {
+    "dataconnect_radius_active": 0,
+    "dataconnect_performance": 1,
+    "dataconnect_nad_health": 2,
+    "dataconnect_radius": 3,
+    "tacacs_activity": 4,
+    "dataconnect_posture": 5,
+    "dataconnect_endpoints": 6,
+    "dataconnect_freshness": 7,
+}
 
 _PERSISTED_DATACONNECT_METRICS = {
     "dataconnect_radius": dataconnect_radius._REPORTING_METRICS,
@@ -67,7 +83,8 @@ class PollScheduler:
         self.next_run = {}
         self.last_success = {}
         self._dataconnect_async = False
-        self._dataconnect_queue = queue.Queue()
+        self._dataconnect_queue = queue.PriorityQueue()
+        self._dataconnect_sequence = itertools.count()
         self._dataconnect_inflight = set()
         self._dataconnect_queued_at = {}
         self._dataconnect_busy = False
@@ -293,7 +310,10 @@ class PollScheduler:
                 return
             self._dataconnect_inflight.add(name)
             self._dataconnect_queued_at[name] = now
-            self._dataconnect_queue.put((name, tier, callback))
+            self._dataconnect_queue.put((
+                _DATACONNECT_PRIORITY.get(name, 100),
+                next(self._dataconnect_sequence), name, tier, callback,
+            ))
             self._publish_worker_state(now)
 
     def _publish_worker_state(self, now=None):
@@ -311,9 +331,9 @@ class PollScheduler:
         while True:
             item = self._dataconnect_queue.get()
             try:
-                if item is None:
+                _priority, _sequence, name, tier, callback = item
+                if name is None:
                     return
-                name, tier, callback = item
                 with self._dataconnect_lock:
                     self._dataconnect_queued_at.pop(name, None)
                     if self._shutdown is not None and self._shutdown.is_set():
@@ -351,7 +371,8 @@ class PollScheduler:
         if not self._dataconnect_async:
             return
         self._dataconnect_async = False
-        self._dataconnect_queue.put(None)
+        self._dataconnect_queue.put((
+            -1, next(self._dataconnect_sequence), None, None, None))
         if self._dataconnect_worker is not None:
             timeout = max(2, int(getattr(self.cfg, "dataconnect_query_timeout", 15)) + 2)
             self._dataconnect_worker.join(timeout=timeout)
