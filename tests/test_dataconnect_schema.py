@@ -56,6 +56,14 @@ def test_contract_requires_columns_used_unconditionally_by_latest_session_querie
         VIEW_CONTRACTS["POSTURE_ASSESSMENT_BY_ENDPOINT"].required
 
 
+def test_contract_requires_columns_used_unconditionally_by_endpoint_queries():
+    assert {
+        "ENDPOINT_ID", "ENDPOINT_IP", "HOSTNAME", "ENDPOINT_POLICY", "IDENTITY_GROUP_ID",
+        "POSTURE_APPLICABLE", "CUSTOM_ATTRIBUTES", "PORTAL_USER", "MDM_GUID",
+        "NATIVE_UDID", "UPDATE_TIME",
+    } <= VIEW_CONTRACTS["ENDPOINTS_DATA"].required
+
+
 def test_validate_schema_reports_missing_views_and_columns():
     rows = _contract_rows()
     rows = [row for row in rows

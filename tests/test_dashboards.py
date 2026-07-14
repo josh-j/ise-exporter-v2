@@ -384,6 +384,17 @@ def test_unknown_endpoint_profile_stat_uses_exact_inventory_total():
     assert "ise_dataconnect_endpoints_by_profile" not in expression
 
 
+def test_endpoint_dashboard_exposes_dataconnect_field_coverage():
+    dashboard = json.loads((DASHBOARDS / "ise-endpoints-devices.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 12)
+    expression = panel["targets"][0]["expr"]
+
+    assert "ise_dataconnect_endpoint_field_coverage_ratio" in expression
+    assert 'dataset="dataconnect_endpoints"' in expression
+    assert "ise_dataset_up" in expression
+    assert panel["fieldConfig"]["defaults"]["unit"] == "percentunit"
+
+
 def test_psn_diagnostic_headline_uses_exact_total_not_topk_breakdown():
     dashboard = json.loads((DASHBOARDS / "ise-psn-troubleshooting.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 4)
