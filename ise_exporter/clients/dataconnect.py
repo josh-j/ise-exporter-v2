@@ -173,11 +173,14 @@ class DataConnectClient:
         remaining = self._next_query_at - time.monotonic()
         if remaining > 0:
             time.sleep(remaining)
-        shared_gate = self._shared_gate()
-        started = time.monotonic()
+        attempt_started = time.monotonic()
+        shared_gate = None
+        started = None
         view = _query_view(sql)
         result = "error"
         try:
+            shared_gate = self._shared_gate()
+            started = time.monotonic()
             for attempt in range(2):
                 try:
                     with self.connect().cursor() as cursor:
@@ -203,15 +206,31 @@ class DataConnectClient:
                     raise
         finally:
             finished = time.monotonic()
-            duration = max(0.0, finished - started)
-            metrics.ise_dataconnect_queries_total.labels(view=view, result=result).inc()
-            metrics.ise_dataconnect_query_duration_seconds.labels(
-                view=view, result=result).observe(duration)
+            duration = max(0.0, finished - (
+                started if started is not None else attempt_started))
             duty_cycle_cooldown = duration * (100 / self.max_duty_cycle - 1)
             cooldown = max(self.min_query_interval, duty_cycle_cooldown)
             metrics.ise_dataconnect_query_cooldown_seconds.labels(view=view).set(cooldown)
             self._next_query_at = finished + cooldown
-            self._release_shared_gate(shared_gate, time.time() + cooldown)
+            query_failed = result == "error"
+            try:
+                self._release_shared_gate(shared_gate, time.time() + cooldown)
+            except Exception:
+                # A failed release means the cross-process safety deadline was
+                # not durably published. Do not report an otherwise successful
+                # database query as healthy. Preserve an existing query error,
+                # which is more useful than masking it with cleanup failure.
+                result = "error"
+                if query_failed:
+                    logger.exception(
+                        "Data Connect shared pacing gate release also failed")
+                else:
+                    raise
+            finally:
+                metrics.ise_dataconnect_queries_total.labels(
+                    view=view, result=result).inc()
+                metrics.ise_dataconnect_query_duration_seconds.labels(
+                    view=view, result=result).observe(duration)
 
     def close(self):
         if self._connection is not None:

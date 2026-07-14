@@ -65,7 +65,7 @@ def test_query_uses_tcps_and_returns_lowercase_mappings(monkeypatch):
 def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
     connection = Connection()
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
-    clock = iter((0.0, 0.0, 0.0, 0.1, 0.2, 0.35, 0.4))
+    clock = iter((0.0, 0.0, 0.0, 0.0, 0.1, 0.2, 0.35, 0.4, 0.45))
     monkeypatch.setattr(dataconnect.time, "monotonic", lambda: next(clock))
     sleeps = []
     monkeypatch.setattr(dataconnect.time, "sleep", sleeps.append)
@@ -135,6 +135,62 @@ def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path
     assert len(sleeps) == 1
     assert sleeps[0] > 0
     assert (tmp_path / "dataconnect.pacing").stat().st_mode & 0o777 == 0o660
+
+
+def test_shared_pacing_gate_acquisition_failure_is_counted(monkeypatch):
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_min_query_interval_ms=500,
+        dataconnect_shared_pacing_file="/unavailable/dataconnect.pacing",
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(
+        client, "_shared_gate", lambda: (_ for _ in ()).throw(
+            RuntimeError("shared pacing gate unavailable")))
+    counter = metrics.ise_dataconnect_queries_total.labels(
+        view="radius_authentications", result="error")
+    before = counter._value.get()
+
+    with pytest.raises(RuntimeError, match="shared pacing gate unavailable"):
+        client.query("SELECT username FROM radius_authentications")
+
+    assert counter._value.get() == before + 1
+    assert client._connection is None
+    assert client._next_query_at > 0
+
+
+def test_shared_pacing_gate_release_failure_marks_query_error(monkeypatch):
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: Connection())
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_min_query_interval_ms=500,
+        dataconnect_shared_pacing_file="/tmp/dataconnect.pacing",
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(client, "_shared_gate", lambda: 123)
+    monkeypatch.setattr(
+        client, "_release_shared_gate", lambda *_: (_ for _ in ()).throw(
+            OSError("pacing deadline write failed")))
+    success = metrics.ise_dataconnect_queries_total.labels(
+        view="radius_authentications", result="success")
+    errors = metrics.ise_dataconnect_queries_total.labels(
+        view="radius_authentications", result="error")
+    success_before = success._value.get()
+    errors_before = errors._value.get()
+
+    with pytest.raises(OSError, match="pacing deadline write failed"):
+        client.query("SELECT username FROM radius_authentications")
+
+    assert success._value.get() == success_before
+    assert errors._value.get() == errors_before + 1
 
 
 def test_connection_backoff_protects_dataconnect_account(monkeypatch):
