@@ -18,7 +18,9 @@ from pathlib import Path
 import re
 import shlex
 import socket
+import stat
 import sys
+import tempfile
 import time
 
 from dotenv import load_dotenv
@@ -1786,15 +1788,56 @@ class ISEShell(cmd.Cmd):
             import readline
             history = Path(os.environ.get(
                 "ISE_CLI_HISTORY", Path.home() / ".local/state/ise-cli/history"))
-            history.parent.mkdir(parents=True, exist_ok=True)
+            history.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            self._validate_history_file(history)
             if history.exists():
                 readline.read_history_file(history)
+                history.chmod(0o600)
             readline.set_history_length(1000)
             readline.parse_and_bind("set show-all-if-ambiguous on")
             readline.parse_and_bind("set completion-ignore-case on")
-            atexit.register(readline.write_history_file, history)
+            atexit.register(self._write_history, readline, history)
         except (ImportError, OSError):
             pass
+
+    @staticmethod
+    def _validate_history_file(history):
+        try:
+            metadata = history.lstat()
+        except FileNotFoundError:
+            return
+        if (not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()):
+            raise OSError("CLI history must be a user-owned regular file")
+
+    @classmethod
+    def _write_history(cls, readline, history):
+        temporary = None
+        try:
+            cls._validate_history_file(history)
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=".ise-cli-history.", dir=history.parent)
+            temporary = Path(temporary_name)
+            try:
+                os.fchmod(descriptor, 0o600)
+            finally:
+                os.close(descriptor)
+            readline.write_history_file(temporary)
+            temporary.chmod(0o600)
+            os.replace(temporary, history)
+            temporary = None
+            cls._validate_history_file(history)
+            history.chmod(0o600)
+        except OSError:
+            # History is a convenience. Never turn shell exit into a failure or
+            # follow a path whose ownership/type changed during the session.
+            return
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass
 
     def _runtime(self, command):
         if command == "schema":

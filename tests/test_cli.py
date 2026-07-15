@@ -721,6 +721,28 @@ def test_shell_close_releases_dataconnect_and_rest_clients():
     assert closed == ["dataconnect", "rest"]
 
 
+def test_cli_history_refuses_symlinks_and_enforces_private_mode(tmp_path):
+    history = tmp_path / "history"
+    target = tmp_path / "target"
+    target.write_text("must-not-overwrite")
+    history.symlink_to(target)
+
+    with pytest.raises(OSError, match="user-owned regular file"):
+        cli.ISEShell._validate_history_file(history)
+
+    history.unlink()
+
+    class Readline:
+        def write_history_file(self, path):
+            path.write_text("endpoint AA:BB:CC:DD:EE:FF")
+            path.chmod(0o666)
+
+    cli.ISEShell._write_history(Readline(), history)
+
+    assert history.read_text() == "endpoint AA:BB:CC:DD:EE:FF"
+    assert history.stat().st_mode & 0o777 == 0o600
+
+
 def test_repl_recovers_from_parse_error_and_runs_next_command():
     stdin = io.StringIO("not-a-command\nschema health -o json\nexit\n")
     stdout = io.StringIO()

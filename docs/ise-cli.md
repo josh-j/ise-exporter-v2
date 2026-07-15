@@ -13,6 +13,9 @@ Running `ise-cli` without a subcommand enters an interactive shell. `?` lists
 commands, `help COMMAND` shows command-specific options, and `exit`, `quit`, or
 Ctrl-D leave the shell. Interactive history is retained in
 `~/.local/state/ise-cli/history` (override with `ISE_CLI_HISTORY`).
+The history file is accepted only when it is a regular file owned by the current
+user, is forced to mode `0600` after every write, and is disabled rather than
+following a symlink or writing through a changed path.
 
 Tab completion is context-aware. It completes commands, valid options, enum values,
 output/select fields, generic GET families and known paths, and Data Connect view
