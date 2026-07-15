@@ -303,6 +303,8 @@ class DataConnectClient:
                 view=view, result="error").inc()
             metrics.ise_dataconnect_query_duration_seconds.labels(
                 view=view, result="error").observe(duration)
+            metrics.ise_dataconnect_query_last_duration_seconds.labels(
+                view=view, result="error").set(duration)
             raise
         if shared_gate is _PACING_BUSY:
             return None
@@ -375,6 +377,8 @@ class DataConnectClient:
                     view=view, result=result).inc()
                 metrics.ise_dataconnect_query_duration_seconds.labels(
                     view=view, result=result).observe(duration)
+                metrics.ise_dataconnect_query_last_duration_seconds.labels(
+                    view=view, result=result).set(duration)
 
     def query_if_ready(self, sql, parameters=None):
         """Issue a statement only when the production pacing gate is ready now.

@@ -447,6 +447,28 @@ def test_dashboard_selectors_reference_real_metric_labels():
     assert not invalid, "dashboard selectors reference unknown labels: " + ", ".join(invalid)
 
 
+def test_dashboard_grouping_references_real_metric_labels():
+    labels_by_metric = _exported_metric_labels()
+    invalid = []
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        for panel in _panels(dashboard.get("panels", [])):
+            for target in panel.get("targets", []):
+                expression = target.get("expr", "")
+                referenced = set(re.findall(
+                    r"\bise_[a-zA-Z0-9_]+\b", expression))
+                available = set().union(
+                    *(labels_by_metric.get(metric, set()) for metric in referenced))
+                for raw in re.findall(
+                        r"\b(?:by|without)\s*\(([^()]*)\)", expression):
+                    grouped = {label.strip() for label in raw.split(",") if label.strip()}
+                    for label in sorted(grouped - available):
+                        invalid.append(
+                            f"{path.name}: panel {panel.get('id')}: {label}")
+
+    assert not invalid, "dashboard grouping references unknown labels: " + ", ".join(invalid)
+
+
 def test_data_quality_dashboard_exposes_collection_and_source_freshness():
     text = (DASHBOARDS / "ise-data-quality.json").read_text()
     for metric in (
@@ -469,6 +491,7 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_tacacs_internal_user_inventory_truncated",
         "ise_dataconnect_worker_busy",
         "ise_dataconnect_queue_depth",
+        "ise_dataconnect_query_last_duration_seconds",
         "ise_dataconnect_oldest_queued_seconds",
         "ise_mnt_worker_busy",
         "ise_mnt_session_list_preflight_count",
@@ -627,6 +650,18 @@ def test_disconnected_node_stat_is_zero_when_all_nodes_are_healthy():
             in text)
     assert "sum(ise_deployment_status == bool 2)" not in text
     assert "sum(ise_deployment_status == 2)" not in text
+
+
+def test_data_quality_query_duration_survives_sparse_production_cadence():
+    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 24)
+    target = panel["targets"][0]
+
+    assert panel["type"] == "bargauge"
+    assert panel["title"] == "Latest Data Connect Query Duration"
+    assert target["expr"] == "ise_dataconnect_query_last_duration_seconds"
+    assert target["instant"] is True
+    assert "histogram_quantile" not in target["expr"]
 
 
 def test_overview_freshness_uses_each_datasets_published_effective_interval():

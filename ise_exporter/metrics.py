@@ -493,6 +493,10 @@ ise_dataconnect_query_duration_seconds = Histogram(
     "ise_dataconnect_query_duration_seconds",
     "Data Connect statement duration by fixed reporting view and result",
     ["view", "result"], buckets=[0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30])
+ise_dataconnect_query_last_duration_seconds = Gauge(
+    "ise_dataconnect_query_last_duration_seconds",
+    "Duration of the latest completed Data Connect statement",
+    ["view", "result"])
 ise_dataconnect_query_rows = Gauge(
     "ise_dataconnect_query_rows",
     "Rows returned by the latest Data Connect statement for a fixed reporting view",

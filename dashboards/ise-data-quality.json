@@ -320,11 +320,11 @@
     },
     {
       "id": 24,
-      "type": "timeseries",
-      "title": "Data Connect Query p95 Duration",
-      "description": "Statement latency by reporting view; compare with the 15-second hard timeout.",
+      "type": "bargauge",
+      "title": "Latest Data Connect Query Duration",
+      "description": "Latest completed statement latency by reporting view. This remains visible across the intentionally sparse production cadence; use the histogram metric for long-range percentile analysis.",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 63},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, view) (rate(ise_dataconnect_query_duration_seconds_bucket{result=\"success\"}[15m])))", "legendFormat": "{{view}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_dataconnect_query_last_duration_seconds", "instant": true, "legendFormat": "{{view}} / {{result}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
     },
     {

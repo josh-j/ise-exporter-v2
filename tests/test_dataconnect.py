@@ -100,6 +100,8 @@ def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
         view="radius_authentications")._value.get() == 1
     assert metrics.ise_dataconnect_query_cooldown_seconds.labels(
         view="radius_authentications")._value.get() == pytest.approx(49.95)
+    assert metrics.ise_dataconnect_query_last_duration_seconds.labels(
+        view="radius_authentications", result="success")._value.get() == pytest.approx(0.05)
     assert dataconnect._query_view("SELECT * FROM arbitrary_table") == "other"
 
 
