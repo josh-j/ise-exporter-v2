@@ -66,7 +66,7 @@
       "id": 91,
       "type": "stat",
       "title": "Dataset Collection Age",
-      "description": "Seconds since the last successful snapshot replacement; thresholds are based on this dataset cadence.",
+      "description": "Seconds since the last successful PSN snapshot replacement. Yellow after one missed 15-minute cycle; red after two.",
       "gridPos": {
         "h": 4,
         "w": 16,
@@ -96,11 +96,11 @@
               },
               {
                 "color": "yellow",
-                "value": 5400
+                "value": 1350
               },
               {
                 "color": "red",
-                "value": 7200
+                "value": 1800
               }
             ]
           }
@@ -619,7 +619,7 @@
       ]
     }
   ],
-  "refresh": "5m",
+  "refresh": "1m",
   "schemaVersion": 39,
   "tags": [
     "ise",

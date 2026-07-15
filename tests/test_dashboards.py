@@ -699,7 +699,7 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
             (129600, 172800),
         ("ise-endpoints-devices.json", "Dataset Collection Age"):
             (129600, 172800),
-        ("ise-psn-troubleshooting.json", "Dataset Collection Age"): (5400, 7200),
+        ("ise-psn-troubleshooting.json", "Dataset Collection Age"): (1350, 1800),
         ("ise-secureclient.json", "Active Snapshot Age (MnT)"): (1350, 1800),
         ("ise-secureclient.json", "Historical Snapshot Age (Data Connect)"):
             (32400, 43200),
@@ -712,6 +712,12 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
         panel = _panel(dashboard, title)
         steps = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
         assert tuple(step["value"] for step in steps[1:]) == thresholds
+
+
+def test_psn_troubleshooting_refresh_matches_prometheus_scrape_cadence():
+    dashboard = _dashboard("ise-psn-troubleshooting.json")
+
+    assert dashboard["refresh"] == "1m"
 
 
 def test_exporter_health_domain_panels_do_not_publish_stale_values_during_outages():
