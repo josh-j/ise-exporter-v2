@@ -132,8 +132,8 @@ class Config:
     # deployment rather than assuming the secondary MnT absorbs every query.
     dataconnect_query_timeout: int = 15
     dataconnect_max_groups: int = 1000
-    dataconnect_min_query_interval_ms: int = 2000
-    dataconnect_max_duty_cycle_percent: float = 0.5
+    dataconnect_min_query_interval_ms: int = 5000
+    dataconnect_max_duty_cycle_percent: float = 0.1
     dataconnect_event_window_hours: int = 24
     dataconnect_radius_interval: int = 86400
     dataconnect_radius_active_interval: int = 1800
@@ -228,9 +228,9 @@ class Config:
             dataconnect_max_groups=_bounded_i(
                 "ISE_DATACONNECT_MAX_GROUPS", 1000, 1, 1000),
             dataconnect_min_query_interval_ms=_bounded_i(
-                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 2000, 2000),
+                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 5000, 5000),
             dataconnect_max_duty_cycle_percent=_bounded_f(
-                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.5, 0.1, 0.5),
+                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.1, 0.1, 0.1),
             dataconnect_event_window_hours=_bounded_i(
                 "ISE_DATACONNECT_EVENT_WINDOW_HOURS", 24, 1, 24),
             dataconnect_radius_interval=_bounded_i(

@@ -110,12 +110,12 @@ ISE_DATACONNECT_USER=dataconnect
 ISE_DATACONNECT_PASSWORD=use-a-secret-store
 ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-dataconnect-ca.pem
 ISE_DATACONNECT_SSL_VERIFY=true
-ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS=2000
-ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT=0.5
+ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS=5000
+ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT=0.1
 ISE_DATACONNECT_SHARED_PACING_FILE=/var/lib/ise-exporter/dataconnect.pacing
 ```
 
-Two seconds between statements, a 0.5% duty cycle, and 1,000 grouped results are
+Five seconds between statements, a 0.1% duty cycle, and 1,000 grouped results are
 hard maximum-pressure boundaries. Environment overrides may make collection more
 conservative, but the exporter and `ise-cli` clamp attempts to make it more
 aggressive. This applies even when the configured Data Connect host is a secondary

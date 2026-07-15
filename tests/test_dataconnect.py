@@ -94,12 +94,12 @@ def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
     client.query("SELECT username FROM radius_authentications")
     client.query("SELECT username FROM radius_authentications")
 
-    assert sleeps == [pytest.approx(19.8)]
+    assert sleeps == [pytest.approx(99.8)]
     assert counter._value.get() == before + 2
     assert metrics.ise_dataconnect_query_rows.labels(
         view="radius_authentications")._value.get() == 1
     assert metrics.ise_dataconnect_query_cooldown_seconds.labels(
-        view="radius_authentications")._value.get() == pytest.approx(9.95)
+        view="radius_authentications")._value.get() == pytest.approx(49.95)
     assert dataconnect._query_view("SELECT * FROM arbitrary_table") == "other"
 
 
@@ -116,8 +116,8 @@ def test_client_cannot_relax_production_pressure_invariants():
 
     client = dataconnect.DataConnectClient(cfg)
 
-    assert client.min_query_interval == 2.0
-    assert client.max_duty_cycle == 0.5
+    assert client.max_duty_cycle == 0.1
+    assert client.min_query_interval == 5.0
 
 
 def test_schema_validation_is_not_mislabeled_as_reporting_activity():

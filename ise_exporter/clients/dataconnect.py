@@ -126,9 +126,9 @@ class DataConnectClient:
         # CLI/tests/extensions can construct a client from another config object;
         # none may silently relax the production database-pressure ceiling.
         self.min_query_interval = max(
-            2.0, getattr(cfg, "dataconnect_min_query_interval_ms", 2000) / 1000.0)
-        self.max_duty_cycle = max(0.1, min(0.5, float(getattr(
-            cfg, "dataconnect_max_duty_cycle_percent", 0.5))))
+            5.0, getattr(cfg, "dataconnect_min_query_interval_ms", 5000) / 1000.0)
+        self.max_duty_cycle = max(0.1, min(0.1, float(getattr(
+            cfg, "dataconnect_max_duty_cycle_percent", 0.1))))
         self.shared_pacing_file = str(getattr(
             cfg, "dataconnect_shared_pacing_file", "") or "")
         self._connection = None
