@@ -49,9 +49,9 @@ def test_collects_bounded_presence_and_newest_event_for_every_timestamped_view(
     assert sql.count("UNION ALL") == len(timestamped) - 1
     assert sql.count("FETCH FIRST 1 ROWS ONLY") == len(timestamped)
     assert sql.count("DESC NULLS LAST") == len(timestamped)
-    assert sql.count("EPOCH_TIME >= 1999913600") == 3
+    assert sql.count("EPOCH_TIME >= 1999978400") == 3
     assert "INTERVAL '2' DAY" not in sql
-    assert sql.count("NUMTODSINTERVAL(24, 'HOUR')") == len(timestamped) - 3
+    assert sql.count("NUMTODSINTERVAL(6, 'HOUR')") == len(timestamped) - 3
     assert "COUNT(" not in sql and "MIN(" not in sql and "MAX(" not in sql
 
     rows = _rows(metrics.ise_dataconnect_view_has_rows)

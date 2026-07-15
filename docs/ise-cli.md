@@ -153,7 +153,7 @@ ise> endpoints '*LAPTOP*' --allow-expensive
 ```
 
 Searches run in Data Connect with bound values, a default 100-row limit, and the
-configured bounded event window (at most 24 hours) for context views. They correlate context records to
+configured bounded event window (at most six hours) for context views. They correlate context records to
 `ENDPOINTS_DATA` by ISE's native MAC key and return every text, numeric, and timestamp
 endpoint inventory column made available by the live schema. Results also include
 `matched_context`, containing the actual authorization policy, location, posture,

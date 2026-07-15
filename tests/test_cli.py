@@ -570,7 +570,7 @@ def test_dataconnect_report_is_bounded_and_filters_normalized_mac(capsys):
     assert json.loads(capsys.readouterr().out)[0]["username"] == "alice"
     report_sql, parameters = dataconnect.calls[-1]
     assert "FETCH FIRST 5 ROWS ONLY" in report_sql
-    assert "NUMTODSINTERVAL(24, 'HOUR')" in report_sql
+    assert "NUMTODSINTERVAL(6, 'HOUR')" in report_sql
     assert "CALLING_STATION_ID = :endpoint_identifier" in report_sql
     assert parameters["endpoint_identifier"] == "AA:BB:CC:DD:EE:FF"
 
@@ -791,7 +791,7 @@ def test_endpoint_context_search_joins_schema_discovered_sources(capsys):
     assert "REPLACE(e.MAC_ADDRESS" not in sql
     assert "LOWER(SUBSTR(m0.match_mac, 1, 2)" in sql
     assert "FETCH FIRST 25 ROWS ONLY" in sql
-    assert "NUMTODSINTERVAL(24, 'HOUR')" in sql
+    assert "NUMTODSINTERVAL(6, 'HOUR')" in sql
     assert set(parameters.values()) == {"LAB-%", "PERMIT%", "BERLIN-%", "WINDOWS%"}
     schema_queries = [sql for sql, _parameters in dataconnect.calls
                       if "FROM user_tab_columns" in sql]

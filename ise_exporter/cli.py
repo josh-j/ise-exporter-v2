@@ -1169,7 +1169,7 @@ def _normalize_endpoint_payloads(rows):
 
 
 def _dataconnect_endpoint_search(
-        dataconnect, criteria, limit, all_rows=False, window_hours=24):
+        dataconnect, criteria, limit, all_rows=False, window_hours=6):
     if limit < 1 or limit > 5000:
         raise CLIError("--limit must be between 1 and 5000")
     bindings, _rows, schemas = _endpoint_field_bindings(dataconnect)
@@ -1359,10 +1359,10 @@ def _dataconnect_report(args, client, dataconnect, cfg):
     epoch_column = _first_column(columns, "EPOCH_TIME")
     if timestamp_column:
         predicates.append(recent_event_predicate(
-            timestamp_column, getattr(cfg, "dataconnect_event_window_hours", 24)))
+            timestamp_column, getattr(cfg, "dataconnect_event_window_hours", 6)))
     elif epoch_column:
-        window = max(1, min(24, int(getattr(
-            cfg, "dataconnect_event_window_hours", 24))))
+        window = max(1, min(6, int(getattr(
+            cfg, "dataconnect_event_window_hours", 6))))
         predicates.append(f"{epoch_column} >= :minimum_epoch")
         parameters["minimum_epoch"] = int(time.time()) - window * 3600
     order_column = timestamp_column or epoch_column
@@ -1449,7 +1449,7 @@ def _execute(args, client, cfg, dataconnect=None):
                     "friendly endpoint searches cannot be combined with advanced --filter")
             return _dataconnect_endpoint_search(
                 dataconnect, criteria, args.limit, all_rows=args.all,
-                window_hours=getattr(cfg, "dataconnect_event_window_hours", 24))
+                window_hours=getattr(cfg, "dataconnect_event_window_hours", 6))
         if criteria:
             raise CLIError(
                 "endpoint name and attribute searches require Data Connect on ISE 3.3 "
@@ -2118,7 +2118,7 @@ class ISEShell(cmd.Cmd):
             recent = ""
             if timestamp:
                 recent = " AND " + recent_event_predicate(
-                    timestamp, getattr(self.cfg, "dataconnect_event_window_hours", 24))
+                    timestamp, getattr(self.cfg, "dataconnect_event_window_hours", 6))
             sql = (
                 f"SELECT DISTINCT {column} AS value FROM {table} "
                 f"WHERE {column} IS NOT NULL{recent} "

@@ -85,7 +85,7 @@ def test_collects_bounded_aggregated_radius_metrics():
     dataconnect_radius.collect_active(client, cfg)
 
     assert len(client.sql) == 5
-    assert sum("NUMTODSINTERVAL(24, 'HOUR')" in sql for sql in client.sql) == 4
+    assert sum("NUMTODSINTERVAL(6, 'HOUR')" in sql for sql in client.sql) == 4
     assert _rows(metrics.ise_dataconnect_radius_authentication_events,
                  "authentication_method", "nad") == {
         ("MSCHAPv2", "nad-1"): 7, ("EAP-TLS", "nad-1"): 3}

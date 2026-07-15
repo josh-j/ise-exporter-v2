@@ -65,7 +65,7 @@ Values are parsed literally after the first `=`; `${NAME}` and additional `=`
 characters in passwords are preserved. Inline comments on integer values are
 not supported. The sample is production-oriented for up to 100,000 endpoints:
 database-side aggregation, collapsed summary/top-group scans, serialized five-second
-query pacing, cadence-aligned event scans capped at 24 hours, daily RADIUS reporting,
+query pacing, cadence-aligned event scans capped at six hours, daily RADIUS reporting,
 30-minute bounded active-session
 reconstruction, hourly performance reporting,
 six-hour posture/TACACS/NAD reporting, daily source-freshness checks, and daily

@@ -71,7 +71,7 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     assert _rows(metrics.ise_dataconnect_endpoint_topk_truncated, "breakdown") == {
         ("profile",): 1.0, ("identity_group",): 1.0, ("profiling",): 1.0}
     profile_sql = next(sql for sql in client.sql if "profiled_endpoints_summary" in sql.lower())
-    assert "NUMTODSINTERVAL(24, 'HOUR')" in profile_sql
+    assert "NUMTODSINTERVAL(6, 'HOUR')" in profile_sql
     assert "FETCH FIRST 50" in profile_sql
     coverage_sql = next(sql for sql in client.sql if "AS stale_180" in sql)
     assert "NUMTODSINTERVAL(180, 'DAY')" in coverage_sql

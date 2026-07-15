@@ -109,23 +109,23 @@ latency. NAD activity health also uses a single per-device aggregation from the
 summary view, not an additional raw authentication scan.
 The three large daily RADIUS sources each use one `GROUPING SETS` statement for
 their paired breakdowns (authentication/latency, volume/failure context, and
-accounting/session duration), rather than rescanning the same 24-hour window.
+accounting/session duration), rather than rescanning the same six-hour window.
 The steady-state scheduled workload is about 7.3 statements per hour after startup.
-Daily RADIUS reporting scans 24 hours, while a disjoint active-session query
+Daily RADIUS reporting samples six hours, while a disjoint active-session query
 scans only its configured stale window every 30 minutes. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
 three-day reporting window.
 Other scheduled event scans match their cadence: one hour for PSN performance
-and diagnostics, six hours for posture and NAD health, and 24 hours for endpoint
-profiling. `ISE_DATACONNECT_EVENT_WINDOW_HOURS` is an absolute 24-hour-or-lower
-ceiling; setting it below a domain cadence is an explicit sampling tradeoff.
+and diagnostics, and six hours for posture, NAD health, and endpoint profiling.
+`ISE_DATACONNECT_EVENT_WINDOW_HOURS` is an absolute six-hour-or-lower ceiling;
+daily domains intentionally sample rather than aggregating a full day.
 The posture snapshot materializes its bounded latest-assessment set once and uses
 one `GROUPING SETS` pass for status/version and failure breakdowns plus eligible
 endpoint coverage; it does not rebuild the same assessment window per dashboard.
 TACACS also runs every six hours and applies an `EPOCH_TIME` lower bound to
 Cisco's two-day views before grouping, so the view's retention does not become
 the exporter's scan size. The 14-view source-freshness diagnostic runs daily as
-one bounded `UNION ALL` statement, applying the same at-most-24-hour timestamp or
+one bounded `UNION ALL` statement, applying the same at-most-six-hour timestamp or
 numeric-epoch ceiling to every view. This avoids 14 adaptive pacing waits holding
 the serialized worker while retaining one atomic freshness snapshot.
 Production cadence settings are minimum intervals: operators may collect less
@@ -166,7 +166,7 @@ fails closed if its protected state is unavailable or malformed.
 Cross-process lock acquisition is non-blocking and cancellation-aware, so a CLI
 process holding the shared pacing gate cannot strand exporter shutdown behind a
 kernel lock during a long adaptive cooldown.
-The Data Quality dashboard exposes per-view statement rate, p95 duration, rows
+The Data Quality dashboard exposes per-view statement rate, latest duration, rows
 returned, configured/effective cadence, pacing, and shared statement cooldown.
 The scheduler does not apply that cooldown a second time when calculating its
 next domain run. ISE-expired Oracle sessions are reconnected and retried once;

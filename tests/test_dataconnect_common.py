@@ -8,8 +8,8 @@ def test_event_window_tracks_cadence_and_never_exceeds_ceiling():
 
     assert event_window_hours(cfg, 3600) == 1
     assert event_window_hours(cfg, 21600) == 6
-    assert event_window_hours(cfg, 86400) == 24
-    assert event_window_hours(cfg, 90000) == 24
+    assert event_window_hours(cfg, 86400) == 6
+    assert event_window_hours(cfg, 90000) == 6
 
 
 def test_event_window_allows_explicit_lower_pressure_sampling_ceiling():

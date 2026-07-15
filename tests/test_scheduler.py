@@ -76,10 +76,10 @@ def test_scheduler_publishes_cadence_aligned_scan_windows():
         sample.labels["dataset"]: sample.value
         for sample in metrics.ise_dataconnect_scan_window_hours.collect()[0].samples
     }
-    assert samples["dataconnect_radius"] == 24
+    assert samples["dataconnect_radius"] == 6
     assert samples["dataconnect_performance"] == 1
     assert samples["dataconnect_posture"] == 6
-    assert samples["dataconnect_endpoints"] == 24
+    assert samples["dataconnect_endpoints"] == 6
     assert samples["dataconnect_nad_health"] == 6
     assert samples["tacacs_activity"] == 6
 
