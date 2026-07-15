@@ -2,6 +2,8 @@
 Description=Cisco ISE Prometheus Exporter
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=1h
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -10,12 +12,28 @@ Group=ise-exporter
 EnvironmentFile=/etc/ise-exporter/ise-exporter.env
 ExecStart=/opt/ise-exporter/.venv/bin/ise-exporter
 Restart=on-failure
-RestartSec=10
+RestartSec=5min
+# Contain a malformed appliance response or local scrape storm without starving
+# the monitoring host. These ceilings are deliberately above the exporter's
+# bounded 64 MiB response/result buffers and small fixed worker pools.
+MemoryHigh=512M
+MemoryMax=768M
+TasksMax=64
+LimitNOFILE=1024
+OOMScoreAdjust=500
 # hardening (Data Connect CA material is read-only to this unit)
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
 StateDirectory=ise-exporter
 StateDirectoryMode=0750
 UMask=0007

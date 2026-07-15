@@ -47,6 +47,14 @@ def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     assert "StateDirectoryMode=0750" in unit
     assert "UMask=0007" in unit
     assert "StateDirectory=ise-exporter" in unit
+    assert "StartLimitIntervalSec=1h" in unit
+    assert "StartLimitBurst=3" in unit
+    assert "RestartSec=5min" in unit
+    assert "MemoryHigh=512M" in unit
+    assert "MemoryMax=768M" in unit
+    assert "TasksMax=64" in unit
+    assert "LimitNOFILE=1024" in unit
+    assert "PrivateDevices=true" in unit
 
 
 def test_install_script_supports_ubuntu_noble_with_standard_packages():

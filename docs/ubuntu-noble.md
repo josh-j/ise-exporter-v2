@@ -54,6 +54,14 @@ will not start or restart the service while any of those placeholders remain.
 This prevents a systemd restart loop from repeatedly sending invalid credentials
 to ISE.
 
+The installed unit also limits a configured service to three starts per hour,
+with five minutes between failure restarts. This is important for Data Connect:
+a new process must not repeatedly bypass an in-memory Oracle authentication
+backoff. The unit contains the exporter at a 512 MiB memory high watermark,
+768 MiB hard memory limit, 64 tasks, and 1,024 file descriptors. Exceeding a
+local resource ceiling can make the dataset stale, but cannot grow without bound
+or create a rapid credential retry loop against production ISE.
+
 The installer is idempotent. Re-run it from an updated checkout to upgrade the
 virtual environment, command-line tools, and systemd unit while preserving
 `/etc/ise-exporter/ise-exporter.env` and certificates. A configured service that
