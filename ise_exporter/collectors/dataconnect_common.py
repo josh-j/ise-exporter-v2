@@ -19,7 +19,10 @@ def number(value, default=0.0):
 
 
 def integer(value):
-    return int(number(value))
+    result = number(value)
+    if result < 0 or not result.is_integer():
+        raise ValueError("Data Connect count must be a non-negative integer")
+    return int(result)
 
 
 def group_limit(cfg):

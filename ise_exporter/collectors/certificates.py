@@ -79,6 +79,7 @@ def collect(client, cfg):
         now = datetime.now(timezone.utc)
         counts = {"exp_30": 0, "exp_60": 0, "exp_90": 0, "expired": 0}
         rows = []
+        identities = set()
 
         def process(cert, hostname, cert_type):
             if not isinstance(cert, dict):
@@ -92,16 +93,33 @@ def collect(client, cfg):
             if not isinstance(self_signed, bool):
                 raise CollectorFailed(
                     f"{cert_type} certificate has invalid selfSigned value")
+            try:
+                key_size = int(cert.get("keySize") or 0)
+            except (TypeError, ValueError) as error:
+                raise CollectorFailed(
+                    f"{cert_type} certificate has invalid keySize") from error
+            if not 0 <= key_size <= 65_536:
+                raise CollectorFailed(
+                    f"{cert_type} certificate has invalid keySize")
+            raw_name = str(cert.get("friendlyName") or cert.get("id") or "").strip()
+            if not raw_name:
+                raise CollectorFailed(f"{cert_type} certificate has no identity")
+            hostname_label = metric_label(hostname)
+            name_label = metric_label(raw_name)
+            identity = (hostname_label, name_label, cert_type)
+            if identity in identities:
+                raise CollectorFailed(
+                    f"{cert_type} certificate inventory contained a duplicate identity")
+            identities.add(identity)
             days = (expiry - now).days
             rows.append({
-                "hostname": metric_label(hostname),
-                "name": metric_label(
-                    cert.get("friendlyName", cert.get("id", "unknown"))),
+                "hostname": hostname_label,
+                "name": name_label,
                 "type": cert_type,
                 "usage": metric_label(
                     cert.get("usedBy", cert.get("trustedFor", "unknown"))),
                 "days": days,
-                "key_size": int(cert.get("keySize") or 0),
+                "key_size": key_size,
                 "signature": _bounded_text(
                     cert.get("signatureAlgorithm"), 256).casefold(),
                 "self_signed": self_signed,

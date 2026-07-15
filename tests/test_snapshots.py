@@ -76,6 +76,25 @@ def test_snapshot_replacement_includes_info_and_rolls_it_back():
     assert level._value.get() == 10
 
 
+@pytest.mark.parametrize("invalid", (float("nan"), float("inf"), float("-inf")))
+def test_snapshot_replacement_rejects_nonfinite_samples_and_rolls_back(invalid):
+    registry = CollectorRegistry()
+    labelled = Gauge("snapshot_finite_labelled", "test", ["key"], registry=registry)
+    scalar = Gauge("snapshot_finite_scalar", "test", registry=registry)
+    labelled.labels(key="old").set(1)
+    scalar.set(2)
+
+    with pytest.raises(ValueError, match="value is invalid"):
+        replace_metric_snapshot((labelled, scalar), (
+            lambda: labelled.labels(key="new").set(invalid),
+            lambda: scalar.set(3),
+        ))
+
+    assert {(sample.labels["key"], sample.value)
+            for sample in labelled.collect()[0].samples} == {("old", 1)}
+    assert scalar._value.get() == 2
+
+
 def test_locked_registry_waits_for_snapshot_publication_boundary():
     registry = CollectorRegistry()
     Gauge("locked_registry_value", "test", registry=registry).set(1)
@@ -165,6 +184,15 @@ def test_metric_snapshot_refuses_to_serialize_excessive_series(monkeypatch):
     monkeypatch.setattr(snapshots_module, "MAX_PERSISTED_SNAPSHOT_SAMPLES", 1)
 
     with pytest.raises(ValueError, match="sample limit"):
+        serialize_metric_snapshot((metric,))
+
+
+def test_metric_snapshot_refuses_to_serialize_nonfinite_live_value():
+    registry = CollectorRegistry()
+    metric = Gauge("serialize_nonfinite", "test", registry=registry)
+    metric.set(float("nan"))
+
+    with pytest.raises(ValueError, match="value is invalid"):
         serialize_metric_snapshot((metric,))
 
 

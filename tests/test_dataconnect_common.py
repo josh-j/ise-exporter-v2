@@ -1,6 +1,23 @@
 import types
 
-from ise_exporter.collectors.dataconnect_common import event_window_hours, query_set
+import pytest
+
+from ise_exporter.collectors.dataconnect_common import (
+    event_window_hours,
+    integer,
+    query_set,
+)
+
+
+@pytest.mark.parametrize("value", (-1, -0.1, 1.5))
+def test_count_normalization_rejects_negative_and_fractional_values(value):
+    with pytest.raises(ValueError, match="non-negative integer"):
+        integer(value)
+
+
+@pytest.mark.parametrize("value, expected", ((None, 0), ("invalid", 0), ("12", 12)))
+def test_count_normalization_preserves_missing_defaults_and_valid_counts(value, expected):
+    assert integer(value) == expected
 
 
 def test_event_window_tracks_cadence_and_never_exceeds_ceiling():

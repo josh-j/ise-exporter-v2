@@ -1,6 +1,7 @@
 """backup collector (port of collect_backup_metrics). Last config-backup status
 via PAN OpenAPI: success timestamp, age in hours, and whether backup is configured."""
 import logging
+import math
 from datetime import datetime, timezone
 
 from .. import metrics
@@ -16,6 +17,7 @@ _METRICS = (
     metrics.ise_backup_age_hours,
 )
 _STATUSES = frozenset({"COMPLETED", "ERROR", "IN_PROGRESS"})
+_MAX_FUTURE_SKEW_SECONDS = 300
 
 
 def collect(client, cfg):
@@ -39,10 +41,15 @@ def collect(client, cfg):
         ts = parse_ise_date(start_date) if (start_date and status == "COMPLETED") else None
         if status == "COMPLETED" and ts is None:
             raise CollectorFailed("completed backup returned an invalid startDate")
+        now = datetime.now(timezone.utc).timestamp()
+        if ts and ts.timestamp() > now + _MAX_FUTURE_SKEW_SECONDS:
+            raise CollectorFailed("completed backup returned a future startDate")
         previous_success = metrics.ise_backup_last_success_timestamp._value.get()
+        if (not math.isfinite(previous_success) or previous_success < 0
+                or previous_success > now + _MAX_FUTURE_SKEW_SECONDS):
+            previous_success = 0
         last_success = ts.timestamp() if ts else previous_success
-        age_hours = ((datetime.now(timezone.utc).timestamp() - last_success) / 3600
-                     if last_success else 0)
+        age_hours = max(0.0, (now - last_success) / 3600) if last_success else 0
 
         def publish():
             metrics.ise_backup_configured.set(1)

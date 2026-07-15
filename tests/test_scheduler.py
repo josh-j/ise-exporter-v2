@@ -9,6 +9,21 @@ import ise_exporter.scheduler as scheduler_module
 from ise_exporter.scheduler import PollScheduler, _next_deadline
 
 
+def test_collector_duration_uses_monotonic_time_during_wall_clock_correction(
+        monkeypatch):
+    monotonic = iter((10.0, 12.5))
+    monkeypatch.setattr(collectors.time, "monotonic", lambda: next(monotonic))
+    monkeypatch.setattr(collectors.time, "time", lambda: 5.0)
+
+    with collectors.observe("clock_adjustment_test"):
+        pass
+
+    assert metrics.ise_last_successful_scrape.labels(
+        collector="clock_adjustment_test")._value.get() == 5.0
+    assert metrics.ise_collector_duration_seconds.labels(
+        collector="clock_adjustment_test")._value.get() == 2.5
+
+
 def _cfg(**overrides):
     values = dict(
         collect_certificates=False,

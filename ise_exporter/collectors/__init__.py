@@ -56,7 +56,9 @@ def record_failure(name, error_type):
 
 @contextmanager
 def observe(name):
-    start = time.time()
+    # Wall clock is required for exported completion timestamps, but elapsed
+    # duration must not go negative when NTP corrects the system clock.
+    start = time.monotonic()
     try:
         yield
         completed = time.time()
@@ -74,6 +76,6 @@ def observe(name):
         logger.error("%s collection error: %s", name, e)
         record_failure(name, "exception")
     finally:
-        duration = time.time() - start
+        duration = max(0.0, time.monotonic() - start)
         metrics.ise_collector_duration_seconds.labels(collector=name).set(duration)
         metrics.ise_scrape_duration_seconds.observe(duration)

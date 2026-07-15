@@ -93,8 +93,8 @@ def test_detail_request_pacing_is_interruptible_during_shutdown():
         pacer.wait()
 
 
-@pytest.mark.parametrize("count", ("-1", -999))
-def test_negative_active_count_is_invalid_not_an_empty_snapshot(count):
+@pytest.mark.parametrize("count", ("-1", -999, 1_000_000_001, "9" * 1000))
+def test_out_of_range_active_count_is_invalid_not_an_empty_snapshot(count):
     assert mnt_active_posture._active_count({
         "total": 1, "sessions": [{"count": count}],
     }) is None

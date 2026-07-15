@@ -20,6 +20,27 @@ snapshot_lock = RLock()
 MAX_PERSISTED_SNAPSHOT_SAMPLES = 20_000
 
 
+def _validate_finite_metric_values(metric_families):
+    """Reject poisoned numeric samples before they cross a snapshot boundary."""
+    for metric in metric_families:
+        children = getattr(metric, "_metrics", {}).values() \
+            if hasattr(metric, "_metrics") else (metric,)
+        for child in children:
+            value = getattr(child, "_value", None)
+            if isinstance(value, dict):  # Info payloads contain strings, not samples.
+                continue
+            if hasattr(value, "get"):
+                value = value.get()
+            try:
+                finite = math.isfinite(float(value))
+            except (TypeError, ValueError, OverflowError) as error:
+                raise ValueError(
+                    f"metric snapshot value is invalid for {metric._name}") from error
+            if not finite:
+                raise ValueError(
+                    f"metric snapshot value is invalid for {metric._name}")
+
+
 class LockedCollectorRegistry:
     """Registry facade that holds ``snapshot_lock`` for one complete scrape."""
 
@@ -67,6 +88,7 @@ def replace_metric_snapshot(metric_families, writers):
                     metric.set(0)
             for writer in writers:
                 writer()
+            _validate_finite_metric_values(families)
         except Exception:
             for metric, (kind, previous) in backups.items():
                 if kind == "labelled":
@@ -85,6 +107,7 @@ def serialize_metric_snapshot(metric_families):
     payload = {"version": 1, "metrics": {}}
     total_samples = 0
     with snapshot_lock:
+        _validate_finite_metric_values(families)
         for metric in families:
             name = getattr(metric, "_name", "")
             if not name or name in payload["metrics"]:

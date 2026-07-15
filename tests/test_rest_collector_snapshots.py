@@ -77,6 +77,37 @@ def test_backup_completed_without_date_preserves_previous_snapshot():
     assert metrics.ise_backup_age_hours._value.get() == 5
 
 
+def test_backup_future_completion_preserves_previous_snapshot():
+    metrics.ise_backup_configured.set(1)
+    metrics.ise_backup_last_success_timestamp.set(100)
+    metrics.ise_backup_age_hours.set(5)
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return {"status": "COMPLETED", "startDate": "9999-01-01T00:00:00Z"}
+
+    backup.collect(Client(), _cfg())
+
+    assert metrics.ise_backup_last_success_timestamp._value.get() == 100
+    assert metrics.ise_backup_age_hours._value.get() == 5
+
+
+def test_backup_discards_nonfinite_previous_timestamp():
+    metrics.ise_backup_configured.set(1)
+    metrics.ise_backup_last_success_timestamp.set(float("nan"))
+    metrics.ise_backup_age_hours.set(5)
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return {"status": "IN_PROGRESS", "startDate": "2026-01-01"}
+
+    backup.collect(Client(), _cfg())
+
+    assert metrics.ise_backup_configured._value.get() == 1
+    assert metrics.ise_backup_last_success_timestamp._value.get() == 0
+    assert metrics.ise_backup_age_hours._value.get() == 0
+
+
 @pytest.mark.parametrize("status", (123, "UNKNOWN", "completed"))
 def test_backup_invalid_status_preserves_previous_snapshot(status):
     metrics.ise_backup_configured.set(1)
@@ -150,6 +181,54 @@ def test_certificate_rejects_string_self_signed_without_replacing_snapshot(monke
     certificates.collect(Client(), _cfg())
 
     assert set(metrics.ise_certificate_self_signed._metrics) == old_keys
+
+
+@pytest.mark.parametrize("key_size", (-1, 65_537, "not-a-number"))
+def test_certificate_rejects_invalid_key_size_without_replacing_snapshot(
+        monkeypatch, key_size):
+    metrics.ise_certificate_key_size_bits.labels(
+        hostname="old", cert_name="old", cert_type="system").set(2048)
+    old_keys = set(metrics.ise_certificate_key_size_bits._metrics)
+    monkeypatch.setattr(
+        certificates, "get_nodes", lambda *args, **kwargs: [{"hostname": "psn-1"}],
+    )
+
+    class Client:
+        def get_pan_api_all(self, path, **kwargs):
+            if "system-certificate" in path:
+                return [{
+                    "friendlyName": "EAP cert", "expirationDate": "2030-01-01",
+                    "selfSigned": False, "keySize": key_size,
+                }]
+            raise AssertionError("invalid system certificate must fail before trust store")
+
+    certificates.collect(Client(), _cfg())
+
+    assert set(metrics.ise_certificate_key_size_bits._metrics) == old_keys
+
+
+@pytest.mark.parametrize("names", ((None, None), ("duplicate", "duplicate")))
+def test_certificate_rejects_ambiguous_identities_without_replacing_snapshot(
+        monkeypatch, names):
+    metrics.ise_certificate_key_size_bits.labels(
+        hostname="old", cert_name="old", cert_type="system").set(2048)
+    old_keys = set(metrics.ise_certificate_key_size_bits._metrics)
+    monkeypatch.setattr(
+        certificates, "get_nodes", lambda *args, **kwargs: [{"hostname": "psn-1"}],
+    )
+
+    class Client:
+        def get_pan_api_all(self, path, **kwargs):
+            if "system-certificate" in path:
+                return [{
+                    "friendlyName": name, "expirationDate": "2030-01-01",
+                    "selfSigned": False, "keySize": 2048,
+                } for name in names]
+            raise AssertionError("invalid system certificate must fail before trust store")
+
+    certificates.collect(Client(), _cfg())
+
+    assert set(metrics.ise_certificate_key_size_bits._metrics) == old_keys
 
 
 def test_certificate_security_binding_and_issuer_coverage(monkeypatch):

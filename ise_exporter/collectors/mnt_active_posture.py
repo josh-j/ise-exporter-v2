@@ -37,6 +37,7 @@ from . import CollectorFailed, observe
 
 
 MAX_STEP_CODES = 256
+MAX_ACTIVE_COUNT = 1_000_000_000
 
 
 _FIELDS = (
@@ -103,7 +104,7 @@ def _active_count(payload):
         value = int(raw)
     except (TypeError, ValueError):
         return None
-    return value if value >= 0 else None
+    return value if 0 <= value <= MAX_ACTIVE_COUNT else None
 
 
 def _milliseconds(value):
