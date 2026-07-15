@@ -1,4 +1,5 @@
 import argparse
+import json
 import types
 
 import pytest
@@ -82,3 +83,63 @@ def test_bulk_limit_must_be_positive_before_live_collection(capsys):
     assert cli.main(["nodes", "--limit", "0"], client=client) == 2
     assert client.calls == []
     assert "--limit must be at least 1" in capsys.readouterr().err
+
+
+def test_openapi_inventory_resolves_only_bounded_self_links(capsys):
+    class Client:
+        cfg = types.SimpleNamespace(cli_max_rows=1000, cli_production_safe=True)
+
+        def __init__(self):
+            self.calls = []
+
+        def get_pan_api(self, path, **kwargs):
+            self.calls.append((path, kwargs))
+            if path == "/policy/network-access/policy-set":
+                return [
+                    {
+                        "id": "first",
+                        "name": "Default",
+                        "link": {
+                            "href": (
+                                "https://advertised.invalid/api/v1/policy/"
+                                "network-access/policy-set/first"
+                            ),
+                            "rel": "self",
+                        },
+                    },
+                    {
+                        "id": "second",
+                        "name": "Not requested",
+                        "link": {
+                            "href": (
+                                "https://advertised.invalid/api/v1/policy/"
+                                "network-access/policy-set/second"
+                            ),
+                            "rel": "self",
+                        },
+                    },
+                ]
+            assert path == "/policy/network-access/policy-set/first"
+            return {
+                "id": "first",
+                "name": "Default",
+                "authenticationPolicy": {"defaultRule": {"name": "Default"}},
+            }
+
+    client = Client()
+
+    assert cli.main(
+        ["network-policy-sets", "--limit", "1", "--output", "json"],
+        client=client,
+    ) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert result == [{
+        "id": "first",
+        "name": "Default",
+        "authenticationPolicy": {"defaultRule": {"name": "Default"}},
+    }]
+    assert [call[0] for call in client.calls] == [
+        "/policy/network-access/policy-set",
+        "/policy/network-access/policy-set/first",
+    ]

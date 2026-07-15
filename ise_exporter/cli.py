@@ -24,6 +24,7 @@ import stat
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 from rich import box
 from rich.console import Console
@@ -279,6 +280,47 @@ OPENAPI_INVENTORIES = {
     "tacacs-command-sets": ("/policy/device-admin/command-sets", True),
     "tacacs-shell-profiles": ("/policy/device-admin/shell-profiles", True),
 }
+
+
+def _openapi_self_path(row):
+    """Return a configured-host-relative path for an OpenAPI resource link."""
+    if not isinstance(row, dict):
+        return None
+    link = row.get("link")
+    if not isinstance(link, dict) or link.get("rel") not in (None, "self"):
+        return None
+    href = link.get("href")
+    if not isinstance(href, str) or not href:
+        return None
+    parsed = urlsplit(href)
+    prefix = "/api/v1/"
+    if (not parsed.path.startswith(prefix) or parsed.query or parsed.fragment
+            or any(part in ("", ".", "..") for part in parsed.path.split("/")[3:])):
+        raise CLIError(f"ISE returned an invalid OpenAPI self-link: {href!r}")
+    # Deliberately discard the advertised origin. get_pan_api always rebuilds
+    # the request below the configured PAN host, so credentials cannot follow
+    # a hostname supplied in an API response.
+    return parsed.path[len("/api/v1"):]
+
+
+def _openapi_inventory_details(client, command, rows):
+    """Replace bounded OpenAPI summaries with their advertised detail payloads."""
+    enriched = []
+    for row in rows:
+        detail_path = _openapi_self_path(row)
+        if detail_path is None:
+            enriched.append(row)
+            continue
+        detail = client.get_pan_api(
+            detail_path, api_name=f"cli_{command}_detail", unwrap=True)
+        if not isinstance(detail, dict):
+            resource = row.get("name") or row.get("id") or detail_path
+            raise CLIError(f"ISE returned no detail for {command} resource {resource!r}")
+        merged = {**row, **detail}
+        merged.pop("link", None)
+        enriched.append(merged)
+    return enriched
+
 
 DATACONNECT_REPORTS = {
     "endpoint-report": {
@@ -1916,6 +1958,7 @@ def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
             _guard_row_limit(args, cfg)
             if isinstance(result, list):
                 result = result[:args.limit]
+                result = _openapi_inventory_details(client, command, result)
         return result
     if command in DATACONNECT_REPORTS:
         _guard_row_limit(args, cfg)
