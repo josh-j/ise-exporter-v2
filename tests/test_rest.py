@@ -288,6 +288,20 @@ def test_get_pan_api_all_fails_closed_on_later_page_failure():
     assert calls == 2
 
 
+def test_get_pan_api_all_initial_request_failure_is_not_double_counted_as_protocol():
+    client = ISERestClient.__new__(ISERestClient)
+    client.pan_url = "https://ise.example/api/v1"
+    client.session = None
+    client._get_json = lambda *_args, **_kwargs: None
+    protocol = ise_api_errors_total.labels(
+        api="pan_initial_failure", error_type="protocol", http_code="200")
+    before = protocol._value.get()
+
+    assert client.get_pan_api_all(
+        "/certs/trusted-certificate", api_name="pan_initial_failure") is None
+    assert protocol._value.get() == before
+
+
 def test_get_pan_api_all_enforces_row_and_page_bounds():
     client = ISERestClient.__new__(ISERestClient)
     client.pan_url = "https://ise.example/api/v1"
@@ -358,6 +372,20 @@ def test_get_ers_preserves_valid_empty_search_result():
         "SearchResult": {"total": 0, "resources": []}}
 
     assert c.get_ers("/config/internaluser", get_all=True) == []
+
+
+def test_get_ers_complete_enumeration_rejects_missing_search_result():
+    c = ISERestClient.__new__(ISERestClient)
+    c.ers_url = "https://h:9060/ers"
+    c.session = None
+    c._get_json = lambda *args, **kwargs: {"InternalUser": {"id": "unexpected"}}
+
+    assert c.get_ers(
+        "/config/internaluser", get_all=True,
+        api_name="ers_missing_search_result") is None
+    # A non-enumerating detail request still legitimately returns a raw object.
+    assert c.get_ers("/config/internaluser/id") == {
+        "InternalUser": {"id": "unexpected"}}
 
 
 def test_get_ers_rejects_missing_pages_when_total_is_larger():
@@ -639,16 +667,22 @@ def test_chunked_api_response_is_stopped_at_hard_byte_ceiling(monkeypatch):
     assert response.closed is True
 
 
-def test_retry_policy_is_get_only_and_has_bounded_backoff():
+def test_transport_never_hides_wire_retries_below_request_telemetry():
     cfg = types.SimpleNamespace(
         ise_host="h", ise_mnt_host="m", ers_port=9060, ise_user="u", ise_pass="p")
     client = ISERestClient(cfg)
     retry = client.session.get_adapter("https://").max_retries
 
     assert retry.allowed_methods == frozenset({"GET"})
+    assert retry.total == 0
+    assert retry.connect == 0
+    assert retry.read == 0
+    assert retry.status == 0
+    assert retry.other == 0
     assert retry.redirect == 0
-    assert retry.backoff_max == 10
+    assert retry.backoff_factor == 0
     assert retry.respect_retry_after_header is False
+    assert retry.raise_on_status is False
 
 
 def test_invalid_json_is_reported_as_api_parse_error():

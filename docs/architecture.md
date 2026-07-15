@@ -191,6 +191,10 @@ cross-process guard keyed by a hash of the configured account and cluster hosts.
 The exporter and authorized `ise-cli` users therefore observe one failure threshold
 and backoff across process restarts; the guard contains no credential material and
 fails closed if its protected state is unavailable or malformed.
+REST and MnT transports make exactly one wire attempt per recorded API request;
+urllib3 retries are disabled because they occur beneath exporter telemetry and
+would otherwise hide appliance pressure. Dataset scheduling owns subsequent
+attempts, so retry timing and failure counters remain observable.
 Cross-process lock acquisition is non-blocking and cancellation-aware, so a CLI
 process holding the shared pacing gate cannot strand exporter shutdown behind a
 kernel lock during a long adaptive cooldown.

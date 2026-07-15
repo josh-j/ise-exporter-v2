@@ -187,17 +187,22 @@ class ISERestClient:
         # Keep trust deterministic: explicit configuration, not ambient process
         # REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE state, owns each plane's trust policy.
         s.trust_env = False
+        # One scheduled request must equal one wire attempt and one telemetry
+        # observation. urllib3 retries happen below _request(), so four physical
+        # calls previously appeared as one Prometheus request and could multiply
+        # ISE pressure and shutdown latency. Dataset cadence and the persistent
+        # authentication guard are the explicit, observable retry boundary.
         retry = Retry(
-            total=3,
-            connect=3,
-            read=3,
-            status=3,
+            total=0,
+            connect=0,
+            read=0,
+            status=0,
+            other=0,
             redirect=0,
             allowed_methods=frozenset({"GET"}),
-            backoff_factor=1,
-            backoff_max=10,
+            backoff_factor=0,
             respect_retry_after_header=False,
-            status_forcelist=[429, 500, 502, 503, 504],
+            raise_on_status=False,
         )
         s.mount("https://", HTTPAdapter(max_retries=retry))
         # Accept-only — Content-Type on a GET is non-standard and has tripped DoD WAFs.
@@ -412,6 +417,10 @@ class ISERestClient:
                 api_name, "Malformed ERS response envelope for %s", url)
             return None
         if "SearchResult" not in data:
+            if get_all:
+                self._ers_protocol_error(
+                    api_name, "Missing ERS SearchResult for complete enumeration %s", url)
+                return None
             return data
 
         sr = data["SearchResult"]
@@ -546,6 +555,11 @@ class ISERestClient:
             raise ValueError("invalid PAN pagination bound")
         url = f"{self.pan_url}{path}"
         data = self._get_json(self.session, url, params, api_name=api_name)
+        if data is None:
+            # _get_json already recorded the actual transport, HTTP, or parse
+            # failure. Do not manufacture a second protocol error for the same
+            # request; protocol errors are reserved for successful malformed JSON.
+            return None
         rows = []
         visited = set()
         pages = 0
