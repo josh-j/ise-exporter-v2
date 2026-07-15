@@ -218,8 +218,11 @@ _COMMAND_FAMILY_SQL = """CASE
     ELSE 'other' END"""
 
 
-def _activity_queries(limit, cutoff_epoch=None, internal_user_count=0):
-    recent = "WHERE epoch_time >= :minimum_epoch" if cutoff_epoch is not None else ""
+def _activity_queries(limit, cutoff_epoch, internal_user_count=0):
+    """Build TACACS aggregates only with an explicit bounded event cutoff."""
+    if int(cutoff_epoch) < 0:
+        raise ValueError("TACACS activity cutoff must be non-negative")
+    recent = "WHERE epoch_time >= :minimum_epoch"
     internal_user_count = max(0, min(1000, int(internal_user_count)))
     internal_filter = ", ".join(
         f":internal_user_{index}" for index in range(internal_user_count))

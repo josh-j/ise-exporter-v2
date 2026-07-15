@@ -25,7 +25,8 @@ def test_large_mnt_default_profile_stays_below_two_due_statements_per_hour():
         "endpoints": len(dataconnect_endpoints._queries(cfg.dataconnect_max_groups)),
         "freshness": 1,
         "nad_health": 1,
-        "tacacs": len(tacacs._activity_queries(cfg.dataconnect_max_groups)),
+        "tacacs": len(tacacs._activity_queries(
+            cfg.dataconnect_max_groups, cutoff_epoch=1)),
     }
     intervals = {
         "radius": cfg.dataconnect_radius_interval,
@@ -102,7 +103,15 @@ def test_radius_reporting_scans_each_large_historical_view_only_once():
 
 def test_alternate_config_cannot_export_more_than_production_group_ceiling():
     assert group_limit(types.SimpleNamespace(dataconnect_max_groups=999_999)) == 1000
-    assert len(tacacs._activity_queries(1000)) == 3
+    assert len(tacacs._activity_queries(1000, cutoff_epoch=1)) == 3
+
+
+def test_tacacs_query_builder_refuses_an_unbounded_event_scan():
+    with pytest.raises(TypeError):
+        tacacs._activity_queries(1000)
+
+    with pytest.raises((TypeError, ValueError)):
+        tacacs._activity_queries(1000, cutoff_epoch=None)
 
 
 def test_malformed_config_like_scan_window_fails_safe():
@@ -116,6 +125,7 @@ def test_tacacs_internal_last_seen_reuses_each_existing_view_scan():
 
     for event_type, sql in queries.items():
         assert sql.lower().count(f"from tacacs_{event_type}_last_two_days") == 1
+        assert "WHERE epoch_time >= :minimum_epoch" in sql
         assert "GROUP BY GROUPING SETS" in sql
         assert "breakdown = 'detail' AND group_rank <= 1000" in sql
         assert sql.count(":internal_user_") == 1000
