@@ -121,7 +121,8 @@ profiling. `ISE_DATACONNECT_EVENT_WINDOW_HOURS` is an absolute 24-hour-or-lower
 ceiling; setting it below a domain cadence is an explicit sampling tradeoff.
 TACACS also runs every six hours and applies an `EPOCH_TIME` lower bound to
 Cisco's two-day views before grouping, so the view's retention does not become
-the exporter's scan size. The 14-view source-freshness diagnostic runs daily.
+the exporter's scan size. The 14-view source-freshness diagnostic runs daily and
+applies the same at-most-24-hour timestamp or numeric-epoch ceiling to every view.
 Production cadence settings are minimum intervals: operators may collect less
 often, but environment overrides cannot restore the former aggressive schedule.
 The exporter and CLI also serialize through one persistent pacing gate so separate

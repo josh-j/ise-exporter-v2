@@ -8,12 +8,14 @@ an empty, stale, and genuinely current reporting plane without exact row counts.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import time
 
 from .. import metrics
 from ..dataconnect_schema import VIEW_CONTRACTS
 from ..snapshots import replace_metric_snapshot
 from ..util import parse_ise_date
 from . import observe
+from .dataconnect_common import event_window_hours, recent_event_predicate
 
 
 _METRICS = (
@@ -47,20 +49,22 @@ def _timestamped_views():
 
 def collect(dataconnect, cfg):
     """Atomically replace low-pressure row-presence and newest-event probes."""
-    del cfg
     with observe("dataconnect_freshness"):
         rows = []
+        window = event_window_hours(
+            cfg, getattr(cfg, "dataconnect_freshness_interval", 86400))
+        minimum_epoch = int(time.time()) - window * 3600
         for view, contract in _timestamped_views():
             column = contract.time_column
-            # Cisco's TACACS views are already hard-bounded to two days and expose
-            # numeric Unix EPOCH_TIME rather than an Oracle timestamp. Applying a
-            # SYSTIMESTAMP predicate to that column is both invalid and redundant.
-            predicate = (f"WHERE {column} IS NOT NULL" if view.startswith("TACACS_") else
-                         f"WHERE {column} >= SYSTIMESTAMP - INTERVAL '2' DAY")
+            # TACACS exposes numeric Unix time, while all other contracts expose
+            # Oracle timestamps. Keep the indexed column bare on the left of each
+            # predicate so the configured window bounds eligible source rows.
+            predicate = (f"{column} >= {minimum_epoch}" if view.startswith("TACACS_") else
+                         recent_event_predicate(column, window))
             result = dataconnect.query(f"""
                 SELECT {column} AS newest_event
                 FROM {view}
-                {predicate}
+                WHERE {predicate}
                 ORDER BY {column} DESC NULLS LAST FETCH FIRST 1 ROWS ONLY
             """)
             row = result[0] if result else {}
