@@ -525,7 +525,8 @@ def test_dataconnect_cooldown_lane_does_not_block_other_collection_planes():
     scheduler._stop_dataconnect_worker()
 
 
-def test_dataconnect_worker_serializes_domains_and_deduplicates_queued_runs():
+def test_dataconnect_worker_serializes_domains_and_deduplicates_queued_runs(caplog):
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
     shutdown = threading.Event()
@@ -549,6 +550,9 @@ def test_dataconnect_worker_serializes_domains_and_deduplicates_queued_runs():
     scheduler._run_dataconnect("dataconnect_radius_active", 1800, first)
     scheduler._run_dataconnect("dataconnect_radius_active", 1800, first)
     scheduler._run_dataconnect("dataconnect_performance", 3600, second)
+    assert "collection queued dataset=dataconnect_radius_active" in caplog.text
+    assert "lane=serialized" in caplog.text
+    assert "reason=scheduled_due" in caplog.text
     assert first_started.wait(1)
     assert not second_started.is_set()
     assert metrics.ise_dataconnect_worker_busy._value.get() == 1
@@ -917,7 +921,9 @@ def test_loop_exception_signals_workers_before_teardown(monkeypatch):
     assert not scheduler.dataconnect_worker_alive
 
 
-def test_failed_dataconnect_attempt_never_retries_faster_than_five_minutes(monkeypatch):
+def test_failed_dataconnect_attempt_never_retries_faster_than_five_minutes(
+        monkeypatch, caplog):
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
     now = [105.0]
     monkeypatch.setattr(scheduler_module.time, "time", lambda: now[0])
     scheduler = PollScheduler(_cfg(), object(), object())
@@ -932,11 +938,16 @@ def test_failed_dataconnect_attempt_never_retries_faster_than_five_minutes(monke
 
     assert len(attempts) == 1
     assert "dataconnect_radius" not in scheduler.last_run
-    assert scheduler.last_attempt["dataconnect_radius"] == 100.0
+    assert scheduler.last_attempt["dataconnect_radius"] == 105.0
     assert scheduler.next_run["dataconnect_radius"] == 405.0
     assert collectors.outcome("dataconnect_radius") is False
     assert metrics.ise_dataset_up.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 0
+    assert "collection started dataset=dataconnect_radius" in caplog.text
+    assert "outcome=failure" in caplog.text
+    assert "reason=database_failed" in caplog.text
+    assert "retry_in_seconds=300" in caplog.text
+    assert "retry_reason=database_protection" in caplog.text
 
     scheduler._run("dataconnect_radius", 404.0, 60, fail)
     assert len(attempts) == 1
@@ -974,7 +985,11 @@ def test_success_schedules_from_completion_and_publishes_freshness(monkeypatch, 
     assert scheduler.last_success["dataconnect_radius"] == 400.0
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
-    assert "Data Connect dataset dataconnect_radius collected successfully" in caplog.text
+    assert "collection started dataset=dataconnect_radius" in caplog.text
+    assert "collection completed dataset=dataconnect_radius" in caplog.text
+    assert "outcome=success" in caplog.text
+    assert "published=true" in caplog.text
+    assert "reason=scheduled_collection" in caplog.text
 
 
 def test_completed_dataset_is_fresh_before_a_later_collector_returns(monkeypatch):

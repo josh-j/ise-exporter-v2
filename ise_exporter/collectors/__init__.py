@@ -125,6 +125,11 @@ def outcome(name):
     return _outcomes.get(name)
 
 
+def last_failure(name):
+    """Return the bounded reason and detail for the latest failed attempt."""
+    return _failure_reasons.get(name), _failure_details.get(name)
+
+
 def record_failure(name, error_type, detail=None):
     """Bump the scrape-error counter + consecutive-failure gauge for a failed collect."""
     with snapshot_lock:

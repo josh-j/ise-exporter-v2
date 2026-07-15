@@ -1113,6 +1113,7 @@ def test_dataconnect_health_reports_oracle_session_without_credentials(capsys):
     assert result["reachable"] is True and result["authenticated"] is True
     assert result["current_schema"] == "DATACONNECT"
     assert "configured_host" in result and "latency_ms" in result
+    assert "query_timeout_seconds" in result
     assert "password" not in result
 
 

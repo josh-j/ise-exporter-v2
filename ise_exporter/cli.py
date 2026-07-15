@@ -1768,7 +1768,7 @@ def _dataconnect_diagnostics(dataconnect, cfg):
         "configured_service": getattr(cfg, "dataconnect_service", ""),
         "configured_user": getattr(cfg, "dataconnect_user", ""),
         "event_window_hours": getattr(cfg, "dataconnect_event_window_hours", 6),
-        "query_timeout_seconds": getattr(cfg, "dataconnect_query_timeout_seconds", 0),
+        "query_timeout_seconds": getattr(cfg, "dataconnect_query_timeout", 0),
     })
     return result
 

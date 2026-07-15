@@ -490,16 +490,29 @@ class PollScheduler:
             if not self._wait_for_startup_slot(name):
                 return
             source = self.dataset_plan[name][0]
+            attempted_at = time.time()
+            started = time.monotonic()
+            previous_failures = collectors.failures(name)
+            previous_success = self.last_success.get(name)
+            success_age = ("never" if previous_success is None else
+                           f"{max(0.0, attempted_at - previous_success):.3f}")
+            logger.info(
+                "collection started dataset=%s source=%s trigger=scheduled_due "
+                "interval_seconds=%s previous_success_age_seconds=%s "
+                "consecutive_failures=%d",
+                name, source, tier, success_age, previous_failures,
+            )
             collectors.begin_attempt(name)
-            self.last_attempt[name] = now
+            self.last_attempt[name] = attempted_at
             metrics.ise_dataset_last_attempt_timestamp.labels(
-                dataset=name, source=source).set(now)
+                dataset=name, source=source).set(attempted_at)
             try:
                 callback()
             except Exception:
                 logger.exception("%s callback escaped collector observation", name)
                 collectors.record_failure(name, "unhandled_exception")
             completed = time.time()
+            duration = max(0.0, time.monotonic() - started)
             effective_interval = tier
             metrics.ise_dataset_effective_interval_seconds.labels(
                 dataset=name, source=source).set(effective_interval)
@@ -514,16 +527,51 @@ class PollScheduler:
                 if source == "dataconnect":
                     self._persist_dataconnect_state(name, completed)
                 self._update_dataset_freshness(name, completed)
-                if source == "dataconnect":
-                    logger.info(
-                        "Data Connect dataset %s collected successfully; next run in %ss",
-                        name, effective_interval,
-                    )
+                outcome_reason = ("recovered" if previous_failures else
+                                  "scheduled_collection")
+                logger.info(
+                    "collection completed dataset=%s source=%s outcome=success "
+                    "duration_seconds=%.3f published=true next_due_at=%s "
+                    "next_in_seconds=%s reason=%s",
+                    name,
+                    source,
+                    duration,
+                    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(
+                        self.next_run[name])),
+                    effective_interval,
+                    outcome_reason,
+                )
             else:
                 retry = self._failure_retry(name, source, effective_interval)
                 self.next_run[name] = completed + retry
                 self._scheduled_delay[name] = retry
                 self._update_dataset_freshness(name, completed)
+                failure_reason, failure_detail = collectors.last_failure(name)
+                failures = collectors.failures(name)
+                if failures >= MAX_CONSECUTIVE_FAILURES:
+                    retry_reason = "consecutive_failure_slowdown"
+                elif name == "dataconnect_schema":
+                    retry_reason = "schema_discovery_retry"
+                elif source == "dataconnect":
+                    retry_reason = "database_protection"
+                else:
+                    retry_reason = "bounded_fast_retry"
+                logger.info(
+                    "collection completed dataset=%s source=%s outcome=failure "
+                    "duration_seconds=%.3f published=false reason=%s detail=%s "
+                    "consecutive_failures=%d retry_at=%s retry_in_seconds=%s "
+                    "retry_reason=%s",
+                    name,
+                    source,
+                    duration,
+                    failure_reason or "unknown_failure",
+                    failure_detail or "No bounded failure detail was published",
+                    failures,
+                    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(
+                        self.next_run[name])),
+                    retry,
+                    retry_reason,
+                )
 
     def _wait_for_startup_slot(self, name):
         """Space each dataset's first attempt without changing later cadence.
@@ -584,6 +632,13 @@ class PollScheduler:
                 next(self._dataconnect_sequence), name, tier, callback,
             ))
             self._publish_worker_state(now)
+            logger.info(
+                "collection queued dataset=%s source=dataconnect lane=serialized "
+                "priority=%d queue_depth=%d reason=scheduled_due",
+                name,
+                _DATACONNECT_PRIORITY.get(name, 100),
+                len(self._dataconnect_queued_at),
+            )
 
     def _dataconnect_dataset_enqueue_blocked(self, name):
         """Allow cold-start work to queue behind in-flight schema discovery.
