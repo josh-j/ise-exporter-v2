@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODULE="${SCRIPT_DIR}/Ise.Cli/Ise.Cli.psd1"
+
+if ! command -v pwsh >/dev/null 2>&1; then
+    echo "ise-cli requires PowerShell 7 (pwsh); the exporter service does not" >&2
+    exit 127
+fi
+
+if [[ $# -eq 0 ]]; then
+    exec pwsh -NoLogo -NoExit -Command \
+        "Import-Module '${MODULE}'; Write-Host 'ISE PowerShell module loaded. Use Get-Command -Module Ise.Cli.'"
+fi
+
+exec pwsh -NoLogo -NoProfile -File "${SCRIPT_DIR}/ise-cli.ps1" "$@"

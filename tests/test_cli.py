@@ -19,6 +19,16 @@ def test_cli_version_reports_revision_and_exact_ise_target(monkeypatch, capsys):
         "ise-cli 2.0.0 (revision abc1234; Cisco ISE 3.3.0.430 Patch 11)\n")
 
 
+def test_machine_completion_protocol_returns_json_without_entering_repl(monkeypatch, capsys):
+    monkeypatch.setattr(
+        cli.ISEShell, "_enable_history",
+        lambda _self: pytest.fail("machine completion must not initialize history"))
+
+    assert cli.main(["--complete", "radius-auth --st", "--cursor", "16"]) == 0
+
+    assert json.loads(capsys.readouterr().out) == ["--status "]
+
+
 def test_explicit_cli_env_file_wins_over_local_dotenv(monkeypatch, tmp_path):
     explicit = tmp_path / "production.env"
     explicit.write_text(

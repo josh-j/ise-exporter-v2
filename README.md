@@ -92,7 +92,7 @@ ise-exporter --dataconnect-check
 ise-exporter --dataconnect-schema  # JSON column metadata; does not read event rows
 ise-exporter --reset-state         # one-shot full state reset; stop the service first
 ise-exporter --version             # package revision and exact ISE compatibility target
-ise-cli --version
+ise-cli --version                   # PowerShell 7 operator module + private backend
 ```
 
 ## Ubuntu Server 24.04 LTS
@@ -108,8 +108,9 @@ sudo systemctl start ise-exporter
 curl --fail --silent http://127.0.0.1:9618/metrics | head
 ```
 
-It installs `ise-cli` in `/usr/local/bin` for all local users while keeping the
-environment file and CA material restricted. Re-running the installer upgrades
+It installs the PowerShell 7 `Ise.Cli` module and `ise-cli` launcher for all local
+users while keeping the environment file and CA material restricted. The exporter
+service itself does not require PowerShell. Re-running the installer upgrades
 the application without overwriting configuration. A fresh installation is
 enabled but intentionally left stopped because the seeded file contains example
 hosts and passwords. The installer also refuses to start or restart the unit
@@ -143,22 +144,23 @@ as status, OS, PSN, agent version, policy result, and numeric step code. MAC
 addresses, session IDs, raw posture reports, usernames, and free-form failure
 text are not exported by that dataset.
 
-The read-only `ise-cli` and scripts under `tools/` are separate diagnostic
-surfaces. Run `ise-cli` with no arguments for an interactive shell (`?` lists
-commands), or use one-shot commands in scripts. Endpoint commands accept common
-MAC formats, IP addresses, hostnames, and ERS ids; Data Connect is preferred for
-IP/hostname inventory resolution and bounded RADIUS, posture, PSN, and TACACS
-reports. Each curl probe supports `--schema-only`, which needs no credentials or
-network. The Secure Client probe calls the same MnT path and parser but is a
-separate operator action; it does not read or mutate the scheduled snapshot.
-Within the shell,
-`endpoints FIELD=PATTERN` provides schema-aware searches across endpoint inventory
-and recent authorization, location, accounting, error, and posture context;
-`endpoint-fields` lists the fields actually available from the connected ISE schema.
+The read-only PowerShell 7 `Ise.Cli` module and scripts under `tools/` are separate
+diagnostic surfaces. Run `ise-cli` with no arguments to start `pwsh` with the
+module imported, or import `Ise.Cli` in an existing session. Endpoint cmdlets
+accept common MAC formats, IP addresses, hostnames, and ERS ids; Data Connect is
+preferred for IP/hostname inventory resolution and bounded RADIUS, posture, PSN,
+and TACACS reports. Each curl probe supports `--schema-only`, which needs no
+credentials or network. The Secure Client probe calls the same MnT path and parser
+but is a separate operator action; it does not read or mutate the scheduled
+snapshot. `Find-IseEndpoint -Criteria FIELD=PATTERN` provides schema-aware searches
+across endpoint inventory and recent authorization, location, accounting, error,
+and posture context; `Get-IseEndpointField` lists fields available from the
+connected ISE schema.
 
 Additional references:
 
 - [Rooted ISE ground truth](docs/rooted-ise-ground-truth.md)
 - [Migration roadmap](docs/migration-pxgrid-removal.md)
 - [TACACS account attribution](docs/tacacs-account-attribution.md)
-- [CLI and schema probes](docs/ise-cli.md)
+- [PowerShell 7 operator CLI](docs/ise-cli-powershell.md)
+- [CLI backend contract and schema probes](docs/ise-cli.md)

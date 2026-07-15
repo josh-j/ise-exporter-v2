@@ -20,6 +20,8 @@ SERVICE_USER=ise-exporter
 SERVICE_NAME=ise-exporter
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 CLI_LINK=/usr/local/bin/ise-cli
+PWSH_CLI_DIR="$INSTALL_DIR/powershell"
+PWSH_MODULE_LINK=/usr/local/share/powershell/Modules/Ise.Cli/2.0.0
 REVISION_FILE="$INSTALL_DIR/REVISION"
 SERVICE_INSTALLED_BEFORE=0
 if [[ -f "$UNIT_PATH" ]]; then
@@ -158,11 +160,25 @@ chown root:root "$REVISION_FILE"
 chmod 644 "$REVISION_FILE"
 echo "==> build revision: $BUILD_REVISION"
 
-# Global read-only operator CLI. The target remains root-owned in the venv; this
-# symlink only makes it discoverable on every user's normal PATH.
+# PowerShell 7 operator module and global launcher. The private Python entrypoint
+# remains the bounded transport/query backend; operators receive native objects,
+# pipeline behavior, help, and completion from Ise.Cli.
 echo "==> installing global read-only CLI at $CLI_LINK"
+rm -rf "$PWSH_CLI_DIR"
+install -d -o root -g root -m 755 "$PWSH_CLI_DIR"
+cp -a "$SOURCE_DIR/powershell/." "$PWSH_CLI_DIR/"
+chown -R root:root "$PWSH_CLI_DIR"
+chmod -R go-w "$PWSH_CLI_DIR"
+chmod -R a+rX "$PWSH_CLI_DIR"
+install -d -o root -g root -m 755 "$(dirname "$PWSH_MODULE_LINK")"
+rm -rf "$PWSH_MODULE_LINK"
+ln -s "$PWSH_CLI_DIR/Ise.Cli" "$PWSH_MODULE_LINK"
 install -d -o root -g root -m 755 "$(dirname "$CLI_LINK")"
-ln -sfn "$VENV/bin/ise-cli" "$CLI_LINK"
+ln -sfn "$PWSH_CLI_DIR/ise-cli" "$CLI_LINK"
+if ! command -v pwsh >/dev/null 2>&1; then
+    echo "==> WARNING: PowerShell 7 (pwsh) is not installed; exporter service is ready,"
+    echo "    but $CLI_LINK requires pwsh before operators can use Ise.Cli"
+fi
 
 # --- config: seed once, never overwrite on upgrade ---------------------
 FRESH_CONFIG=0

@@ -1,21 +1,24 @@
-# ise-cli: read-only Cisco ISE operator CLI
+# ise-cli backend contract and migration reference
 
-`ise-cli` is a read-only operator interface over ERS, OpenAPI, Data Connect, and
-selected MnT XML diagnostics. It provides a PowerCLI-like surface for discovery,
-troubleshooting, reporting, and automation without exposing write operations.
+The public operator interface is now the PowerShell 7 module documented in
+[Ise.Cli for PowerShell 7](ise-cli-powershell.md). This document retains the
+backend subcommand contract, API ownership, endpoint-search semantics, and safety
+model used by the PowerShell module and by scripts migrating from the former
+Python-rendered CLI.
+
+The private `ise-cli-backend` is a read-only interface over ERS, OpenAPI, Data
+Connect, and selected MnT XML diagnostics. `Ise.Cli` invokes it through bounded
+JSON and completion protocols; operators normally use PowerShell cmdlets rather
+than invoking the backend directly.
 
 For lab-specific appliance version, service, listener, and TLS facts, use the
 [rooted ISE ground-truth snapshot](rooted-ise-ground-truth.md). CLI output remains
 authoritative for the supported remote API or reporting query it actually runs;
 it must not be used to infer rooted process state.
 
-Running `ise-cli` without a subcommand enters an interactive shell. `?` lists
-commands, `help COMMAND` shows command-specific options, and `exit`, `quit`, or
-Ctrl-D leave the shell. Interactive history is retained in
-`~/.local/state/ise-cli/history` (override with `ISE_CLI_HISTORY`).
-The history file is accepted only when it is a regular file owned by the current
-user, is forced to mode `0600` after every write, and is disabled rather than
-following a symlink or writing through a changed path.
+The compatibility launcher `ise-cli` with no arguments starts `pwsh` with the
+module imported. The former Python REPL remains private backend implementation
+code during migration and is not installed as the public command.
 
 Tab completion is context-aware. It completes commands, valid options, enum values,
 output/select fields, generic GET families and known paths, and Data Connect view
@@ -31,13 +34,11 @@ cooldown; it simply omits live suggestions when the pacing gate is busy. Complet
 failures are silent and never prevent command entry.
 Press Tab twice to display all matching choices.
 
-```console
-$ ise-cli
-Cisco ISE read-only shell. Type ? for commands, help COMMAND for details.
-ise> ?
-ise> endpoint aabb.ccdd.eeff
-ise> radius-auth --identifier client-25.example.test --limit 20
-ise> quit
+```powershell
+ise-cli
+Get-Command -Module Ise.Cli
+Get-IseEndpoint aabb.ccdd.eeff
+Get-IseRadiusAuthentication -Identifier client-25.example.test -Limit 20
 ```
 
 The exporter runtime uses MnT XML only for its separately bounded current
@@ -47,9 +48,9 @@ or Secure Client records; they do not access or modify that scheduled snapshot.
 
 ## Configuration and routing
 
-The CLI loads `./.env`, then `ISE_EXPORTER_ENV_FILE` (default
-`/etc/ise-exporter/ise-exporter.env`) without overriding variables already present in
-the process environment. REST/OpenAPI commands require `ISE_HOST`, `ISE_USER`, and
+The backend honors existing process variables first, then `ISE_EXPORTER_ENV_FILE`
+(default `/etc/ise-exporter/ise-exporter.env`), then `./.env` as a development
+fallback. REST/OpenAPI commands require `ISE_HOST`, `ISE_USER`, and
 `ISE_PASS`; only MnT XML commands additionally require `ISE_MNT_HOST`. Data Connect
 reporting commands can run with only the `ISE_DATACONNECT_*` settings; when both
 credential sets are present, endpoint resolution can enrich Data Connect inventory
@@ -137,25 +138,25 @@ explicit production-impact acknowledgement. Complete enumeration requires both
 `--all` and `--allow-expensive`. MnT ActiveList retrieval and leading-wildcard
 searches such as `*LAPTOP*` likewise require `--allow-expensive`.
 
-### Friendly endpoint searches
+### Endpoint search grammar
 
-Inside `ise-cli`, a bare pattern searches the endpoint name/hostname. A qualified
-pattern uses `FIELD=PATTERN`:
+`Find-IseEndpoint` accepts a bare pattern for endpoint name/hostname searches and
+qualified `FIELD=PATTERN` criteria for other Context Visibility attributes:
 
-```console
-ise> endpoints LAB-*
-ise> endpoints authorization-policy=PermitAccess*
-ise> endpoints location=Berlin-* endpoint-policy=Windows*
-ise> endpoints posture-status=Compliant agent-version=5.1.*
-ise> endpoints username=alice nad=access-switch-*
+```powershell
+Find-IseEndpoint 'LAB-*'
+Find-IseEndpoint 'authorization-policy=PermitAccess*'
+Find-IseEndpoint 'location=Berlin-*','endpoint-policy=Windows*'
+Find-IseEndpoint 'posture-status=Compliant','agent-version=5.1.*'
+Find-IseEndpoint 'username=alice','nad=access-switch-*'
 ```
 
 `*` matches any text and `?` matches one character. Different fields are combined
 with AND. Repeating one field supplies alternatives with OR:
 
-```console
-ise> endpoints location=Berlin-* location=London-* posture-status=Compliant
-ise> endpoints '*LAPTOP*' --allow-expensive
+```powershell
+Find-IseEndpoint 'location=Berlin-*','location=London-*','posture-status=Compliant'
+Find-IseEndpoint '*LAPTOP*' -AllowExpensive
 ```
 
 Searches run in Data Connect with bound values, a default 100-row limit, and the
@@ -180,10 +181,10 @@ spaces such as `Ops Owner`); an unrecognized payload is preserved verbatim.
 
 The field catalog is schema-driven rather than tied to a guessed ISE column list:
 
-```console
-ise> endpoint-fields
-ise> endpoint-fields *policy*
-ise> endpoint-fields *location*
+```powershell
+Get-IseEndpointField
+Get-IseEndpointField '*policy*'
+Get-IseEndpointField '*location*'
 ```
 
 Short operator aliases include `name`, `mac`, `ip`, `endpoint-policy`, `profile`,
@@ -206,7 +207,12 @@ bounded unfiltered ERS inventory and accepts explicitly supplied advanced filter
 that the appliance supports. In a normal OS shell, quote wildcard arguments so the
 local shell does not expand them.
 
-## Examples
+## Legacy subcommand compatibility
+
+The public launcher still maps the former subcommand grammar through PowerShell
+for migration. It asks the private backend for JSON, recreates the requested
+terminal format at the process boundary, and preserves `--select`; use native
+cmdlets for new scripts and pipelines.
 
 ```console
 ise-cli health
@@ -237,9 +243,9 @@ ise-cli get openapi /license/system/tier-state --no-unwrap --output json
 ise-cli get mnt /Session/ActiveList --allow-expensive --output json
 ```
 
-Every data command supports `--output table|json|jsonl|csv` and `--select`.
-`jsonl`, `csv`, and field selection provide pipeline-friendly structured output in
-the same spirit as selecting properties from PowerCLI objects.
+Compatibility calls retain `--output table|json|jsonl|csv` and `--select`. Native
+PowerShell callers use `Format-Table`, `ConvertTo-Json`, `Export-Csv`, and
+`Select-Object` at the pipeline boundary.
 
 ## Read-only safety model
 

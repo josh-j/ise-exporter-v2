@@ -20,7 +20,7 @@ dev = ["pytest>=8.0", "ruff>=0.4"]
 
 [project.scripts]
 ise-exporter = "ise_exporter.__main__:main"
-ise-cli = "ise_exporter.cli:main"
+ise-cli-backend = "ise_exporter.cli:main"
 
 [tool.hatch.build]
 exclude = [

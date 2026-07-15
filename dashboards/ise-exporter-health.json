@@ -1,0 +1,1081 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    }
+  ],
+  "id": null,
+  "uid": "ise-exporter-health",
+  "title": "ISE Exporter Health",
+  "tags": [
+    "ise",
+    "exporter",
+    "health",
+    "freshness",
+    "data-quality"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 4,
+  "refresh": "30s",
+  "editable": true,
+  "graphTooltip": 1,
+  "description": "Collection-plan health, source-event freshness, reporting-view coverage, and top-K truncation. A successful query is separated from genuinely current source data.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Collection Health & Freshness",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Unavailable Enabled Datasets",
+      "description": "Enabled authoritative datasets whose latest collection attempt failed.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "count((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1)) or on() (0 * (count(ise_dataset_up) > 0))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Stale Enabled Datasets",
+      "description": "Enabled datasets without a successful replacement inside twice their configured interval.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "count((ise_dataset_fresh == 0) and on(dataset,source) (ise_dataset_enabled == 1)) or on() (0 * (count(ise_dataset_up) > 0))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Views Without Recent Rows",
+      "description": "Timestamped Data Connect views with no rows in the configured bounded recent window. This does not claim that the full historical view is empty; proving that would require an unsafe unbounded scan.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "(count(ise_dataconnect_view_has_recent_rows == 0) and on() ((max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Truncated Breakdowns",
+      "description": "Collector dimensional breakdowns where the configured top-K limit omits groups. Exact total metrics remain authoritative.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "((count(ise_dataconnect_radius_topk_truncated == 1) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))) + ((ise_dataconnect_radius_active_groups_truncated and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1)))) + ((count(ise_dataconnect_posture_topk_truncated == 1) and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1)))) + ((count(ise_dataconnect_endpoint_topk_truncated == 1) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)))) + ((count(ise_dataconnect_diagnostic_topk_truncated == 1) and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)))) + ((count(ise_tacacs_topk_truncated == 1) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)))) + ((ise_tacacs_internal_user_inventory_truncated and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Unavailable Dataset Details",
+      "description": "Every enabled unavailable or stale dataset, its collection source, bounded failure category, and operator-safe detail. A NONE row explicitly confirms that all enabled datasets are available and fresh.",
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "((ise_dataset_last_failure_detail_info or label_replace((ise_dataset_last_failure_info unless on(dataset,source) ise_dataset_last_failure_detail_info), \"detail\", \"Failure category: $1; inspect exporter journal\", \"reason\", \"(.+)\") or (label_replace(label_replace(ise_dataset_up, \"reason\", \"not_attempted\", \"dataset\", \".+\"), \"detail\", \"No collection attempt has completed or failed yet\", \"dataset\", \".+\") unless on(dataset,source) (ise_dataset_last_failure_info or ise_dataset_last_failure_detail_info))) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))) or label_replace(label_replace(((ise_dataset_fresh == 0) and on(dataset,source) (ise_dataset_up == 1)) and on(dataset,source) (ise_dataset_enabled == 1), \"reason\", \"stale\", \"dataset\", \".+\"), \"detail\", \"Last successful collection is older than two configured intervals\", \"dataset\", \".+\") or label_replace(label_replace(label_replace(label_replace(absent(count(((ise_dataset_up == 0) or on(dataset,source) (ise_dataset_fresh == 0)) and on(dataset,source) (ise_dataset_enabled == 1))), \"dataset\", \"NONE\", \"\", \".*\"), \"source\", \"-\", \"\", \".*\"), \"reason\", \"healthy\", \"\", \".*\"), \"detail\", \"All enabled datasets are available and fresh\", \"\", \".*\")",
+          "format": "table",
+          "instant": true,
+          "refId": "Unavailable",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true
+            },
+            "indexByName": {
+              "dataset": 0,
+              "source": 1,
+              "reason": 2,
+              "detail": 3
+            },
+            "renameByName": {
+              "dataset": "Dataset",
+              "source": "Source",
+              "reason": "Failure category",
+              "detail": "Why unavailable"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Dataset Collection Attempt and Success Age",
+      "description": "Seconds since each enabled dataset was last attempted and last replaced successfully. Missing success series mean that dataset has never completed successfully since exporter state was reset.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "(time() - ise_dataset_last_attempt_timestamp) and on(dataset,source) (ise_dataset_enabled == 1)",
+          "legendFormat": "{{dataset}} / {{source}} / attempt",
+          "refId": "Attempt age",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "(time() - ise_dataset_last_success_timestamp) and on(dataset,source) (ise_dataset_enabled == 1)",
+          "legendFormat": "{{dataset}} / {{source}} / success",
+          "refId": "Success age",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Data Connect Source-Event Freshness",
+      "description": "Recent-row presence and newest recent event inside each view's configured bounded window. Each source probe returns at most one row; global emptiness, exact counts, and full-history scans are intentionally omitted to protect MnT.",
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_view_has_recent_rows and on() ((max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "Has recent rows",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "(time() - (ise_dataconnect_view_newest_recent_event_timestamp > 0)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "Newest recent event age",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Source Data Quality",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Posture Coverage",
+      "description": "Fraction of posture-applicable endpoints with a recent assessment in the bounded reporting window.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 29
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_posture_eligible_recent_assessment_ratio and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Unknown Endpoint Profiles",
+      "description": "Current endpoints whose profile is missing or unknown.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 29
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_endpoints_unknown_profile_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Endpoints Stale 90d",
+      "description": "Current endpoint inventory not updated during the last 90 days.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 29
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_endpoints_stale{age_days=\"90\"} and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "MnT Detail Coverage",
+      "description": "Successful detail lookups divided by selected active endpoints.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 29
+      },
+      "targets": [
+        {
+          "expr": "ise_mnt_active_posture_detail_coverage_ratio and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "MnT Detail Truncated",
+      "description": "1 means candidate active endpoints exceeded the configured detail-request bound.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "ise_mnt_active_posture_detail_truncated and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "COMPLETE",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "TRUNCATED",
+                  "color": "yellow"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "NAD Inventory Export Coverage",
+      "description": "Configured NADs selected for per-device series versus the exact ERS inventory total. Truncated=1 means inactive devices were omitted after active devices were prioritized.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "ise_nad_inventory_selected and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "legendFormat": "selected",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_nad_inventory_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "legendFormat": "configured total",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_nad_inventory_truncated and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "legendFormat": "truncated",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "NAD Activity Group Coverage",
+      "description": "Data Connect NAD activity groups returned versus the exact pre-limit group count. Unconfigured-event totals cover only the returned top-K when truncated=1.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "ise_nad_activity_groups_returned and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "legendFormat": "returned",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_nad_activity_groups_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "legendFormat": "groups total",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_nad_activity_groups_truncated and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "legendFormat": "truncated",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Data Connect Collection Cadence",
+      "description": "Scheduled domain cadence and bounded event scan windows. The client applies the per-statement duty-cycle cooldown shown below; the scheduler does not apply that delay a second time.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 37
+      },
+      "targets": [
+        {
+          "expr": "ise_dataset_interval_seconds{source=\"dataconnect\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "Configured",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_dataset_effective_interval_seconds{source=\"dataconnect\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "Scheduled",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_dataconnect_scan_window_hours",
+          "format": "table",
+          "instant": true,
+          "refId": "Scan window hours",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "Worker & Query Health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "panels": []
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Data Connect Worker / Queue",
+      "description": "One worker executes reporting domains serially. Queue depth above zero is expected during a paced cold start but should eventually drain.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 47
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_worker_busy",
+          "instant": true,
+          "legendFormat": "busy",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_dataconnect_queue_depth",
+          "instant": true,
+          "legendFormat": "queued domains",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Oldest Data Connect Queue Wait",
+      "description": "Time the oldest reporting domain has waited behind the serialized duty-cycle gate.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 47
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_oldest_queued_seconds",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "MnT Posture Worker",
+      "description": "Whether the independent bounded MnT detail-refresh lane is currently executing.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 47
+      },
+      "targets": [
+        {
+          "expr": "ise_mnt_worker_busy",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "IDLE",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "RUNNING",
+                  "color": "blue"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Data Connect Statements per Minute",
+      "description": "Fixed reporting-view labels only; arbitrary SQL is never exported.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      },
+      "targets": [
+        {
+          "expr": "60 * sum by (view, result) (rate(ise_dataconnect_queries_total[5m]))",
+          "legendFormat": "{{view}} / {{result}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "qpm"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 23,
+      "type": "bargauge",
+      "title": "Latest Data Connect Query Duration",
+      "description": "Latest completed statement latency by reporting view. This remains visible across the intentionally sparse production cadence; use the histogram metric for long-range percentile analysis.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_query_last_duration_seconds",
+          "instant": true,
+          "legendFormat": "{{view}} / {{result}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 24,
+      "type": "bargauge",
+      "title": "Latest Data Connect Rows Returned",
+      "description": "Client-side result size by fixed reporting view; a failed latest attempt publishes zero instead of retaining an older successful row count. Grouped result caps protect exporter memory and metric cardinality.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 59
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_query_rows",
+          "legendFormat": "{{view}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 25,
+      "type": "bargauge",
+      "title": "Latest Global Query Cooldown",
+      "description": "Quiet time imposed after each view query to keep aggregate Data Connect database duty cycle within the configured ceiling.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 59
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_query_cooldown_seconds",
+          "legendFormat": "{{view}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "Safety & Build Identity",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 68
+      },
+      "panels": []
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "MnT Unpaged ActiveList Safety",
+      "description": "The cheap ActiveCount result, configured ceiling, and whether the exporter refused the unpaged ActiveList download.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 69
+      },
+      "targets": [
+        {
+          "expr": "ise_mnt_session_list_preflight_count",
+          "instant": true,
+          "legendFormat": "active sessions",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_mnt_session_list_ceiling",
+          "instant": true,
+          "legendFormat": "download ceiling",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_mnt_session_list_skipped",
+          "instant": true,
+          "legendFormat": "list refused",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "table",
+      "title": "Exporter Build Identity",
+      "description": "Exact deployed source revision and supported Cisco ISE release. A revision of unknown means the packaging layer did not inject a build identity.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 6,
+        "y": 69
+      },
+      "targets": [
+        {
+          "expr": "ise_exporter_build_info",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 29,
+      "type": "table",
+      "title": "Data Connect Enforced Safety Limits",
+      "description": "Effective hard client limits. Production should show a duty-cycle ceiling no higher than 0.1%, a query timeout no higher than 15 seconds, 5,000 rows, and 64 MiB retained bytes.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 77
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_max_duty_cycle_percent",
+          "instant": true,
+          "legendFormat": "maximum duty cycle percent",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_dataconnect_query_timeout_seconds",
+          "instant": true,
+          "legendFormat": "query timeout seconds",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_dataconnect_result_row_ceiling",
+          "instant": true,
+          "legendFormat": "result row ceiling",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_dataconnect_result_byte_ceiling",
+          "instant": true,
+          "legendFormat": "result byte ceiling",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Prometheus",
+        "current": {},
+        "hide": 0
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "annotations": {
+    "list": []
+  },
+  "links": []
+}

@@ -464,8 +464,7 @@
   "tags": [
     "ise",
     "endpoints",
-    "dataconnect",
-    "rest"
+    "network-devices"
   ],
   "templating": {
     "list": [
@@ -491,7 +490,7 @@
     "to": "now"
   },
   "timezone": "browser",
-  "title": "ISE Exporter / Endpoints & Devices",
+  "title": "ISE Endpoints & Network Devices",
   "uid": "ise-endpoints-devices",
   "version": 2,
   "__inputs": [

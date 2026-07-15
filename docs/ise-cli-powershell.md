@@ -1,0 +1,157 @@
+# Ise.Cli for PowerShell 7
+
+`Ise.Cli` is the PowerShell-first operator interface for Cisco ISE 3.3 Patch 11.
+It returns normal PowerShell objects instead of pre-rendered terminal tables, so
+filtering, selection, grouping, CSV export, JSON conversion, and formatting use
+the standard PowerShell pipeline.
+
+The exporter service remains Python-only and does not require PowerShell. The
+module calls the private `ise-cli-backend` JSON protocol for ISE transport and
+queries. This deliberately keeps TLS validation, REST authentication backoff,
+Data Connect serialization/pacing, schema discovery, query windows, and hard row
+limits in one audited implementation rather than recreating them with a second
+Oracle or HTTP client.
+
+## Start PowerShell
+
+The native installer copies the module into PowerShell's system module path and
+installs the `ise-cli` launcher:
+
+```console
+$ ise-cli
+PowerShell 7
+ISE PowerShell module loaded. Use Get-Command -Module Ise.Cli.
+PS> Get-Command -Module Ise.Cli
+```
+
+From an existing `pwsh` session:
+
+```powershell
+Import-Module Ise.Cli
+Get-IseCliVersion
+Get-Help Find-IseEndpoint -Full
+```
+
+For a checkout that has not been installed:
+
+```powershell
+Import-Module ./powershell/Ise.Cli/Ise.Cli.psd1
+```
+
+PowerShell 7.2 or newer is required. Windows PowerShell 5.1 is intentionally not
+supported. On Ubuntu, PowerShell is an operator-tool dependency obtained from
+Microsoft's PowerShell packages; the exporter daemon continues to use only the
+standard Ubuntu packages documented in [ubuntu-noble.md](ubuntu-noble.md).
+
+## Native object workflow
+
+```powershell
+# Wildcards are passed as values; the shell does not expand them as filesystem globs.
+Find-IseEndpoint 'LAB-*'
+Find-IseEndpoint @(
+    'authorization-policy=PermitAccess*'
+    'location=Berlin-*'
+) -Limit 250
+
+# Normal PowerShell selection, filtering, formatting, and export.
+Find-IseEndpoint '*LAPTOP*' -AllowExpensive |
+    Where-Object posture_status -eq Compliant |
+    Select-Object mac_address, hostname, endpoint_policy, matched_context |
+    Format-Table
+
+Get-IseRadiusAuthentication -Status failed -Limit 100 |
+    Group-Object nad |
+    Sort-Object Count -Descending
+
+Get-IseTacacsActivity -EventType accounting -Username netadmin |
+    Export-Csv ./tacacs-accounting.csv -NoTypeInformation
+
+Get-IseSecureClient client-25.example.test -IncludeAll |
+    ConvertTo-Json -Depth 10
+```
+
+PowerShell validates bounded numeric ranges and enum values before starting the
+backend. The backend remains authoritative for production-impact checks, including
+`-AllowExpensive`, leading-wildcard searches, complete ERS enumeration, MnT
+ActiveList, and the hard 5,000-row Data Connect ceiling.
+
+## Command map
+
+| PowerShell command | ISE operation |
+|---|---|
+| `Test-IseHealth` | PAN/ERS, MnT, and Data Connect health |
+| `Get-IseNode` | Deployment nodes |
+| `Find-IseEndpoint` | Endpoint inventory and context wildcard search |
+| `Get-IseEndpointField` | Live searchable-field schema |
+| `Get-IseEndpoint`, `Resolve-IseEndpoint` | Endpoint detail and identifier resolution |
+| `Get-IseSession`, `Get-IseActiveSession` | One endpoint session or guarded ActiveList |
+| `Get-IseAuthenticationStatus` | Bounded MnT authentication status |
+| `Get-IseSecureClient` | Parsed posture and Secure Client attributes |
+| `Get-IseNetworkDevice`, `Get-IseProfilerProfile` | ERS configuration inventory |
+| `Get-IseTacacsUser`, `Get-IseIdentityGroup`, `Get-IseNetworkDeviceGroup` | ERS identity/group inventory |
+| `Get-IseLicense`, `Get-IsePatch`, `Get-IseBackupStatus`, `Get-IseRepository` | Platform state |
+| `Get-IseNetworkPolicySet`, `Get-IseAuthorizationProfile` | Network Access policy objects |
+| `Get-IseDeviceAdminPolicySet`, `Get-IseTacacsCommandSet`, `Get-IseTacacsShellProfile` | Device Administration objects |
+| `Get-IseCertificate` | System and trusted certificates |
+| `Get-IseRadiusAuthentication`, `Get-IseRadiusError`, `Get-IseRadiusAccounting` | Bounded RADIUS reports |
+| `Get-IseEndpointReport` | Data Connect endpoint inventory |
+| `Get-IsePostureAssessment` | Endpoint- or condition-level posture reports |
+| `Get-IsePsnMetric` | PSN key-performance metrics |
+| `Get-IseTacacsActivity` | TACACS authentication, authorization, or accounting |
+| `Get-IseDataConnectSchema` | Catalog metadata only |
+| `Get-IseSchema` | Backend route and response contracts without an ISE call |
+| `Invoke-IseReadOnlyRequest` | Explicit GET-only ERS/OpenAPI/MnT diagnostic |
+| `Invoke-IseCommand` | Compatibility dispatcher for an existing `ise-cli` subcommand |
+
+Examples for configuration routing, endpoint field semantics, and API ownership
+remain in [ise-cli.md](ise-cli.md). PowerShell parameter names replace the former
+GNU-style flags:
+
+```powershell
+Get-IseAuthenticationStatus 192.0.2.25 -Seconds 3600 -Limit 50
+Get-IseCertificate -Node laba-ise-001
+Get-IsePostureAssessment -Conditions -Identifier AA:BB:CC:DD:EE:FF
+Invoke-IseReadOnlyRequest -Family ers -Path /config/identitygroup -Parameter @{size=25}
+```
+
+## Completion
+
+PowerShell provides command and parameter completion from the module metadata.
+The module additionally registers bounded context-aware completers for endpoint
+identifiers, endpoint search fields/values, ISE nodes and PSNs, NADs, usernames,
+and endpoint profiles. These completers use the backend's same completion protocol:
+
+- at most 25 suggestions;
+- five-minute backend cache;
+- no event-view scans unless expensive completion is explicitly enabled;
+- non-blocking Data Connect pacing acquisition;
+- failures return no suggestions and never block command entry.
+
+Press Tab repeatedly or use PowerShell's menu completion to see multiple choices.
+
+## Compatibility launcher
+
+Existing scripts can temporarily retain subcommand spelling:
+
+```console
+ise-cli endpoints LAB-* --limit 25
+ise-cli radius-auth --status failed --limit 50
+ise-cli schema secure-client
+```
+
+The launcher runs through PowerShell and returns PowerShell-formatted output. New
+automation should import `Ise.Cli` and use cmdlets so objects remain typed inside
+the calling pipeline. Use `ConvertTo-Json`, `Export-Csv`, or `Format-Table` at the
+pipeline boundary instead of asking the backend to pre-render output.
+
+## Configuration and authorization
+
+The backend reads existing process variables first, then an explicitly supplied
+`-EnvironmentFile` or `/etc/ise-exporter/ise-exporter.env`, then a local `.env`
+as a development fallback. Values after the first `=` remain literal.
+
+The installed module is readable by all users, but service credentials and CA
+material remain restricted to `root:ise-exporter`. Operators may use their own
+environment file or be added deliberately to the `ise-exporter` group. Data
+Connect access is refused when the user cannot participate in the shared pacing
+and authentication guards; it never falls back to an uncoordinated query.

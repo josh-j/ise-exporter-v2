@@ -72,6 +72,7 @@ It creates:
 
 - the locked `ise-exporter` system account;
 - `/opt/ise-exporter/.venv` for application code and dependencies;
+- `/opt/ise-exporter/powershell` and the system `Ise.Cli` module link;
 - `/etc/ise-exporter/ise-exporter.env` and `/etc/ise-exporter/certs`;
 - `/usr/local/bin/ise-cli` for all local users;
 - `/etc/systemd/system/ise-exporter.service`.
@@ -197,8 +198,8 @@ instances.
 ```bash
 sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --dataconnect-check
 ise-cli --help
-ise-cli  # enter the interactive shell; type ? and then quit
-ise-cli dataconnect-schema ENDPOINTS_DATA --output json
+ise-cli  # start pwsh with Ise.Cli imported
+pwsh -NoProfile -Command 'Import-Module Ise.Cli; Get-IseDataConnectSchema ENDPOINTS_DATA'
 journalctl -u ise-exporter -n 100 --no-pager
 ```
 

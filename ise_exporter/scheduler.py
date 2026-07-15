@@ -545,7 +545,7 @@ class PollScheduler:
         collection, while the one-worker queue still guarantees that reporting
         statements never execute concurrently.
         """
-        if self._dataconnect_dataset_blocked(name):
+        if self._dataconnect_dataset_enqueue_blocked(name):
             return
         if not self._dataconnect_async:
             self._run(name, time.time(), tier, callback)
@@ -564,6 +564,25 @@ class PollScheduler:
                 next(self._dataconnect_sequence), name, tier, callback,
             ))
             self._publish_worker_state(now)
+
+    def _dataconnect_dataset_enqueue_blocked(self, name):
+        """Allow cold-start work to queue behind in-flight schema discovery.
+
+        Synchronous callers must still prove the schema before executing a
+        reporting callback. In the production asynchronous lane, however, the
+        schema job is the highest-priority serialized item. Queuing compatible-
+        unknown work behind it avoids losing the whole first scheduler cycle
+        while preserving the worker's authoritative post-discovery check.
+        """
+        if name == "dataconnect_schema":
+            return False
+        if self._dataconnect_schema_ready:
+            return name in self._dataconnect_schema_failures
+        with self._dataconnect_lock:
+            return not (
+                self._dataconnect_async
+                and "dataconnect_schema" in self._dataconnect_inflight
+            )
 
     def _dataconnect_dataset_blocked(self, name):
         return (name != "dataconnect_schema"
@@ -833,9 +852,35 @@ class PollScheduler:
     def run_cycle(self):
         cfg, now = self.cfg, time.time()
 
-        # REST/OpenAPI control plane: always authoritative in every profile.
+        # Establish basic exporter and schema health first. The schema worker is
+        # asynchronous in production, so current operational datasets can queue
+        # behind it while the slower REST inventory lane continues independently.
         self._run("deployment", now, self.dataset_plan["deployment"][1],
                   lambda: deployment.collect(self.client, cfg))
+
+        if self._schema_managed:
+            self._run_dataconnect(
+                "dataconnect_schema", self.dataset_plan["dataconnect_schema"][1],
+                self._collect_dataconnect_schema)
+
+        self._run_dataconnect(
+            "dataconnect_radius_active",
+            self.dataset_plan["dataconnect_radius_active"][1],
+            lambda: dataconnect_radius.collect_active(self.dataconnect, cfg))
+        self._run_dataconnect(
+            "dataconnect_performance",
+            self.dataset_plan["dataconnect_performance"][1],
+            lambda: dataconnect_performance.collect(self.dataconnect, cfg))
+
+        # MnT owns only a bounded current active-endpoint posture snapshot. Run
+        # it before cold-start inventory so the overview becomes useful early.
+        if getattr(cfg, "collect_mnt_active_posture", True):
+            interval = self.dataset_plan["mnt_active_posture"][1]
+            self._run_mnt(
+                "mnt_active_posture", interval,
+                lambda: mnt_active_posture.collect(self.mnt, cfg))
+
+        # REST/OpenAPI control plane: always authoritative in every profile.
         def collect_devices():
             # A failed current REST attempt invalidates the join input; retaining
             # an older list would make NAD health look authoritative while ERS is down.
@@ -855,23 +900,10 @@ class PollScheduler:
             self._run("patches", now, self.dataset_plan["patches"][1],
                       lambda: patches.collect(self.client, cfg))
 
-        if self._schema_managed:
-            self._run_dataconnect(
-                "dataconnect_schema", self.dataset_plan["dataconnect_schema"][1],
-                self._collect_dataconnect_schema)
-
         # Exact historical reporting and current active-session reconstruction
         # have disjoint metric families and independent production-safe cadences.
-        # Queue the smallest/current operational datasets before slower historical
-        # reports after a cold start. The DB worker remains strictly serialized.
-        self._run_dataconnect(
-            "dataconnect_radius_active",
-            self.dataset_plan["dataconnect_radius_active"][1],
-            lambda: dataconnect_radius.collect_active(self.dataconnect, cfg))
-        self._run_dataconnect(
-            "dataconnect_performance",
-            self.dataset_plan["dataconnect_performance"][1],
-            lambda: dataconnect_performance.collect(self.dataconnect, cfg))
+        # Current operational datasets were queued above; the DB worker remains
+        # strictly serialized and leaves the slower historical backlog behind them.
         self._run_dataconnect(
             "dataconnect_nad_health",
             self.dataset_plan["dataconnect_nad_health"][1],
@@ -888,14 +920,6 @@ class PollScheduler:
         self._run_dataconnect(
             "dataconnect_freshness", self.dataset_plan["dataconnect_freshness"][1],
             lambda: dataconnect_freshness.collect(self.dataconnect, cfg))
-
-        # MnT owns only a bounded current active-endpoint posture snapshot. It
-        # never writes or substitutes for Data Connect historical metrics.
-        if getattr(cfg, "collect_mnt_active_posture", True):
-            interval = self.dataset_plan["mnt_active_posture"][1]
-            self._run_mnt(
-                "mnt_active_posture", interval,
-                lambda: mnt_active_posture.collect(self.mnt, cfg))
 
         # TACACS configuration is REST-owned; activity is Data Connect-owned in
         # standard mode. The collector exposes distinct metric families for each.

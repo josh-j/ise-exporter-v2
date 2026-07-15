@@ -506,7 +506,6 @@
   "tags": [
     "ise",
     "psn",
-    "dataconnect",
     "troubleshooting"
   ],
   "templating": {
@@ -533,7 +532,7 @@
     "to": "now"
   },
   "timezone": "browser",
-  "title": "ISE Exporter / PSN Metrics & Troubleshooting",
+  "title": "ISE PSN Troubleshooting",
   "uid": "ise-psn-troubleshooting",
   "version": 1,
   "__inputs": [

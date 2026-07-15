@@ -11,6 +11,7 @@ import atexit
 import cmd
 import contextlib
 import csv
+import io
 import ipaddress
 import json
 import os
@@ -446,6 +447,10 @@ def build_parser(*, require_command=False):
     parser.add_argument(
         "--env-file",
         help="dotenv file to load with precedence over a local development .env")
+    parser.add_argument(
+        "--complete", metavar="LINE", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--cursor", type=int, help=argparse.SUPPRESS)
     parser.add_argument(
         "--version", action="version", version=version_string("%(prog)s"))
     subs = parser.add_subparsers(dest="command", required=require_command)
@@ -2387,6 +2392,17 @@ class ISEShell(cmd.Cmd):
 def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdout=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.complete is not None:
+        shell = ISEShell(env_file=args.env_file, client=client, cfg=cfg,
+                         dataconnect=dataconnect,
+                         stdin=stdin if stdin is not None else io.StringIO(),
+                         stdout=stdout)
+        try:
+            candidates = shell.completion_candidates(args.complete, cursor=args.cursor)
+            print(json.dumps(candidates), file=stdout or sys.stdout)
+            return 0
+        finally:
+            shell.close()
     if args.command is None:
         shell = ISEShell(env_file=args.env_file, client=client, cfg=cfg,
                          dataconnect=dataconnect, stdin=stdin, stdout=stdout)

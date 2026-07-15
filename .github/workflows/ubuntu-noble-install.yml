@@ -25,6 +25,8 @@ jobs:
           sudo /opt/ise-exporter/.venv/bin/python -c \
             'import ise_exporter, oracledb, requests; print(oracledb.__version__)'
           ise-cli --help
+          pwsh -NoProfile -Command \
+            'Import-Module Ise.Cli; Get-Command Find-IseEndpoint; Get-IseCliVersion'
           /opt/ise-exporter/.venv/bin/ise-exporter --help
           test -L /usr/local/bin/ise-cli
           sudo systemd-analyze verify /etc/systemd/system/ise-exporter.service

@@ -7,21 +7,43 @@
   "description": "RADIUS failure work queue from stable Data Connect dimensions. Counts cover the bounded ISE reporting view, not unique currently connected endpoints.",
   "panels": [
     {
-      "id": 90,
+      "id": 1,
+      "type": "row",
+      "title": "Access Health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
       "type": "stat",
       "title": "Dataset Availability",
       "description": "Authoritative Data Connect dataset health. DOWN is not a valid zero.",
       "gridPos": {
         "h": 4,
-        "w": 8,
+        "w": 4,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "targets": [
         {
           "expr": "max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"})",
           "instant": true,
-          "refId": "A",
+          "refId": "Reporting",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "Active sessions",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -63,21 +85,30 @@
       }
     },
     {
-      "id": 91,
+      "id": 3,
       "type": "stat",
       "title": "Dataset Collection Age",
       "description": "Seconds since the last successful snapshot replacement; thresholds are based on this dataset cadence.",
       "gridPos": {
         "h": 4,
-        "w": 16,
-        "x": 8,
-        "y": 0
+        "w": 4,
+        "x": 4,
+        "y": 1
       },
       "targets": [
         {
           "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"dataconnect_radius\",source=\"dataconnect\"})",
           "instant": true,
-          "refId": "A",
+          "refId": "Reporting",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "Active sessions",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -105,18 +136,77 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "Active sessions"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 2700
+                    },
+                    {
+                      "color": "red",
+                      "value": 3600
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       }
     },
     {
-      "id": 1,
+      "id": 4,
+      "type": "stat",
+      "title": "Pass Rate",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "((100 * (ise_dataconnect_radius_authentication_events_total - ise_dataconnect_radius_failure_events_total) / clamp_min(ise_dataconnect_radius_authentication_events_total, 1)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
       "type": "stat",
       "title": "Failed Authentication Events",
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 0,
-        "y": 4
+        "w": 4,
+        "x": 12,
+        "y": 1
       },
       "targets": [
         {
@@ -131,48 +221,19 @@
       ]
     },
     {
-      "id": 2,
+      "id": 6,
       "type": "stat",
-      "title": "Failure Rate",
+      "title": "Likely Active Sessions",
+      "description": "Latest accounting record per session ID is Start or Interim, not Stop. Depends on NAD accounting quality.",
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 4
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "((100 * ise_dataconnect_radius_failure_events_total / clamp_min(ise_dataconnect_radius_authentication_events_total, 1)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
-          "instant": true,
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          }
-        }
-      ]
-    },
-    {
-      "id": 3,
-      "type": "stat",
-      "title": "NADs Producing Errors",
-      "gridPos": {
-        "h": 4,
-        "w": 8,
+        "w": 4,
         "x": 16,
-        "y": 4
+        "y": 1
       },
       "targets": [
         {
-          "expr": "(count(count by (nad) (ise_dataconnect_radius_errors)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
+          "expr": "(ise_dataconnect_radius_active_sessions_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -183,18 +244,53 @@
       ]
     },
     {
-      "id": 4,
+      "id": 7,
+      "type": "stat",
+      "title": "Accounting Starts",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "(ise_dataconnect_radius_accounting_event_type_total{event_type=\"start\"} and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Authentication & Sessions",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
       "type": "timeseries",
-      "title": "Failure Events by Status",
+      "title": "Authentication Outcome",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 6
       },
       "targets": [
         {
-          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{status}}",
           "refId": "A",
           "datasource": {
@@ -205,14 +301,215 @@
       ]
     },
     {
-      "id": 5,
+      "id": 10,
+      "type": "bargauge",
+      "title": "Authentication Methods",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (authentication_method) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{authentication_method}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Authentication Protocols",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (authentication_protocol) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{authentication_protocol}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "bargauge",
+      "title": "Authorization Policies",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (authorization_policy) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{authorization_policy}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "bargauge",
+      "title": "Authentication by PSN",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (psn, status) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{psn}} / {{status}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "bargauge",
+      "title": "Response Time by PSN",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(max by (psn, stat, status) (ise_dataconnect_radius_response_time_seconds)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{psn}} / {{stat}} / {{status}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "bargauge",
+      "title": "Authentication by NAD",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{nad}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "bargauge",
+      "title": "Accounting Events by NAD",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_accounting_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{nad}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "bargauge",
+      "title": "Accounting Session Duration",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(ise_dataconnect_radius_accounting_session_seconds) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{stat}} / {{nad}} / {{psn}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "Failure Triage",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "panels": []
+    },
+    {
+      "id": 19,
       "type": "bargauge",
       "title": "Top Error Codes",
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 8
+        "x": 0,
+        "y": 47
       },
       "targets": [
         {
@@ -227,14 +524,14 @@
       ]
     },
     {
-      "id": 6,
+      "id": 20,
       "type": "bargauge",
       "title": "Failing NADs",
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 16
+        "x": 12,
+        "y": 47
       },
       "targets": [
         {
@@ -249,14 +546,14 @@
       ]
     },
     {
-      "id": 7,
+      "id": 21,
       "type": "bargauge",
       "title": "Auth Methods at Failing NADs",
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 16
+        "x": 0,
+        "y": 55
       },
       "targets": [
         {
@@ -271,14 +568,14 @@
       ]
     },
     {
-      "id": 8,
+      "id": 22,
       "type": "bargauge",
       "title": "Errors by PSN",
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 24
+        "x": 12,
+        "y": 55
       },
       "targets": [
         {
@@ -293,15 +590,15 @@
       ]
     },
     {
-      "id": 9,
+      "id": 23,
       "type": "stat",
       "title": "Certificate and PKI Errors",
       "description": "Common certificate-related ISE message codes; tune this expression when Cisco adds codes to the targeted release.",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 24
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 63
       },
       "targets": [
         {
@@ -316,15 +613,15 @@
       ]
     },
     {
-      "id": 11,
+      "id": 24,
       "type": "bargauge",
       "title": "Failure Classes",
       "description": "Failed authentications grouped into bounded reason classes from Cisco's aggregate RADIUS summary view.",
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 32
+        "w": 12,
+        "x": 6,
+        "y": 63
       },
       "targets": [
         {
@@ -340,15 +637,15 @@
       ]
     },
     {
-      "id": 12,
+      "id": 25,
       "type": "bargauge",
       "title": "Failed Authorization Profiles",
       "description": "Authorization profiles associated with failed authentications in the bounded aggregate reporting window.",
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 32
+        "w": 12,
+        "x": 0,
+        "y": 71
       },
       "targets": [
         {
@@ -364,15 +661,15 @@
       ]
     },
     {
-      "id": 13,
+      "id": 26,
       "type": "bargauge",
       "title": "Failure Locations",
       "description": "Network-device locations associated with failed authentications in the bounded aggregate reporting window.",
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 32
+        "w": 12,
+        "x": 12,
+        "y": 71
       },
       "targets": [
         {
@@ -388,15 +685,15 @@
       ]
     },
     {
-      "id": 10,
+      "id": 27,
       "type": "table",
       "title": "RADIUS Failure Work Queue",
       "description": "One row per failed-authentication combination of NAD, method, protocol, authorization policy, and PSN. Error-code panels above remain sourced from the separate RADIUS errors view.",
       "gridPos": {
         "h": 12,
-        "w": 24,
+        "w": 12,
         "x": 0,
-        "y": 40
+        "y": 79
       },
       "targets": [
         {
@@ -417,8 +714,9 @@
   "tags": [
     "ise",
     "radius",
-    "dataconnect",
-    "failures"
+    "authentication",
+    "accounting",
+    "troubleshooting"
   ],
   "templating": {
     "list": [
@@ -444,8 +742,8 @@
     "to": "now"
   },
   "timezone": "browser",
-  "title": "C2C RADIUS Failure Triage",
-  "uid": "ise-failure-triage",
+  "title": "ISE Access Troubleshooting",
+  "uid": "ise-access-troubleshooting",
   "version": 1,
   "__inputs": [
     {

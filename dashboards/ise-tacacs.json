@@ -665,8 +665,7 @@
   "tags": [
     "ise",
     "tacacs",
-    "device-admin",
-    "dataconnect"
+    "device-administration"
   ],
   "templating": {
     "list": [
@@ -692,7 +691,7 @@
     "to": "now"
   },
   "timezone": "browser",
-  "title": "ISE / TACACS Device Administration",
+  "title": "ISE TACACS Device Administration",
   "uid": "ise-tacacs",
   "version": 2,
   "__inputs": [

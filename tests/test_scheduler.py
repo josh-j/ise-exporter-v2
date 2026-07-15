@@ -219,6 +219,61 @@ def test_schema_discovery_unblocks_compatible_datasets_and_restores_snapshots(
     assert pending_details == []
 
 
+def test_cold_start_queues_operational_data_behind_schema_in_first_cycle():
+    class DataConnect:
+        schema_ready = False
+        dataset_schema_failures = {}
+
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False), object(), DataConnect(), mnt=object())
+    scheduler._dataconnect_async = True
+    queued = []
+    scheduler._dataconnect_queue.put = lambda item: queued.append(item[2])
+
+    scheduler._run_dataconnect(
+        "dataconnect_schema", 86400, lambda: None)
+    scheduler._run_dataconnect(
+        "dataconnect_radius_active", 1800, lambda: None)
+    scheduler._run_dataconnect(
+        "dataconnect_performance", 3600, lambda: None)
+
+    assert queued == [
+        "dataconnect_schema",
+        "dataconnect_radius_active",
+        "dataconnect_performance",
+    ]
+
+
+def test_cold_start_dispatches_operational_lanes_before_inventory(monkeypatch):
+    class DataConnect:
+        schema_ready = False
+        dataset_schema_failures = {}
+
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False), object(), DataConnect(), mnt=object())
+    dispatched = []
+    monkeypatch.setattr(
+        scheduler, "_run",
+        lambda name, *_args, **_kwargs: dispatched.append(name))
+    monkeypatch.setattr(
+        scheduler, "_run_dataconnect",
+        lambda name, *_args, **_kwargs: dispatched.append(name))
+    monkeypatch.setattr(
+        scheduler, "_run_mnt",
+        lambda name, *_args, **_kwargs: dispatched.append(name))
+
+    scheduler.run_cycle()
+
+    assert dispatched[:5] == [
+        "deployment",
+        "dataconnect_schema",
+        "dataconnect_radius_active",
+        "dataconnect_performance",
+        "mnt_active_posture",
+    ]
+    assert dispatched.index("devices") > dispatched.index("mnt_active_posture")
+
+
 def test_schema_transport_failure_keeps_rest_reporting_lane_retryable(monkeypatch):
     class DataConnect:
         schema_ready = False

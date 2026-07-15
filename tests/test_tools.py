@@ -35,7 +35,12 @@ def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     unit = (Path(__file__).parents[1] / "deploy/ise-exporter.service").read_text()
 
     assert "CLI_LINK=/usr/local/bin/ise-cli" in script
-    assert 'ln -sfn "$VENV/bin/ise-cli" "$CLI_LINK"' in script
+    assert 'PWSH_CLI_DIR="$INSTALL_DIR/powershell"' in script
+    assert 'PWSH_MODULE_LINK=/usr/local/share/powershell/Modules/Ise.Cli/2.0.0' in script
+    assert 'cp -a "$SOURCE_DIR/powershell/." "$PWSH_CLI_DIR/"' in script
+    assert 'ln -s "$PWSH_CLI_DIR/Ise.Cli" "$PWSH_MODULE_LINK"' in script
+    assert 'ln -sfn "$PWSH_CLI_DIR/ise-cli" "$CLI_LINK"' in script
+    assert "PowerShell 7 (pwsh) is not installed" in script
     assert 'chmod -R go-w "$VENV"' in script
     assert 'chmod -R a+rX "$VENV"' in script
     assert 'chmod 640 "$ENV_FILE"' in script
