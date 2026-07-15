@@ -62,9 +62,9 @@ def _load_json(store, key, default):
     return value
 
 
-def _sync_internal_user_state(cfg, usernames):
-    """Persist only bounded internal-account names and their activity high water."""
-    usernames = sorted(set(usernames))
+def _sync_internal_user_state(cfg, accounts):
+    """Persist bounded raw-to-metric internal names and their activity high water."""
+    accounts = {label: raw for raw, label in accounts}
     store = StateStore(_state_path(cfg))
     try:
         previous = _load_json(store, _INTERNAL_LAST_SEEN_STATE, {})
@@ -75,11 +75,11 @@ def _sync_internal_user_state(cfg, usernames):
                 if isinstance(events, dict) and event_type in events
                 and str(events[event_type]).isdigit()
             }
-            for username in usernames
+            for username in accounts
             if isinstance(previous, dict) and isinstance(previous.get(username), dict)
             for events in (previous[username],)
         }
-        store.set_value(_INTERNAL_USERS_STATE, json.dumps(usernames, separators=(",", ":")),
+        store.set_value(_INTERNAL_USERS_STATE, json.dumps(accounts, separators=(",", ":")),
                         commit=False)
         store.set_value(_INTERNAL_LAST_SEEN_STATE,
                         json.dumps(high_water, separators=(",", ":")), commit=False)
@@ -89,13 +89,35 @@ def _sync_internal_user_state(cfg, usernames):
         store.close()
 
 
+def _internal_accounts(cfg):
+    """Return at most 1,000 ``(metric_label, raw_casefolded_name)`` pairs."""
+    store = StateStore(_state_path(cfg))
+    try:
+        saved = _load_json(store, _INTERNAL_USERS_STATE, {})
+    finally:
+        store.close()
+    if isinstance(saved, dict):
+        pairs = ((str(label), str(raw).strip().casefold())
+                 for label, raw in saved.items())
+    elif isinstance(saved, list):
+        # Upgrade legacy state which stored only the already-normalized label.
+        pairs = ((str(value), str(value).strip().casefold()) for value in saved)
+    else:
+        return []
+    return sorted({(label, raw) for label, raw in pairs if label.strip() and raw})[:1000]
+
+
 def _merge_internal_last_seen(cfg, observed):
     """Merge at most three timestamps per configured internal account."""
     store = StateStore(_state_path(cfg))
     try:
         usernames = _load_json(store, _INTERNAL_USERS_STATE, [])
-        internal = {str(value) for value in usernames if str(value).strip()} \
-            if isinstance(usernames, list) else set()
+        if isinstance(usernames, dict):
+            internal = {str(value) for value in usernames if str(value).strip()}
+        elif isinstance(usernames, list):
+            internal = {str(value) for value in usernames if str(value).strip()}
+        else:
+            internal = set()
         previous = _load_json(store, _INTERNAL_LAST_SEEN_STATE, {})
         high_water = {}
         for username in internal:
@@ -173,52 +195,96 @@ _COMMAND_FAMILY_SQL = """CASE
     ELSE 'other' END"""
 
 
-def _activity_queries(limit, cutoff_epoch=None):
+def _activity_queries(limit, cutoff_epoch=None, internal_user_count=0):
     recent = "WHERE epoch_time >= :minimum_epoch" if cutoff_epoch is not None else ""
+    internal_user_count = max(0, min(1000, int(internal_user_count)))
+    internal_filter = ", ".join(
+        f":internal_user_{index}" for index in range(internal_user_count))
+
+    def selection(grouped, name):
+        detail = f"(breakdown = 'detail' AND group_rank <= {limit})"
+        internal = (" OR (breakdown = 'internal_last_seen' "
+                    f"AND LOWER(TRIM(username)) IN ({internal_filter}))") \
+            if internal_filter else ""
+        return f"SELECT * FROM {grouped} WHERE {detail}{internal}"
+
     return {
         "authentication": f"""
-            SELECT grouped_auth.*,
-                   SUM(hits) OVER () AS total_events,
-                   COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT username, status, device_name, authentication_policy,
+            WITH grouped_auth AS (
+                SELECT CASE WHEN GROUPING(status) = 1
+                            THEN 'internal_last_seen' ELSE 'detail' END AS breakdown,
+                       username, status, device_name, authentication_policy,
                        identity_store, {_FAILURE_CLASS_SQL} AS failure_class,
                        COUNT(*) AS hits, MAX(epoch_time) AS last_seen
                 FROM tacacs_authentication_last_two_days
                 {recent}
-                GROUP BY username, status, device_name, authentication_policy,
-                         identity_store, {_FAILURE_CLASS_SQL}
-            ) grouped_auth
-            ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
+                GROUP BY GROUPING SETS (
+                    (username, status, device_name, authentication_policy,
+                     identity_store, {_FAILURE_CLASS_SQL}),
+                    (username)
+                )
+            ), ranked_auth AS (
+                SELECT grouped_auth.*,
+                       SUM(CASE WHEN breakdown = 'detail' THEN hits ELSE 0 END)
+                           OVER () AS total_events,
+                       SUM(CASE WHEN breakdown = 'detail' THEN 1 ELSE 0 END)
+                           OVER () AS total_groups,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY breakdown ORDER BY hits DESC) AS group_rank
+                FROM grouped_auth
+            )
+            {selection("ranked_auth", "authentication")}
         """,
         "authorization": f"""
-            SELECT grouped_authorization.*,
-                   SUM(hits) OVER () AS total_events,
-                   COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT username, status, device_name, authorization_policy,
+            WITH grouped_authorization AS (
+                SELECT CASE WHEN GROUPING(status) = 1
+                            THEN 'internal_last_seen' ELSE 'detail' END AS breakdown,
+                       username, status, device_name, authorization_policy,
                        shell_profile, matched_command_set,
                        COUNT(*) AS hits, MAX(epoch_time) AS last_seen
                 FROM tacacs_authorization_last_two_days
                 {recent}
-                GROUP BY username, status, device_name, authorization_policy,
-                         shell_profile, matched_command_set
-            ) grouped_authorization
-            ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
+                GROUP BY GROUPING SETS (
+                    (username, status, device_name, authorization_policy,
+                     shell_profile, matched_command_set),
+                    (username)
+                )
+            ), ranked_authorization AS (
+                SELECT grouped_authorization.*,
+                       SUM(CASE WHEN breakdown = 'detail' THEN hits ELSE 0 END)
+                           OVER () AS total_events,
+                       SUM(CASE WHEN breakdown = 'detail' THEN 1 ELSE 0 END)
+                           OVER () AS total_groups,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY breakdown ORDER BY hits DESC) AS group_rank
+                FROM grouped_authorization
+            )
+            {selection("ranked_authorization", "authorization")}
         """,
         "accounting": f"""
-            SELECT grouped_accounting.*,
-                   SUM(hits) OVER () AS total_events,
-                   COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT username, status, device_name,
+            WITH grouped_accounting AS (
+                SELECT CASE WHEN GROUPING(status) = 1
+                            THEN 'internal_last_seen' ELSE 'detail' END AS breakdown,
+                       username, status, device_name,
                        {_COMMAND_FAMILY_SQL} AS command_family,
                        COUNT(*) AS hits, MAX(epoch_time) AS last_seen
                 FROM tacacs_accounting_last_two_days
                 {recent}
-                GROUP BY username, status, device_name, {_COMMAND_FAMILY_SQL}
-            ) grouped_accounting
-            ORDER BY hits DESC FETCH FIRST {limit} ROWS ONLY
+                GROUP BY GROUPING SETS (
+                    (username, status, device_name, {_COMMAND_FAMILY_SQL}),
+                    (username)
+                )
+            ), ranked_accounting AS (
+                SELECT grouped_accounting.*,
+                       SUM(CASE WHEN breakdown = 'detail' THEN hits ELSE 0 END)
+                           OVER () AS total_events,
+                       SUM(CASE WHEN breakdown = 'detail' THEN 1 ELSE 0 END)
+                           OVER () AS total_groups,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY breakdown ORDER BY hits DESC) AS group_rank
+                FROM grouped_accounting
+            )
+            {selection("ranked_accounting", "accounting")}
         """,
     }
 
@@ -228,11 +294,18 @@ def _collect_dataconnect(dataconnect, cfg):
     window = event_window_hours(
         cfg, getattr(cfg, "dataconnect_tacacs_interval", 21600))
     cutoff = max(0, int(time.time()) - window * 3600)
-    queries = _activity_queries(limit, cutoff)
-    rows = {kind: dataconnect.query(sql, {"minimum_epoch": cutoff})
+    internal_accounts = _internal_accounts(cfg)
+    parameters = {"minimum_epoch": cutoff}
+    parameters.update({f"internal_user_{index}": raw
+                       for index, (_label_name, raw) in enumerate(internal_accounts)})
+    queries = _activity_queries(limit, cutoff, len(internal_accounts))
+    combined = {kind: dataconnect.query(sql, parameters)
             for kind, sql in queries.items()}
+    rows = {kind: [row for row in values
+                   if row.get("breakdown") != "internal_last_seen"]
+            for kind, values in combined.items()}
     observed_last_seen = {}
-    for event_type, event_rows in rows.items():
+    for event_type, event_rows in combined.items():
         for row in event_rows:
             username = _label(row.get("username"))
             observed_last_seen[(username, event_type)] = max(
@@ -312,6 +385,8 @@ def collect_config(client, cfg):
         resource_ids = [str(row.get("id") or "").strip() for row in resources]
         if (any(not user_id or not str(row.get("name") or "").strip()
                 for user_id, row in zip(resource_ids, resources))
+                or any(len(str(row.get("name") or "").encode("utf-8")) > 256
+                       for row in resources)
                 or len(set(resource_ids)) != len(resource_ids)):
             raise CollectorFailed("TACACS internal-user inventory contained invalid identities")
         policy_ids = [str(row.get("id") or "").strip() for row in policy_sets]
@@ -425,8 +500,8 @@ def collect_config(client, cfg):
         review_days = max(1, getattr(cfg, "tacacs_unused_account_days", 180))
         cutoff = datetime.now(timezone.utc).timestamp() - review_days * 86400
         usernames = [
-            _label(resource.get("name")) for resource in selected
-            if isinstance(resource, dict) and resource.get("name")
+            (str(resource.get("name")).strip(), _label(resource.get("name")))
+            for resource in selected if resource.get("name")
         ]
         try:
             internal_last_seen = _sync_internal_user_state(cfg, usernames)

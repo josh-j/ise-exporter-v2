@@ -102,3 +102,13 @@ def test_radius_reporting_scans_each_large_historical_view_only_once():
 def test_alternate_config_cannot_export_more_than_production_group_ceiling():
     assert group_limit(types.SimpleNamespace(dataconnect_max_groups=999_999)) == 1000
     assert len(tacacs._activity_queries(1000)) == 3
+
+
+def test_tacacs_internal_last_seen_reuses_each_existing_view_scan():
+    queries = tacacs._activity_queries(1000, cutoff_epoch=1, internal_user_count=1000)
+
+    for event_type, sql in queries.items():
+        assert sql.lower().count(f"from tacacs_{event_type}_last_two_days") == 1
+        assert "GROUP BY GROUPING SETS" in sql
+        assert "breakdown = 'detail' AND group_rank <= 1000" in sql
+        assert sql.count(":internal_user_") == 1000

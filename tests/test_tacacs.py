@@ -413,3 +413,47 @@ def test_internal_last_seen_survives_view_rollover_and_restart(tmp_path):
         clear_metric(metric)
     tacacs.collect_config(Client(), cfg)
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
+
+
+def test_internal_account_last_seen_is_not_lost_outside_dimensional_topk(tmp_path):
+    state_path = str(tmp_path / "state.sqlite3")
+    cfg = types.SimpleNamespace(
+        dataconnect_max_groups=1, state_db_path=state_path,
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=1)
+    tacacs.collect_config(Client(), cfg)
+    now = int(time.time())
+
+    class Activity:
+        def __init__(self):
+            self.sql = []
+            self.parameters = []
+
+        def query(self, sql, parameters=None):
+            self.sql.append(sql)
+            self.parameters.append(parameters)
+            return [{
+                "breakdown": "detail", "username": "high-volume-ad-user",
+                "status": "Pass", "device_name": "switch-1", "hits": 100,
+                "last_seen": now, "total_events": 101, "total_groups": 2,
+            }, {
+                "breakdown": "internal_last_seen", "username": "netadmin",
+                "hits": 1, "last_seen": now, "total_events": 101,
+                "total_groups": 2,
+            }]
+
+    activity = Activity()
+    tacacs.collect_activity(activity, cfg)
+
+    assert all("GROUP BY GROUPING SETS" in sql for sql in activity.sql)
+    assert all(parameters["internal_user_0"] == "netadmin"
+               for parameters in activity.parameters)
+    last_seen = _rows(metrics.ise_tacacs_account_last_seen_timestamp,
+                      "username", "event_type")
+    assert {key: value for key, value in last_seen.items() if key[0] == "netadmin"} == {
+        ("netadmin", "authentication"): float(now),
+        ("netadmin", "authorization"): float(now),
+        ("netadmin", "accounting"): float(now),
+    }
+
+    tacacs.collect_config(Client(), cfg)
+    assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []

@@ -36,8 +36,14 @@ GROUP BY username, authorization_policy, shell_profile, matched_command_set;
 ```
 
 The exporter does not guess account usage from deployment-wide lifetime policy hit
-counts. Its hygiene queue combines internal-account object age with activity that
-the exporter has actually observed through Data Connect. Because ISE's efficient
+counts. Each of the three existing scans uses `GROUPING SETS` to return the
+dimensional top-K plus one last-seen row for each configured internal account in
+the same statement. A low-volume internal account therefore cannot disappear
+behind a high-volume dimensional top-K and be falsely marked unused. The output
+remains bounded to 1,000 troubleshooting groups plus at most 1,000 configured
+internal accounts per statement. Its hygiene queue combines internal-account
+object age with activity that the exporter has actually observed through Data
+Connect. Because ISE's efficient
 views roll over after two days, the private exporter state database retains only a
 high-water timestamp for authentication, authorization, and accounting for each
 currently configured internal account. At the default cap this is no more than
