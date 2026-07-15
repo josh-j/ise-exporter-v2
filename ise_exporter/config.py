@@ -255,7 +255,7 @@ class Config:
             dataconnect_min_query_interval_ms=_bounded_i(
                 "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 5000, 5000),
             dataconnect_max_duty_cycle_percent=_bounded_f(
-                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.1, 0.1, 0.1),
+                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.1, 0.01, 0.1),
             dataconnect_event_window_hours=_bounded_i(
                 "ISE_DATACONNECT_EVENT_WINDOW_HOURS", 6, 1, 6),
             dataconnect_radius_interval=_bounded_i(

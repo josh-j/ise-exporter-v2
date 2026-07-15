@@ -244,6 +244,18 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.tacacs_unused_account_days == 1
 
 
+def test_dataconnect_accepts_a_more_conservative_duty_cycle(monkeypatch):
+    monkeypatch.setenv("ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", "0.05")
+
+    assert Config.from_env().dataconnect_max_duty_cycle_percent == 0.05
+
+
+def test_dataconnect_duty_cycle_has_a_staleness_safety_floor(monkeypatch):
+    monkeypatch.setenv("ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", "0")
+
+    assert Config.from_env().dataconnect_max_duty_cycle_percent == 0.01
+
+
 def test_empty_shared_pacing_path_cannot_disable_cross_process_guard(monkeypatch):
     monkeypatch.setenv("ISE_DATACONNECT_SHARED_PACING_FILE", "")
 

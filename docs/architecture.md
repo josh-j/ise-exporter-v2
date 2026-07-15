@@ -91,14 +91,15 @@ node. `ISE_DATACONNECT_HOST` is therefore mandatory when Data Connect is enabled
 and never inherits `ISE_MNT_HOST`; this prevents an XML API routing choice from
 silently becoming the Oracle target. Production defaults for up to 100,000
 endpoints use one sequential connection, five-second statement pacing, a 0.1%
-adaptive query-duty-cycle ceiling, 15-second statement timeouts, and independent
+adaptive query-duty-cycle ceiling, 15-second total Oracle-attempt timeouts, and independent
 30-minute to 24-hour domain cadences. The client enforces five seconds, 0.1%,
 and a 15-second Oracle-call timeout as hard safety limits and refuses to
 materialize more than 5,000 rows from any statement. Results are streamed in
 100-row batches, with 1 MiB per-field and
 64 MiB per-query retained-payload ceilings, even when a CLI caller or alternate
 configuration object requests a more aggressive value; grouped output is likewise
-capped at 1,000 series per breakdown. Summary
+capped at 1,000 series per breakdown. Operators may lower the duty-cycle ceiling
+as far as 0.01%; values above 0.1% are always clamped. Summary
 and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate event scan. Exact
 RADIUS volume, failure totals, and distinct endpoint/user counts come from Cisco's

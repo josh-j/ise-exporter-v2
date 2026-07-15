@@ -140,6 +140,39 @@ def test_client_cannot_relax_production_pressure_invariants():
     assert client.min_query_interval == 5.0
 
 
+def test_client_honors_more_conservative_duty_cycle():
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_max_duty_cycle_percent=0.05,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    assert dataconnect.DataConnectClient(cfg).max_duty_cycle == 0.05
+
+
+def test_query_timeout_is_total_across_execute_and_fetch_round_trips(monkeypatch):
+    connection = Connection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    clock = iter((0.0, 0.0, 14.9, 15.1))
+    monkeypatch.setattr(dataconnect.time, "perf_counter", lambda: next(clock))
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=15,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    with pytest.raises(TimeoutError, match="hard attempt timeout"):
+        dataconnect.DataConnectClient(cfg).query(
+            "SELECT username FROM radius_authentications")
+
+    assert connection.call_timeout == pytest.approx(100)
+
+
 def test_schema_validation_is_not_mislabeled_as_reporting_activity():
     sql = """
         SELECT table_name, column_name
@@ -287,6 +320,22 @@ def test_shared_pacing_gate_rejects_corrupt_deadline_state(tmp_path, state):
     )
 
     with pytest.raises(RuntimeError, match="shared pacing gate unavailable"):
+        dataconnect.DataConnectClient(cfg)._shared_gate()
+
+
+def test_shared_pacing_gate_rejects_implausibly_distant_deadline(
+        monkeypatch, tmp_path):
+    path = tmp_path / "dataconnect.pacing"
+    path.write_text(str(dataconnect.MAX_SHARED_PACING_FUTURE_SECONDS + 101))
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file=str(path),
+    )
+
+    with pytest.raises(RuntimeError, match="implausibly far in the future"):
         dataconnect.DataConnectClient(cfg)._shared_gate()
 
 

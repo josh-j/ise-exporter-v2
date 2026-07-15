@@ -27,6 +27,9 @@ MAX_RESULT_ROWS = 5000
 FETCH_BATCH_ROWS = 100
 MAX_FIELD_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 64 * 1024 * 1024
+MIN_DUTY_CYCLE_PERCENT = 0.01
+MAX_DUTY_CYCLE_PERCENT = 0.1
+MAX_SHARED_PACING_FUTURE_SECONDS = 366 * 86400
 _PACING_BUSY = object()
 
 
@@ -134,8 +137,10 @@ class DataConnectClient:
         # none may silently relax the production database-pressure ceiling.
         self.min_query_interval = max(
             5.0, getattr(cfg, "dataconnect_min_query_interval_ms", 5000) / 1000.0)
-        self.max_duty_cycle = max(0.1, min(0.1, float(getattr(
-            cfg, "dataconnect_max_duty_cycle_percent", 0.1))))
+        self.max_duty_cycle = max(MIN_DUTY_CYCLE_PERCENT, min(
+            MAX_DUTY_CYCLE_PERCENT,
+            float(getattr(cfg, "dataconnect_max_duty_cycle_percent", 0.1)),
+        ))
         self.shared_pacing_file = str(getattr(
             cfg, "dataconnect_shared_pacing_file", "") or "")
         self._connection = None
@@ -208,6 +213,8 @@ class DataConnectClient:
             if not math.isfinite(deadline) or deadline < 0:
                 raise OSError("pacing gate deadline is not a finite non-negative value")
             remaining = deadline - time.time()
+            if remaining > MAX_SHARED_PACING_FUTURE_SECONDS:
+                raise OSError("pacing gate deadline is implausibly far in the future")
             if remaining > 0:
                 if not wait:
                     fcntl.flock(descriptor, fcntl.LOCK_UN)
@@ -280,6 +287,14 @@ class DataConnectClient:
             self._connection.call_timeout = self.timeout * 1000
         return self._connection
 
+    @staticmethod
+    def _apply_attempt_timeout(connection, deadline):
+        """Bound all Oracle round trips to one total per-attempt time budget."""
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            raise TimeoutError("Data Connect query exceeded the hard attempt timeout")
+        connection.call_timeout = max(1, math.ceil(remaining * 1000))
+
     def query(self, sql, parameters=None, *, wait_for_pacing=True):
         remaining = self._next_query_at - time.monotonic()
         if remaining > 0:
@@ -316,12 +331,16 @@ class DataConnectClient:
             started = time.monotonic()
             for attempt in range(2):
                 try:
-                    with self.connect().cursor() as cursor:
+                    connection = self.connect()
+                    deadline = time.perf_counter() + self.timeout
+                    with connection.cursor() as cursor:
+                        self._apply_attempt_timeout(connection, deadline)
                         cursor.execute(sql, parameters or {})
                         columns = [column.name.lower() for column in cursor.description]
                         rows = []
                         result_bytes = 0
                         while True:
+                            self._apply_attempt_timeout(connection, deadline)
                             batch = cursor.fetchmany(FETCH_BATCH_ROWS)
                             if not batch:
                                 break

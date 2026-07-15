@@ -118,8 +118,10 @@ ISE_REST_AUTH_GUARD_FILE=/var/lib/ise-exporter/shared/rest-auth.guard
 
 Five seconds between statements, a 0.1% duty cycle, and 1,000 grouped results are
 hard maximum-pressure boundaries. Environment overrides may make collection more
-conservative, but the exporter and `ise-cli` clamp attempts to make it more
-aggressive. This applies even when the configured Data Connect host is a secondary
+conservative down to a 0.01% duty-cycle floor, but the exporter and `ise-cli`
+clamp attempts to make it more aggressive. The 15-second timeout is enforced
+across the complete execute/fetch attempt, not independently for every Oracle
+round trip. This applies even when the configured Data Connect host is a secondary
 MnT because an exposed reporting view may still consume cluster-wide resources.
 The documented 30-minute through daily domain cadences are also minimum intervals;
 the 14-view source-freshness diagnostic is intentionally one daily statement and
