@@ -35,11 +35,19 @@ HTTP_READ_CHUNK_BYTES = 64 * 1024
 MAX_HTTP_RESPONSE_BYTES = 64 * 1024 * 1024
 HTTP_ERROR_SNIPPET_BYTES = 200
 MAX_AUTH_BACKOFF_SECONDS = 86400
+MAX_XML_ELEMENTS = 2_000_000
+MAX_XML_DEPTH = 64
+MAX_XML_SESSIONS = 250_000
+MAX_XML_FIELDS_PER_SESSION = 128
 UNSAFE_XML_DECLARATION = re.compile(br"<!DOCTYPE|<!ENTITY", re.IGNORECASE)
 
 
 class ResponseTooLarge(RuntimeError):
     """The remote API attempted to return more data than this process retains."""
+
+
+class XMLResponseTooComplex(RuntimeError):
+    """The bounded MnT XML shape exceeded safe structural limits."""
 
 
 class RestAuthGuard:
@@ -142,6 +150,97 @@ class RestAuthGuard:
 
 def _strip_ns(tag):
     return tag.split("}", 1)[-1] if "}" in tag else tag
+
+
+def _parse_mnt_xml(content):
+    """Pull-parse MnT XML while releasing completed nodes immediately."""
+    parser = ET.XMLPullParser(events=("start", "end"))
+    stack = []
+    elements = 0
+    raw_total = None
+    active_sessions = []
+    auth_sessions = []
+    detail = {}
+    active_record = None
+    auth_record = None
+    active_fields = 0
+    auth_fields = 0
+
+    def process_events():
+        nonlocal elements, raw_total, active_record, auth_record
+        nonlocal active_fields, auth_fields
+        for event, element in parser.read_events():
+            name = _strip_ns(element.tag)
+            if event == "start":
+                elements += 1
+                if elements > MAX_XML_ELEMENTS:
+                    raise XMLResponseTooComplex(
+                        f"MnT XML exceeded {MAX_XML_ELEMENTS} elements")
+                if len(stack) + 1 > MAX_XML_DEPTH:
+                    raise XMLResponseTooComplex(
+                        f"MnT XML exceeded {MAX_XML_DEPTH} levels")
+                if not stack:
+                    raw_total = next((
+                        value for key, value in element.attrib.items()
+                        if _strip_ns(key) == "noOfActiveSession"), None)
+                if name == "activeSession":
+                    if active_record is not None:
+                        raise XMLResponseTooComplex("MnT XML nested activeSession records")
+                    active_record = {}
+                    active_fields = 0
+                elif name == "authStatusElements":
+                    if auth_record is not None:
+                        raise XMLResponseTooComplex(
+                            "MnT XML nested authStatusElements records")
+                    auth_record = {}
+                    auth_fields = 0
+                stack.append(element)
+                continue
+
+            parent_name = _strip_ns(stack[-2].tag) if len(stack) >= 2 else ""
+            text = (element.text or "").strip()
+            if parent_name == "activeSession" and active_record is not None:
+                active_fields += 1
+                if active_fields > MAX_XML_FIELDS_PER_SESSION:
+                    raise XMLResponseTooComplex(
+                        "MnT activeSession exceeded the field ceiling")
+                active_record[name] = text
+            elif parent_name == "authStatusElements" and auth_record is not None:
+                auth_fields += 1
+                if auth_fields > MAX_XML_FIELDS_PER_SESSION:
+                    raise XMLResponseTooComplex(
+                        "MnT authStatusElements exceeded the field ceiling")
+                auth_record[name] = text
+            elif len(stack) == 2 and text:
+                detail[name] = text
+
+            if name == "activeSession":
+                if len(active_sessions) >= MAX_XML_SESSIONS:
+                    raise XMLResponseTooComplex(
+                        f"MnT XML exceeded {MAX_XML_SESSIONS} active sessions")
+                active_sessions.append(active_record or {})
+                active_record = None
+            elif name == "authStatusElements":
+                if len(auth_sessions) >= MAX_XML_SESSIONS:
+                    raise XMLResponseTooComplex(
+                        f"MnT XML exceeded {MAX_XML_SESSIONS} auth-status records")
+                auth_sessions.append(auth_record or {})
+                auth_record = None
+
+            stack.pop()
+            if stack:
+                try:
+                    stack[-1].remove(element)
+                except ValueError:
+                    pass
+            element.clear()
+
+    for offset in range(0, len(content), HTTP_READ_CHUNK_BYTES):
+        parser.feed(content[offset:offset + HTTP_READ_CHUNK_BYTES])
+        process_events()
+    parser.close()
+    process_events()
+    return raw_total, active_sessions, auth_sessions, detail
 
 
 class ISERestClient:
@@ -394,7 +493,7 @@ class ISERestClient:
             return None
         try:
             return r.json()
-        except ValueError as error:
+        except (RecursionError, ValueError) as error:
             status = str(getattr(r, "status_code", 0) or 0)
             logger.warning("Invalid JSON from %s: %s", url, error)
             ise_api_errors_total.labels(
@@ -630,21 +729,18 @@ class ISERestClient:
             logger.error("Rejected XML with a DTD or entity declaration from %s", url)
             return None
         try:
-            root = ET.fromstring(r.content)
+            raw_total, active, auth_status, detail = _parse_mnt_xml(r.content)
         except ET.ParseError as e:
             ise_api_errors_total.labels(api=api_name, error_type="parse", http_code="0").inc()
             logger.error("XML parse error from %s: %s", url, e)
             return None
+        except XMLResponseTooComplex as error:
+            ise_api_errors_total.labels(
+                api=api_name, error_type="response_too_complex", http_code="200").inc()
+            logger.error("Rejected structurally complex XML from %s: %s", url, error)
+            return None
 
-        # ISE appliances may qualify MnT elements with a default namespace.
-        # ElementTree's literal ``.//activeSession`` does not match
-        # ``{namespace}activeSession``, so compare local names consistently with
-        # the already namespace-stripped output fields.
-        active = [item for item in root.iter()
-                  if _strip_ns(item.tag) == "activeSession"]
         if active:
-            raw_total = next((value for key, value in root.attrib.items()
-                              if _strip_ns(key) == "noOfActiveSession"), None)
             try:
                 total = len(active) if raw_total is None else int(raw_total)
             except (TypeError, ValueError):
@@ -656,20 +752,11 @@ class ISERestClient:
                     "MnT ActiveList count mismatch from %s: declared %r, parsed %d",
                     url, raw_total, len(active))
                 return None
-            sessions = [{_strip_ns(c.tag): (c.text or "").strip() for c in item} for item in active]
-            return {"total": total, "sessions": sessions}
+            return {"total": total, "sessions": active}
 
-        auth_status = [item for item in root.iter()
-                       if _strip_ns(item.tag) == "authStatusElements"]
         if auth_status:
-            sessions = [{_strip_ns(c.tag): (c.text or "").strip() for c in item}
-                        for item in auth_status]
-            return {"total": len(sessions), "sessions": sessions}
+            return {"total": len(auth_status), "sessions": auth_status}
 
-        detail = {}
-        for c in root:
-            if c.text and c.text.strip():
-                detail[_strip_ns(c.tag)] = c.text.strip()
         return {"total": 1 if detail else 0, "sessions": [detail] if detail else []}
 
     def health_check(self):

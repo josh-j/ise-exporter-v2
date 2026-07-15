@@ -4,6 +4,7 @@ import threading
 import types
 import warnings
 
+import pytest
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -748,6 +749,26 @@ def test_invalid_json_is_reported_as_api_parse_error():
     assert counter._value.get() == before + 1
 
 
+def test_deep_json_recursion_is_reported_as_api_parse_error():
+    client = ISERestClient.__new__(ISERestClient)
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            raise RecursionError("JSON nesting exceeded interpreter limit")
+
+    client._request = lambda *_args, **_kwargs: Response()
+    counter = ise_api_errors_total.labels(
+        api="ers_deep_json", error_type="parse", http_code="200")
+    before = counter._value.get()
+
+    assert client._get_json(
+        object(), "https://ise.example/ers/config/endpoint",
+        api_name="ers_deep_json") is None
+    assert counter._value.get() == before + 1
+
+
 def test_mnt_xml_rejects_dtd_and_entity_declarations():
     client = ISERestClient.__new__(ISERestClient)
     client.mnt_xml_url = "https://mnt.example/admin/API/mnt"
@@ -760,6 +781,28 @@ def test_mnt_xml_rejects_dtd_and_entity_declarations():
     before = counter._value.get()
 
     assert client.get_mnt_xml("/Session/test", api_name="mnt_safe_xml") is None
+    assert counter._value.get() == before + 1
+
+
+@pytest.mark.parametrize(("constant", "limit", "xml"), (
+    ("MAX_XML_ELEMENTS", 3, b"<root><a/><b/><c/></root>"),
+    ("MAX_XML_DEPTH", 2, b"<root><child><grandchild/></child></root>"),
+    ("MAX_XML_FIELDS_PER_SESSION", 1,
+     b"<root><activeSession><a>1</a><b>2</b></activeSession></root>"),
+))
+def test_mnt_xml_rejects_structural_amplification(
+        monkeypatch, constant, limit, xml):
+    monkeypatch.setattr(rest_module, constant, limit)
+    client = ISERestClient.__new__(ISERestClient)
+    client.mnt_xml_url = "https://mnt.example/admin/API/mnt"
+    client.mnt_session = object()
+    client._request = lambda *_args, **_kwargs: _Resp(xml)
+    counter = ise_api_errors_total.labels(
+        api="mnt_complex_xml", error_type="response_too_complex", http_code="200")
+    before = counter._value.get()
+
+    assert client.get_mnt_xml(
+        "/Session/test", api_name="mnt_complex_xml") is None
     assert counter._value.get() == before + 1
 
 
