@@ -68,7 +68,7 @@ database-side aggregation, collapsed summary/top-group scans, serialized two-sec
 query pacing, cadence-aligned event scans capped at 24 hours, daily RADIUS reporting,
 30-minute bounded active-session
 reconstruction, hourly performance reporting,
-six-hour posture/TACACS/NAD reporting, 12-hour source-freshness checks, and daily
+six-hour posture/TACACS/NAD reporting, daily source-freshness checks, and daily
 inventory state. A private
 SQLite cache survives restarts. MnT fetches at most 250 new or rotating endpoint
 details per 15-minute cycle, while cached active details retain dashboard coverage.

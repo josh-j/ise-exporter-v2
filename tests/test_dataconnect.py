@@ -1,4 +1,5 @@
 import fcntl
+import os
 import threading
 import types
 
@@ -206,6 +207,43 @@ def test_shared_pacing_gate_inherits_state_directory_group(monkeypatch, tmp_path
     client._release_shared_gate(descriptor, 0)
 
     assert calls == [(-1, tmp_path.stat().st_gid)]
+
+
+def test_shared_pacing_gate_publishes_crash_safe_lease_before_query(
+        monkeypatch, tmp_path):
+    path = tmp_path / "dataconnect.pacing"
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file=str(path),
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    descriptor = client._shared_gate()
+    try:
+        deadline = float(path.read_text().strip())
+        expected_cooldown = 2 * client.timeout * (100 / client.max_duty_cycle - 1)
+        assert deadline == pytest.approx(100.0 + expected_cooldown)
+    finally:
+        client._release_shared_gate(descriptor, 0)
+
+
+def test_shared_pacing_gate_rejects_non_regular_file(tmp_path):
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO support unavailable")
+    path = tmp_path / "dataconnect.pacing"
+    os.mkfifo(path)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file=str(path),
+    )
+
+    with pytest.raises(RuntimeError, match="not a regular file"):
+        dataconnect.DataConnectClient(cfg)._shared_gate()
 
 
 def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):

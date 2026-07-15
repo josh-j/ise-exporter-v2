@@ -9,6 +9,7 @@ import fcntl
 import logging
 import os
 import ssl
+import stat
 import threading
 import time
 
@@ -164,8 +165,15 @@ class DataConnectClient:
         path = os.path.abspath(os.path.expanduser(self.shared_pacing_file))
         try:
             descriptor = os.open(
-                path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o660)
-            if os.fstat(descriptor).st_uid == os.geteuid():
+                path,
+                os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o660,
+            )
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise OSError("pacing gate is not a regular file")
+            if metadata.st_uid == os.geteuid():
                 # Authorized CLI users may create the gate before the service.
                 # Match the state directory's group explicitly in addition to
                 # requiring setgid deployment directories, so both processes
@@ -188,6 +196,17 @@ class DataConnectClient:
             remaining = deadline - time.time()
             if remaining > 0:
                 self._wait(remaining)
+            # Persist a conservative lease *before* Oracle work begins. A normal
+            # completion replaces it with the measured duty-cycle cooldown, but
+            # SIGKILL, host loss, or interpreter failure cannot release the flock
+            # and leave the next process free to hit a large MnT immediately.
+            worst_case_duration = 2 * self.timeout  # one reconnect is permitted
+            crash_cooldown = max(
+                self.min_query_interval,
+                worst_case_duration * (100 / self.max_duty_cycle - 1),
+            )
+            self._write_shared_deadline(
+                descriptor, time.time() + crash_cooldown)
             return descriptor
         except Exception as error:
             try:
@@ -198,14 +217,18 @@ class DataConnectClient:
                 f"Data Connect shared pacing gate unavailable at {path}: {error}") from error
 
     @staticmethod
-    def _release_shared_gate(descriptor, deadline):
+    def _write_shared_deadline(descriptor, deadline):
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        os.ftruncate(descriptor, 0)
+        os.write(descriptor, f"{deadline:.6f}\n".encode("ascii"))
+        os.fsync(descriptor)
+
+    @classmethod
+    def _release_shared_gate(cls, descriptor, deadline):
         if descriptor is None:
             return
         try:
-            os.lseek(descriptor, 0, os.SEEK_SET)
-            os.ftruncate(descriptor, 0)
-            os.write(descriptor, f"{deadline:.6f}\n".encode("ascii"))
-            os.fsync(descriptor)
+            cls._write_shared_deadline(descriptor, deadline)
         finally:
             fcntl.flock(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)

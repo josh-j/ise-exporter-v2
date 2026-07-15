@@ -141,6 +141,9 @@ Authorized `ise-cli` users must belong to the `ise-exporter` group so their Data
 Connect queries participate in the same serialized pacing gate as the service.
 The state directory is mode `2770`; setgid group inheritance prevents a CLI-created
 gate from locking the service out when the operator has a different primary group.
+The gate must be a regular file and carries a conservative pre-query crash lease,
+so an interrupted CLI or service cannot release serialization and immediately
+repeat a slow statement after restart.
 The resulting metrics are current aggregate samples with coverage/truncation
 signals; they never expose endpoint identity, session identity, or raw/free-form
 attributes as Prometheus labels. Data Connect remains the historical posture and

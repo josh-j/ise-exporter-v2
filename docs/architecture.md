@@ -107,7 +107,10 @@ authentication view remains bounded and is used only for dimensions the summary
 does not expose: method, protocol, exact authorization policy, and status-specific
 latency. NAD activity health also uses a single per-device aggregation from the
 summary view, not an additional raw authentication scan.
-The steady-state scheduled workload is about 8.3 statements per hour after startup.
+The three large daily RADIUS sources each use one `GROUPING SETS` statement for
+their paired breakdowns (authentication/latency, volume/failure context, and
+accounting/session duration), rather than rescanning the same 24-hour window.
+The steady-state scheduled workload is about 8.2 statements per hour after startup.
 Daily RADIUS reporting scans 24 hours, while a disjoint active-session query
 scans only its configured stale window every 30 minutes. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
@@ -124,7 +127,10 @@ often, but environment overrides cannot restore the former aggressive schedule.
 The exporter and CLI also serialize through one persistent pacing gate so separate
 processes cannot bypass the cooldown. An empty pacing-path environment value is
 normalized back to the protected service-state path rather than disabling this
-guard. The former shared-tier design issued 1,437
+guard. The gate publishes a conservative two-attempt lease before Oracle work
+starts, then replaces it with the measured cooldown; process or host loss during
+a query therefore cannot turn restart into an immediate second database hit.
+The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
 invocations before adaptive cooldown is considered.
 The daily endpoint inventory uses one current-row coverage scan and one Oracle

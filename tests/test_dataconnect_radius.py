@@ -35,36 +35,40 @@ class DataConnect:
         self.sql.append(sql)
         lowered = sql.lower()
         if "grouped_failure" in lowered:
-            return [{"failure_class": "credentials", "authorization_profiles": "PermitAccess",
-                     "location": "Campus", "events": 9,
-                     "total_groups": 2}]
-        if "from radius_authentication_summary" in lowered:
-            return [{"total_events": 107, "failure_events": 11,
-                     "distinct_endpoints": 81, "distinct_users": 54}]
-        if "grouped_latency" in lowered:
-            return [{"status": "failed", "device_name": "nad-1", "ise_node": "psn-1",
-                     "samples": 4, "avg_response_ms": 200, "max_response_ms": 900,
-                     "total_groups": 1}]
+            return [
+                {"breakdown": "volume_summary", "total_events": 107,
+                 "failure_events": 11, "distinct_endpoints": 81,
+                 "distinct_users": 54, "events": 11, "total_groups": 1},
+                {"breakdown": "failure_context", "failure_class": "credentials",
+                 "authorization_profiles": "PermitAccess", "location": "Campus",
+                 "events": 9, "total_groups": 2},
+            ]
         if "grouped_auth" in lowered:
             return [
-                 {"status": "failed", "authentication_method": "MSCHAPv2",
+                {"breakdown": "authentication", "status": "failed",
+                 "authentication_method": "MSCHAPv2",
                  "authentication_protocol": "PEAP", "device_name": "nad-1",
                  "authorization_policy": "Employee", "ise_node": "psn-1", "events": 7,
                  "total_groups": 30},
-                {"status": "failed", "authentication_method": "EAP-TLS",
+                {"breakdown": "authentication", "status": "failed",
+                 "authentication_method": "EAP-TLS",
                  "authentication_protocol": "EAP-TLS", "device_name": "nad-1",
                  "authorization_policy": "Employee", "ise_node": "psn-1", "events": 3,
                  "total_groups": 30},
+                {"breakdown": "latency", "status": "failed",
+                 "device_name": "nad-1", "ise_node": "psn-1", "samples": 4,
+                 "avg_response_ms": 200, "max_response_ms": 900, "total_groups": 1},
             ]
         if "grouped_accounting" in lowered:
-            return [{"acct_status_type": "Start", "device_name": "nad-1",
-                     "authorization_policy": "Employee", "ise_node": "psn-1",
-                     "events": 4, "total_events": 200, "start_events": 120,
-                     "stop_events": 80, "total_groups": 2}]
-        if "grouped_sessions" in lowered:
-            return [{"device_name": "nad-1", "ise_node": "psn-1",
-                     "avg_session_seconds": 60, "max_session_seconds": 300,
-                     "total_groups": 1}]
+            return [
+                {"breakdown": "accounting", "acct_status_type": "Start",
+                 "device_name": "nad-1", "authorization_policy": "Employee",
+                 "ise_node": "psn-1", "events": 4, "total_events": 200,
+                 "start_events": 120, "stop_events": 80, "total_groups": 2},
+                {"breakdown": "accounting_sessions", "device_name": "nad-1",
+                 "ise_node": "psn-1", "samples": 5, "avg_session_seconds": 60,
+                 "max_session_seconds": 300, "total_groups": 1},
+            ]
         if "grouped_active" in lowered:
             return [{"device_name": "nad-1", "ise_node": "psn-1", "sessions": 12,
                      "total_sessions": 37, "total_groups": 1}]
@@ -77,12 +81,11 @@ def test_collects_bounded_aggregated_radius_metrics():
     client = DataConnect()
     cfg = types.SimpleNamespace(dataconnect_max_groups=25)
     dataconnect_radius.collect_reporting(client, cfg)
-    assert len(client.sql) == 7
+    assert len(client.sql) == 4
     dataconnect_radius.collect_active(client, cfg)
 
-    assert len(client.sql) == 8
-    assert sum("NUMTODSINTERVAL(24, 'HOUR')" in sql for sql in client.sql) == 7
-    assert sum("FETCH FIRST 25" in sql for sql in client.sql) == 7
+    assert len(client.sql) == 5
+    assert sum("NUMTODSINTERVAL(24, 'HOUR')" in sql for sql in client.sql) == 4
     assert _rows(metrics.ise_dataconnect_radius_authentication_events,
                  "authentication_method", "nad") == {
         ("MSCHAPv2", "nad-1"): 7, ("EAP-TLS", "nad-1"): 3}
@@ -135,28 +138,39 @@ def test_collects_bounded_aggregated_radius_metrics():
     assert "NOT LIKE '%stop%'" not in active_sql
 
 
-def test_latency_query_uses_one_matching_group_and_excludes_nulls():
+def test_authentication_and_latency_share_one_bounded_view_scan():
     queries = dataconnect_radius._queries(25)
 
-    assert "NVL(response_time, 0)" not in queries["latency"]
-    assert "response_time IS NOT NULL" in queries["latency"]
-    assert "authentication_method" not in queries["latency"].split("GROUP BY", 1)[1]
-    assert "policy_set_name" not in queries["latency"].split("GROUP BY", 1)[1]
+    assert "GROUP BY GROUPING SETS" in queries["authentication"]
+    assert queries["authentication"].count("FROM radius_authentications") == 1
+    assert "COUNT(response_time)" in queries["authentication"]
+    assert "NVL(response_time, 0)" not in queries["authentication"]
+    assert "breakdown = 'authentication' OR samples > 0" in queries["authentication"]
+    assert "policy_set_name" not in queries["authentication"]
 
 
 def test_exact_volume_uses_patch11_aggregate_view_not_raw_authentication_rows():
     queries = dataconnect_radius._queries(25)
 
     assert "FROM radius_authentication_summary" in queries["volume_summary"]
+    assert queries["volume_summary"].count("FROM radius_authentication_summary") == 1
+    assert "GROUP BY GROUPING SETS" in queries["volume_summary"]
     assert "SUM(NVL(passed_count, 0) + NVL(failed_count, 0))" in \
         queries["volume_summary"]
     assert "COUNT(DISTINCT calling_station_id)" in queries["volume_summary"]
     assert "authorization_policy" in queries["authentication"]
-    assert "FROM radius_authentication_summary" in queries["failure_context"]
-    assert "authorization_profiles" in queries["failure_context"]
-    assert "SUM(NVL(failed_count, 0))" in queries["failure_context"]
+    assert "authorization_profiles" in queries["volume_summary"]
+    assert "SUM(NVL(failed_count, 0))" in queries["volume_summary"]
     assert "policy_set_name" not in queries["authentication"]
-    assert "policy_set_name" not in queries["failure_context"]
+
+
+def test_accounting_breakdowns_share_one_bounded_view_scan():
+    query = dataconnect_radius._queries(25)["accounting"]
+
+    assert query.count("FROM radius_accounting") == 1
+    assert "GROUP BY GROUPING SETS" in query
+    assert "accounting_sessions" in query
+    assert "CASE WHEN acct_session_time > 0" in query
 
 
 def test_query_failure_preserves_previous_snapshot():

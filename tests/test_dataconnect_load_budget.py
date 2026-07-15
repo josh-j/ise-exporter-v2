@@ -43,7 +43,7 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
     )
 
     assert statements_per_run == {
-        "radius": 7,
+        "radius": 4,
         "radius_active": 1,
         "performance": 4,
         "posture": 4,
@@ -52,19 +52,23 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(8.333333333333334)
-    assert statements_per_hour < 8.5
+    assert statements_per_hour == pytest.approx(8.208333333333334)
+    assert statements_per_hour < 8.25
 
 
-def test_radius_reporting_limits_raw_authentication_view_to_needed_dimensions():
+def test_radius_reporting_scans_each_large_historical_view_only_once():
     queries = dataconnect_radius._reporting_queries(Config().dataconnect_max_groups)
     raw = [name for name, sql in queries.items()
            if "FROM radius_authentications" in sql]
     summary = [name for name, sql in queries.items()
                if "FROM radius_authentication_summary" in sql]
 
-    assert raw == ["authentication", "latency"]
-    assert summary == ["volume_summary", "failure_context"]
+    accounting = [name for name, sql in queries.items()
+                  if "FROM radius_accounting" in sql]
+
+    assert raw == ["authentication"]
+    assert summary == ["volume_summary"]
+    assert accounting == ["accounting"]
 
 
 def test_alternate_config_cannot_export_more_than_production_group_ceiling():

@@ -110,87 +110,104 @@ def _queries(limit, stale_minutes=60, window_hours=6):
     errors_recent = recent_event_predicate("timestamp", window_hours)
     return {
         "authentication": f"""
-            SELECT grouped_auth.*, COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END
+            WITH grouped_auth AS (
+                SELECT CASE WHEN GROUPING(authentication_method) = 0
+                            THEN 'authentication' ELSE 'latency' END AS breakdown,
+                       CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END
                            AS status,
                        authentication_method, authentication_protocol, device_name,
-                       authorization_policy, ise_node, COUNT(*) AS events
-                FROM radius_authentications
-                WHERE {auth_recent}
-                GROUP BY CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
-                         authentication_method, authentication_protocol, device_name,
-                         authorization_policy, ise_node
-            ) grouped_auth
-            ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
-        """,
-        "volume_summary": f"""
-            SELECT SUM(NVL(passed_count, 0) + NVL(failed_count, 0)) AS total_events,
-                   SUM(NVL(failed_count, 0)) AS failure_events,
-                   COUNT(DISTINCT calling_station_id) AS distinct_endpoints,
-                   COUNT(DISTINCT username) AS distinct_users
-            FROM radius_authentication_summary
-            WHERE {auth_summary_recent}
-        """,
-        "failure_context": f"""
-            SELECT grouped_failure.*, COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT {_FAILURE_CLASS_SQL} AS failure_class,
-                       authorization_profiles, location,
-                       SUM(NVL(failed_count, 0)) AS events
-                FROM radius_authentication_summary
-                WHERE {auth_summary_recent}
-                  AND NVL(failed_count, 0) > 0
-                GROUP BY {_FAILURE_CLASS_SQL}, authorization_profiles, location
-            ) grouped_failure
-            ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
-        """,
-        "latency": f"""
-            SELECT grouped_latency.*, COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END
-                           AS status,
-                       device_name, ise_node, COUNT(response_time) AS samples,
+                       authorization_policy, ise_node, COUNT(*) AS events,
+                       COUNT(response_time) AS samples,
                        AVG(response_time) AS avg_response_ms,
                        MAX(response_time) AS max_response_ms
                 FROM radius_authentications
                 WHERE {auth_recent}
-                  AND response_time IS NOT NULL
-                GROUP BY CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
-                         device_name, ise_node
-            ) grouped_latency
-            ORDER BY samples DESC FETCH FIRST {limit} ROWS ONLY
+                GROUP BY GROUPING SETS (
+                    (CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
+                     authentication_method, authentication_protocol, device_name,
+                     authorization_policy, ise_node),
+                    (CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
+                     device_name, ise_node)
+                )
+            ), ranked_auth AS (
+                SELECT grouped_auth.*,
+                       COUNT(*) OVER (PARTITION BY breakdown) AS total_groups,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY breakdown
+                           ORDER BY CASE WHEN breakdown = 'authentication'
+                                         THEN events ELSE samples END DESC
+                       ) AS group_rank
+                FROM grouped_auth
+                WHERE breakdown = 'authentication' OR samples > 0
+            )
+            SELECT * FROM ranked_auth WHERE group_rank <= {limit}
+        """,
+        "volume_summary": f"""
+            WITH grouped_failure AS (
+                SELECT CASE WHEN GROUPING(authorization_profiles) = 1
+                            THEN 'volume_summary' ELSE 'failure_context' END AS breakdown,
+                       {_FAILURE_CLASS_SQL} AS failure_class,
+                       authorization_profiles, location,
+                       SUM(NVL(passed_count, 0) + NVL(failed_count, 0)) AS total_events,
+                       SUM(NVL(failed_count, 0)) AS failure_events,
+                       COUNT(DISTINCT calling_station_id) AS distinct_endpoints,
+                       COUNT(DISTINCT username) AS distinct_users,
+                       SUM(NVL(failed_count, 0)) AS events
+                FROM radius_authentication_summary
+                WHERE {auth_summary_recent}
+                GROUP BY GROUPING SETS (
+                    (),
+                    ({_FAILURE_CLASS_SQL}, authorization_profiles, location)
+                )
+            ), ranked_failure AS (
+                SELECT grouped_failure.*,
+                       COUNT(*) OVER (PARTITION BY breakdown) AS total_groups,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY breakdown ORDER BY events DESC
+                       ) AS group_rank
+                FROM grouped_failure
+                WHERE breakdown = 'volume_summary' OR events > 0
+            )
+            SELECT * FROM ranked_failure
+            WHERE breakdown = 'volume_summary' OR group_rank <= {limit}
         """,
         "accounting": f"""
-            SELECT grouped_accounting.*,
-                   SUM(events) OVER () AS total_events,
-                   SUM(CASE WHEN LOWER(NVL(acct_status_type, '')) LIKE '%start%'
-                            THEN events ELSE 0 END) OVER () AS start_events,
-                   SUM(CASE WHEN LOWER(NVL(acct_status_type, '')) LIKE '%stop%'
-                            THEN events ELSE 0 END) OVER () AS stop_events,
-                   COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT acct_status_type, device_name, authorization_policy, ise_node,
-                       COUNT(*) AS events
+            WITH grouped_accounting AS (
+                SELECT CASE WHEN GROUPING(acct_status_type) = 0
+                            THEN 'accounting' ELSE 'accounting_sessions' END AS breakdown,
+                       acct_status_type, device_name, authorization_policy, ise_node,
+                       COUNT(*) AS events,
+                       COUNT(CASE WHEN acct_session_time > 0
+                                  THEN acct_session_time END) AS samples,
+                       AVG(CASE WHEN acct_session_time > 0
+                                THEN acct_session_time END) AS avg_session_seconds,
+                       MAX(CASE WHEN acct_session_time > 0
+                                THEN acct_session_time END) AS max_session_seconds
                 FROM radius_accounting
                 WHERE {accounting_recent}
-                GROUP BY acct_status_type, device_name, authorization_policy, ise_node
-            ) grouped_accounting
-            ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
-        """,
-        "accounting_sessions": f"""
-            SELECT grouped_sessions.*, COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT device_name, ise_node,
-                       COUNT(acct_session_time) AS samples,
-                       AVG(acct_session_time) AS avg_session_seconds,
-                       MAX(acct_session_time) AS max_session_seconds
-                FROM radius_accounting
-                WHERE {accounting_recent}
-                  AND acct_session_time IS NOT NULL AND acct_session_time > 0
-                GROUP BY device_name, ise_node
-            ) grouped_sessions
-            ORDER BY max_session_seconds DESC FETCH FIRST {limit} ROWS ONLY
+                GROUP BY GROUPING SETS (
+                    (acct_status_type, device_name, authorization_policy, ise_node),
+                    (device_name, ise_node)
+                )
+            ), ranked_accounting AS (
+                SELECT grouped_accounting.*,
+                       SUM(events) OVER (PARTITION BY breakdown) AS total_events,
+                       SUM(CASE WHEN LOWER(NVL(acct_status_type, '')) LIKE '%start%'
+                                THEN events ELSE 0 END)
+                           OVER (PARTITION BY breakdown) AS start_events,
+                       SUM(CASE WHEN LOWER(NVL(acct_status_type, '')) LIKE '%stop%'
+                                THEN events ELSE 0 END)
+                           OVER (PARTITION BY breakdown) AS stop_events,
+                       COUNT(*) OVER (PARTITION BY breakdown) AS total_groups,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY breakdown
+                           ORDER BY CASE WHEN breakdown = 'accounting'
+                                         THEN events ELSE samples END DESC
+                       ) AS group_rank
+                FROM grouped_accounting
+                WHERE breakdown = 'accounting' OR samples > 0
+            )
+            SELECT * FROM ranked_accounting WHERE group_rank <= {limit}
         """,
         "active_sessions": active_cte + f"""
             SELECT grouped_active.*,
@@ -229,10 +246,25 @@ def collect_reporting(dataconnect, cfg):
     """Atomically replace a bounded recent RADIUS reporting snapshot."""
     with observe("dataconnect_radius"):
         limit = group_limit(cfg)
-        rows = {name: dataconnect.query(sql)
-                for name, sql in _reporting_queries(
-                    limit, event_window_hours(
-                        cfg, getattr(cfg, "dataconnect_radius_interval", 86400))).items()}
+        combined = {name: dataconnect.query(sql)
+                    for name, sql in _reporting_queries(
+                        limit, event_window_hours(
+                            cfg, getattr(cfg, "dataconnect_radius_interval", 86400))).items()}
+        rows = {
+            "authentication": [row for row in combined["authentication"]
+                               if row.get("breakdown") == "authentication"],
+            "latency": [row for row in combined["authentication"]
+                        if row.get("breakdown") == "latency"],
+            "volume_summary": [row for row in combined["volume_summary"]
+                               if row.get("breakdown") == "volume_summary"],
+            "failure_context": [row for row in combined["volume_summary"]
+                                if row.get("breakdown") == "failure_context"],
+            "accounting": [row for row in combined["accounting"]
+                           if row.get("breakdown") == "accounting"],
+            "accounting_sessions": [row for row in combined["accounting"]
+                                    if row.get("breakdown") == "accounting_sessions"],
+            "errors": combined["errors"],
+        }
         summaries = {name: (values[0] if values else {}) for name, values in rows.items()}
         auth = [{
             "status": label(row.get("status")),
