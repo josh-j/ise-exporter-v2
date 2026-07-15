@@ -195,7 +195,8 @@ def test_health_schema_describes_authenticated_probe_paths_and_output(capsys):
         "/admin/API/mnt/Session/ActiveCount",
     ]
     assert schema["fields"] == [
-        "service", "host", "reachable", "authenticated", "http_status"]
+        "service", "host", "reachable", "authenticated", "http_status",
+        "probe_status"]
 
 
 def test_health_reports_reachability_and_authentication(capsys):
@@ -203,8 +204,10 @@ def test_health_reports_reachability_and_authentication(capsys):
     rows = json.loads(capsys.readouterr().out)
     assert rows == [
         {"authenticated": True, "host": "pan.example.mil", "http_status": 0,
+         "probe_status": "completed",
          "reachable": True, "service": "PAN/ERS"},
         {"authenticated": False, "host": "mnt.example.mil", "http_status": 0,
+         "probe_status": "completed",
          "reachable": False, "service": "MnT"},
     ]
 
@@ -223,7 +226,30 @@ def test_health_works_with_only_dataconnect_configuration(capsys):
     assert cli.main(["health", "-o", "json"], cfg=cfg, dataconnect=dataconnect) == 0
     assert json.loads(capsys.readouterr().out) == [{
         "authenticated": True, "host": "mnt.example.mil", "http_status": 0,
+        "probe_status": "completed",
         "reachable": True, "service": "Data Connect"}]
+
+
+def test_health_defers_dataconnect_probe_instead_of_waiting_for_pacing(capsys):
+    cfg = types.SimpleNamespace(
+        ise_host="", ise_mnt_host="", ise_user="", ise_pass="",
+        dataconnect_host="mnt.example.mil", dataconnect_ready=True)
+
+    class PacedDataConnect(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            raise AssertionError("health must not use the blocking query path")
+
+        def query_if_ready(self, sql, parameters=None):
+            self.calls.append((sql, parameters or {}))
+            return None
+
+    dataconnect = PacedDataConnect()
+    assert cli.main(["health", "-o", "json"], cfg=cfg, dataconnect=dataconnect) == 0
+    assert json.loads(capsys.readouterr().out) == [{
+        "authenticated": None, "host": "mnt.example.mil", "http_status": 0,
+        "probe_status": "deferred", "reachable": None,
+        "service": "Data Connect"}]
+    assert len(dataconnect.calls) == 1
 
 
 def test_sessions_rejects_nonpositive_limit_before_network_access(capsys):

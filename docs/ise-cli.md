@@ -239,7 +239,7 @@ the same spirit as selecting properties from PowerCLI objects.
 
 - REST/OpenAPI/MnT commands only call GET methods.
 - Data Connect commands use fixed `SELECT` templates, discover available columns
-  from Oracle metadata, bind user values, enforce two-day windows where a timestamp
+  from Oracle metadata, bind user values, enforce six-hour windows where a timestamp
   is available, and cap output at 5,000 rows.
 - The normal production ceiling is 1,000 rows. Higher limits, full inventories,
   leading-wildcard scans, and MnT ActiveList require `--allow-expensive`.
@@ -273,8 +273,11 @@ responses with the normalized CLI output.
 `health` uses a one-row ERS request and MnT `Session/ActiveCount`, not an
 unauthenticated landing page or the expensive session list. Its `reachable` field
 distinguishes network routing from `authenticated`; `http_status` exposes rejected
-REST credentials without printing them. Data Connect-only installations can run
-`health` without configuring REST/MnT.
+REST credentials without printing them. The Data Connect probe acquires the shared
+pacing gate non-blockingly. During a cooldown it reports `probe_status=deferred`
+and leaves reachability/authentication unknown instead of waiting or reporting a
+false outage. Data Connect-only installations can run `health` without configuring
+REST/MnT.
 
 ## System-wide installation
 

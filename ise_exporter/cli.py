@@ -57,7 +57,9 @@ COMMAND_SCHEMAS = {
             "/ers/config/networkdevice?size=1&page=1",
             "/admin/API/mnt/Session/ActiveCount",
         ],
-        "fields": ["service", "host", "reachable", "authenticated", "http_status"],
+        "fields": [
+            "service", "host", "reachable", "authenticated", "http_status",
+            "probe_status"],
     },
     "endpoints": {
         "api": "Data Connect + ERS", "host_env": ["ISE_DATACONNECT_HOST", "ISE_HOST"],
@@ -1388,10 +1390,30 @@ def _dataconnect_health(dataconnect):
     try:
         # Authentication/access proof only: do not count the complete catalog
         # when a single bounded metadata row proves the same thing.
-        return bool(dataconnect.query(
-            "SELECT 1 AS available FROM user_views FETCH FIRST 1 ROWS ONLY"))
+        query_if_ready = getattr(dataconnect, "query_if_ready", None)
+        query = query_if_ready if query_if_ready is not None else dataconnect.query
+        rows = query("SELECT 1 AS available FROM user_views FETCH FIRST 1 ROWS ONLY")
+        if rows is None:
+            return {
+                "reachable": None,
+                "authenticated": None,
+                "http_status": 0,
+                "probe_status": "deferred",
+            }
+        healthy = bool(rows)
+        return {
+            "reachable": healthy,
+            "authenticated": healthy,
+            "http_status": 0,
+            "probe_status": "completed",
+        }
     except Exception:
-        return False
+        return {
+            "reachable": False,
+            "authenticated": False,
+            "http_status": 0,
+            "probe_status": "completed",
+        }
 
 
 def _dataconnect_schema(dataconnect, table=None):
@@ -1470,17 +1492,18 @@ def _execute(args, client, cfg, dataconnect=None):
                     ("MnT", cfg.ise_mnt_host, "mnt")):
                 status = health[key]
                 if isinstance(status, dict):
-                    result.append({"service": service, "host": host, **status})
+                    result.append({"service": service, "host": host,
+                                   "probe_status": "completed", **status})
                 else:
                     # Compatibility for injected/test clients using the old bool shape.
                     result.append({"service": service, "host": host,
                                    "reachable": bool(status),
-                                   "authenticated": bool(status), "http_status": 0})
-        dataconnect_reachable = _dataconnect_health(dataconnect)
-        if dataconnect_reachable is not None:
+                                   "authenticated": bool(status), "http_status": 0,
+                                   "probe_status": "completed"})
+        dataconnect_status = _dataconnect_health(dataconnect)
+        if dataconnect_status is not None:
             result.append({"service": "Data Connect", "host": cfg.dataconnect_host,
-                           "reachable": dataconnect_reachable,
-                           "authenticated": dataconnect_reachable, "http_status": 0})
+                           **dataconnect_status})
         if not result:
             raise CLIError("no REST/MnT or Data Connect credentials are configured")
         return result
