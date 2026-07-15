@@ -42,6 +42,36 @@ class Connection:
         self.closed = True
 
 
+def test_connection_disables_parallel_query_before_reporting_sql(monkeypatch):
+    statements = []
+
+    class RecordingCursor(Cursor):
+        def execute(self, sql, parameters=None):
+            statements.append((sql, parameters))
+
+    class RecordingConnection(Connection):
+        def cursor(self):
+            return RecordingCursor()
+
+    connection = RecordingConnection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    client = dataconnect.DataConnectClient(cfg)
+    client.query("SELECT username, COUNT(*) hits FROM example")
+
+    assert statements == [
+        ("ALTER SESSION DISABLE PARALLEL QUERY", {}),
+        ("SELECT username, COUNT(*) hits FROM example", {}),
+    ]
+
+
 def test_query_uses_tcps_and_returns_lowercase_mappings(monkeypatch):
     connection = Connection()
     calls = []

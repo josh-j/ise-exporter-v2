@@ -280,20 +280,30 @@ class DataConnectClient:
                     f"Data Connect reconnect suppressed for {remaining:.0f}s after "
                     f"{self._connect_failures} connection failures")
             try:
-                self._connection = oracledb.connect(
+                connection = oracledb.connect(
                     user=self.user, password=self.password, host=self.host,
                     port=self.port, service_name=self.service, protocol="tcps",
                     ssl_context=self._ssl_context(), ssl_server_dn_match=self.verify,
                     tcp_connect_timeout=self.timeout,
                 )
+                connection.call_timeout = self.timeout * 1000
+                # A bounded aggregate result can still consume disproportionate
+                # cluster resources if Oracle parallelizes the underlying reporting
+                # view scan. Data Connect is monitoring, never a batch workload.
+                with connection.cursor() as cursor:
+                    cursor.execute("ALTER SESSION DISABLE PARALLEL QUERY", {})
             except Exception:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
                 self._connect_failures += 1
                 if self._connect_failures >= self.failure_threshold:
                     self._blocked_until = time.monotonic() + self.failure_backoff
                 raise
+            self._connection = connection
             self._connect_failures = 0
             self._blocked_until = 0.0
-            self._connection.call_timeout = self.timeout * 1000
         return self._connection
 
     @staticmethod
