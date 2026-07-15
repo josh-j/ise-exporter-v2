@@ -19,6 +19,27 @@ def test_cli_version_reports_revision_and_exact_ise_target(monkeypatch, capsys):
         "ise-cli 2.0.0 (revision abc1234; Cisco ISE 3.3.0.430 Patch 11)\n")
 
 
+def test_explicit_cli_env_file_wins_over_local_dotenv(monkeypatch, tmp_path):
+    explicit = tmp_path / "production.env"
+    explicit.write_text(
+        "ISE_HOST=production-pan.example\n"
+        "ISE_USER=production-reader\n"
+        "ISE_PASS=left=middle=right\n")
+    (tmp_path / ".env").write_text(
+        "ISE_HOST=development-pan.example\n"
+        "ISE_USER=development-reader\n"
+        "ISE_PASS=wrong\n")
+    monkeypatch.chdir(tmp_path)
+    for name in ("ISE_HOST", "ISE_USER", "ISE_PASS"):
+        monkeypatch.delenv(name, raising=False)
+
+    cfg = cli._load_config(str(explicit))
+
+    assert cfg.ise_host == "production-pan.example"
+    assert cfg.ise_user == "production-reader"
+    assert cfg.ise_pass == "left=middle=right"
+
+
 class FakeClient:
     def __init__(self):
         self.cfg = types.SimpleNamespace(
@@ -101,6 +122,12 @@ class FakeDataConnect:
         if "select distinct table_name" in lowered:
             return [{"value": "CUSTOM_REPORT_VIEW"}]
         if "from user_tab_columns" in lowered:
+            if (parameters or {}).get("table_name") == "ENDPOINTS_DATA":
+                return [{"column_name": name, "data_type": "VARCHAR2"}
+                        for name in (
+                            "ID", "ENDPOINT_ID", "MAC_ADDRESS", "ENDPOINT_IP",
+                            "HOSTNAME", "ENDPOINT_POLICY", "IDENTITY_GROUP_ID",
+                            "UPDATE_TIME")]
             return [{"column_name": name} for name in (
                 "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "DEVICE_NAME",
                 "ISE_NODE", "AUTHENTICATION_METHOD", "AUTHENTICATION_PROTOCOL",
@@ -615,6 +642,67 @@ def test_endpoint_resolution_does_not_select_absent_optional_row_ids():
     assert "SELECT MAC_ADDRESS, ENDPOINT_IP, HOSTNAME" in sql
     assert "SELECT ID," not in sql
     assert "ENDPOINT_ID" not in sql
+
+
+def test_endpoint_resolution_does_not_order_by_absent_optional_timestamp():
+    dataconnect = FakeDataConnect()
+    dataconnect.schema = {
+        "ENDPOINTS_DATA": {
+            "MAC_ADDRESS": "VARCHAR2", "ENDPOINT_IP": "VARCHAR2",
+            "HOSTNAME": "VARCHAR2",
+        },
+    }
+
+    rows = cli._dataconnect_endpoint_candidates(
+        dataconnect, "client-25.example.test", "hostname")
+
+    assert rows[0]["mac_address"] == "AA:BB:CC:DD:EE:FF"
+    sql = dataconnect.calls[0][0].upper()
+    assert "UPDATE_TIME" not in sql
+    assert "CREATE_TIME" not in sql
+    assert "FETCH FIRST 10 ROWS ONLY" in sql
+
+
+def test_endpoint_resolution_discovers_uncached_schema_before_reporting_query():
+    class UncachedVariant:
+        schema = {}
+
+        def __init__(self):
+            self.calls = []
+
+        def query_catalog(self, sql, parameters=None):
+            self.calls.append(("catalog", sql, parameters))
+            return [
+                {"column_name": "MAC_ADDRESS", "data_type": "VARCHAR2"},
+                {"column_name": "HOSTNAME", "data_type": "VARCHAR2"},
+                {"column_name": "CREATE_TIME", "data_type": "TIMESTAMP"},
+            ]
+
+        def query(self, sql, parameters=None):
+            self.calls.append(("report", sql, parameters))
+            return [{"mac_address": "AA:BB:CC:DD:EE:FF", "hostname": "client"}]
+
+    dataconnect = UncachedVariant()
+
+    rows = cli._dataconnect_endpoint_candidates(dataconnect, "client", "hostname")
+
+    assert rows[0]["mac_address"] == "AA:BB:CC:DD:EE:FF"
+    assert [call[0] for call in dataconnect.calls] == ["catalog", "report"]
+    sql = dataconnect.calls[1][1].upper()
+    assert "SELECT MAC_ADDRESS, HOSTNAME" in sql
+    assert "ID," not in sql
+    assert "ORDER BY CREATE_TIME DESC NULLS LAST" in sql
+
+
+def test_endpoint_resolution_rejects_missing_search_capability_before_row_query():
+    class MissingHostname:
+        schema = {"ENDPOINTS_DATA": {"MAC_ADDRESS": "VARCHAR2"}}
+
+        def query(self, _sql, _parameters=None):
+            raise AssertionError("reporting query must not execute")
+
+    with pytest.raises(cli.CLIError, match="column HOSTNAME is unavailable"):
+        cli._dataconnect_endpoint_candidates(MissingHostname(), "client", "hostname")
 
 
 def test_mac_required_commands_reject_ambiguous_hostname_resolution():

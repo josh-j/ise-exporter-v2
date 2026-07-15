@@ -443,7 +443,9 @@ def build_parser(*, require_command=False):
         prog="ise-cli",
         description="Read-only Cisco ISE operator CLI (ERS, OpenAPI, Data Connect, MnT)",
     )
-    parser.add_argument("--env-file", help="dotenv file to load after ./.env")
+    parser.add_argument(
+        "--env-file",
+        help="dotenv file to load with precedence over a local development .env")
     parser.add_argument(
         "--version", action="version", version=version_string("%(prog)s"))
     subs = parser.add_subparsers(dest="command", required=require_command)
@@ -602,11 +604,14 @@ def build_parser(*, require_command=False):
 
 
 def _load_config(env_file=None, *, require_rest=True):
-    load_dotenv(interpolate=False)
     deployed = env_file or os.environ.get(
         "ISE_EXPORTER_ENV_FILE", "/etc/ise-exporter/ise-exporter.env")
     if deployed and os.path.isfile(deployed):
         load_dotenv(deployed, interpolate=False)
+    # An explicit/deployed file must win over an unrelated .env in the
+    # operator's current directory. Existing process/systemd variables still
+    # take precedence because python-dotenv does not override them by default.
+    load_dotenv(".env", interpolate=False)
     cfg = Config.from_env()
     if (require_rest
             and (not cfg.ise_host or not cfg.ise_user or not cfg.ise_pass)):
@@ -719,20 +724,36 @@ def _field(record, *names):
 def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
     if dataconnect is None or kind not in ("ip", "hostname"):
         return []
-    comparison = ("endpoint_ip = :identifier" if kind == "ip"
-                  else "LOWER(hostname) = LOWER(:identifier)")
+    comparison_column = "ENDPOINT_IP" if kind == "ip" else "HOSTNAME"
     candidates = (
         "ID", "ENDPOINT_ID", "MAC_ADDRESS", "ENDPOINT_IP", "HOSTNAME",
         "ENDPOINT_POLICY", "IDENTITY_GROUP_ID",
     )
     schema = getattr(dataconnect, "schema", {})
     columns = schema.get("ENDPOINTS_DATA", {}) if isinstance(schema, dict) else {}
-    selected = [column for column in candidates if not columns or column in columns]
+    if not columns:
+        try:
+            columns = _dataconnect_table_columns(dataconnect, "ENDPOINTS_DATA")
+        except Exception as error:
+            raise CLIError(
+                f"Data Connect schema lookup failed for ENDPOINTS_DATA: {error}") from error
+    if not columns:
+        raise CLIError("Data Connect view ENDPOINTS_DATA is unavailable")
+    if comparison_column not in columns:
+        raise CLIError(
+            f"ENDPOINTS_DATA cannot resolve endpoints by {kind}; "
+            f"column {comparison_column} is unavailable")
+    selected = [column for column in candidates if column in columns]
+    order_column = next(
+        (column for column in ("UPDATE_TIME", "CREATE_TIME") if column in columns), None)
+    order = f"ORDER BY {order_column} DESC NULLS LAST" if order_column else ""
+    comparison = (f"{comparison_column} = :identifier" if kind == "ip"
+                  else f"LOWER({comparison_column}) = LOWER(:identifier)")
     return dataconnect.query(f"""
         SELECT {", ".join(selected)}
         FROM endpoints_data
         WHERE {comparison}
-        ORDER BY update_time DESC NULLS LAST
+        {order}
         FETCH FIRST 10 ROWS ONLY
     """, {"identifier": identifier})
 

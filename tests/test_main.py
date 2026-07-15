@@ -276,6 +276,24 @@ def test_load_env_reads_deployment_env_file(monkeypatch, tmp_path):
         os.environ.pop("ISE_DATACONNECT_HOST", None)
 
 
+def test_deployment_env_wins_over_local_dotenv_but_not_process_env(
+        monkeypatch, tmp_path):
+    env_file = tmp_path / "deployed.env"
+    env_file.write_text("ISE_HOST=deployed-pan.example\n")
+    (tmp_path / ".env").write_text("ISE_HOST=local-dev-pan.example\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(app, "DEPLOY_ENV_FILE", str(env_file))
+    monkeypatch.delenv("ISE_HOST", raising=False)
+
+    app._load_env()
+
+    assert os.environ["ISE_HOST"] == "deployed-pan.example"
+
+    monkeypatch.setenv("ISE_HOST", "systemd-pan.example")
+    app._load_env()
+    assert os.environ["ISE_HOST"] == "systemd-pan.example"
+
+
 def test_load_env_preserves_literal_value_after_first_equals(monkeypatch, tmp_path):
     env_file = tmp_path / "ise-exporter.env"
     env_file.write_text(

@@ -116,17 +116,18 @@ def dataconnect_schema(cfg):
 
 
 def _load_env():
-    """Load ./.env (dev convenience) then the systemd deployment env file if present,
-    so diagnostics work from any directory on a deployed host.
+    """Load the systemd deployment env, then ``./.env`` as a dev fallback.
 
     Values are configuration data, not shell templates.  Disabling interpolation
     preserves the entire value after the first ``=`` literally, including additional
-    equals signs and password/token text such as ``${NAME}``.
+    equals signs and password/token text such as ``${NAME}``. Existing process
+    environment always wins; the deployed file wins over a coincidental local
+    ``.env`` so diagnostics cannot silently target a development cluster.
     """
-    load_dotenv(interpolate=False)
     if os.path.isfile(DEPLOY_ENV_FILE):
         load_dotenv(DEPLOY_ENV_FILE, interpolate=False)
         logger.info("loaded config from %s", DEPLOY_ENV_FILE)
+    load_dotenv(".env", interpolate=False)
 
 
 def main(argv=None):

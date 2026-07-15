@@ -598,9 +598,12 @@ def test_data_quality_lists_each_unavailable_dataset_and_latest_reason():
     assert "ise_dataset_last_failure_detail_info" in expression
     assert "ise_dataset_enabled == 1" in expression
     assert "ise_dataset_up == 0" in expression
+    assert "ise_dataset_fresh == 0" in expression
     assert '"not_attempted"' in expression
+    assert '"stale"' in expression
+    assert '"Last successful collection is older than two configured intervals"' in expression
     assert '"NONE"' in expression
-    assert '"All enabled datasets are available"' in expression
+    assert '"All enabled datasets are available and fresh"' in expression
     assert "absent(count(" in expression
     assert panel["targets"][0]["format"] == "table"
     assert panel["targets"][0]["instant"] is True
