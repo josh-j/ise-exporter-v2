@@ -212,6 +212,17 @@ pwsh -NoProfile -Command 'Import-Module Ise.Cli; Get-IseDataConnectSchema ENDPOI
 journalctl -u ise-exporter -n 100 --no-pager
 ```
 
+At `INFO`, each scheduled attempt is an operator-readable lifecycle: `collection
+queued` explains serialized Data Connect backlog, `collection started` records
+the source, cadence, prior success age, and failure count, and `collection
+completed` records outcome, duration, publication state, next due/retry time,
+and the scheduling reason. Collector-specific summaries between those records
+describe the result counts. A `Data Connect query waiting` line means collection
+is deliberately paused by the shared or local database-protection gate; it gives
+the bounded reporting view, wait duration, resume time when known, and exact
+pacing reason. Use `LOG_LEVEL=DEBUG` only when request/query detail is required;
+normal collection progress should not require DEBUG.
+
 For a completely fresh exporter state, stop the service and run the one-shot
 reset command as the service account, then start it again:
 

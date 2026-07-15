@@ -127,6 +127,28 @@ def test_startup_journal_lists_dataset_source_cadence_and_time(caplog, monkeypat
     assert "scheduled dataset=tacacs_activity source=dataconnect enabled=false" in caplog.text
 
 
+def test_expected_schema_discovery_deferral_is_informational(caplog):
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False), object(), object(), mnt=object())
+    scheduler._dataconnect_schema_failures = {
+        "dataconnect_performance": types.SimpleNamespace(
+            reason="schema_validation_pending",
+            detail="Data Connect schema discovery has not completed successfully",
+        ),
+    }
+    caplog.clear()
+
+    scheduler._log_startup_schedule()
+
+    records = [
+        record for record in caplog.records
+        if "reason=schema_validation_pending" in record.getMessage()
+    ]
+    assert records
+    assert all(record.levelname == "INFO" for record in records)
+
+
 def test_schema_incompatible_dataset_is_visible_and_never_queried(caplog):
     failure = types.SimpleNamespace(
         reason="schema_missing_view_system_summary",
@@ -609,6 +631,7 @@ def test_schema_revalidation_discards_already_queued_incompatible_dataset(caplog
 
 def test_dataconnect_worker_survives_scheduler_bookkeeping_exception(
         monkeypatch, caplog):
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
     shutdown = threading.Event()
@@ -634,6 +657,8 @@ def test_dataconnect_worker_survives_scheduler_bookkeeping_exception(
     assert scheduler.next_run[
         "dataconnect_radius_active"] > scheduler_module.time.time()
     assert "Data Connect worker bookkeeping failed" in caplog.text
+    assert "collection rescheduled dataset=dataconnect_radius_active" in caplog.text
+    assert "retry_reason=worker_recovery" in caplog.text
     shutdown.set()
     scheduler._stop_dataconnect_worker()
 
@@ -737,6 +762,7 @@ def test_paced_mnt_lane_does_not_block_rest_and_deduplicates_cycles():
 
 def test_mnt_worker_bookkeeping_exception_is_accounted_and_recoverable(
         monkeypatch, caplog):
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, request_timeout=1),
         object(), object(), mnt=object())
@@ -757,6 +783,8 @@ def test_mnt_worker_bookkeeping_exception_is_accounted_and_recoverable(
     assert scheduler.next_run[
         "mnt_active_posture"] > scheduler_module.time.time()
     assert "MnT worker bookkeeping failed" in caplog.text
+    assert "collection rescheduled dataset=mnt_active_posture" in caplog.text
+    assert "retry_reason=worker_recovery" in caplog.text
 
     later_runs = []
     monkeypatch.setattr(scheduler, "_run", original_run)
@@ -1091,7 +1119,7 @@ def test_future_success_after_large_backward_clock_correction_is_not_fresh():
 
 
 def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
-        monkeypatch, tmp_path):
+        monkeypatch, tmp_path, caplog):
     registry = CollectorRegistry()
     persisted = Gauge("restart_persisted", "test", ["key"], registry=registry)
     monkeypatch.setattr(
@@ -1100,6 +1128,7 @@ def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
     )
     clock = [400.0]
     monkeypatch.setattr(scheduler_module.time, "time", lambda: clock[0])
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
     cfg = _cfg(state_db_path=str(tmp_path / "state.sqlite3"))
     first = PollScheduler(cfg, object(), object())
 
@@ -1121,6 +1150,9 @@ def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
+    assert "collection restored dataset=dataconnect_radius" in caplog.text
+    assert "snapshot_age_seconds=1" in caplog.text
+    assert "reason=restart_persistent_snapshot" in caplog.text
 
     queried = []
     restarted._run("dataconnect_radius", 401.0, 300, lambda: queried.append(True))

@@ -222,13 +222,16 @@ class PollScheduler:
                 continue
             schema_failure = self._dataconnect_schema_failures.get(name)
             if schema_failure is not None:
-                logger.warning(
+                reason = getattr(schema_failure, "reason", "schema_incompatible")
+                log = (logger.info if reason == "schema_validation_pending"
+                       else logger.warning)
+                log(
                     "scheduled dataset=%s source=%s enabled=true interval_seconds=%s "
                     "blocked=true reason=%s detail=%s",
                     name,
                     source,
                     interval,
-                    getattr(schema_failure, "reason", "schema_incompatible"),
+                    reason,
                     getattr(schema_failure, "detail", "schema incompatible"),
                 )
                 continue
@@ -414,8 +417,14 @@ class PollScheduler:
                 self._scheduled_delay[name] = interval
                 self._update_dataset_freshness(name, now)
                 logger.info(
-                    "restored Data Connect dataset %s; next run in %.0fs",
-                    name, max(0, self.next_run[name] - now),
+                    "collection restored dataset=%s source=dataconnect "
+                    "snapshot_age_seconds=%.0f published=true next_due_at=%s "
+                    "next_in_seconds=%.0f reason=restart_persistent_snapshot",
+                    name,
+                    max(0, now - updated_at),
+                    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(
+                        self.next_run[name])),
+                    max(0, self.next_run[name] - now),
                 )
         except Exception as error:
             logger.warning("could not read restart-persistent dataset state: %s", error)
@@ -479,6 +488,16 @@ class PollScheduler:
         retry = self._failure_retry(name, source, tier)
         self.next_run[name] = completed + retry
         self._scheduled_delay[name] = retry
+        logger.info(
+            "collection rescheduled dataset=%s source=%s outcome=failure "
+            "published=false reason=worker_exception retry_at=%s "
+            "retry_in_seconds=%s retry_reason=worker_recovery",
+            name,
+            source,
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(
+                self.next_run[name])),
+            retry,
+        )
         try:
             self._update_dataset_freshness(name, completed)
         except Exception:

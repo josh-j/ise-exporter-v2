@@ -120,6 +120,13 @@ For Docker, copy `ise-exporter.toml.example` to `ise-exporter.toml`, provide the
 CA under `deploy/certs`, then run `docker compose -f deploy/docker-compose.yml up -d`.
 Prometheus scrapes port `9618`.
 
+The systemd journal is useful at the default `INFO` level: every real collection
+attempt records when and why it was queued or started, its outcome and duration,
+whether metrics were published, and its next due or retry time. Per-request and
+per-statement traffic remains at `DEBUG`. Long Data Connect safety waits remain
+visible at `INFO` with the reporting view, wait duration, resume time, and pacing
+reason, without printing SQL.
+
 ## Dashboards and diagnostics
 
 Grafana dashboards are in [dashboards](dashboards/README.md). Data Connect panels

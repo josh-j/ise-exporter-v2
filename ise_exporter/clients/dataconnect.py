@@ -284,7 +284,7 @@ class DataConnectClient:
         else:
             time.sleep(seconds)
 
-    def _shared_gate(self, *, wait=True, adaptive_duty=True):
+    def _shared_gate(self, *, wait=True, adaptive_duty=True, view="other"):
         """Serialize and pace queries across exporter and CLI processes.
 
         The installed service and authorized CLI operators share this small lock
@@ -318,6 +318,7 @@ class DataConnectClient:
             # adaptive cooldown: service shutdown must not wait minutes for the
             # kernel lock. Poll non-blocking acquisition through the same
             # cancellable wait used by local pacing.
+            lock_wait_logged = False
             while True:
                 try:
                     fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -326,6 +327,13 @@ class DataConnectClient:
                     if not wait:
                         os.close(descriptor)
                         return _PACING_BUSY
+                    if not lock_wait_logged:
+                        logger.info(
+                            "Data Connect query waiting view=%s "
+                            "reason=shared_gate_in_use resume=when_current_query_finishes",
+                            view,
+                        )
+                        lock_wait_logged = True
                     self._wait(0.25)
             raw = os.read(descriptor, 64).decode("ascii").strip()
             deadline = float(raw) if raw else 0.0
@@ -339,6 +347,13 @@ class DataConnectClient:
                     fcntl.flock(descriptor, fcntl.LOCK_UN)
                     os.close(descriptor)
                     return _PACING_BUSY
+                logger.info(
+                    "Data Connect query waiting view=%s wait_seconds=%.1f "
+                    "resume_at=%s reason=adaptive_duty_cycle_database_protection",
+                    view,
+                    remaining,
+                    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(deadline)),
+                )
                 self._wait(remaining)
             # Persist a conservative lease *before* Oracle work begins. A normal
             # completion replaces it with the measured duty-cycle cooldown, but
@@ -454,21 +469,27 @@ class DataConnectClient:
 
     def _query(self, sql, parameters=None, *, wait_for_pacing=True,
                adaptive_duty=True):
+        view = _query_view(sql)
         if not self._batch_active:
             remaining = self._next_query_at - time.monotonic()
             if remaining > 0:
                 if not wait_for_pacing:
                     return None
+                logger.info(
+                    "Data Connect query waiting view=%s wait_seconds=%.1f "
+                    "reason=local_duty_cycle_database_protection",
+                    view,
+                    remaining,
+                )
                 self._wait(remaining)
         attempt_started = time.monotonic()
         shared_gate = self._batch_gate
         started = None
-        view = _query_view(sql)
         result = "error"
         try:
             if not self._batch_active:
                 shared_gate = self._shared_gate(
-                    wait=wait_for_pacing, adaptive_duty=adaptive_duty)
+                    wait=wait_for_pacing, adaptive_duty=adaptive_duty, view=view)
         except Exception:
             finished = time.monotonic()
             duration = max(0.0, finished - attempt_started)
@@ -609,7 +630,8 @@ class DataConnectClient:
         # Acquire with a one-statement crash lease. The lease is advanced below
         # immediately before each later statement, so a kill early in the batch
         # cannot strand all Data Connect work behind a multi-day worst-case lease.
-        gate = self._shared_gate()
+        views = ",".join(dict.fromkeys(_query_view(sql) for _name, sql in items))
+        gate = self._shared_gate(view=views)
         self._batch_active = True
         self._batch_gate = gate
         self._batch_duration = 0.0

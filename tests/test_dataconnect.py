@@ -649,7 +649,8 @@ def test_adaptive_pacing_wait_is_interruptible_during_shutdown():
         client._wait(3600)
 
 
-def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path):
+def test_shared_pacing_gate_serializes_independent_clients(
+        monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: Connection())
     monotonic = [0.0]
 
@@ -662,6 +663,7 @@ def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path
     monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
     sleeps = []
     monkeypatch.setattr(dataconnect.time, "sleep", sleeps.append)
+    caplog.set_level("INFO", logger="ise_exporter.clients.dataconnect")
     cfg = types.SimpleNamespace(
         dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
@@ -679,6 +681,9 @@ def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path
     assert len(sleeps) == 1
     assert sleeps[0] > 0
     assert (tmp_path / "dataconnect.pacing").stat().st_mode & 0o777 == 0o660
+    assert "Data Connect query waiting view=radius_authentications" in caplog.text
+    assert "reason=adaptive_duty_cycle_database_protection" in caplog.text
+    assert "resume_at=" in caplog.text
 
 
 def test_shared_pacing_gate_inherits_state_directory_group(monkeypatch, tmp_path):
@@ -778,7 +783,7 @@ def test_shared_pacing_deadline_cannot_strand_collection_for_a_year():
     assert dataconnect.MAX_SHARED_PACING_FUTURE_SECONDS == 36 * 86400
 
 
-def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):
+def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path, caplog):
     path = tmp_path / "dataconnect.pacing"
     owner = path.open("w+")
     fcntl.flock(owner.fileno(), fcntl.LOCK_EX)
@@ -795,10 +800,13 @@ def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):
     shutdown.set()
     client = dataconnect.DataConnectClient(cfg)
     client.set_shutdown_event(shutdown)
+    caplog.set_level("INFO", logger="ise_exporter.clients.dataconnect")
 
     try:
         with pytest.raises(RuntimeError, match="cancelled during exporter shutdown"):
-            client._shared_gate()
+            client._shared_gate(view="radius_authentications")
+        assert "Data Connect query waiting view=radius_authentications" in caplog.text
+        assert "reason=shared_gate_in_use" in caplog.text
     finally:
         fcntl.flock(owner.fileno(), fcntl.LOCK_UN)
         owner.close()
