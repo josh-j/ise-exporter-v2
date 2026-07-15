@@ -121,6 +121,46 @@ def test_dashboard_set_is_consolidated_around_operator_workflows():
     }
 
 
+def test_distribution_panels_use_readable_horizontal_bars():
+    violations = []
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        for panel in _panels(dashboard.get("panels", [])):
+            if panel.get("type") == "piechart":
+                violations.append(f"{path.name}: panel {panel.get('id')} uses a pie chart")
+                continue
+            if panel.get("type") != "bargauge":
+                continue
+            options = panel.get("options", {})
+            thresholds = panel.get("fieldConfig", {}).get(
+                "defaults", {}).get("thresholds", {}).get("steps", [])
+            if options.get("orientation") != "horizontal":
+                violations.append(
+                    f"{path.name}: panel {panel.get('id')} is not horizontal")
+            if not thresholds:
+                violations.append(
+                    f"{path.name}: panel {panel.get('id')} uses implicit colors")
+
+    assert not violations, "poor distribution visualizations: " + ", ".join(violations)
+
+
+def test_dense_endpoint_profile_distribution_is_bounded_for_readable_labels():
+    dashboard = _dashboard("ise-endpoints-devices.json")
+    panel = _panel(dashboard, "Endpoints by Profile")
+
+    assert panel["type"] == "bargauge"
+    assert "topk(10," in panel["targets"][0]["expr"]
+
+
+def test_safety_limits_render_all_values_without_a_table_frame_picker():
+    dashboard = _dashboard("ise-exporter-health.json")
+    panel = _panel(dashboard, "Data Connect Enforced Safety Limits")
+
+    assert panel["type"] == "stat"
+    assert panel["options"]["orientation"] == "horizontal"
+    assert {target["refId"] for target in panel["targets"]} == {"A", "B", "C", "D"}
+
+
 def test_exporter_health_owns_exporter_data_quality_and_freshness():
     health = (DASHBOARDS / "ise-exporter-health.json").read_text()
     overview = (DASHBOARDS / "ise-overview.json").read_text()

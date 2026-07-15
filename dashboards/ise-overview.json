@@ -530,6 +530,9 @@
                 "value": null
               }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -542,7 +545,8 @@
             "lastNotNull"
           ],
           "values": false
-        }
+        },
+        "showUnfilled": true
       }
     },
     {
@@ -835,6 +839,9 @@
                 "value": null
               }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -847,7 +854,8 @@
             "lastNotNull"
           ],
           "values": false
-        }
+        },
+        "showUnfilled": true
       }
     },
     {

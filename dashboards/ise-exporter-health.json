@@ -543,7 +543,7 @@
       "description": "Configured NADs selected for per-device series versus the exact ERS inventory total. Truncated=1 means inactive devices were omitted after active devices were prioritized.",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 9,
         "x": 6,
         "y": 33
       },
@@ -578,7 +578,49 @@
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "id": 16,
@@ -587,8 +629,8 @@
       "description": "Data Connect NAD activity groups returned versus the exact pre-limit group count. Unconfigured-event totals cover only the returned top-K when truncated=1.",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
+        "w": 9,
+        "x": 15,
         "y": 33
       },
       "targets": [
@@ -622,7 +664,49 @@
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "id": 17,
@@ -697,7 +781,7 @@
       "description": "One worker executes reporting domains serially. Queue depth above zero is expected during a paced cold start but should eventually drain.",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 8,
         "x": 0,
         "y": 47
       },
@@ -722,7 +806,24 @@
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 20,
@@ -731,8 +832,8 @@
       "description": "Time the oldest reporting domain has waited behind the serialized duty-cycle gate.",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
+        "w": 8,
+        "x": 8,
         "y": 47
       },
       "targets": [
@@ -760,8 +861,8 @@
       "description": "Whether the independent bounded MnT detail-refresh lane is currently executing.",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
+        "w": 8,
+        "x": 16,
         "y": 47
       },
       "targets": [
@@ -850,9 +951,32 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "showUnfilled": true
       }
     },
     {
@@ -878,8 +1002,32 @@
         }
       ],
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
         "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "showUnfilled": true
       }
     },
     {
@@ -906,9 +1054,32 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "showUnfilled": true
       }
     },
     {
@@ -931,7 +1102,7 @@
       "description": "The cheap ActiveCount result, configured ceiling, and whether the exporter refused the unpaged ActiveList download.",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 9,
         "x": 0,
         "y": 69
       },
@@ -966,7 +1137,49 @@
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "id": 28,
@@ -975,8 +1188,8 @@
       "description": "Exact deployed source revision and supported Cisco ISE release. A revision of unknown means the packaging layer did not inject a build identity.",
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 6,
+        "w": 15,
+        "x": 9,
         "y": 69
       },
       "targets": [
@@ -997,11 +1210,11 @@
     },
     {
       "id": 29,
-      "type": "table",
+      "type": "stat",
       "title": "Data Connect Enforced Safety Limits",
       "description": "Effective hard client limits. Production should show a duty-cycle ceiling no higher than 0.1%, a query timeout no higher than 15 seconds, 5,000 rows, and 64 MiB retained bytes.",
       "gridPos": {
-        "h": 8,
+        "h": 5,
         "w": 24,
         "x": 0,
         "y": 77
@@ -1049,11 +1262,73 @@
         }
       ],
       "fieldConfig": {
-        "defaults": {},
-        "overrides": []
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
       },
       "options": {
-        "showHeader": true
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
       }
     }
   ],
