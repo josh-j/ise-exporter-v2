@@ -37,8 +37,8 @@ MAX_FIELD_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 64 * 1024 * 1024
 MAX_FIELD_NESTING_DEPTH = 16
 MAX_BATCH_QUERIES = 5
-MIN_DUTY_CYCLE_PERCENT = 0.01
-MAX_DUTY_CYCLE_PERCENT = 0.1
+RECOMMENDED_MIN_DUTY_CYCLE_PERCENT = 0.01
+RECOMMENDED_MAX_DUTY_CYCLE_PERCENT = 0.1
 # One statement may spend one timeout connecting and one executing, then repeat
 # both after the single permitted disconnect retry. Crash leases must reserve
 # all four periods because the flock disappears when the process dies.
@@ -192,15 +192,21 @@ class DataConnectClient:
             cfg, "auth_failure_threshold", 3))))
         self.failure_backoff = max(300, min(86400, int(getattr(
             cfg, "auth_failure_backoff", 900))))
-        # These are hard client invariants, not only environment-parser defaults.
-        # CLI/tests/extensions can construct a client from another config object;
-        # none may silently relax the production database-pressure ceiling.
+        # Valid explicit pacing is operator-owned. Config warns when it falls
+        # outside the production recommendation, but the runtime must not
+        # silently replace a deliberately more conservative setting.
         self.min_query_interval = max(
-            5.0, getattr(cfg, "dataconnect_min_query_interval_ms", 5000) / 1000.0)
-        self.max_duty_cycle = max(MIN_DUTY_CYCLE_PERCENT, min(
-            MAX_DUTY_CYCLE_PERCENT,
-            float(getattr(cfg, "dataconnect_max_duty_cycle_percent", 0.1)),
-        ))
+            0.0, getattr(cfg, "dataconnect_min_query_interval_ms", 5000) / 1000.0)
+        configured_duty = float(getattr(
+            cfg, "dataconnect_max_duty_cycle_percent", 0.1))
+        self.max_duty_cycle = configured_duty \
+            if math.isfinite(configured_duty) and configured_duty > 0 else 0.1
+        worst_case_batch = (
+            MAX_BATCH_QUERIES * MAX_STATEMENT_TIMEOUT_PERIODS * self.timeout
+            * max(0.0, 100 / self.max_duty_cycle - 1)
+        )
+        self.max_shared_pacing_future_seconds = max(
+            MAX_SHARED_PACING_FUTURE_SECONDS, worst_case_batch + 86400)
         self.shared_pacing_file = str(getattr(
             cfg, "dataconnect_shared_pacing_file", "") or "")
         self._auth_guard = PersistentAuthGuard(
@@ -308,7 +314,7 @@ class DataConnectClient:
             if not math.isfinite(deadline) or deadline < 0:
                 raise OSError("pacing gate deadline is not a finite non-negative value")
             remaining = deadline - time.time()
-            if remaining > MAX_SHARED_PACING_FUTURE_SECONDS:
+            if remaining > self.max_shared_pacing_future_seconds:
                 raise OSError("pacing gate deadline is implausibly far in the future")
             if remaining > 0:
                 if not wait:

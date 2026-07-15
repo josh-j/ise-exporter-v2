@@ -90,6 +90,7 @@ Before starting the service, verify the reporting connection:
 ```bash
 ise-exporter --dataconnect-check
 ise-exporter --dataconnect-schema  # JSON column metadata; does not read event rows
+ise-exporter --reset-state         # one-shot full state reset; stop the service first
 ise-exporter --version             # package revision and exact ISE compatibility target
 ise-cli --version
 ```

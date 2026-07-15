@@ -371,7 +371,7 @@ def test_query_batch_applies_result_byte_ceiling_across_statements(monkeypatch):
     assert client._batch_result_bytes == 0
 
 
-def test_client_cannot_relax_production_pressure_invariants():
+def test_client_respects_explicit_pacing_but_preserves_auth_safety():
     cfg = types.SimpleNamespace(
         dataconnect_host="mnt.example.mil", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
@@ -384,8 +384,8 @@ def test_client_cannot_relax_production_pressure_invariants():
 
     client = dataconnect.DataConnectClient(cfg)
 
-    assert client.max_duty_cycle == 0.1
-    assert client.min_query_interval == 5.0
+    assert client.max_duty_cycle == 100
+    assert client.min_query_interval == 0.001
     assert client.failure_threshold == 5
     assert client.failure_backoff == 300
 
@@ -401,6 +401,22 @@ def test_client_honors_more_conservative_duty_cycle():
     )
 
     assert dataconnect.DataConnectClient(cfg).max_duty_cycle == 0.05
+
+
+def test_client_honors_extremely_conservative_duty_cycle_and_deadline():
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=15,
+        dataconnect_max_duty_cycle_percent=0.001,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    client = dataconnect.DataConnectClient(cfg)
+
+    assert client.max_duty_cycle == 0.001
+    assert client.max_shared_pacing_future_seconds > 300 * 86400
 
 
 def test_query_timeout_is_total_across_execute_and_fetch_round_trips(monkeypatch):

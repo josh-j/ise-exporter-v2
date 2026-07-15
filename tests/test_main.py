@@ -17,11 +17,21 @@ def _cfg(**overrides):
         dataconnect_password="secret",
         dataconnect_ready=True,
         exporter_port=9618,
+        state_db_path=":memory:",
+        rest_auth_guard_file="",
+        dataconnect_auth_guard_file="",
+        dataconnect_shared_pacing_file="",
     )
     values.update(overrides)
     cfg = types.SimpleNamespace(**values)
     cfg.summary = lambda: "test-config"
     return cfg
+
+
+@pytest.fixture(autouse=True)
+def _runtime_lock(monkeypatch):
+    monkeypatch.setattr(app, "acquire_runtime_lock", lambda _path: 123)
+    monkeypatch.setattr(app, "release_runtime_lock", lambda _descriptor: None)
 
 
 def test_exporter_version_reports_revision_and_exact_ise_target(monkeypatch, capsys):
@@ -60,6 +70,35 @@ def test_main_publishes_bounded_build_identity(monkeypatch):
         "version": "2.0.0", "revision": "unknown",
         "target_ise_release": "3.3.0.430 Patch 11",
     } for sample in samples)
+
+
+def test_reset_state_switch_is_one_shot_and_clears_every_state_plane(
+        monkeypatch, caplog):
+    cfg = _cfg(
+        state_db_path="/state.sqlite3",
+        rest_auth_guard_file="/rest.guard",
+        dataconnect_auth_guard_file="/dataconnect.guard",
+        dataconnect_shared_pacing_file="/dataconnect.pacing",
+    )
+    seen = []
+    monkeypatch.setattr(app, "Config", types.SimpleNamespace(from_env=lambda: cfg))
+    monkeypatch.setattr(
+        app, "reset_exporter_state",
+        lambda state, guards: seen.append((state, guards)) or (
+            state, *guards),
+    )
+    monkeypatch.setattr(
+        app, "ISEControlPlaneClient",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("reset must exit before creating API clients")),
+    )
+
+    assert app.main(["--reset-state"]) == 0
+    assert seen == [(
+        "/state.sqlite3",
+        ("/rest.guard", "/dataconnect.guard", "/dataconnect.pacing"),
+    )]
+    assert "reset removed /dataconnect.pacing" in caplog.text
 
 
 def test_dataconnect_check_validates_contract_and_closes(monkeypatch):

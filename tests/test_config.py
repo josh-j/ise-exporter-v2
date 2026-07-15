@@ -193,7 +193,7 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert all(" #" not in line for line in assignments)
 
 
-def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
+def test_hard_limits_clamp_but_valid_tuning_is_respected_with_warnings(monkeypatch):
     unsafe = {
         "ISE_DATACONNECT_QUERY_TIMEOUT": "999",
         "ISE_DATACONNECT_MAX_GROUPS": "999999",
@@ -238,39 +238,39 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
 
     assert cfg.dataconnect_query_timeout == 15
     assert cfg.dataconnect_max_groups == 1000
-    assert cfg.dataconnect_min_query_interval_ms == 5000
-    assert cfg.dataconnect_max_duty_cycle_percent == 0.1
+    assert cfg.dataconnect_min_query_interval_ms == 0
+    assert cfg.dataconnect_max_duty_cycle_percent == 99
     assert cfg.dataconnect_event_window_hours == 6
-    assert cfg.dataconnect_radius_interval == 86400
-    assert cfg.dataconnect_radius_active_interval == 7200
-    assert cfg.dataconnect_performance_interval == 21600
-    assert cfg.dataconnect_posture_interval == 86400
-    assert cfg.dataconnect_endpoints_interval == 86400
-    assert cfg.dataconnect_freshness_interval == 86400
-    assert cfg.dataconnect_nad_health_interval == 86400
-    assert cfg.dataconnect_tacacs_interval == 86400
+    assert cfg.dataconnect_radius_interval == 1
+    assert cfg.dataconnect_radius_active_interval == 1
+    assert cfg.dataconnect_performance_interval == 1
+    assert cfg.dataconnect_posture_interval == 1
+    assert cfg.dataconnect_endpoints_interval == 1
+    assert cfg.dataconnect_freshness_interval == 1
+    assert cfg.dataconnect_nad_health_interval == 1
+    assert cfg.dataconnect_tacacs_interval == 1
     assert cfg.mnt_active_posture_max_active_list_sessions == 250000
     assert cfg.tacacs_internal_user_max == 1000
     assert cfg.tacacs_internal_user_detail_max_requests == 250
-    assert cfg.tacacs_internal_user_detail_ttl == 86400
-    assert cfg.tacacs_internal_user_detail_request_interval_ms == 100
+    assert cfg.tacacs_internal_user_detail_ttl == 1
+    assert cfg.tacacs_internal_user_detail_request_interval_ms == 0
     assert cfg.tacacs_policy_set_max == 1000
     assert cfg.tacacs_policy_rule_refresh_max == 25
-    assert cfg.tacacs_policy_rule_ttl == 86400
-    assert cfg.tacacs_policy_rule_request_interval_ms == 100
+    assert cfg.tacacs_policy_rule_ttl == 1
+    assert cfg.tacacs_policy_rule_request_interval_ms == 0
     assert cfg.ers_port == 65535
     assert cfg.exporter_port == 1
-    assert cfg.scrape_interval == 60
-    assert cfg.medium_interval == 300
+    assert cfg.scrape_interval == 1
+    assert cfg.medium_interval == 1
     assert cfg.slow_interval == 3600
     assert cfg.auth_failure_backoff == 300
     assert cfg.auth_failure_threshold == 5
-    assert cfg.device_cache_ttl == 86400
+    assert cfg.device_cache_ttl == 2592000
     assert cfg.device_detail_max_requests == 100
-    assert cfg.device_detail_request_interval_ms == 100
+    assert cfg.device_detail_request_interval_ms == 0
     assert cfg.dataconnect_port == 65535
     assert cfg.tacacs_unused_account_days == 1
-    assert cfg.startup_rate_limit_seconds == 300
+    assert cfg.startup_rate_limit_seconds == 999
 
 
 def test_startup_rate_limit_can_be_tuned_or_disabled(monkeypatch):
@@ -287,10 +287,16 @@ def test_dataconnect_accepts_a_more_conservative_duty_cycle(monkeypatch):
     assert Config.from_env().dataconnect_max_duty_cycle_percent == 0.05
 
 
-def test_dataconnect_duty_cycle_has_a_staleness_safety_floor(monkeypatch):
+def test_dataconnect_duty_cycle_rejects_zero_as_not_operational(monkeypatch):
     monkeypatch.setenv("ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", "0")
 
-    assert Config.from_env().dataconnect_max_duty_cycle_percent == 0.01
+    assert Config.from_env().dataconnect_max_duty_cycle_percent == 0.1
+
+
+def test_dataconnect_duty_cycle_honors_value_below_recommendation(monkeypatch):
+    monkeypatch.setenv("ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", "0.001")
+
+    assert Config.from_env().dataconnect_max_duty_cycle_percent == 0.001
 
 
 def test_empty_shared_pacing_path_cannot_disable_cross_process_guard(monkeypatch):

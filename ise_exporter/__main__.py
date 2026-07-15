@@ -24,6 +24,11 @@ from .compatibility import ISECompatibilityError, validate_ise_compatibility
 from .dataconnect_schema import metadata_rows, validate_dataconnect_schema
 from .scheduler import PollScheduler
 from .snapshots import LockedCollectorRegistry
+from .state import (
+    acquire_runtime_lock,
+    release_runtime_lock,
+    reset_exporter_state,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("ise_exporter")
@@ -122,6 +127,8 @@ def main(argv=None):
                         help="validate Data Connect credentials, TLS, and view access")
     parser.add_argument("--dataconnect-schema", action="store_true",
                         help="print reporting-view column metadata as JSON")
+    parser.add_argument("--reset-state", action="store_true",
+                        help="clear exporter caches, snapshots, auth backoff, and DB pacing")
     args = parser.parse_args(argv)
 
     _load_env()
@@ -136,6 +143,23 @@ def main(argv=None):
         return dataconnect_check(cfg)
     if args.dataconnect_schema:
         return dataconnect_schema(cfg)
+    if args.reset_state:
+        try:
+            removed = reset_exporter_state(
+                cfg.state_db_path,
+                (
+                    cfg.rest_auth_guard_file,
+                    cfg.dataconnect_auth_guard_file,
+                    cfg.dataconnect_shared_pacing_file,
+                ),
+            )
+        except Exception as exc:
+            logger.error("exporter state reset failed: %s", exc)
+            return 1
+        logger.warning("exporter state reset complete; removed %d files", len(removed))
+        for path in removed:
+            logger.warning("reset removed %s", path)
+        return 0
 
     if not cfg.ise_host:
         logger.error("ISE_HOST not configured")
@@ -146,14 +170,20 @@ def main(argv=None):
     if cfg.collect_mnt_active_posture and not cfg.ise_mnt_host:
         logger.error("ISE_MNT_HOST is required when COLLECT_MNT_ACTIVE_POSTURE=true")
         return 1
-
-    rest_auth_guard = RestAuthGuard(cfg)
-    client = ISEControlPlaneClient(cfg, auth_guard=rest_auth_guard)
+    runtime_lock = None
+    try:
+        runtime_lock = acquire_runtime_lock(cfg.state_db_path)
+    except Exception as exc:
+        logger.error("could not acquire exporter runtime state: %s", exc)
+        return 1
+    client = None
     dataconnect = None
     mnt = None
     scheduler = None
     metrics_server = None
     try:
+        rest_auth_guard = RestAuthGuard(cfg)
+        client = ISEControlPlaneClient(cfg, auth_guard=rest_auth_guard)
         try:
             compatibility = validate_ise_compatibility(client)
         except ISECompatibilityError as exc:
@@ -204,6 +234,7 @@ def main(argv=None):
                            "the worker is still stopping")
         _close_quietly(client, "control-plane client")
         _stop_metrics_server(metrics_server)
+        release_runtime_lock(runtime_lock)
     logger.info("shutdown complete")
     return 0
 

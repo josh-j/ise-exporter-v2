@@ -5,7 +5,13 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 import ise_exporter.state as state_module
-from ise_exporter.state import STATE_SCHEMA_VERSION, StateStore
+from ise_exporter.state import (
+    STATE_SCHEMA_VERSION,
+    StateStore,
+    acquire_runtime_lock,
+    release_runtime_lock,
+    reset_exporter_state,
+)
 
 
 def test_database_and_live_wal_sidecars_are_private(tmp_path):
@@ -22,6 +28,50 @@ def test_database_and_live_wal_sidecars_are_private(tmp_path):
     assert modes["state.sqlite3-wal"] == 0o600
     assert modes["state.sqlite3-shm"] == 0o600
     store.close()
+
+
+def test_explicit_state_reset_removes_sqlite_guards_and_pacing(tmp_path):
+    path = tmp_path / "state.sqlite3"
+    path.write_bytes(b"state")
+    path.with_name(f"{path.name}-wal").write_bytes(b"wal")
+    path.with_name(f"{path.name}-shm").write_bytes(b"shm")
+    pacing = tmp_path / "dataconnect.pacing"
+    pacing.write_text("deadline")
+    rest_guard = tmp_path / "rest-auth.guard"
+    rest_guard.write_text("backoff")
+    dc_guard = tmp_path / "dataconnect-auth.guard"
+    dc_guard.write_text("backoff")
+
+    removed = reset_exporter_state(path, (rest_guard, dc_guard, pacing))
+
+    assert set(removed) == {
+        str(path), f"{path}-wal", f"{path}-shm",
+        str(rest_guard), str(dc_guard), str(pacing),
+    }
+    assert all(not candidate.exists() for candidate in (
+        path, rest_guard, dc_guard, pacing))
+
+
+def test_explicit_state_reset_rejects_symlink_target(tmp_path):
+    target = tmp_path / "real.sqlite3"
+    target.write_bytes(b"preserve")
+    link = tmp_path / "state.sqlite3"
+    link.symlink_to(target)
+
+    with pytest.raises(OSError, match="not a regular file"):
+        reset_exporter_state(link)
+
+    assert target.read_bytes() == b"preserve"
+
+
+def test_reset_refuses_while_exporter_runtime_owns_state(tmp_path):
+    path = tmp_path / "state.sqlite3"
+    descriptor = acquire_runtime_lock(path)
+    try:
+        with pytest.raises(RuntimeError, match="in use"):
+            reset_exporter_state(path)
+    finally:
+        release_runtime_lock(descriptor)
 
 
 def test_upgrade_removes_obsolete_dataconnect_rollup_history(tmp_path):

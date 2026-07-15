@@ -79,6 +79,36 @@ def _bounded_f(v, d, minimum=None, maximum=None):
     return bounded
 
 
+def _recommended_i(v, d, minimum=None, maximum=None, valid_minimum=0):
+    """Honor valid operator tuning while warning outside production guidance."""
+    value = _i(v, d)
+    if value < valid_minimum:
+        logger.warning(
+            "%s=%s is not operationally valid — defaulting to %s", v, value, d)
+        return d
+    if ((minimum is not None and value < minimum)
+            or (maximum is not None and value > maximum)):
+        logger.warning(
+            "%s=%s is outside the production-recommended range — respecting "
+            "the explicit setting", v, value)
+    return value
+
+
+def _recommended_f(v, d, minimum=None, maximum=None, valid_minimum=0.0):
+    """Float counterpart to :func:`_recommended_i`."""
+    value = _f(v, d)
+    if value <= valid_minimum:
+        logger.warning(
+            "%s=%s is not operationally valid — defaulting to %s", v, value, d)
+        return d
+    if ((minimum is not None and value < minimum)
+            or (maximum is not None and value > maximum)):
+        logger.warning(
+            "%s=%s is outside the production-recommended range — respecting "
+            "the explicit setting", v, value)
+    return value
+
+
 def _b(v, d):
     raw = _s(v, None)
     if raw is None:
@@ -213,11 +243,12 @@ class Config:
             mnt_ca_bundle=_s("ISE_MNT_CA_BUNDLE", _s("ISE_REST_CA_BUNDLE")),
             mnt_ssl_verify=_b(
                 "ISE_MNT_SSL_VERIFY", _b("ISE_REST_SSL_VERIFY", True)),
-            scrape_interval=_bounded_i("SCRAPE_INTERVAL", 120, 60),
-            medium_interval=_bounded_i("MEDIUM_INTERVAL", 300, 300),
-            slow_interval=_bounded_i("SLOW_INTERVAL", 3600, 3600),
-            startup_rate_limit_seconds=_bounded_i(
-                "ISE_STARTUP_RATE_LIMIT_SECONDS", 5, 0, 300),
+            scrape_interval=_recommended_i("SCRAPE_INTERVAL", 120, 60, valid_minimum=1),
+            medium_interval=_recommended_i(
+                "MEDIUM_INTERVAL", 300, 300, valid_minimum=1),
+            slow_interval=_recommended_i("SLOW_INTERVAL", 3600, 3600, valid_minimum=1),
+            startup_rate_limit_seconds=_recommended_i(
+                "ISE_STARTUP_RATE_LIMIT_SECONDS", 5, 0, 300, valid_minimum=0),
             auth_failure_backoff=_bounded_i(
                 "AUTH_FAILURE_BACKOFF", 900, 300, 86400),
             auth_failure_threshold=_bounded_i(
@@ -226,12 +257,13 @@ class Config:
                 "ISE_REST_AUTH_GUARD_FILE",
                 "/var/lib/ise-exporter/shared/rest-auth.guard")
                 or "/var/lib/ise-exporter/shared/rest-auth.guard",
-            device_cache_ttl=_bounded_i(
-                "DEVICE_CACHE_TTL", 2592000, 86400, 31536000),
+            device_cache_ttl=_recommended_i(
+                "DEVICE_CACHE_TTL", 2592000, 86400, 31536000, valid_minimum=1),
             device_detail_max_requests=_bounded_i(
                 "DEVICE_DETAIL_MAX_REQUESTS", 25, 1, 100),
-            device_detail_request_interval_ms=_bounded_i(
-                "DEVICE_DETAIL_REQUEST_INTERVAL_MS", 250, 100, 10000),
+            device_detail_request_interval_ms=_recommended_i(
+                "DEVICE_DETAIL_REQUEST_INTERVAL_MS", 250, 100, 10000,
+                valid_minimum=0),
             collect_device_details=_b("COLLECT_DEVICE_DETAILS", True),
             collect_certificates=_b("COLLECT_CERTIFICATES", True),
             collect_licensing=_b("COLLECT_LICENSING", True),
@@ -239,8 +271,8 @@ class Config:
             collect_patches=_b("COLLECT_PATCHES", True),
             collect_tacacs=_b("COLLECT_TACACS", True),
             collect_mnt_active_posture=_b("COLLECT_MNT_ACTIVE_POSTURE", True),
-            mnt_active_posture_interval=_bounded_i(
-                "MNT_ACTIVE_POSTURE_INTERVAL", 900, 900),
+            mnt_active_posture_interval=_recommended_i(
+                "MNT_ACTIVE_POSTURE_INTERVAL", 900, 900, valid_minimum=1),
             mnt_active_posture_max_active_list_sessions=_bounded_i(
                 "MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS", 10000, 1, 250000),
             mnt_active_posture_max_sessions=_bounded_i(
@@ -249,26 +281,30 @@ class Config:
                 "MNT_ACTIVE_POSTURE_WORKERS", 2, 1, 4),
             mnt_active_posture_max_requests_per_cycle=_bounded_i(
                 "MNT_ACTIVE_POSTURE_MAX_REQUESTS_PER_CYCLE", 250, 1, 250),
-            mnt_active_posture_refresh_ttl=_bounded_i(
-                "MNT_ACTIVE_POSTURE_REFRESH_TTL", 3600, 900),
-            mnt_active_posture_request_interval_ms=_bounded_i(
-                "MNT_ACTIVE_POSTURE_REQUEST_INTERVAL_MS", 500, 250),
+            mnt_active_posture_refresh_ttl=_recommended_i(
+                "MNT_ACTIVE_POSTURE_REFRESH_TTL", 3600, 900, valid_minimum=1),
+            mnt_active_posture_request_interval_ms=_recommended_i(
+                "MNT_ACTIVE_POSTURE_REQUEST_INTERVAL_MS", 500, 250,
+                valid_minimum=0),
             tacacs_internal_user_max=_bounded_i(
                 "TACACS_INTERNAL_USER_MAX", 1000, 1, 1000),
             tacacs_internal_user_detail_max_requests=_bounded_i(
                 "TACACS_INTERNAL_USER_DETAIL_MAX_REQUESTS", 100, 1, 250),
-            tacacs_internal_user_detail_ttl=_bounded_i(
-                "TACACS_INTERNAL_USER_DETAIL_TTL", 604800, 86400),
-            tacacs_internal_user_detail_request_interval_ms=_bounded_i(
-                "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS", 250, 100),
+            tacacs_internal_user_detail_ttl=_recommended_i(
+                "TACACS_INTERNAL_USER_DETAIL_TTL", 604800, 86400,
+                valid_minimum=1),
+            tacacs_internal_user_detail_request_interval_ms=_recommended_i(
+                "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS", 250, 100,
+                valid_minimum=0),
             tacacs_policy_set_max=_bounded_i(
                 "TACACS_POLICY_SET_MAX", 100, 1, 1000),
             tacacs_policy_rule_refresh_max=_bounded_i(
                 "TACACS_POLICY_RULE_REFRESH_MAX", 10, 1, 25),
-            tacacs_policy_rule_ttl=_bounded_i(
-                "TACACS_POLICY_RULE_TTL", 604800, 86400),
-            tacacs_policy_rule_request_interval_ms=_bounded_i(
-                "TACACS_POLICY_RULE_REQUEST_INTERVAL_MS", 250, 100),
+            tacacs_policy_rule_ttl=_recommended_i(
+                "TACACS_POLICY_RULE_TTL", 604800, 86400, valid_minimum=1),
+            tacacs_policy_rule_request_interval_ms=_recommended_i(
+                "TACACS_POLICY_RULE_REQUEST_INTERVAL_MS", 250, 100,
+                valid_minimum=0),
             tacacs_unused_account_days=_bounded_i(
                 "TACACS_UNUSED_ACCOUNT_DAYS", 180, 1, 3650),
             # Never infer the Oracle target from the MnT XML host. Production
@@ -284,28 +320,34 @@ class Config:
                 "ISE_DATACONNECT_QUERY_TIMEOUT", 15, 5, 15),
             dataconnect_max_groups=_bounded_i(
                 "ISE_DATACONNECT_MAX_GROUPS", 1000, 1, 1000),
-            dataconnect_min_query_interval_ms=_bounded_i(
-                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 5000, 5000),
-            dataconnect_max_duty_cycle_percent=_bounded_f(
+            dataconnect_min_query_interval_ms=_recommended_i(
+                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 5000, 5000,
+                valid_minimum=0),
+            dataconnect_max_duty_cycle_percent=_recommended_f(
                 "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.1, 0.01, 0.1),
             dataconnect_event_window_hours=_bounded_i(
                 "ISE_DATACONNECT_EVENT_WINDOW_HOURS", 6, 1, 6),
-            dataconnect_radius_interval=_bounded_i(
-                "ISE_DATACONNECT_RADIUS_INTERVAL", 86400, 86400),
-            dataconnect_radius_active_interval=_bounded_i(
-                "ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL", 7200, 7200),
-            dataconnect_performance_interval=_bounded_i(
-                "ISE_DATACONNECT_PERFORMANCE_INTERVAL", 21600, 21600),
-            dataconnect_posture_interval=_bounded_i(
-                "ISE_DATACONNECT_POSTURE_INTERVAL", 86400, 86400),
-            dataconnect_endpoints_interval=_bounded_i(
-                "ISE_DATACONNECT_ENDPOINTS_INTERVAL", 86400, 86400),
-            dataconnect_freshness_interval=_bounded_i(
-                "ISE_DATACONNECT_FRESHNESS_INTERVAL", 86400, 86400),
-            dataconnect_nad_health_interval=_bounded_i(
-                "ISE_DATACONNECT_NAD_HEALTH_INTERVAL", 86400, 86400),
-            dataconnect_tacacs_interval=_bounded_i(
-                "ISE_DATACONNECT_TACACS_INTERVAL", 86400, 86400),
+            dataconnect_radius_interval=_recommended_i(
+                "ISE_DATACONNECT_RADIUS_INTERVAL", 86400, 86400, valid_minimum=1),
+            dataconnect_radius_active_interval=_recommended_i(
+                "ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL", 7200, 7200,
+                valid_minimum=1),
+            dataconnect_performance_interval=_recommended_i(
+                "ISE_DATACONNECT_PERFORMANCE_INTERVAL", 21600, 21600,
+                valid_minimum=1),
+            dataconnect_posture_interval=_recommended_i(
+                "ISE_DATACONNECT_POSTURE_INTERVAL", 86400, 86400, valid_minimum=1),
+            dataconnect_endpoints_interval=_recommended_i(
+                "ISE_DATACONNECT_ENDPOINTS_INTERVAL", 86400, 86400,
+                valid_minimum=1),
+            dataconnect_freshness_interval=_recommended_i(
+                "ISE_DATACONNECT_FRESHNESS_INTERVAL", 86400, 86400,
+                valid_minimum=1),
+            dataconnect_nad_health_interval=_recommended_i(
+                "ISE_DATACONNECT_NAD_HEALTH_INTERVAL", 86400, 86400,
+                valid_minimum=1),
+            dataconnect_tacacs_interval=_recommended_i(
+                "ISE_DATACONNECT_TACACS_INTERVAL", 86400, 86400, valid_minimum=1),
             dataconnect_shared_pacing_file=_s(
                 "ISE_DATACONNECT_SHARED_PACING_FILE",
                 "/var/lib/ise-exporter/shared/dataconnect.pacing")

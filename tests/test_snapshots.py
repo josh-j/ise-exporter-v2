@@ -3,13 +3,16 @@ import threading
 import pytest
 from prometheus_client import CollectorRegistry, Gauge, Info
 
+from ise_exporter import collectors, metrics
 import ise_exporter.snapshots as snapshots_module
 from ise_exporter.snapshots import (
     LockedCollectorRegistry,
+    commit_metric_snapshots,
     replace_metric_snapshot,
     restore_metric_snapshot,
     serialize_metric_snapshot,
     snapshot_lock,
+    stage_metric_snapshots,
 )
 
 
@@ -129,6 +132,65 @@ def test_locked_registry_waits_for_snapshot_publication_boundary():
         assert not completed.wait(0.05)
     thread.join(1)
     assert completed.is_set()
+
+
+def test_observed_snapshot_is_staged_until_success_metadata_commits():
+    registry = CollectorRegistry()
+    domain = Gauge("staged_domain_value", "test", ["key"], registry=registry)
+    domain.labels(key="old").set(1)
+    name = "staged_success_test"
+
+    with collectors.observe(name):
+        replace_metric_snapshot(
+            (domain,), (lambda: domain.labels(key="new").set(2),))
+        assert {(sample.labels["key"], sample.value)
+                for sample in domain.collect()[0].samples} == {("old", 1)}
+
+    assert {(sample.labels["key"], sample.value)
+            for sample in domain.collect()[0].samples} == {("new", 2)}
+    assert metrics.ise_dataset_up.labels(
+        dataset=name, source="rest")._value.get() == 1
+    assert metrics.ise_dataset_fresh.labels(
+        dataset=name, source="rest")._value.get() == 1
+
+
+def test_failed_observation_discards_staged_snapshot():
+    registry = CollectorRegistry()
+    domain = Gauge("discarded_domain_value", "test", ["key"], registry=registry)
+    domain.labels(key="old").set(1)
+    name = "staged_failure_test"
+
+    with collectors.observe(name):
+        replace_metric_snapshot(
+            (domain,), (lambda: domain.labels(key="new").set(2),))
+        raise collectors.CollectorFailed("incomplete snapshot")
+
+    assert {(sample.labels["key"], sample.value)
+            for sample in domain.collect()[0].samples} == {("old", 1)}
+    assert metrics.ise_dataset_up.labels(
+        dataset=name, source="rest")._value.get() == 0
+
+
+def test_staged_metadata_failure_rolls_back_domain_and_metadata():
+    registry = CollectorRegistry()
+    domain = Gauge("transaction_domain", "test", registry=registry)
+    health = Gauge("transaction_health", "test", registry=registry)
+    domain.set(1)
+    health.set(0)
+
+    with stage_metric_snapshots() as replacements:
+        replace_metric_snapshot((domain,), (lambda: domain.set(2),))
+
+        def fail_metadata():
+            health.set(1)
+            raise RuntimeError("metadata failed")
+
+        with pytest.raises(RuntimeError, match="metadata failed"):
+            commit_metric_snapshots(
+                replacements, (health,), (fail_metadata,))
+
+    assert domain._value.get() == 1
+    assert health._value.get() == 0
 
 
 def test_metric_snapshot_round_trip_restores_labelled_and_scalar_gauges():

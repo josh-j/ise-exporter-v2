@@ -126,10 +126,10 @@ ISE_REST_AUTH_GUARD_FILE=/var/lib/ise-exporter/shared/rest-auth.guard
 ```
 
 Five seconds between statements, a 0.1% duty cycle, and 1,000 grouped results are
-hard maximum-pressure boundaries. Environment overrides may make collection more
-conservative down to a 0.01% duty-cycle floor, but the exporter and `ise-cli`
-clamp attempts to make it more aggressive. Atomic domain batches keep those
-limits: no more than five sequential
+the production recommendation. Valid explicit pacing, duty-cycle, and cadence
+settings are honored even outside that range and produce a journal warning; hard
+query timeout, row, byte, group, and batch ceilings remain enforced. Atomic
+domain batches keep those hard limits: no more than five sequential
 statements share a lease, and one cooldown based on their combined execution time
 starts only after the domain snapshot completes. The rolling crash deadline covers
 only completed work plus the immediately pending statement. The 15-second timeout
@@ -201,6 +201,19 @@ ise-cli  # enter the interactive shell; type ? and then quit
 ise-cli dataconnect-schema ENDPOINTS_DATA --output json
 journalctl -u ise-exporter -n 100 --no-pager
 ```
+
+For a completely fresh exporter state, stop the service and run the one-shot
+reset command as the service account, then start it again:
+
+```bash
+sudo systemctl stop ise-exporter
+sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --reset-state
+sudo systemctl start ise-exporter
+```
+
+The command removes the SQLite cache/snapshots, REST and Data Connect auth
+backoff files, and the shared Data Connect pacing deadline. It refuses to run
+while the exporter owns the state namespace and journals every removed path.
 
 The install path is continuously exercised on an `ubuntu-24.04` GitHub Actions
 runner, including package installation, Python imports, global CLI availability,

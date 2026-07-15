@@ -108,6 +108,22 @@ def test_scheduler_freshness_fallback_matches_daily_production_cadence():
         "dataconnect", 86400, True)
 
 
+def test_startup_journal_lists_dataset_source_cadence_and_time(caplog, monkeypatch):
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: 100.0)
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
+
+    PollScheduler(
+        _cfg(startup_rate_limit_seconds=7, collect_tacacs=False),
+        object(), object(), mnt=object())
+
+    assert "startup schedule:" in caplog.text
+    assert "startup_rate_limit_seconds=7" in caplog.text
+    assert "scheduled dataset=deployment source=rest enabled=true" in caplog.text
+    assert "interval_seconds=300" in caplog.text
+    assert "first_attempt_not_before=1970-01-01T00:01:40Z" in caplog.text
+    assert "scheduled dataset=tacacs_activity source=dataconnect enabled=false" in caplog.text
+
+
 def test_startup_rate_limit_spaces_only_each_datasets_first_attempt(monkeypatch):
     clock = [100.0]
     sleeps = []
@@ -147,7 +163,7 @@ def test_startup_rate_limit_wait_is_interruptible(monkeypatch):
     assert waits == [7]
 
 
-def test_unchecked_config_cannot_relax_production_scheduler_cadences():
+def test_scheduler_respects_valid_explicit_cadences_but_preserves_auth_backoff():
     scheduler = PollScheduler(_cfg(
         scrape_interval=1,
         medium_interval=1,
@@ -164,26 +180,26 @@ def test_unchecked_config_cannot_relax_production_scheduler_cadences():
         dataconnect_tacacs_interval=1,
     ), object(), object(), mnt=object())
 
-    assert scheduler.scrape_interval == 60
+    assert scheduler.scrape_interval == 1
     assert scheduler.auth_failure_backoff == 300
     assert {name: interval for name, (_source, interval, _enabled)
             in scheduler.dataset_plan.items()} == {
-        "deployment": 300,
-        "devices": 3600,
-        "certificates": 3600,
-        "licensing": 3600,
-        "backup": 3600,
-        "patches": 3600,
-        "dataconnect_radius": 86400,
-        "dataconnect_radius_active": 7200,
-        "dataconnect_performance": 21600,
-        "dataconnect_posture": 86400,
-        "dataconnect_endpoints": 86400,
-        "dataconnect_freshness": 86400,
-        "dataconnect_nad_health": 86400,
-        "mnt_active_posture": 900,
-        "tacacs_config": 3600,
-        "tacacs_activity": 86400,
+        "deployment": 1,
+        "devices": 1,
+        "certificates": 1,
+        "licensing": 1,
+        "backup": 1,
+        "patches": 1,
+        "dataconnect_radius": 1,
+        "dataconnect_radius_active": 1,
+        "dataconnect_performance": 1,
+        "dataconnect_posture": 1,
+        "dataconnect_endpoints": 1,
+        "dataconnect_freshness": 1,
+        "dataconnect_nad_health": 1,
+        "mnt_active_posture": 1,
+        "tacacs_config": 1,
+        "tacacs_activity": 1,
     }
     assert metrics.ise_dataconnect_scan_window_hours.labels(
         dataset="dataconnect_radius")._value.get() == 1

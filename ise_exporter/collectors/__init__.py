@@ -13,6 +13,11 @@ import time
 from contextlib import contextmanager
 
 from .. import metrics
+from ..snapshots import (
+    commit_metric_snapshots,
+    snapshot_lock,
+    stage_metric_snapshots,
+)
 
 logger = logging.getLogger(__name__)
 _failures = {}
@@ -47,11 +52,15 @@ def outcome(name):
 
 def record_failure(name, error_type):
     """Bump the scrape-error counter + consecutive-failure gauge for a failed collect."""
-    metrics.ise_scrape_errors_total.labels(collector=name, error_type=error_type).inc()
-    _failures[name] = _failures.get(name, 0) + 1
-    metrics.ise_consecutive_failures.labels(collector=name).set(_failures[name])
-    _outcomes[name] = False
-    metrics.ise_dataset_up.labels(dataset=name, source=source(name)).set(0)
+    with snapshot_lock:
+        metrics.ise_scrape_errors_total.labels(
+            collector=name, error_type=error_type).inc()
+        _failures[name] = _failures.get(name, 0) + 1
+        metrics.ise_consecutive_failures.labels(
+            collector=name).set(_failures[name])
+        _outcomes[name] = False
+        metrics.ise_dataset_up.labels(
+            dataset=name, source=source(name)).set(0)
 
 
 @contextmanager
@@ -59,23 +68,45 @@ def observe(name):
     # Wall clock is required for exported completion timestamps, but elapsed
     # duration must not go negative when NTP corrects the system clock.
     start = time.monotonic()
-    try:
-        yield
-        completed = time.time()
-        metrics.ise_last_successful_scrape.labels(collector=name).set(completed)
-        _outcomes[name] = True
-        metrics.ise_dataset_up.labels(dataset=name, source=source(name)).set(1)
-        metrics.ise_dataset_last_success_timestamp.labels(
-            dataset=name, source=source(name)).set(completed)
-        _failures[name] = 0
-        metrics.ise_consecutive_failures.labels(collector=name).set(0)
-    except CollectorFailed as e:
-        logger.warning("%s: %s", name, e)
-        record_failure(name, "no_data")
-    except Exception as e:
-        logger.error("%s collection error: %s", name, e)
-        record_failure(name, "exception")
-    finally:
-        duration = max(0.0, time.monotonic() - start)
-        metrics.ise_collector_duration_seconds.labels(collector=name).set(duration)
-        metrics.ise_scrape_duration_seconds.observe(duration)
+    with stage_metric_snapshots() as replacements:
+        try:
+            yield
+            completed = time.time()
+            dataset_source = source(name)
+
+            def publish_success():
+                metrics.ise_last_successful_scrape.labels(
+                    collector=name).set(completed)
+                metrics.ise_dataset_up.labels(
+                    dataset=name, source=dataset_source).set(1)
+                metrics.ise_dataset_fresh.labels(
+                    dataset=name, source=dataset_source).set(1)
+                metrics.ise_dataset_last_success_timestamp.labels(
+                    dataset=name, source=dataset_source).set(completed)
+                metrics.ise_consecutive_failures.labels(collector=name).set(0)
+
+            commit_metric_snapshots(
+                replacements,
+                (
+                    metrics.ise_last_successful_scrape,
+                    metrics.ise_dataset_up,
+                    metrics.ise_dataset_fresh,
+                    metrics.ise_dataset_last_success_timestamp,
+                    metrics.ise_consecutive_failures,
+                ),
+                (publish_success,),
+            )
+            _outcomes[name] = True
+            _failures[name] = 0
+        except CollectorFailed as e:
+            logger.warning("%s: %s", name, e)
+            record_failure(name, "no_data")
+        except Exception as e:
+            logger.error("%s collection error: %s", name, e)
+            record_failure(name, "exception")
+        finally:
+            duration = max(0.0, time.monotonic() - start)
+            with snapshot_lock:
+                metrics.ise_collector_duration_seconds.labels(
+                    collector=name).set(duration)
+                metrics.ise_scrape_duration_seconds.observe(duration)

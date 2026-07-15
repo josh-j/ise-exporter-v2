@@ -9,7 +9,8 @@ snapshot or the new one.
 from __future__ import annotations
 
 import math
-from threading import RLock
+from contextlib import contextmanager
+from threading import RLock, local
 
 from prometheus_client import REGISTRY
 
@@ -17,6 +18,7 @@ from .util import MAX_METRIC_LABEL_BYTES
 
 
 snapshot_lock = RLock()
+_snapshot_staging = local()
 MAX_METRIC_SNAPSHOT_SAMPLES = 20_000
 MAX_PERSISTED_SNAPSHOT_SAMPLES = 20_000
 
@@ -69,13 +71,15 @@ class LockedCollectorRegistry:
         return LockedCollectorRegistry(restricted(names))
 
 
-def replace_metric_snapshot(metric_families, writers):
-    """Clear and rebuild labelled metric families atomically, with rollback.
-
-    Writers are prepared after all network I/O and normalization.  The previous
-    labelled-child maps remain available for rollback until every writer succeeds.
-    """
-    families = tuple(dict.fromkeys(metric_families))
+def _replace_metric_snapshots(replacements, extra_families=(), extra_writers=()):
+    """Apply one or more replacements and metadata writers under one lock."""
+    replacements = tuple(
+        (tuple(dict.fromkeys(families)), tuple(writers))
+        for families, writers in replacements
+    )
+    replacement_families = tuple(dict.fromkeys(
+        metric for families, _writers in replacements for metric in families))
+    families = tuple(dict.fromkeys((*replacement_families, *extra_families)))
     with snapshot_lock:
         backups = {}
         for metric in families:
@@ -89,17 +93,20 @@ def replace_metric_snapshot(metric_families, writers):
             else:
                 raise TypeError(f"unsupported metric family {metric!r}")
         try:
-            for metric in families:
-                kind, _previous = backups[metric]
-                if kind == "labelled":
-                    metric._metrics.clear()
-                elif kind == "info":
-                    metric.info({})
-                else:
-                    metric.set(0)
-            for writer in writers:
+            for replacement, writers in replacements:
+                for metric in replacement:
+                    kind, _previous = backups[metric]
+                    if kind == "labelled":
+                        metric._metrics.clear()
+                    elif kind == "info":
+                        metric.info({})
+                    else:
+                        metric.set(0)
+                for writer in writers:
+                    writer()
+            for writer in extra_writers:
                 writer()
-            _validate_metric_sample_count(families)
+            _validate_metric_sample_count(replacement_families)
             _validate_finite_metric_values(families)
         except Exception:
             for metric, (kind, previous) in backups.items():
@@ -111,6 +118,40 @@ def replace_metric_snapshot(metric_families, writers):
                 else:
                     metric.set(previous)
             raise
+
+
+@contextmanager
+def stage_metric_snapshots():
+    """Defer replacements until collector success metadata can join the commit."""
+    if getattr(_snapshot_staging, "replacements", None) is not None:
+        raise RuntimeError("nested metric snapshot transaction is not supported")
+    replacements = []
+    _snapshot_staging.replacements = replacements
+    try:
+        yield replacements
+    finally:
+        _snapshot_staging.replacements = None
+
+
+def commit_metric_snapshots(replacements, extra_families=(), extra_writers=()):
+    """Commit staged domain data and its validity metadata atomically."""
+    _replace_metric_snapshots(replacements, extra_families, extra_writers)
+
+
+def replace_metric_snapshot(metric_families, writers):
+    """Clear and rebuild labelled metric families atomically, with rollback.
+
+    Inside a collector observation the replacement is staged so the outer
+    success metadata joins the same scrape boundary. Outside an observation it
+    remains an immediate atomic replacement for restores and standalone users.
+    """
+    families = tuple(dict.fromkeys(metric_families))
+    writers = tuple(writers)
+    staged = getattr(_snapshot_staging, "replacements", None)
+    if staged is not None:
+        staged.append((families, writers))
+        return
+    _replace_metric_snapshots(((families, writers),))
 
 
 def serialize_metric_snapshot(metric_families):

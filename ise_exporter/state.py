@@ -70,6 +70,68 @@ _RECOVERABLE_CORRUPTION_MESSAGES = (
 logger = logging.getLogger(__name__)
 
 
+def acquire_runtime_lock(state_path):
+    """Hold one exporter/reset owner for a state namespace."""
+    target = Path(str(state_path or "/var/lib/ise-exporter/state.sqlite3"))
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
+    lock_path = Path(f"{target}.runtime.lock")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(lock_path, flags, 0o600)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise OSError(f"exporter runtime lock is not a regular file: {lock_path}")
+        os.fchmod(descriptor, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError(
+                "exporter state is in use; stop the running exporter before reset") from error
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def release_runtime_lock(descriptor):
+    if descriptor is None:
+        return
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
+def reset_exporter_state(state_path, guard_paths=()):
+    """One-shot reset of cache, snapshots, auth guards, and DB pacing state."""
+    state_path = str(state_path or "")
+    if not state_path or state_path == ":memory:":
+        candidates = [Path(str(path)) for path in guard_paths if path]
+        runtime_state = "/tmp/ise-exporter-memory-state"
+    else:
+        target = Path(state_path)
+        candidates = [Path(f"{target}{suffix}") for suffix in ("", "-wal", "-shm")]
+        candidates.extend(Path(str(path)) for path in guard_paths if path)
+        runtime_state = state_path
+    descriptor = acquire_runtime_lock(runtime_state)
+    removed = []
+    try:
+        for candidate in dict.fromkeys(candidates):
+            try:
+                candidate_metadata = candidate.lstat()
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(candidate_metadata.st_mode):
+                raise OSError(
+                    f"state database reset target is not a regular file: {candidate}")
+            candidate.unlink()
+            removed.append(str(candidate))
+    finally:
+        release_runtime_lock(descriptor)
+    return tuple(removed)
+
+
 class StateStore:
     def __init__(self, path):
         self.path = str(path or ":memory:")

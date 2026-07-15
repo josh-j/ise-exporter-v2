@@ -14,7 +14,11 @@ import time
 
 from . import collectors, metrics
 from .state import StateStore
-from .snapshots import restore_metric_snapshot, serialize_metric_snapshot
+from .snapshots import (
+    restore_metric_snapshot,
+    serialize_metric_snapshot,
+    snapshot_lock,
+)
 from .collectors import (
     backup,
     certificates,
@@ -47,6 +51,15 @@ def _minimum_interval(value, default, minimum):
     except (TypeError, ValueError):
         interval = default
     return max(minimum, interval)
+
+
+def _configured_interval(value, default):
+    """Honor a valid positive operator cadence; Config already logs advisories."""
+    try:
+        interval = int(value)
+    except (TypeError, ValueError):
+        return default
+    return interval if interval > 0 else default
 
 # Lower values run first whenever more than one due domain is waiting. This does
 # not add query concurrency or preempt an atomic collector; it prevents daily
@@ -93,19 +106,19 @@ def _next_deadline(deadline, now, interval):
 class PollScheduler:
     def __init__(self, cfg, client, dataconnect=None, mnt=None):
         self.cfg = cfg
-        self.scrape_interval = _minimum_interval(
-            getattr(cfg, "scrape_interval", 120), 120, 60)
-        self.medium_interval = _minimum_interval(
-            getattr(cfg, "medium_interval", 300), 300, 300)
-        self.slow_interval = _minimum_interval(
-            getattr(cfg, "slow_interval", 3600), 3600, 3600)
+        self.scrape_interval = _configured_interval(
+            getattr(cfg, "scrape_interval", 120), 120)
+        self.medium_interval = _configured_interval(
+            getattr(cfg, "medium_interval", 300), 300)
+        self.slow_interval = _configured_interval(
+            getattr(cfg, "slow_interval", 3600), 3600)
         self.auth_failure_backoff = _minimum_interval(
             getattr(cfg, "auth_failure_backoff", 900), 900, 300)
         try:
             startup_spacing = int(getattr(cfg, "startup_rate_limit_seconds", 0))
         except (TypeError, ValueError):
             startup_spacing = 5
-        self.startup_rate_limit_seconds = max(0, min(300, startup_spacing))
+        self.startup_rate_limit_seconds = max(0, startup_spacing)
         self._startup_lock = threading.Lock()
         self._startup_started = set()
         self._startup_next_at = 0.0
@@ -137,8 +150,44 @@ class PollScheduler:
         self._initialize_dataset_state()
         self._publish_worker_state(time.time())
         self._restore_dataconnect_state()
+        self._log_startup_schedule()
         logger.info("collection plan: REST/OpenAPI=platform/config "
                     "DataConnect=historical-reporting MnT=bounded-active-posture")
+
+    def _log_startup_schedule(self):
+        """Journal every enabled cadence and its earliest post-start attempt."""
+        now = time.time()
+        cold_slot = 0
+        logger.info(
+            "startup schedule: dataset_count=%d startup_rate_limit_seconds=%s",
+            sum(enabled for _source, _interval, enabled in self.dataset_plan.values()),
+            self.startup_rate_limit_seconds,
+        )
+        for name, (source, interval, enabled) in self.dataset_plan.items():
+            if not enabled:
+                logger.info(
+                    "scheduled dataset=%s source=%s enabled=false interval_seconds=%s",
+                    name, source, interval,
+                )
+                continue
+            restored_due = self.next_run.get(name)
+            if restored_due is None:
+                not_before = now + cold_slot * self.startup_rate_limit_seconds
+                cold_slot += 1
+                reason = "cold_start"
+            else:
+                not_before = restored_due
+                reason = "restored_snapshot"
+            logger.info(
+                "scheduled dataset=%s source=%s enabled=true interval_seconds=%s "
+                "first_attempt_not_before=%s first_attempt_in_seconds=%.0f reason=%s",
+                name,
+                source,
+                interval,
+                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(not_before)),
+                max(0.0, not_before - now),
+                reason,
+            )
 
     def _dataset_plan(self):
         cfg = self.cfg
@@ -153,34 +202,34 @@ class PollScheduler:
             "backup": ("rest", self.slow_interval, cfg.collect_backup_status),
             "patches": ("rest", self.slow_interval, cfg.collect_patches),
             "dataconnect_radius": (
-                "dataconnect", _minimum_interval(
-                    getattr(cfg, "dataconnect_radius_interval", 86400), 86400, 86400), True),
+                "dataconnect", _configured_interval(
+                    getattr(cfg, "dataconnect_radius_interval", 86400), 86400), True),
             "dataconnect_radius_active": (
-                "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_radius_active_interval", 7200), 7200, 7200), True),
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_radius_active_interval", 7200), 7200), True),
             "dataconnect_performance": (
-                "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_performance_interval", 21600), 21600, 21600), True),
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_performance_interval", 21600), 21600), True),
             "dataconnect_posture": (
-                "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_posture_interval", 86400), 86400, 86400), True),
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_posture_interval", 86400), 86400), True),
             "dataconnect_endpoints": (
-                "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_endpoints_interval", 86400), 86400, 86400), True),
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_endpoints_interval", 86400), 86400), True),
             "dataconnect_freshness": (
-                "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_freshness_interval", 86400), 86400, 86400), True),
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_freshness_interval", 86400), 86400), True),
             "dataconnect_nad_health": (
-                "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_nad_health_interval", 86400), 86400, 86400), True),
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_nad_health_interval", 86400), 86400), True),
             "mnt_active_posture": (
-                "mnt", _minimum_interval(getattr(
-                    cfg, "mnt_active_posture_interval", self.medium_interval), 900, 900),
+                "mnt", _configured_interval(getattr(
+                    cfg, "mnt_active_posture_interval", self.medium_interval), 900),
                 getattr(cfg, "collect_mnt_active_posture", True)),
             "tacacs_config": ("rest", self.slow_interval, cfg.collect_tacacs),
             "tacacs_activity": (
-                "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_tacacs_interval", 86400), 86400, 86400),
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_tacacs_interval", 86400), 86400),
                 cfg.collect_tacacs),
         }
 
@@ -254,7 +303,16 @@ class PollScheduler:
                     logger.info("ignoring stale %s snapshot; collecting immediately", name)
                     continue
                 try:
-                    restore_metric_snapshot(families, payload)
+                    with snapshot_lock:
+                        restore_metric_snapshot(families, payload)
+                        metrics.ise_dataset_up.labels(
+                            dataset=name, source=source).set(int(enabled))
+                        metrics.ise_dataset_last_success_timestamp.labels(
+                            dataset=name, source=source).set(updated_at)
+                        metrics.ise_last_successful_scrape.labels(
+                            collector=name).set(updated_at)
+                        metrics.ise_dataset_fresh.labels(
+                            dataset=name, source=source).set(1)
                 except (TypeError, ValueError) as error:
                     logger.warning("ignoring incompatible %s snapshot: %s", name, error)
                     continue
@@ -262,10 +320,6 @@ class PollScheduler:
                 self.last_success[name] = updated_at
                 self.next_run[name] = updated_at + interval
                 self._scheduled_delay[name] = interval
-                metrics.ise_dataset_up.labels(dataset=name, source=source).set(int(enabled))
-                metrics.ise_dataset_last_success_timestamp.labels(
-                    dataset=name, source=source).set(updated_at)
-                metrics.ise_last_successful_scrape.labels(collector=name).set(updated_at)
                 self._update_dataset_freshness(name, now)
                 logger.info(
                     "restored Data Connect dataset %s; next run in %.0fs",

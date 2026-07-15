@@ -92,8 +92,10 @@ and never inherits `ISE_MNT_HOST`; this prevents an XML API routing choice from
 silently becoming the Oracle target. Production defaults for up to 100,000
 endpoints use one sequential connection, five-second statement pacing, a 0.1%
 adaptive query-duty-cycle ceiling, 15-second total Oracle-attempt timeouts, and independent
-two-hour to 24-hour domain cadences. The client enforces five seconds, 0.1%,
-and a 15-second Oracle-call timeout as hard safety limits and refuses to
+two-hour to 24-hour domain cadences. Valid explicit pacing, duty-cycle, startup
+spacing, and cadence values are honored; values outside this production profile
+produce startup warnings instead of being silently replaced. The client retains
+a hard 15-second Oracle-call timeout and refuses to
 run reporting SQL until the session accepts `ALTER SESSION DISABLE PARALLEL
 QUERY`; this prevents a small aggregate result from fanning out across parallel
 database workers. The client also refuses to materialize more than 5,000 rows
@@ -105,11 +107,13 @@ fetches, with 1 MiB per-field and 64 MiB
 retained-payload ceilings per standalone statement or complete batch, even when
 a CLI caller or alternate
 configuration object requests a more aggressive value; grouped output is likewise
-capped at 1,000 series per breakdown. Operators may lower the duty-cycle ceiling
-as far as 0.01%; values above 0.1% are always clamped.
+capped at 1,000 series per breakdown. Operators may lower the duty-cycle below
+0.01% for exceptionally low-pressure collection; the shared-deadline validity
+window expands with the configured duty cycle so a deliberate long cooldown is
+not mistaken for corrupt pacing state.
 The startup schema check is a single allowlisted `USER_TAB_COLUMNS` dictionary
 read. It retains the global cross-process lock, session safety setup, 15-second
-timeout, and all result ceilings, but uses only the fixed five-second post-query
+timeout, and all result ceilings, but uses only the configured post-query
 gap instead of multiplying its duration by the reporting-view duty-cycle ratio.
 Oracle dictionary size does not scale with the 80--200 GB event history, and this
 prevents a harmless one-second compatibility check from postponing the first real
@@ -213,8 +217,8 @@ process holding the shared pacing gate cannot strand exporter shutdown behind a
 kernel lock during a long adaptive cooldown.
 The Data Quality dashboard exposes per-view statement rate, latest duration, rows
 returned, configured/effective cadence, pacing, shared statement cooldown, and
-the effective hard duty-cycle, timeout, result-row, and materialized-byte
-ceilings. Production monitoring therefore proves the guardrails in the running
+the effective configured duty-cycle and the hard timeout, result-row, and
+materialized-byte ceilings. Production monitoring therefore proves the running
 process rather than relying on a sample environment file.
 The scheduler does not apply that cooldown a second time when calculating its
 next domain run. ISE-expired Oracle sessions are reconnected and retried once;
@@ -279,6 +283,10 @@ status, agent-version, and policy labels and NAD classification labels have
 smaller domain-specific ceilings; overflow is aggregated into `Other` while
 preserving totals. A collector regression therefore rolls back instead of
 turning a bounded query or API response into row-like Prometheus state.
+Successful domain values, availability, freshness, and completion timestamps
+commit under that same scrape lock. A failed collector discards its staged
+replacement, while restart restoration rehydrates values and validity metadata
+within one boundary, so Prometheus cannot pair a new snapshot with old health.
 The state layer validates its exact table contract at startup and bounds all keys,
 values, and reconciliation sets before materialization. Explicit SQLite physical
 corruption is recovered under a cross-process lock by preserving the original
