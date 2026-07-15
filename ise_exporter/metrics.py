@@ -2,6 +2,9 @@
 from prometheus_client import Gauge, Counter, Info, Enum, Histogram
 
 # --- availability / deployment ---
+ise_exporter_build_info = Gauge(
+    "ise_exporter_build_info", "Exporter package and exact ISE compatibility identity",
+    ["version", "revision", "target_ise_release"])
 ise_up = Gauge("ise_up", "ISE API availability (1=up, 0=down)")
 ise_info = Info("ise", "ISE deployment info")
 ise_deployment_status = Enum(

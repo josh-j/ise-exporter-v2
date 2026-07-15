@@ -8,6 +8,17 @@ import pytest
 from ise_exporter import cli
 
 
+def test_cli_version_reports_revision_and_exact_ise_target(monkeypatch, capsys):
+    monkeypatch.setenv("ISE_EXPORTER_BUILD_REVISION", "abc1234")
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main(["--version"])
+
+    assert exited.value.code == 0
+    assert capsys.readouterr().out == (
+        "ise-cli 2.0.0 (revision abc1234; Cisco ISE 3.3.0.430 Patch 11)\n")
+
+
 class FakeClient:
     def __init__(self):
         self.cfg = types.SimpleNamespace(

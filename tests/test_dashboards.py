@@ -370,6 +370,7 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
     text = (DASHBOARDS / "ise-data-quality.json").read_text()
     for metric in (
         "ise_dataset_enabled",
+        "ise_exporter_build_info",
         "ise_dataset_up",
         "ise_dataset_fresh",
         "ise_dataset_last_attempt_timestamp",

@@ -28,6 +28,7 @@ from rich.pretty import Pretty
 from rich.table import Table
 from rich.text import Text
 
+from . import version_string
 from .clients.dataconnect import DataConnectClient
 from .clients.rest import ERS_MAX_PAGES, ISEOperatorClient
 from .collectors.dataconnect_common import recent_event_predicate
@@ -435,7 +436,8 @@ def build_parser(*, require_command=False):
         description="Read-only Cisco ISE operator CLI (ERS, OpenAPI, Data Connect, MnT)",
     )
     parser.add_argument("--env-file", help="dotenv file to load after ./.env")
-    parser.add_argument("--version", action="version", version="%(prog)s 2.0.0")
+    parser.add_argument(
+        "--version", action="version", version=version_string("%(prog)s"))
     subs = parser.add_subparsers(dest="command", required=require_command)
 
     def command(name, help_text):

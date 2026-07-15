@@ -15,6 +15,8 @@ import urllib3
 from dotenv import load_dotenv
 from prometheus_client import start_http_server
 
+from . import __version__, build_revision, SUPPORTED_ISE_RELEASE, version_string
+from . import metrics
 from .config import Config
 from .clients.rest import ISEControlPlaneClient, MnTActiveSessionClient
 from .clients.dataconnect import DataConnectClient
@@ -86,6 +88,7 @@ def _load_env():
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
+    parser.add_argument("--version", action="version", version=version_string("ise-exporter"))
     parser.add_argument("--dataconnect-check", action="store_true",
                         help="validate Data Connect credentials, TLS, and view access")
     parser.add_argument("--dataconnect-schema", action="store_true",
@@ -93,6 +96,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     _load_env()
+    metrics.ise_exporter_build_info.labels(
+        version=__version__, revision=build_revision(),
+        target_ise_release=SUPPORTED_ISE_RELEASE).set(1)
     cfg = Config.from_env()
     logging.getLogger().setLevel(cfg.log_level)
     logger.info("config: %s", cfg.summary())

@@ -408,6 +408,15 @@
         {"expr": "ise_mnt_session_list_ceiling", "instant": true, "legendFormat": "download ceiling", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
         {"expr": "ise_mnt_session_list_skipped", "instant": true, "legendFormat": "list refused", "refId": "C", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ]
+    },
+    {
+      "id": 38,
+      "type": "table",
+      "title": "Exporter Build Identity",
+      "description": "Exact deployed source revision and supported Cisco ISE release. A revision of unknown means the packaging layer did not inject a build identity.",
+      "gridPos": {"h": 5, "w": 24, "x": 0, "y": 98},
+      "targets": [{"expr": "ise_exporter_build_info", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {}, "overrides": []}
     }
   ],
   "templating": {

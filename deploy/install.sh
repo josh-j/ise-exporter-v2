@@ -19,6 +19,7 @@ SERVICE_USER=ise-exporter
 SERVICE_NAME=ise-exporter
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 CLI_LINK=/usr/local/bin/ise-cli
+REVISION_FILE="$INSTALL_DIR/REVISION"
 
 if [[ $EUID -ne 0 ]]; then
     echo "must run as root: sudo $0 [path-to-repo-checkout]" >&2
@@ -130,6 +131,26 @@ chmod -R a+rX "$VENV"
 INSTALLED_VERSION="$("$VENV/bin/python" -c \
     "import importlib.metadata as m; print(m.version('ise-exporter'))")"
 echo "==> installed ise-exporter $INSTALLED_VERSION"
+
+# Preserve exact source identity without adding Git as a production prerequisite.
+# A real checkout contributes its commit; an archive remains honestly unknown
+# unless the packaging caller supplies a bounded revision explicitly.
+BUILD_REVISION="${ISE_EXPORTER_BUILD_REVISION:-}"
+if [[ ! "$BUILD_REVISION" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+    BUILD_REVISION=""
+fi
+if [[ -z "$BUILD_REVISION" ]] && command -v git >/dev/null 2>&1 \
+        && git -C "$SOURCE_DIR" rev-parse --verify HEAD >/dev/null 2>&1; then
+    BUILD_REVISION="$(git -C "$SOURCE_DIR" rev-parse --short=12 HEAD)"
+    if [[ -n "$(git -C "$SOURCE_DIR" status --porcelain --untracked-files=normal)" ]]; then
+        BUILD_REVISION="${BUILD_REVISION}-dirty"
+    fi
+fi
+BUILD_REVISION="${BUILD_REVISION:-unknown}"
+printf '%s\n' "$BUILD_REVISION" >"$REVISION_FILE"
+chown root:root "$REVISION_FILE"
+chmod 644 "$REVISION_FILE"
+echo "==> build revision: $BUILD_REVISION"
 
 # Global read-only operator CLI. The target remains root-owned in the venv; this
 # symlink only makes it discoverable on every user's normal PATH.
