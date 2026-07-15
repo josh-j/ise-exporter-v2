@@ -100,6 +100,7 @@ def test_summary_excludes_password(monkeypatch):
     assert "dataconnect_min_query_interval_ms=5000" in cfg.summary()
     assert "dataconnect_max_duty_cycle_percent=0.1" in cfg.summary()
     assert "dataconnect_max_groups=1000" in cfg.summary()
+    assert "rest_request_timeout_seconds=30" in cfg.summary()
     assert cfg.dataconnect_ready is True
     assert cfg.dataconnect_host == "mnt2.example.mil"
 
@@ -141,6 +142,7 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert "FAST_INTERVAL" not in values
     assert "MAX_WORKERS" not in values
     assert values["ISE_DATACONNECT_MAX_GROUPS"] == "1000"
+    assert values["ISE_REST_REQUEST_TIMEOUT"] == "30"
     assert values["ISE_DATACONNECT_QUERY_TIMEOUT"] == "15"
     assert values["ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS"] == "5000"
     assert values["ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT"] == "0.1"
@@ -218,6 +220,7 @@ def test_hard_limits_clamp_but_valid_tuning_is_respected_with_warnings(monkeypat
         "TACACS_POLICY_RULE_TTL": "1",
         "TACACS_POLICY_RULE_REQUEST_INTERVAL_MS": "0",
         "ERS_PORT": "99999",
+        "ISE_REST_REQUEST_TIMEOUT": "999",
         "EXPORTER_PORT": "0",
         "SCRAPE_INTERVAL": "1",
         "MEDIUM_INTERVAL": "1",
@@ -259,6 +262,7 @@ def test_hard_limits_clamp_but_valid_tuning_is_respected_with_warnings(monkeypat
     assert cfg.tacacs_policy_rule_ttl == 1
     assert cfg.tacacs_policy_rule_request_interval_ms == 0
     assert cfg.ers_port == 65535
+    assert cfg.request_timeout == 30
     assert cfg.exporter_port == 1
     assert cfg.scrape_interval == 1
     assert cfg.medium_interval == 1

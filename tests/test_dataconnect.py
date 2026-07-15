@@ -411,6 +411,21 @@ def test_client_respects_explicit_pacing_but_preserves_auth_safety():
     assert client.failure_backoff == 300
 
 
+@pytest.mark.parametrize("host", (
+    "tcps://mnt.example", "user@mnt.example", "mnt.example/cpm10", "mnt.example:2484",
+))
+def test_dataconnect_rejects_non_bare_database_hosts(host):
+    cfg = types.SimpleNamespace(
+        dataconnect_host=host, dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=True, dataconnect_query_timeout=15,
+    )
+
+    with pytest.raises(ValueError, match="bare DNS hostname or IPv4 address"):
+        dataconnect.DataConnectClient(cfg)
+
+
 def test_client_honors_more_conservative_duty_cycle():
     cfg = types.SimpleNamespace(
         dataconnect_host="mnt.example.mil", dataconnect_port=2484,

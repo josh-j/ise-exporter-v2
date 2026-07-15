@@ -19,6 +19,7 @@ import oracledb
 
 from .. import metrics
 from ..auth_guard import PersistentAuthGuard
+from ..compatibility import valid_hostname
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +178,9 @@ def _authentication_failure(error):
 
 class DataConnectClient:
     def __init__(self, cfg):
+        if not valid_hostname(cfg.dataconnect_host):
+            raise ValueError(
+                "ISE_DATACONNECT_HOST must be a bare DNS hostname or IPv4 address")
         self.host = cfg.dataconnect_host
         self.port = cfg.dataconnect_port
         self.service = cfg.dataconnect_service
@@ -226,13 +230,14 @@ class DataConnectClient:
         self._batch_rows = 0
         self._batch_result_bytes = 0
         self.schema = {}
+        self.dataset_schema_failures = {}
         metrics.ise_dataconnect_query_pacing_seconds.set(self.min_query_interval)
         metrics.ise_dataconnect_max_duty_cycle_percent.set(self.max_duty_cycle)
         metrics.ise_dataconnect_query_timeout_seconds.set(self.timeout)
         metrics.ise_dataconnect_result_row_ceiling.set(MAX_RESULT_ROWS)
         metrics.ise_dataconnect_result_byte_ceiling.set(MAX_RESULT_BYTES)
 
-    def set_schema(self, schema):
+    def set_schema(self, schema, dataset_failures=None):
         """Retain startup-discovered view capabilities without another DB query."""
         if not isinstance(schema, dict):
             raise TypeError("Data Connect schema must be a table mapping")
@@ -244,6 +249,7 @@ class DataConnectClient:
             for table, columns in schema.items()
             if isinstance(columns, dict)
         }
+        self.dataset_schema_failures = dict(dataset_failures or {})
         radius_columns = self.schema.get("RADIUS_AUTHENTICATIONS", {})
         if (radius_columns and "AUTHORIZATION_POLICY" not in radius_columns
                 and "POLICY_SET_NAME" in radius_columns):

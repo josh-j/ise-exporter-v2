@@ -17,6 +17,7 @@ from urllib3.util.retry import Retry
 from urllib3.exceptions import InsecureRequestWarning
 
 from ..auth_guard import PersistentAuthGuard
+from ..compatibility import valid_hostname
 from ..metrics import ise_api_requests_total, ise_api_errors_total
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,17 @@ def _redact_log_text(value):
     text = _SENSITIVE_LOG_PAIR.sub(r'\1<redacted>', text)
     text = _SENSITIVE_LOG_XML.sub(r'\1<redacted>\2', text)
     return _SENSITIVE_LOG_BEARER.sub(r'\1<redacted>', text)
+
+
+def _request_timeout(total):
+    """Split one configured wall budget across connect and read phases."""
+    try:
+        total = float(total)
+    except (TypeError, ValueError):
+        total = 30.0
+    total = max(1.0, min(30.0, total))
+    connect = min(5.0, total / 2)
+    return connect, total - connect
 
 
 class RestAuthGuard(PersistentAuthGuard):
@@ -177,6 +189,10 @@ class ISERestClient:
 
     def __init__(self, cfg, *, include_control=True, include_mnt=True,
                  auth_guard=None):
+        if include_control and not valid_hostname(cfg.ise_host):
+            raise ValueError("ISE_HOST must be a bare DNS hostname or IPv4 address")
+        if include_mnt and not valid_hostname(cfg.ise_mnt_host):
+            raise ValueError("ISE_MNT_HOST must be a bare DNS hostname or IPv4 address")
         self.cfg = cfg
         self.host = cfg.ise_host
         self.mnt_host = cfg.ise_mnt_host
@@ -261,12 +277,13 @@ class ISERestClient:
         s.headers.update({"Accept": content_type})
         return s
 
-    def _request(self, session, url, params=None, timeout=30, api_name="unknown"):
+    def _request(self, session, url, params=None, timeout=None, api_name="unknown"):
         with self._transport_lock():
             return self._request_serialized(
                 session, url, params=params, timeout=timeout, api_name=api_name)
 
-    def _request_serialized(self, session, url, params=None, timeout=30, api_name="unknown"):
+    def _request_serialized(self, session, url, params=None, timeout=None,
+                            api_name="unknown"):
         shutdown = getattr(self, "shutdown_event", None)
         if shutdown is not None and shutdown.is_set():
             ise_api_requests_total.labels(api=api_name, status="shutdown").inc()
@@ -291,7 +308,11 @@ class ISERestClient:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", InsecureRequestWarning)
                 r = session.get(
-                    url, params=params, timeout=timeout, stream=True,
+                    url, params=params,
+                    timeout=_request_timeout(
+                        timeout if timeout is not None else getattr(
+                            getattr(self, "cfg", None), "request_timeout", 30)),
+                    stream=True,
                     allow_redirects=False)
             status = int(getattr(r, "status_code", 200))
             if not 200 <= status < 300:
@@ -305,7 +326,6 @@ class ISERestClient:
                     api=api_name, error_type="http_error", http_code=str(status)).inc()
                 return None
             self._buffer_response(r)
-            self._auth_guard_state().success()
             ise_api_requests_total.labels(api=api_name, status="success").inc()
             return r
         except ResponseTooLarge as error:
@@ -428,6 +448,16 @@ class ISERestClient:
             logger.error("ISE API authentication failed %d times; suppressing further API "
                          "requests for %ds to avoid account lockout", failures, backoff)
 
+    def _record_auth_success(self, api_name):
+        try:
+            self._auth_guard_state().success()
+            return True
+        except Exception as error:
+            logger.error("REST authentication guard unavailable: %s", error)
+            ise_api_errors_total.labels(
+                api=api_name, error_type="auth_guard", http_code="0").inc()
+            return False
+
     def _auth_guard_state(self):
         guard = getattr(self, "_auth_guard", None)
         if guard is None:
@@ -443,13 +473,14 @@ class ISERestClient:
         if r is None:
             return None
         try:
-            return r.json()
+            data = r.json()
         except (RecursionError, ValueError) as error:
             status = str(getattr(r, "status_code", 0) or 0)
             logger.warning("Invalid JSON from %s: %s", url, error)
             ise_api_errors_total.labels(
                 api=api_name, error_type="parse", http_code=status).inc()
             return None
+        return data if self._record_auth_success(api_name) else None
 
     @staticmethod
     def _ers_protocol_error(api_name, message, *args):
@@ -691,6 +722,9 @@ class ISERestClient:
             logger.error("Rejected structurally complex XML from %s: %s", url, error)
             return None
 
+        if not self._record_auth_success(api_name):
+            return None
+
         if active:
             try:
                 total = len(active) if raw_total is None else int(raw_total)
@@ -722,7 +756,10 @@ class ISERestClient:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", InsecureRequestWarning)
                         response = session.get(
-                            url, params=params, timeout=5, stream=True,
+                            url, params=params,
+                            timeout=_request_timeout(min(5, int(getattr(
+                                getattr(self, "cfg", None), "request_timeout", 30)))),
+                            stream=True,
                             allow_redirects=False)
                 result["reachable"] = True
                 result["http_status"] = response.status_code
@@ -786,10 +823,20 @@ class ISEOperatorClient:
 
     def __init__(self, cfg):
         auth_guard = RestAuthGuard(cfg)
+        self.cfg = cfg
+        self._auth_guard = auth_guard
         self.control = ISEControlPlaneClient(cfg, auth_guard=auth_guard)
-        self.mnt = MnTDiagnosticsClient(cfg, auth_guard=auth_guard)
+        self.mnt = None
         self.host = self.control.host
-        self.mnt_host = self.mnt.mnt_host
+        self.mnt_host = getattr(cfg, "ise_mnt_host", "")
+
+    def _mnt_client(self):
+        if not self.mnt_host:
+            raise RuntimeError("ISE_MNT_HOST is required for MnT XML operations")
+        if self.mnt is None:
+            self.mnt = MnTDiagnosticsClient(
+                self.cfg, auth_guard=self._auth_guard)
+        return self.mnt
 
     def get_ers(self, *args, **kwargs):
         return self.control.get_ers(*args, **kwargs)
@@ -804,17 +851,23 @@ class ISEOperatorClient:
         return self.control.get_pan_api_all(*args, **kwargs)
 
     def get_mnt_xml(self, *args, **kwargs):
-        return self.mnt.get_mnt_xml(*args, **kwargs)
+        return self._mnt_client().get_mnt_xml(*args, **kwargs)
 
     def health_check(self):
         control = self.control.health_check()
-        diagnostics = self.mnt.health_check()
+        if not self.mnt_host:
+            return {"pan": control["pan"], "mnt": {
+                "reachable": False, "authenticated": False, "http_status": 0,
+            }}
+        diagnostics = self._mnt_client().health_check()
         return {"pan": control["pan"], "mnt": diagnostics["mnt"]}
 
     def close(self):
         """Release both plane-specific pools even if one close fails."""
         errors = []
         for client in (self.control, self.mnt):
+            if client is None:
+                continue
             try:
                 client.close()
             except Exception as error:

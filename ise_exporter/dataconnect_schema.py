@@ -21,6 +21,14 @@ class ViewContract:
     domain: str = ""
 
 
+@dataclass(frozen=True)
+class DatasetSchemaFailure:
+    """One bounded metric reason plus full journal detail for a blocked dataset."""
+
+    reason: str
+    detail: str
+
+
 def _view(required, *, optional=(), time_column="", domain=""):
     return ViewContract(frozenset(required), frozenset(optional), time_column, domain)
 
@@ -98,6 +106,32 @@ VIEW_CONTRACTS = {
 }
 
 
+DATASET_VIEW_DEPENDENCIES = {
+    "dataconnect_radius": frozenset({
+        "RADIUS_AUTHENTICATIONS", "RADIUS_AUTHENTICATION_SUMMARY",
+        "RADIUS_ACCOUNTING", "RADIUS_ERRORS_VIEW",
+    }),
+    "dataconnect_radius_active": frozenset({"RADIUS_ACCOUNTING"}),
+    "dataconnect_performance": frozenset({
+        "KEY_PERFORMANCE_METRICS", "SYSTEM_SUMMARY",
+        "AAA_DIAGNOSTICS_VIEW", "SYSTEM_DIAGNOSTICS_VIEW",
+    }),
+    "dataconnect_posture": frozenset({
+        "POSTURE_ASSESSMENT_BY_ENDPOINT", "POSTURE_ASSESSMENT_BY_CONDITION",
+        "ENDPOINTS_DATA",
+    }),
+    "dataconnect_endpoints": frozenset({
+        "ENDPOINTS_DATA", "PROFILED_ENDPOINTS_SUMMARY",
+    }),
+    "dataconnect_nad_health": frozenset({"RADIUS_AUTHENTICATION_SUMMARY"}),
+    "tacacs_activity": frozenset({
+        "TACACS_AUTHENTICATION_LAST_TWO_DAYS",
+        "TACACS_AUTHORIZATION_LAST_TWO_DAYS",
+        "TACACS_ACCOUNTING_LAST_TWO_DAYS",
+    }),
+}
+
+
 def metadata_rows(dataconnect, table_names=None, *, query=None):
     names = tuple(table_names or VIEW_CONTRACTS)
     unknown = set(names) - set(VIEW_CONTRACTS)
@@ -137,20 +171,59 @@ def table_columns(dataconnect, table):
             for row in rows if row.get("column_name")}
 
 
-def validate_dataconnect_schema(dataconnect, *, include_tacacs=True):
-    contracts = {name: contract for name, contract in VIEW_CONTRACTS.items()
-                 if include_tacacs or contract.domain != "tacacs"}
-    schema = schema_by_table(metadata_rows(dataconnect, contracts))
-    failures = []
+def _contracts(include_tacacs):
+    return {name: contract for name, contract in VIEW_CONTRACTS.items()
+            if include_tacacs or contract.domain != "tacacs"}
+
+
+def _view_failures(schema, contracts):
+    failures = {}
     for table, contract in contracts.items():
         columns = set(schema.get(table, {}))
         if not columns:
-            failures.append(f"missing view {table}")
+            failures[table] = f"missing view {table}"
             continue
         missing = sorted(contract.required - columns)
         if missing:
-            failures.append(f"{table} missing columns: {', '.join(missing)}")
+            failures[table] = f"{table} missing columns: {', '.join(missing)}"
+    return failures
+
+
+def inspect_dataconnect_schema(dataconnect, *, include_tacacs=True):
+    """Discover capabilities and contain incompatibility to dependent datasets."""
+    contracts = _contracts(include_tacacs)
+    schema = schema_by_table(metadata_rows(dataconnect, contracts))
+    view_failures = _view_failures(schema, contracts)
+    dependencies = dict(DATASET_VIEW_DEPENDENCIES)
+    dependencies["dataconnect_freshness"] = frozenset(
+        name for name, contract in contracts.items() if contract.time_column)
+    if not include_tacacs:
+        dependencies.pop("tacacs_activity", None)
+
+    dataset_failures = {}
+    for dataset, views in dependencies.items():
+        failed = [view_failures[view] for view in sorted(views)
+                  if view in view_failures]
+        if not failed:
+            continue
+        first_view = next(view for view in sorted(views) if view in view_failures)
+        issue = view_failures[first_view]
+        if issue.startswith("missing view "):
+            reason = f"schema_missing_view_{first_view.lower()}"
+        else:
+            first_column = issue.split(":", 1)[1].split(",", 1)[0].strip().lower()
+            reason = f"schema_{first_view.lower()}_missing_{first_column}"
+        dataset_failures[dataset] = DatasetSchemaFailure(
+            reason=reason[:96], detail="; ".join(failed))
+    return schema, dataset_failures
+
+
+def validate_dataconnect_schema(dataconnect, *, include_tacacs=True):
+    contracts = _contracts(include_tacacs)
+    schema = schema_by_table(metadata_rows(dataconnect, contracts))
+    failures = _view_failures(schema, contracts)
     if failures:
         raise DataConnectSchemaError(
-            "ISE 3.3 Patch 11 Data Connect schema is incompatible: " + "; ".join(failures))
+            "ISE 3.3 Patch 11 Data Connect schema is incompatible: "
+            + "; ".join(failures.values()))
     return schema

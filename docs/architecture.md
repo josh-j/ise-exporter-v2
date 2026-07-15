@@ -64,6 +64,10 @@ REST/OpenAPI owns appliance and configuration state:
 
 ERS and OpenAPI requests go to `ISE_HOST`. They are not used for bulk endpoint,
 authentication, posture, session, or performance reporting.
+Authenticated REST, MnT, and Data Connect targets are validated as bare DNS
+hostnames or IPv4 addresses before a client is constructed. Schemes, user-info,
+paths, and embedded ports are rejected so configuration parsing cannot change the
+credential destination.
 
 ### Data Connect reporting plane
 
@@ -118,7 +122,13 @@ gap instead of multiplying its duration by the reporting-view duty-cycle ratio.
 Oracle dictionary size does not scale with the 80--200 GB event history, and this
 prevents a harmless one-second compatibility check from postponing the first real
 reporting query by roughly 17 minutes. Arbitrary views and joins cannot use this
-catalog-only path.
+catalog-only path. Schema incompatibility is contained by an explicit
+dataset-to-view dependency map: the exporter starts its REST/OpenAPI and compatible
+reporting collectors, marks each affected dataset unavailable with a bounded reason,
+and never issues SQL for that dataset. A transport, authentication, TLS, pacing-gate,
+or catalog-query failure still fails startup because no live view contract was
+discovered. The operator-only `--dataconnect-check` remains strict and returns a
+failure if any enabled contract is incompatible.
 Multi-view domains execute as atomic batches of at most five statements under one
 shared lease. Statements remain sequential and retain the fixed five-second gap;
 the adaptive cooldown is calculated from their combined Oracle execution time and
@@ -212,6 +222,9 @@ REST and MnT transports make exactly one wire attempt per recorded API request;
 urllib3 retries are disabled because they occur beneath exporter telemetry and
 would otherwise hide appliance pressure. Dataset scheduling owns subsequent
 attempts, so retry timing and failure counters remain observable.
+`ISE_REST_REQUEST_TIMEOUT` is hard-bounded to 5--30 seconds and split into
+connect and read phase timeouts whose sum equals that configured budget; a scalar
+Requests timeout is not used because it would permit the full value once per phase.
 Cross-process lock acquisition is non-blocking and cancellation-aware, so a CLI
 process holding the shared pacing gate cannot strand exporter shutdown behind a
 kernel lock during a long adaptive cooldown.
@@ -370,6 +383,9 @@ they emit distinct metric families and never substitute for one another.
 ## Failure semantics
 
 - Failure of one dataset records collector failure without changing ownership.
+- A missing Data Connect view or required column blocks only the datasets that
+  depend on it. Incompatible datasets remain enabled-but-unavailable, are listed
+  with their schema reason, do not restore an older snapshot, and issue no SQL.
 - The exporter retries the same authoritative source and never switches between
   Data Connect, MnT XML, pxGrid, or per-endpoint ERS. An early Data Connect failure
   retries no faster than five minutes and normally at the one-hour slow interval,

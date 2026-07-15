@@ -20,8 +20,16 @@ from . import metrics
 from .config import Config
 from .clients.rest import ISEControlPlaneClient, MnTActiveSessionClient, RestAuthGuard
 from .clients.dataconnect import DataConnectClient
-from .compatibility import ISECompatibilityError, validate_ise_compatibility
-from .dataconnect_schema import metadata_rows, validate_dataconnect_schema
+from .compatibility import (
+    ISECompatibilityError,
+    valid_hostname,
+    validate_ise_compatibility,
+)
+from .dataconnect_schema import (
+    inspect_dataconnect_schema,
+    metadata_rows,
+    validate_dataconnect_schema,
+)
 from .scheduler import PollScheduler
 from .snapshots import LockedCollectorRegistry
 from .state import (
@@ -75,8 +83,9 @@ def dataconnect_check(cfg):
         logger.error("Data Connect check requires ISE_DATACONNECT_HOST, "
                      "ISE_DATACONNECT_USER, and ISE_DATACONNECT_PASSWORD")
         return 1
-    client = DataConnectClient(cfg)
+    client = None
     try:
+        client = DataConnectClient(cfg)
         schema = validate_dataconnect_schema(
             client, include_tacacs=getattr(cfg, "collect_tacacs", True))
         logger.info("Data Connect check passed: %d required reporting views", len(schema))
@@ -85,7 +94,7 @@ def dataconnect_check(cfg):
         logger.error("Data Connect check failed: %s", exc)
         return 1
     finally:
-        client.close()
+        _close_quietly(client, "Data Connect check client")
 
 
 def dataconnect_schema(cfg):
@@ -94,8 +103,9 @@ def dataconnect_schema(cfg):
         logger.error("Data Connect schema requires ISE_DATACONNECT_HOST, "
                      "ISE_DATACONNECT_USER, and ISE_DATACONNECT_PASSWORD")
         return 1
-    client = DataConnectClient(cfg)
+    client = None
     try:
+        client = DataConnectClient(cfg)
         rows = metadata_rows(client)
         print(json.dumps(rows, indent=2, default=str))
         return 0
@@ -103,7 +113,7 @@ def dataconnect_schema(cfg):
         logger.error("Data Connect schema failed: %s", exc)
         return 1
     finally:
-        client.close()
+        _close_quietly(client, "Data Connect schema client")
 
 
 def _load_env():
@@ -164,11 +174,21 @@ def main(argv=None):
     if not cfg.ise_host:
         logger.error("ISE_HOST not configured")
         return 1
+    if not valid_hostname(cfg.ise_host):
+        logger.error("ISE_HOST must be a bare DNS hostname or IPv4 address")
+        return 1
     if not cfg.dataconnect_ready:
         logger.error("Data Connect credentials are required for reporting collection")
         return 1
+    if not valid_hostname(cfg.dataconnect_host):
+        logger.error(
+            "ISE_DATACONNECT_HOST must be a bare DNS hostname or IPv4 address")
+        return 1
     if cfg.collect_mnt_active_posture and not cfg.ise_mnt_host:
         logger.error("ISE_MNT_HOST is required when COLLECT_MNT_ACTIVE_POSTURE=true")
+        return 1
+    if cfg.collect_mnt_active_posture and not valid_hostname(cfg.ise_mnt_host):
+        logger.error("ISE_MNT_HOST must be a bare DNS hostname or IPv4 address")
         return 1
     runtime_lock = None
     try:
@@ -195,13 +215,23 @@ def main(argv=None):
 
         dataconnect = DataConnectClient(cfg)
         try:
-            schema = validate_dataconnect_schema(
+            schema, schema_failures = inspect_dataconnect_schema(
                 dataconnect, include_tacacs=getattr(cfg, "collect_tacacs", True))
         except Exception as exc:
             logger.error("Data Connect startup validation failed: %s", exc)
             return 1
-        dataconnect.set_schema(schema)
-        logger.info("validated %d Cisco ISE Data Connect reporting views", len(schema))
+        dataconnect.set_schema(schema, schema_failures)
+        if schema_failures:
+            logger.warning(
+                "Data Connect schema has %d incompatible datasets; REST/OpenAPI and "
+                "compatible reporting datasets will remain available",
+                len(schema_failures),
+            )
+            for dataset, failure in sorted(schema_failures.items()):
+                logger.warning(
+                    "Data Connect dataset %s unavailable: %s", dataset, failure.detail)
+        else:
+            logger.info("validated %d Cisco ISE Data Connect reporting views", len(schema))
         mnt = (MnTActiveSessionClient(cfg, auth_guard=rest_auth_guard)
                if cfg.collect_mnt_active_posture else None)
 

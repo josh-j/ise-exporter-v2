@@ -162,6 +162,8 @@ class PollScheduler:
         self._mnt_worker = None
         self._shutdown = None
         self._nad_inventory = None
+        self._dataconnect_schema_failures = dict(getattr(
+            dataconnect, "dataset_schema_failures", {}) or {})
         self.dataset_plan = self._dataset_plan()
         self._initialize_dataset_state()
         self._publish_worker_state(time.time())
@@ -184,6 +186,18 @@ class PollScheduler:
                 logger.info(
                     "scheduled dataset=%s source=%s enabled=false interval_seconds=%s",
                     name, source, interval,
+                )
+                continue
+            schema_failure = self._dataconnect_schema_failures.get(name)
+            if schema_failure is not None:
+                logger.warning(
+                    "scheduled dataset=%s source=%s enabled=true interval_seconds=%s "
+                    "blocked=true reason=%s detail=%s",
+                    name,
+                    source,
+                    interval,
+                    getattr(schema_failure, "reason", "schema_incompatible"),
+                    getattr(schema_failure, "detail", "schema incompatible"),
                 )
                 continue
             restored_due = self.next_run.get(name)
@@ -258,6 +272,12 @@ class PollScheduler:
             metrics.ise_dataset_up.labels(dataset=name, source=source).set(0)
             metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(0)
             metrics.ise_collector_enabled.labels(collector=name).set(int(enabled))
+        for name, failure in self._dataconnect_schema_failures.items():
+            if name not in self.dataset_plan or not self.dataset_plan[name][2]:
+                continue
+            reason = str(getattr(failure, "reason", "schema_incompatible"))
+            metrics.ise_dataset_last_failure_info.labels(
+                dataset=name, source="dataconnect", reason=reason).set(1)
         # The scan window may intentionally be shorter than the protected run
         # cadence, so report the collector's configured sampling window rather
         # than implying that a full cadence interval is queried.
@@ -305,7 +325,7 @@ class PollScheduler:
         try:
             for name, families in _PERSISTED_DATACONNECT_METRICS.items():
                 source, interval, enabled = self.dataset_plan[name]
-                if not enabled:
+                if not enabled or name in self._dataconnect_schema_failures:
                     continue
                 snapshot = store.dataset_snapshot(name)
                 if snapshot is None:
@@ -493,6 +513,8 @@ class PollScheduler:
         collection, while the one-worker queue still guarantees that reporting
         statements never execute concurrently.
         """
+        if name in self._dataconnect_schema_failures:
+            return
         if not self._dataconnect_async:
             self._run(name, time.time(), tier, callback)
             return

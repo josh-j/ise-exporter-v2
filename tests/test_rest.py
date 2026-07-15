@@ -53,8 +53,55 @@ def test_runtime_and_diagnostics_clients_do_not_construct_the_other_plane():
     assert diagnostics.session is None and diagnostics.mnt_session is not None
     assert active.session is None and active.mnt_session is not None
     assert operator.control.mnt_session is None
-    assert operator.mnt.session is None
-    assert operator.control._auth_guard is operator.mnt._auth_guard
+    assert operator.mnt is None
+    mnt = operator._mnt_client()
+    assert mnt.session is None
+    assert operator.control._auth_guard is mnt._auth_guard
+    operator.close()
+
+
+def test_control_only_operator_does_not_require_or_construct_mnt():
+    cfg = types.SimpleNamespace(
+        ise_host="pan.example", ise_mnt_host="", ers_port=9060,
+        ise_user="u", ise_pass="p")
+
+    operator = ISEOperatorClient(cfg)
+
+    assert operator.control.session is not None
+    assert operator.mnt is None
+    with pytest.raises(RuntimeError, match="ISE_MNT_HOST is required"):
+        operator.get_mnt_xml("/Session/ActiveCount")
+    operator.close()
+
+
+def test_control_only_operator_does_not_parse_optional_mnt_target():
+    cfg = types.SimpleNamespace(
+        ise_host="pan.example", ise_mnt_host="https://bad-mnt.example", ers_port=9060,
+        ise_user="u", ise_pass="p")
+
+    operator = ISEOperatorClient(cfg)
+
+    assert operator.control.session is not None
+    assert operator.mnt is None
+    with pytest.raises(ValueError, match="ISE_MNT_HOST must be a bare"):
+        operator.get_mnt_xml("/Session/ActiveCount")
+    operator.close()
+
+
+@pytest.mark.parametrize("attribute,value,client", (
+    ("ise_host", "https://pan.example", ISEControlPlaneClient),
+    ("ise_host", "attacker.example@pan.example", ISEControlPlaneClient),
+    ("ise_mnt_host", "mnt.example/admin", MnTActiveSessionClient),
+    ("ise_mnt_host", "mnt.example:443", MnTActiveSessionClient),
+))
+def test_authenticated_rest_clients_reject_non_bare_hosts(attribute, value, client):
+    values = dict(
+        ise_host="pan.example", ise_mnt_host="mnt.example", ers_port=9060,
+        ise_user="u", ise_pass="p")
+    values[attribute] = value
+
+    with pytest.raises(ValueError, match="bare DNS hostname or IPv4 address"):
+        client(types.SimpleNamespace(**values))
 
 
 def test_rest_client_close_releases_owned_pools_and_is_idempotent():
@@ -724,6 +771,91 @@ def test_api_requests_stream_without_redirects_and_reject_login_redirects():
     assert client._request(session, "https://ise.example/ers") is None
     assert session.kwargs["stream"] is True
     assert session.kwargs["allow_redirects"] is False
+    assert session.kwargs["timeout"] == (5.0, 25.0)
+
+
+def test_rest_timeout_is_one_bounded_connect_and_read_budget():
+    client = ISERestClient.__new__(ISERestClient)
+    client.cfg = types.SimpleNamespace(request_timeout=12)
+
+    class Response:
+        status_code = 204
+        headers = {}
+
+        def iter_content(self, chunk_size):
+            return iter(())
+
+        def close(self):
+            pass
+
+    class Session:
+        def get(self, *_args, **kwargs):
+            self.kwargs = kwargs
+            return Response()
+
+    session = Session()
+    assert client._request(session, "https://ise.example/api") is not None
+    assert session.kwargs["timeout"] == (5.0, 7.0)
+
+    session = Session()
+    assert client._request(
+        session, "https://ise.example/api", timeout=4) is not None
+    assert session.kwargs["timeout"] == (2.0, 2.0)
+
+
+def test_auth_backoff_clears_only_after_a_valid_api_body():
+    class Guard:
+        def __init__(self):
+            self.successes = 0
+
+        def success(self):
+            self.successes += 1
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, value=None, error=None):
+            self.value = value
+            self.error = error
+
+        def json(self):
+            if self.error is not None:
+                raise self.error
+            return self.value
+
+    client = ISERestClient.__new__(ISERestClient)
+    client._auth_guard = Guard()
+    responses = iter((
+        Response(error=ValueError("login page is not JSON")),
+        Response(value={"SearchResult": {"resources": []}}),
+    ))
+    client._request = lambda *_args, **_kwargs: next(responses)
+
+    assert client._get_json(object(), "https://ise.example/ers") is None
+    assert client._auth_guard.successes == 0
+    assert client._get_json(object(), "https://ise.example/ers") == {
+        "SearchResult": {"resources": []},
+    }
+    assert client._auth_guard.successes == 1
+
+
+def test_valid_body_fails_closed_when_auth_guard_cannot_be_reset():
+    class Guard:
+        def success(self):
+            raise OSError("guard unavailable")
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"response": []}
+
+    client = ISERestClient.__new__(ISERestClient)
+    client._auth_guard = Guard()
+    client._request = lambda *_args, **_kwargs: Response()
+
+    assert client._get_json(
+        object(), "https://ise.example/api", api_name="guard_reset") is None
 
 
 def test_api_response_content_length_is_rejected_before_body_read(monkeypatch):

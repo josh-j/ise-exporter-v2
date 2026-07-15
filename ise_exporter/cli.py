@@ -609,14 +609,13 @@ def _load_config(env_file=None, *, require_rest=True):
         load_dotenv(deployed, interpolate=False)
     cfg = Config.from_env()
     if (require_rest
-            and (not cfg.ise_host or not cfg.ise_mnt_host
-                 or not cfg.ise_user or not cfg.ise_pass)):
-        raise CLIError("ISE_HOST, ISE_MNT_HOST, ISE_USER, and ISE_PASS are required")
+            and (not cfg.ise_host or not cfg.ise_user or not cfg.ise_pass)):
+        raise CLIError("ISE_HOST, ISE_USER, and ISE_PASS are required")
     return cfg
 
 
 def _rest_ready(cfg):
-    return bool(cfg and cfg.ise_host and cfg.ise_mnt_host and cfg.ise_user and cfg.ise_pass)
+    return bool(cfg and cfg.ise_host and cfg.ise_user and cfg.ise_pass)
 
 
 def _require_expensive(args, cfg, reason):
@@ -1871,7 +1870,7 @@ class ISEShell(cmd.Cmd):
         if self.client is None and _rest_ready(self.cfg):
             self.client = ISEOperatorClient(self.cfg)
         if self.client is None and not dataconnect_only:
-            raise CLIError("ISE_HOST, ISE_MNT_HOST, ISE_USER, and ISE_PASS are required")
+            raise CLIError("ISE_HOST, ISE_USER, and ISE_PASS are required")
         if self.cfg is None:
             self.cfg = getattr(self.client, "cfg", None)
         if (self.dataconnect is None and self.cfg is not None

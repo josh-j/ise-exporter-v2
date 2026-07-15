@@ -49,10 +49,13 @@ or Secure Client records; they do not access or modify that scheduled snapshot.
 
 The CLI loads `./.env`, then `ISE_EXPORTER_ENV_FILE` (default
 `/etc/ise-exporter/ise-exporter.env`) without overriding variables already present in
-the process environment. REST and MnT commands require `ISE_HOST`, `ISE_MNT_HOST`,
-`ISE_USER`, and `ISE_PASS`. Data Connect reporting commands can run with only the
-`ISE_DATACONNECT_*` settings; when both credential sets are present, endpoint
-resolution can enrich Data Connect inventory rows with ERS detail.
+the process environment. REST/OpenAPI commands require `ISE_HOST`, `ISE_USER`, and
+`ISE_PASS`; only MnT XML commands additionally require `ISE_MNT_HOST`. Data Connect
+reporting commands can run with only the `ISE_DATACONNECT_*` settings; when both
+credential sets are present, endpoint resolution can enrich Data Connect inventory
+rows with ERS detail. Authenticated targets must be bare DNS hostnames or IPv4
+addresses, never URLs, user-info, paths, or `host:port` strings; ports and service
+names have their own settings.
 
 API routing is fixed by family:
 

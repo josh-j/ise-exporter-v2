@@ -124,6 +124,30 @@ def test_startup_journal_lists_dataset_source_cadence_and_time(caplog, monkeypat
     assert "scheduled dataset=tacacs_activity source=dataconnect enabled=false" in caplog.text
 
 
+def test_schema_incompatible_dataset_is_visible_and_never_queried(caplog):
+    failure = types.SimpleNamespace(
+        reason="schema_missing_view_system_summary",
+        detail="missing view SYSTEM_SUMMARY",
+    )
+    dataconnect = types.SimpleNamespace(dataset_schema_failures={
+        "dataconnect_performance": failure,
+    })
+    caplog.set_level("WARNING", logger="ise_exporter.scheduler")
+    scheduler = PollScheduler(_cfg(), object(), dataconnect, mnt=object())
+    called = []
+
+    scheduler._run_dataconnect(
+        "dataconnect_performance", 1, lambda: called.append(True))
+
+    assert called == []
+    assert metrics.ise_dataset_up.labels(
+        dataset="dataconnect_performance", source="dataconnect")._value.get() == 0
+    assert metrics.ise_dataset_last_failure_info.labels(
+        dataset="dataconnect_performance", source="dataconnect",
+        reason="schema_missing_view_system_summary")._value.get() == 1
+    assert "blocked=true reason=schema_missing_view_system_summary" in caplog.text
+
+
 def test_startup_rate_limit_spaces_only_each_datasets_first_attempt(monkeypatch):
     clock = [100.0]
     sleeps = []

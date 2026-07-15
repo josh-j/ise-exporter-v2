@@ -133,6 +133,7 @@ class Config:
     ise_user: str = "ers.readonly"
     ise_pass: str = ""
     ers_port: int = 9060
+    request_timeout: int = 30
     rest_ca_bundle: str = ""
     rest_ssl_verify: bool = True
     mnt_ca_bundle: str = ""
@@ -221,6 +222,7 @@ class Config:
                 f"dataconnect_max_duty_cycle_percent="
                 f"{self.dataconnect_max_duty_cycle_percent} "
                 f"dataconnect_max_groups={self.dataconnect_max_groups} "
+                f"rest_request_timeout_seconds={self.request_timeout} "
                 f"startup_rate_limit_seconds={self.startup_rate_limit_seconds} "
                 f"dataconnect_event_window_ceiling_hours="
                 f"{self.dataconnect_event_window_hours} "
@@ -234,6 +236,7 @@ class Config:
             ise_host=_s("ISE_HOST"), ise_mnt_host=_s("ISE_MNT_HOST"),
             ise_user=_s("ISE_USER", "ers.readonly"), ise_pass=_s("ISE_PASS"),
             ers_port=_bounded_i("ERS_PORT", 9060, 1, 65535),
+            request_timeout=_bounded_i("ISE_REST_REQUEST_TIMEOUT", 30, 5, 30),
             exporter_port=_bounded_i("EXPORTER_PORT", 9618, 1, 65535),
             state_db_path=_s(
                 "ISE_EXPORTER_STATE_DB", "/var/lib/ise-exporter/state.sqlite3")

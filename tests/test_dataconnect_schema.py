@@ -1,8 +1,17 @@
 import pytest
 
+from ise_exporter.collectors import (
+    dataconnect_endpoints,
+    dataconnect_performance,
+    dataconnect_posture,
+    dataconnect_radius,
+    tacacs,
+)
 from ise_exporter.dataconnect_schema import (
+    DATASET_VIEW_DEPENDENCIES,
     DataConnectSchemaError,
     VIEW_CONTRACTS,
+    inspect_dataconnect_schema,
     schema_by_table,
     table_columns,
     validate_dataconnect_schema,
@@ -127,6 +136,57 @@ def test_validate_schema_reports_missing_views_and_columns():
         validate_dataconnect_schema(DataConnect(rows))
     assert "missing view SYSTEM_SUMMARY" in str(error.value)
     assert "RADIUS_ACCOUNTING missing columns: ACCT_SESSION_ID" in str(error.value)
+
+
+def test_schema_inspection_contains_failures_to_dependent_datasets():
+    rows = _contract_rows()
+    rows = [row for row in rows
+            if row["table_name"] != "SYSTEM_SUMMARY"
+            and not (row["table_name"] == "RADIUS_ACCOUNTING"
+                     and row["column_name"] == "ACCT_SESSION_ID")]
+
+    schema, failures = inspect_dataconnect_schema(DataConnect(rows))
+
+    assert "SYSTEM_SUMMARY" not in schema
+    assert failures["dataconnect_performance"].reason == \
+        "schema_missing_view_system_summary"
+    assert "missing view SYSTEM_SUMMARY" in \
+        failures["dataconnect_performance"].detail
+    assert failures["dataconnect_radius"].reason == \
+        "schema_radius_accounting_missing_acct_session_id"
+    assert failures["dataconnect_radius_active"].reason == \
+        "schema_radius_accounting_missing_acct_session_id"
+    assert "dataconnect_posture" not in failures
+    assert "dataconnect_endpoints" not in failures
+    assert "dataconnect_freshness" in failures
+
+
+def test_every_scheduled_dataconnect_dataset_has_explicit_view_dependencies():
+    expected = {
+        "dataconnect_radius", "dataconnect_radius_active",
+        "dataconnect_performance", "dataconnect_posture",
+        "dataconnect_endpoints", "dataconnect_nad_health", "tacacs_activity",
+    }
+    assert set(DATASET_VIEW_DEPENDENCIES) == expected
+
+
+def test_dataset_dependencies_cover_every_reporting_view_named_by_collector_sql():
+    query_sets = {
+        "dataconnect_radius": dataconnect_radius._reporting_queries(10),
+        "dataconnect_radius_active": {
+            "active": dataconnect_radius._queries(10)["active_sessions"],
+        },
+        "dataconnect_performance": dataconnect_performance._queries(10),
+        "dataconnect_posture": dataconnect_posture._queries(10),
+        "dataconnect_endpoints": dataconnect_endpoints._queries(10),
+        "tacacs_activity": tacacs._activity_queries(10, 0),
+    }
+    for dataset, statements in query_sets.items():
+        sql = "\n".join(statements.values()).lower()
+        referenced = {
+            view for view in VIEW_CONTRACTS if view.lower() in sql
+        }
+        assert referenced <= DATASET_VIEW_DEPENDENCIES[dataset], dataset
 
 
 def test_validate_schema_can_exclude_tacacs_contracts():
