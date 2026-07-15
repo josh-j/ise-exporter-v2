@@ -960,6 +960,25 @@ def test_unverified_https_warning_is_suppressed_for_health_checks():
     assert client.mnt_session.responses[0].closed is True
 
 
+@pytest.mark.parametrize("body, secret", [
+    (b'{"password":"do-not-log","message":"bad request"}', "do-not-log"),
+    (b'token=abc.def.ghi&reason=expired', "abc.def.ghi"),
+    (b'<password>xml-secret</password>', "xml-secret"),
+    (b'Authorization: Bearer opaque-token', "opaque-token"),
+])
+def test_error_snippets_redact_common_credential_forms(body, secret):
+    class Response:
+        content = body
+
+        def close(self):
+            pass
+
+    snippet = ISERestClient._read_error_snippet(Response())
+
+    assert secret not in snippet
+    assert "<redacted>" in snippet
+
+
 def test_health_check_does_not_report_auth_failure_as_healthy():
     client = ISERestClient.__new__(ISERestClient)
     client.host = "pan.example"

@@ -35,6 +35,16 @@ MAX_XML_DEPTH = 64
 MAX_XML_SESSIONS = 250_000
 MAX_XML_FIELDS_PER_SESSION = 128
 UNSAFE_XML_DECLARATION = re.compile(br"<!DOCTYPE|<!ENTITY", re.IGNORECASE)
+_SENSITIVE_LOG_JSON = re.compile(
+    r'(?i)(["\']?(?:password|passwd|passphrase|secret|token|authorization|cookie)'
+    r'["\']?\s*:\s*)["\'][^"\']*["\']')
+_SENSITIVE_LOG_PAIR = re.compile(
+    r'(?i)(\b(?:password|passwd|passphrase|secret|token|authorization|cookie)\s*=)'
+    r'[^&\s,;]+')
+_SENSITIVE_LOG_XML = re.compile(
+    r'(?i)(<(?:password|passwd|passphrase|secret|token|authorization|cookie)\b[^>]*>)'
+    r'.*?(</(?:password|passwd|passphrase|secret|token|authorization|cookie)>)')
+_SENSITIVE_LOG_BEARER = re.compile(r'(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+')
 
 
 class ResponseTooLarge(RuntimeError):
@@ -43,6 +53,15 @@ class ResponseTooLarge(RuntimeError):
 
 class XMLResponseTooComplex(RuntimeError):
     """The bounded MnT XML shape exceeded safe structural limits."""
+
+
+def _redact_log_text(value):
+    """Remove common credential forms from bounded remote error text."""
+    text = str(value or "")
+    text = _SENSITIVE_LOG_JSON.sub(r'\1"<redacted>"', text)
+    text = _SENSITIVE_LOG_PAIR.sub(r'\1<redacted>', text)
+    text = _SENSITIVE_LOG_XML.sub(r'\1<redacted>\2', text)
+    return _SENSITIVE_LOG_BEARER.sub(r'\1<redacted>', text)
 
 
 class RestAuthGuard(PersistentAuthGuard):
@@ -394,7 +413,8 @@ class ISERestClient:
             raw = b""
         finally:
             cls._close_response(response)
-        return raw.decode("utf-8", "replace").replace("\n", " ").replace("\r", " ")
+        text = raw.decode("utf-8", "replace").replace("\n", " ").replace("\r", " ")
+        return _redact_log_text(text)
 
     def _record_auth_failure(self):
         cfg = getattr(self, "cfg", None)
