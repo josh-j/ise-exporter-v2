@@ -9,6 +9,7 @@ import fcntl
 import logging
 import math
 import os
+import re
 import ssl
 import stat
 import threading
@@ -61,7 +62,7 @@ def _query_view(sql):
     # Schema validation embeds every reporting view name in an IN clause. Classify
     # metadata access before scanning those literals or startup looks like a real
     # query against whichever reporting view happens to appear first.
-    if "user_tab_columns" in normalized:
+    if "user_tab_columns" in normalized or "user_views" in normalized:
         return "schema_metadata"
     for view in _QUERY_VIEWS:
         if view in normalized:
@@ -172,7 +173,7 @@ class DataConnectClient:
         else:
             time.sleep(seconds)
 
-    def _shared_gate(self, *, wait=True):
+    def _shared_gate(self, *, wait=True, adaptive_duty=True):
         """Serialize and pace queries across exporter and CLI processes.
 
         The installed service and authorized CLI operators share this small lock
@@ -237,7 +238,8 @@ class DataConnectClient:
             worst_case_duration = 2 * self.timeout
             crash_cooldown = max(
                 self.min_query_interval,
-                worst_case_duration * (100 / self.max_duty_cycle - 1),
+                (worst_case_duration * (100 / self.max_duty_cycle - 1)
+                 if adaptive_duty else worst_case_duration),
             )
             self._write_shared_deadline(
                 descriptor, time.time() + crash_cooldown)
@@ -314,7 +316,8 @@ class DataConnectClient:
             raise TimeoutError("Data Connect query exceeded the hard attempt timeout")
         connection.call_timeout = max(1, math.ceil(remaining * 1000))
 
-    def query(self, sql, parameters=None, *, wait_for_pacing=True):
+    def _query(self, sql, parameters=None, *, wait_for_pacing=True,
+               adaptive_duty=True):
         if not self._batch_active:
             remaining = self._next_query_at - time.monotonic()
             if remaining > 0:
@@ -328,13 +331,15 @@ class DataConnectClient:
         result = "error"
         try:
             if not self._batch_active:
-                shared_gate = self._shared_gate(wait=wait_for_pacing)
+                shared_gate = self._shared_gate(
+                    wait=wait_for_pacing, adaptive_duty=adaptive_duty)
         except Exception:
             finished = time.monotonic()
             duration = max(0.0, finished - attempt_started)
             cooldown = max(
                 self.min_query_interval,
-                duration * (100 / self.max_duty_cycle - 1),
+                (duration * (100 / self.max_duty_cycle - 1)
+                 if adaptive_duty else duration),
             )
             self._next_query_at = finished + cooldown
             metrics.ise_dataconnect_query_cooldown_seconds.labels(view=view).set(cooldown)
@@ -410,7 +415,9 @@ class DataConnectClient:
                 self._batch_views.append(view)
                 cooldown = None
             else:
-                duty_cycle_cooldown = duration * (100 / self.max_duty_cycle - 1)
+                duty_cycle_cooldown = (
+                    duration * (100 / self.max_duty_cycle - 1)
+                    if adaptive_duty else duration)
                 cooldown = max(self.min_query_interval, duty_cycle_cooldown)
                 metrics.ise_dataconnect_query_cooldown_seconds.labels(
                     view=view).set(cooldown)
@@ -528,6 +535,39 @@ class DataConnectClient:
         empty list remains a successful query with no matching rows.
         """
         return self.query(sql, parameters, wait_for_pacing=False)
+
+    def query(self, sql, parameters=None, *, wait_for_pacing=True):
+        """Execute a reporting query under adaptive production duty pacing."""
+        return self._query(
+            sql, parameters, wait_for_pacing=wait_for_pacing, adaptive_duty=True)
+
+    @staticmethod
+    def _validate_catalog_query(sql):
+        """Allow fixed Oracle dictionary reads, never reporting-view bypasses."""
+        normalized = " ".join(str(sql or "").lower().split())
+        referenced = set(re.findall(
+            r"\b(?:from|join)\s+([a-z][a-z0-9_$#.]*)", normalized))
+        allowed = {"user_tab_columns", "user_views"}
+        if (not normalized.startswith("select ") or not referenced
+                or not referenced <= allowed):
+            raise ValueError("catalog query must be a SELECT from an allowed dictionary view")
+
+    def query_catalog(self, sql, parameters=None, *, wait_for_pacing=True):
+        """Read bounded schema metadata without reporting-scan duty amplification.
+
+        Catalog reads still use the global lock, hard timeout, result ceilings,
+        session parallel-query prohibition, and minimum inter-query gap. They do
+        not scale with the 80--200 GB MnT reporting database, so charging their
+        duration as reporting-view duty can delay the first useful collection by
+        minutes or hours without reducing production load.
+        """
+        self._validate_catalog_query(sql)
+        return self._query(
+            sql, parameters, wait_for_pacing=wait_for_pacing, adaptive_duty=False)
+
+    def query_catalog_if_ready(self, sql, parameters=None):
+        """Non-blocking catalog lookup for interactive completion and health."""
+        return self.query_catalog(sql, parameters, wait_for_pacing=False)
 
     def close(self):
         if self._connection is not None:

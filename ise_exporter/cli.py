@@ -1389,7 +1389,9 @@ def _dataconnect_health(dataconnect):
     try:
         # Authentication/access proof only: do not count the complete catalog
         # when a single bounded metadata row proves the same thing.
-        query_if_ready = getattr(dataconnect, "query_if_ready", None)
+        query_if_ready = getattr(dataconnect, "query_catalog_if_ready", None)
+        if query_if_ready is None:
+            query_if_ready = getattr(dataconnect, "query_if_ready", None)
         query = query_if_ready if query_if_ready is not None else dataconnect.query
         rows = query("SELECT 1 AS available FROM user_views FETCH FIRST 1 ROWS ONLY")
         if rows is None:
@@ -1432,7 +1434,8 @@ def _dataconnect_schema(dataconnect, table=None):
     predicate = " WHERE table_name = :table_name"
     parameters["table_name"] = normalized
     try:
-        return dataconnect.query(f"""
+        query = getattr(dataconnect, "query_catalog", dataconnect.query)
+        return query(f"""
             SELECT table_name, column_id, column_name, data_type, data_length, nullable
             FROM user_tab_columns{predicate}
             ORDER BY table_name, column_id
@@ -2123,6 +2126,11 @@ class ISEShell(cmd.Cmd):
 
     def _completion_query(self, sql, parameters=None):
         """Return immediately instead of waiting behind production DB pacing."""
+        normalized = str(sql or "").lower()
+        if "user_tab_columns" in normalized or "user_views" in normalized:
+            query_catalog = getattr(self.dataconnect, "query_catalog_if_ready", None)
+            if query_catalog is not None:
+                return query_catalog(sql, parameters)
         query_if_ready = getattr(self.dataconnect, "query_if_ready", None)
         if query_if_ready is not None:
             return query_if_ready(sql, parameters)

@@ -19,6 +19,15 @@ class DataConnect:
         return self.rows
 
 
+class CatalogDataConnect(DataConnect):
+    def query(self, sql, parameters=None):
+        raise AssertionError("schema lookup used reporting-query duty accounting")
+
+    def query_catalog(self, sql, parameters=None):
+        self.calls.append((sql, parameters))
+        return self.rows
+
+
 def _contract_rows(include_tacacs=True):
     rows = []
     for table, contract in VIEW_CONTRACTS.items():
@@ -47,6 +56,14 @@ def test_validate_schema_accepts_complete_patch_11_contract():
     schema = validate_dataconnect_schema(client)
     assert set(schema) == set(VIEW_CONTRACTS)
     assert "user_tab_columns" in client.calls[0][0].lower()
+
+
+def test_validate_schema_prefers_bounded_catalog_query_path():
+    client = CatalogDataConnect(_contract_rows())
+
+    validate_dataconnect_schema(client)
+
+    assert len(client.calls) == 1
 
 
 def test_contract_requires_columns_used_unconditionally_by_latest_session_queries():

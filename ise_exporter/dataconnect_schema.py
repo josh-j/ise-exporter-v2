@@ -104,7 +104,7 @@ def metadata_rows(dataconnect, table_names=None, *, query=None):
     if unknown:
         raise ValueError(f"unknown Data Connect contract views: {', '.join(sorted(unknown))}")
     literals = ", ".join(f"'{name}'" for name in names)
-    execute = query or dataconnect.query
+    execute = query or getattr(dataconnect, "query_catalog", dataconnect.query)
     return execute(f"""
         SELECT table_name, column_id, column_name, data_type, data_length, nullable
         FROM user_tab_columns
@@ -125,7 +125,8 @@ def schema_by_table(rows):
 
 def table_columns(dataconnect, table):
     name = str(table or "").strip().upper()
-    rows = dataconnect.query("""
+    execute = getattr(dataconnect, "query_catalog", dataconnect.query)
+    rows = execute("""
         SELECT column_name, data_type
         FROM user_tab_columns
         WHERE table_name = :table_name

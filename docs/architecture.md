@@ -104,6 +104,14 @@ a CLI caller or alternate
 configuration object requests a more aggressive value; grouped output is likewise
 capped at 1,000 series per breakdown. Operators may lower the duty-cycle ceiling
 as far as 0.01%; values above 0.1% are always clamped.
+The startup schema check is a single allowlisted `USER_TAB_COLUMNS` dictionary
+read. It retains the global cross-process lock, session safety setup, 15-second
+timeout, and all result ceilings, but uses only the fixed five-second post-query
+gap instead of multiplying its duration by the reporting-view duty-cycle ratio.
+Oracle dictionary size does not scale with the 80--200 GB event history, and this
+prevents a harmless one-second compatibility check from postponing the first real
+reporting query by roughly 17 minutes. Arbitrary views and joins cannot use this
+catalog-only path.
 Multi-view domains execute as atomic batches of at most five statements under one
 shared lease. Statements remain sequential and retain the fixed five-second gap;
 the adaptive cooldown is calculated from their combined Oracle execution time and
@@ -153,7 +161,9 @@ processes cannot bypass the cooldown. An empty pacing-path environment value is
 normalized back to the protected service-state path rather than disabling this
 guard. The gate publishes a conservative two-attempt lease before Oracle work
 starts, then replaces it with the measured cooldown; process or host loss during
-a query therefore cannot turn restart into an immediate second database hit.
+a reporting query therefore cannot turn restart into an immediate second database
+hit. The fixed metadata lookup publishes a two-attempt timeout lease rather than
+an hours-long reporting lease.
 The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
 invocations before adaptive cooldown is considered.

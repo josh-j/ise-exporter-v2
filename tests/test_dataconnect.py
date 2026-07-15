@@ -377,6 +377,70 @@ def test_schema_validation_is_not_mislabeled_as_reporting_activity():
     assert dataconnect._query_view(sql) == "schema_metadata"
 
 
+def test_catalog_query_uses_only_minimum_gap_not_reporting_duty(monkeypatch):
+    connection = Connection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    monotonic = iter((0.0, 0.0, 0.0, 0.0, 1.0))
+    monkeypatch.setattr(dataconnect.time, "monotonic", lambda: next(monotonic))
+    releases = []
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_min_query_interval_ms=5000,
+        dataconnect_max_duty_cycle_percent=0.1,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(client, "_shared_gate", lambda **kwargs: 123)
+    monkeypatch.setattr(
+        client, "_release_shared_gate", lambda descriptor, deadline:
+        releases.append((descriptor, deadline)))
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+
+    client.query_catalog("SELECT column_name FROM user_tab_columns")
+
+    assert client._next_query_at == pytest.approx(6.0)
+    assert releases == [(123, pytest.approx(105.0))]
+
+
+@pytest.mark.parametrize("sql", (
+    "SELECT * FROM radius_authentications",
+    "SELECT * FROM user_tab_columns JOIN radius_authentications ON 1 = 1",
+    "DELETE FROM user_tab_columns",
+))
+def test_catalog_query_cannot_bypass_reporting_duty_cycle(sql):
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    with pytest.raises(ValueError, match="allowed dictionary view"):
+        client.query_catalog(sql)
+
+
+def test_catalog_crash_lease_is_bounded_to_metadata_attempt(monkeypatch, tmp_path):
+    path = tmp_path / "dataconnect.pacing"
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file=str(path),
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    descriptor = client._shared_gate(adaptive_duty=False)
+    try:
+        assert float(path.read_text().strip()) == pytest.approx(130.0)
+    finally:
+        client._release_shared_gate(descriptor, 0)
+
+
 def test_radius_summary_has_its_own_bounded_telemetry_label():
     assert dataconnect._query_view(
         "SELECT SUM(passed_count) FROM radius_authentication_summary"
