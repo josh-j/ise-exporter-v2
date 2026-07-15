@@ -115,7 +115,7 @@ def test_unchecked_config_cannot_relax_production_scheduler_cadences():
     assert {name: interval for name, (_source, interval, _enabled)
             in scheduler.dataset_plan.items()} == {
         "deployment": 300,
-        "devices": 300,
+        "devices": 3600,
         "certificates": 3600,
         "licensing": 3600,
         "backup": 3600,

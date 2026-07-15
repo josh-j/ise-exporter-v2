@@ -126,7 +126,10 @@ class PollScheduler:
         cfg = self.cfg
         return {
             "deployment": ("rest", self.medium_interval, True),
-            "devices": ("rest", self.medium_interval, True),
+            # NAD configuration and group membership are low-volatility. Keep the
+            # complete ERS enumeration and bounded detail convergence off the
+            # medium deployment-health cadence.
+            "devices": ("rest", self.slow_interval, True),
             "certificates": ("rest", self.slow_interval, cfg.collect_certificates),
             "licensing": ("rest", self.slow_interval, cfg.collect_licensing),
             "backup": ("rest", self.slow_interval, cfg.collect_backup_status),
