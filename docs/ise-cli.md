@@ -152,13 +152,19 @@ ise> endpoints location=Berlin-* location=London-* posture-status=Compliant
 ise> endpoints '*LAPTOP*' --allow-expensive
 ```
 
-Searches run in Data Connect with bound values, a default 100-row limit, and a
-two-day window for event/context views. They correlate context records to
+Searches run in Data Connect with bound values, a default 100-row limit, and the
+configured bounded event window (at most 24 hours) for context views. They correlate context records to
 `ENDPOINTS_DATA` by ISE's native MAC key and return every text, numeric, and timestamp
 endpoint inventory column made available by the live schema. Results also include
 `matched_context`, containing the actual authorization policy, location, posture,
 or other context value that matched each requested field, while `matched_filters`
 records the requested patterns.
+
+`--all` is intentionally unavailable for Data Connect attribute searches because
+the process has a non-relaxable 5,000-row materialization ceiling; silently calling
+that subset complete would be incorrect. Narrow the pattern and use `--limit` (up
+to 5,000 with `--allow-expensive`). Bare ERS inventory enumeration still supports
+explicit `--all --allow-expensive` when a complete configuration export is required.
 
 ISE 3.3 can store historical `PROBE_DATA` or `CUSTOM_ATTRIBUTES` bytes that are not
 valid UTF-8. The CLI asks Oracle for an ASCII-safe projection so one legacy value

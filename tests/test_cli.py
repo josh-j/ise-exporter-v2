@@ -343,6 +343,17 @@ def test_complete_inventory_requires_explicit_production_acknowledgement():
     assert client.calls == []
 
 
+def test_dataconnect_attribute_search_rejects_misleading_all(capsys):
+    dataconnect = CompletionDataConnect()
+
+    assert cli.main([
+        "endpoints", "name=LAB-*", "--all", "--allow-expensive",
+    ], client=FakeClient(), dataconnect=dataconnect) == 2
+
+    assert "cannot truthfully enumerate" in capsys.readouterr().err
+    assert dataconnect.calls == []
+
+
 def test_secure_client_uses_mnt_session_path_and_exporter_parsers(capsys):
     client = FakeClient()
 

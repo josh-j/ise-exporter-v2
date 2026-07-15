@@ -1429,6 +1429,11 @@ def _execute(args, client, cfg, dataconnect=None):
         _guard_row_limit(args, cfg)
         if args.all:
             _require_expensive(args, cfg, "complete endpoint enumeration is disabled")
+            if criteria and dataconnect is not None:
+                raise CLIError(
+                    "--all cannot truthfully enumerate Data Connect endpoint matches "
+                    "within the 5,000-row process safety ceiling; use a narrower "
+                    "pattern with --limit instead")
         broad_patterns = [pattern for _field, pattern in criteria
                           if _leading_wildcard(pattern)]
         if broad_patterns:
