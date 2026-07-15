@@ -16,7 +16,8 @@ function Get-IseBackendCommand {
     param()
 
     if ($env:ISE_CLI_BACKEND) {
-        $explicit = Get-Command -Name $env:ISE_CLI_BACKEND -CommandType Application -ErrorAction SilentlyContinue
+        $explicit = Get-Command -Name $env:ISE_CLI_BACKEND -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1
         if (-not $explicit -and (Test-Path -LiteralPath $env:ISE_CLI_BACKEND -PathType Leaf)) {
             $explicit = Get-Item -LiteralPath $env:ISE_CLI_BACKEND
         }
@@ -27,7 +28,8 @@ function Get-IseBackendCommand {
         return [pscustomobject]@{ FilePath = $path; Prefix = @() }
     }
 
-    $installed = Get-Command -Name 'ise-cli-backend' -CommandType Application -ErrorAction SilentlyContinue
+    $installed = Get-Command -Name 'ise-cli-backend' -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
     if ($installed) {
         return [pscustomobject]@{ FilePath = $installed.Source; Prefix = @() }
     }
@@ -536,6 +538,8 @@ $nativeCompleter = {
 }
 Register-ArgumentCompleter -Native -CommandName ise-cli -ScriptBlock $nativeCompleter
 
+Set-Alias -Name Find-Endpoint -Value Find-IseEndpoint
+
 Export-ModuleMember -Function @(
     'Invoke-IseCommand','Get-IseCliVersion','Test-IseHealth','Get-IseNode','Find-IseEndpoint',
     'Get-IseEndpointField','Get-IseEndpoint','Resolve-IseEndpoint','Get-IseSession',
@@ -548,4 +552,4 @@ Export-ModuleMember -Function @(
     'Get-IseEndpointReport','Get-IseRadiusError','Get-IseRadiusAccounting',
     'Get-IsePostureAssessment','Get-IsePsnMetric','Get-IseTacacsActivity',
     'Get-IseDataConnectSchema','Get-IseSchema','Invoke-IseReadOnlyRequest'
-)
+) -Alias 'Find-Endpoint'

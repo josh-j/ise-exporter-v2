@@ -19,10 +19,14 @@ installs the `ise-cli` launcher:
 
 ```console
 $ ise-cli
-PowerShell 7
-ISE PowerShell module loaded. Use Get-Command -Module Ise.Cli.
-PS> Get-Command -Module Ise.Cli
+ISE CLI ready. Try Find-Endpoint, ise-help, or Get-Command -Module Ise.Cli.
+ISE PS /current/path> Get-Command -Module Ise.Cli
+ISE PS /current/path> Find-Endpoint 'LAB-*'  # concise alias for Find-IseEndpoint
 ```
+
+The launcher uses its own operator profile without changing the normal PowerShell
+profile. It provides an `ISE PS` prompt, menu completion on Tab, prefix-based
+history search on the arrow keys, and `ise-help` for a compact command guide.
 
 From an existing `pwsh` session:
 
@@ -48,6 +52,7 @@ standard Ubuntu packages documented in [ubuntu-noble.md](ubuntu-noble.md).
 ```powershell
 # Wildcards are passed as values; the shell does not expand them as filesystem globs.
 Find-IseEndpoint 'LAB-*'
+Find-Endpoint 'LAB-*'  # equivalent convenience alias
 Find-IseEndpoint @(
     'authorization-policy=PermitAccess*'
     'location=Berlin-*'

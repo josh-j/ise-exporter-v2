@@ -49,7 +49,7 @@
     )
     CmdletsToExport = @()
     VariablesToExport = @()
-    AliasesToExport = @()
+    AliasesToExport = @('Find-Endpoint')
     PrivateData = @{
         PSData = @{
             Tags = @('Cisco', 'ISE', 'Security', 'Operations')

@@ -10,6 +10,7 @@ import pytest
 ROOT = Path(__file__).parents[1]
 MODULE = ROOT / "powershell" / "Ise.Cli" / "Ise.Cli.psd1"
 LAUNCHER = ROOT / "powershell" / "ise-cli"
+PROFILE = ROOT / "powershell" / "Ise.Cli.Profile.ps1"
 
 
 def test_powershell_cli_is_a_pwsh_module_over_private_bounded_backend():
@@ -40,7 +41,19 @@ def test_powershell_cli_is_a_pwsh_module_over_private_bounded_backend():
 
 def test_powershell_cli_launcher_is_shell_safe():
     subprocess.run(["bash", "-n", str(LAUNCHER)], check=True)
-    assert "exec pwsh -NoLogo -NoExit" in LAUNCHER.read_text()
+    assert "exec pwsh -NoLogo -NoProfile -NoExit" in LAUNCHER.read_text()
+    assert 'export PSModulePath="${SCRIPT_DIR}' in LAUNCHER.read_text()
+    assert 'Ise.Cli.Profile.ps1' in LAUNCHER.read_text()
+
+
+def test_powershell_cli_profile_has_operator_focused_ux():
+    profile = PROFILE.read_text()
+    assert "Import-Module Ise.Cli" in profile
+    assert "Show-IseCliHelp" in profile
+    assert "Find-Endpoint" in profile
+    assert "MenuComplete" in profile
+    assert "HistorySearchBackward" in profile
+    assert "function global:prompt" in profile
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")
@@ -50,9 +63,25 @@ def test_powershell_module_imports_and_exports_native_commands():
         Import-Module '{MODULE}' -Force
         $commands = @(Get-Command -Module Ise.Cli | Select-Object -ExpandProperty Name)
         if ($commands.Count -lt 30) {{ throw "only $($commands.Count) commands exported" }}
-        foreach ($required in @('Find-IseEndpoint','Get-IseEndpoint','Get-IseCliVersion')) {{
+        foreach ($required in @('Find-IseEndpoint','Find-Endpoint','Get-IseEndpoint','Get-IseCliVersion')) {{
             if ($required -notin $commands) {{ throw "missing $required" }}
         }}
+    """
+    subprocess.run(
+        ["pwsh", "-NoLogo", "-NoProfile", "-Command", script], check=True)
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")
+def test_powershell_cli_profile_loads_alias_help_and_prompt():
+    module_root = MODULE.parents[1]
+    script = f"""
+        $ErrorActionPreference = 'Stop'
+        $env:PSModulePath = '{module_root}:' + $env:PSModulePath
+        . '{PROFILE}'
+        if (-not $global:ISE_CLI_PROFILE_ACTIVE) {{ throw 'profile marker missing' }}
+        if ((Get-Alias Find-Endpoint).Definition -ne 'Find-IseEndpoint') {{ throw 'alias missing' }}
+        if ((Get-Alias ise-help).Definition -ne 'Show-IseCliHelp') {{ throw 'help alias missing' }}
+        if ((prompt) -notlike 'ISE PS *> ') {{ throw 'ISE prompt missing' }}
     """
     subprocess.run(
         ["pwsh", "-NoLogo", "-NoProfile", "-Command", script], check=True)
@@ -80,6 +109,25 @@ def test_powershell_cmdlet_returns_only_backend_objects(tmp_path):
     """
     subprocess.run(
         ["pwsh", "-NoLogo", "-NoProfile", "-Command", script], check=True)
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")
+def test_powershell_backend_resolution_tolerates_duplicate_path_entries(tmp_path):
+    backend = tmp_path / "ise-cli-backend"
+    backend.write_text("#!/bin/sh\nprintf '%s\\n' 'ise-cli duplicate-path-test'\n")
+    backend.chmod(0o755)
+    env = os.environ | {
+        "PATH": os.pathsep.join((str(tmp_path), str(tmp_path), os.environ["PATH"])),
+    }
+    script = f"""
+        $ErrorActionPreference = 'Stop'
+        Import-Module '{MODULE}' -Force
+        if ((Get-IseCliVersion) -ne 'ise-cli duplicate-path-test') {{
+            throw 'duplicate PATH entries produced an invalid backend path'
+        }}
+    """
+    subprocess.run(
+        ["pwsh", "-NoLogo", "-NoProfile", "-Command", script], env=env, check=True)
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")
