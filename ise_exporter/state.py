@@ -17,6 +17,8 @@ import time
 
 STATE_SCHEMA_VERSION = 1
 MAX_PERSISTED_SNAPSHOT_BYTES = 32 * 1024 * 1024
+MAX_POSTURE_CACHE_DETAIL_BYTES = 128 * 1024
+MAX_TACACS_CACHE_DETAIL_BYTES = 64 * 1024
 
 
 class StateStore:
@@ -129,6 +131,10 @@ class StateStore:
 
     def put_posture(self, mac, signature, detail, now=None):
         now = time.time() if now is None else float(now)
+        encoded = json.dumps(
+            detail, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        if len(encoded.encode("utf-8")) > MAX_POSTURE_CACHE_DETAIL_BYTES:
+            raise ValueError("posture cache detail exceeds the persisted size limit")
         self.db.execute("""
             INSERT INTO mnt_posture_cache
                 (mac, session_signature, detail_json, updated_at, last_seen)
@@ -138,7 +144,7 @@ class StateStore:
                 detail_json=excluded.detail_json,
                 updated_at=excluded.updated_at,
                 last_seen=excluded.last_seen
-        """, (mac, signature, json.dumps(detail, separators=(",", ":")), now, now))
+        """, (mac, signature, encoded, now, now))
 
     def finish_posture_cycle(self, active_macs, now=None):
         now = time.time() if now is None else float(now)
@@ -212,6 +218,10 @@ class StateStore:
 
     def put_tacacs_user(self, user_id, detail, now=None):
         now = time.time() if now is None else float(now)
+        encoded = json.dumps(
+            detail, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        if len(encoded.encode("utf-8")) > MAX_TACACS_CACHE_DETAIL_BYTES:
+            raise ValueError("TACACS cache detail exceeds the persisted size limit")
         self.db.execute("""
             INSERT INTO tacacs_internal_user_cache
                 (user_id, detail_json, updated_at, last_seen)
@@ -220,7 +230,7 @@ class StateStore:
                 detail_json=excluded.detail_json,
                 updated_at=excluded.updated_at,
                 last_seen=excluded.last_seen
-        """, (str(user_id), json.dumps(detail, separators=(",", ":")), now, now))
+        """, (str(user_id), encoded, now, now))
 
     def finish_tacacs_user_cycle(self, active_ids, now=None):
         """Mark active cache rows and prune accounts removed from ISE."""

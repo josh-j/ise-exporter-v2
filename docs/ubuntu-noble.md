@@ -137,7 +137,9 @@ The systemd `StateDirectory` preserves cached active-posture details and compati
 Data Connect metric snapshots across restarts. It does not store RADIUS event rows
 or locally merged historical windows. Each reporting-domain snapshot is limited
 to 20,000 aggregate samples and 32 MiB on write and restore, so the eight domains
-cannot turn this cache into a replica of an 80--200 GB MnT database.
+cannot turn this cache into a replica of an 80--200 GB MnT database. Compact MnT
+posture rows and TACACS internal-user detail rows are separately capped at 128 KiB
+and 64 KiB using their actual UTF-8 byte size.
 The exporter forces the SQLite database and its live WAL/shared-memory sidecars to
 mode `0600`; this remains true if an operator chooses a non-systemd state path.
 Fresh restored domains retain their normal query deadlines instead of creating a

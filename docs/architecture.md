@@ -210,7 +210,9 @@ details rather than creating a cold-start burst. Coverage, cache age, deferred
 refreshes, candidate count, and truncation qualify every sample.
 Persisted rows contain only bounded posture, agent, PSN, and latency inputs needed
 to reconstruct these metrics. Usernames, addresses, authorization results, and the
-rest of the MnT session-detail response are discarded before storage.
+rest of the MnT session-detail response are discarded before storage. Text limits
+are measured as UTF-8 bytes, not characters; a compact posture row is capped at
+128 KiB and an internal-user detail row at 64 KiB before SQLite accepts it.
 
 RADIUS history is not accumulated in SQLite. The daily reporting collection
 recomputes an exact, bounded recent-window aggregate from Data Connect and persists only

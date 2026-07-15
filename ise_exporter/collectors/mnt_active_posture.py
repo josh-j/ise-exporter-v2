@@ -184,7 +184,12 @@ def _detail(client, mac, pacer=None):
 
 def _bounded_text(value, limit):
     text = str(value or "").strip()
-    return text[:limit] if text else ""
+    if not text:
+        return ""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= limit:
+        return text
+    return encoded[:limit].decode("utf-8", "ignore")
 
 
 def _compact_detail(detail):

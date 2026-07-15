@@ -158,6 +158,16 @@ def test_latency_aggregate_caps_distinct_step_label_domain():
     assert set(steps) == {str(code) for code in range(1, 257)}
 
 
+def test_compact_posture_fields_are_bounded_by_utf8_bytes():
+    compact = mnt_active_posture._compact_detail({
+        "posture_report": "ä" * 65_536,
+        "execution_steps": "ä" * 16_384,
+    })
+
+    assert len(compact["posture_report"].encode("utf-8")) <= 65_536
+    assert len(compact["execution_steps"].encode("utf-8")) <= 16_384
+
+
 def test_bound_is_explicit_and_failed_full_sample_preserves_previous_snapshot():
     client = MnT()
     mnt_active_posture.collect(client, _cfg(mnt_active_posture_max_sessions=1))

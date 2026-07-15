@@ -131,3 +131,29 @@ def test_oversized_dataset_snapshot_is_not_written(tmp_path, monkeypatch):
 
     assert store.get_value("dataset_snapshot.radius") is None
     store.close()
+
+
+@pytest.mark.parametrize(("method", "table", "message"), (
+    ("posture", "mnt_posture_cache", "posture cache detail"),
+    ("tacacs", "tacacs_internal_user_cache", "TACACS cache detail"),
+))
+def test_oversized_cache_detail_is_not_written(
+        tmp_path, monkeypatch, method, table, message):
+    store = StateStore(tmp_path / "state.sqlite3")
+    if method == "posture":
+        monkeypatch.setattr(state_module, "MAX_POSTURE_CACHE_DETAIL_BYTES", 32)
+
+        def write():
+            store.put_posture(
+                "AA:BB:CC:DD:EE:FF", "signature", {"value": "x" * 100}, now=10)
+    else:
+        monkeypatch.setattr(state_module, "MAX_TACACS_CACHE_DETAIL_BYTES", 32)
+
+        def write():
+            store.put_tacacs_user("u1", {"value": "x" * 100}, now=10)
+
+    with pytest.raises(ValueError, match=message):
+        write()
+
+    assert store.db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    store.close()
