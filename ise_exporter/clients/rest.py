@@ -3,8 +3,13 @@ class from the monolith with the FEATURE methods removed — those (get_active_s
 get_network_devices, ...) collapse into the collectors, which now call the generic
 get_ers / get_ers_total / get_pan_api / get_mnt_xml directly. Pure plumbing, no
 metric writes except the api_requests/api_errors counters."""
+import fcntl
+import hashlib
 import logging
+import math
+import os
 import re
+import stat
 import threading
 import time
 import warnings
@@ -34,6 +39,98 @@ class ResponseTooLarge(RuntimeError):
     """The remote API attempted to return more data than this process retains."""
 
 
+class RestAuthGuard:
+    """Account-wide failed-authentication backoff shared across planes/processes."""
+
+    def __init__(self, cfg):
+        self.path = str(getattr(cfg, "rest_auth_guard_file", "") or "")
+        identity = "\0".join((
+            str(getattr(cfg, "ise_user", "")),
+            str(getattr(cfg, "ise_host", "")),
+            str(getattr(cfg, "ise_mnt_host", "")),
+        )).encode("utf-8")
+        self.identity = hashlib.sha256(identity).hexdigest()[:16]
+        self._lock = threading.RLock()
+        self._memory = (0, 0.0)
+
+    def _open(self):
+        path = os.path.abspath(os.path.expanduser(self.path))
+        descriptor = os.open(
+            path,
+            os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o660,
+        )
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise OSError("REST authentication guard is not a regular file")
+            if metadata.st_size > 128:
+                raise OSError("REST authentication guard exceeds 128 bytes")
+            if metadata.st_uid == os.geteuid():
+                parent_group = os.stat(os.path.dirname(path)).st_gid
+                os.fchown(descriptor, -1, parent_group)
+                os.fchmod(descriptor, 0o660)
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            return descriptor
+        except Exception:
+            os.close(descriptor)
+            raise
+
+    def _read(self, descriptor):
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        raw = os.read(descriptor, 128).decode("ascii").strip()
+        if not raw:
+            return 0, 0.0
+        fields = raw.split()
+        if len(fields) != 4 or fields[0] != "v1" or fields[1] != self.identity:
+            return 0, 0.0
+        failures = int(fields[2])
+        deadline = float(fields[3])
+        if failures < 0 or failures > 1_000_000 or not math.isfinite(deadline) or deadline < 0:
+            raise ValueError("invalid REST authentication guard state")
+        return failures, deadline
+
+    def _write(self, descriptor, failures, deadline):
+        value = f"v1 {self.identity} {failures} {deadline:.6f}\n".encode("ascii")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        os.ftruncate(descriptor, 0)
+        os.write(descriptor, value)
+        os.fsync(descriptor)
+
+    def _update(self, callback):
+        with self._lock:
+            if not self.path:
+                self._memory, result = callback(*self._memory)
+                return result
+            descriptor = self._open()
+            try:
+                current = self._read(descriptor)
+                state, result = callback(*current)
+                if state != current:
+                    self._write(descriptor, *state)
+                return result
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+                os.close(descriptor)
+
+    def blocked(self, now):
+        return self._update(
+            lambda failures, deadline: ((failures, deadline), deadline > now))
+
+    def failure(self, threshold, backoff, now):
+        def update(failures, deadline):
+            failures += 1
+            if failures >= threshold and backoff:
+                deadline = max(deadline, now + backoff)
+            return (failures, deadline), (failures, deadline)
+        return self._update(update)
+
+    def success(self):
+        return self._update(lambda failures, deadline: (
+            (0, 0.0), bool(failures or deadline)))
+
+
 def _strip_ns(tag):
     return tag.split("}", 1)[-1] if "}" in tag else tag
 
@@ -42,7 +139,8 @@ class ISERestClient:
     """Compatibility client spanning both planes; new runtime code uses the
     plane-specific clients below."""
 
-    def __init__(self, cfg, *, include_control=True, include_mnt=True):
+    def __init__(self, cfg, *, include_control=True, include_mnt=True,
+                 auth_guard=None):
         self.cfg = cfg
         self.host = cfg.ise_host
         self.mnt_host = cfg.ise_mnt_host
@@ -54,8 +152,7 @@ class ISERestClient:
             "application/json", self._tls_verify("rest")) if include_control else None
         self.mnt_session = self._mk(
             "application/xml", self._tls_verify("mnt")) if include_mnt else None
-        self._auth_failures = 0
-        self._auth_block_until = 0.0
+        self._auth_guard = auth_guard or RestAuthGuard(cfg)
         self._request_lock = threading.RLock()
         self.shutdown_event = None
 
@@ -112,7 +209,15 @@ class ISERestClient:
 
     def _request_serialized(self, session, url, params=None, timeout=30, api_name="unknown"):
         now = time.time()
-        if self._auth_block_until and now < self._auth_block_until:
+        try:
+            auth_blocked = self._auth_guard_state().blocked(now)
+        except Exception as error:
+            logger.error("REST authentication guard unavailable: %s", error)
+            ise_api_requests_total.labels(api=api_name, status="auth_guard_error").inc()
+            ise_api_errors_total.labels(
+                api=api_name, error_type="auth_guard", http_code="0").inc()
+            return None
+        if auth_blocked:
             ise_api_requests_total.labels(api=api_name, status="auth_blocked").inc()
             ise_api_errors_total.labels(api=api_name, error_type="auth_blocked",
                                         http_code="401").inc()
@@ -137,8 +242,7 @@ class ISERestClient:
                     api=api_name, error_type="http_error", http_code=str(status)).inc()
                 return None
             self._buffer_response(r)
-            self._auth_failures = 0
-            self._auth_block_until = 0.0
+            self._auth_guard_state().success()
             ise_api_requests_total.labels(api=api_name, status="success").inc()
             return r
         except ResponseTooLarge as error:
@@ -249,16 +353,21 @@ class ISERestClient:
         return raw.decode("utf-8", "replace").replace("\n", " ").replace("\r", " ")
 
     def _record_auth_failure(self):
-        self._auth_failures += 1
-        threshold = max(1, getattr(self.cfg, "auth_failure_threshold", 3))
-        if self._auth_failures < threshold:
-            return
-        backoff = max(0, getattr(self.cfg, "auth_failure_backoff", 900))
-        if not backoff:
-            return
-        self._auth_block_until = time.time() + backoff
-        logger.error("ISE API authentication failed %d times; suppressing further API requests "
-                     "for %ds to avoid account lockout", self._auth_failures, backoff)
+        cfg = getattr(self, "cfg", None)
+        threshold = max(1, getattr(cfg, "auth_failure_threshold", 3))
+        backoff = max(0, getattr(cfg, "auth_failure_backoff", 900))
+        failures, deadline = self._auth_guard_state().failure(
+            threshold, backoff, time.time())
+        if deadline:
+            logger.error("ISE API authentication failed %d times; suppressing further API "
+                         "requests for %ds to avoid account lockout", failures, backoff)
+
+    def _auth_guard_state(self):
+        guard = getattr(self, "_auth_guard", None)
+        if guard is None:
+            guard = RestAuthGuard(getattr(self, "cfg", None))
+            self._auth_guard = guard
+        return guard
 
     def _get_json(self, session, url, params=None, api_name="unknown"):
         """GET + JSON-decode, returning the parsed body or None on request/parse failure.
@@ -461,6 +570,9 @@ class ISERestClient:
         def probe(session, url, *, params=None):
             result = {"reachable": False, "authenticated": False, "http_status": 0}
             try:
+                if self._auth_guard_state().blocked(time.time()):
+                    result["http_status"] = 401
+                    return result
                 with self._transport_lock():
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", InsecureRequestWarning)
@@ -471,6 +583,10 @@ class ISERestClient:
                 # Redirects are deliberately not followed. A 3xx commonly points
                 # at an interactive login page and does not prove API credentials.
                 result["authenticated"] = 200 <= response.status_code < 300
+                if response.status_code == 401:
+                    self._record_auth_failure()
+                elif result["authenticated"]:
+                    self._auth_guard_state().success()
             except Exception as error:
                 logger.debug("health probe failed for %s: %s", url, error)
             return result
@@ -499,15 +615,17 @@ class ISERestClient:
 class ISEControlPlaneClient(ISERestClient):
     """ERS and PAN OpenAPI transport used by the exporter runtime."""
 
-    def __init__(self, cfg):
-        super().__init__(cfg, include_control=True, include_mnt=False)
+    def __init__(self, cfg, *, auth_guard=None):
+        super().__init__(cfg, include_control=True, include_mnt=False,
+                         auth_guard=auth_guard)
 
 
 class MnTActiveSessionClient(ISERestClient):
     """MnT XML transport scoped to active-session detail and diagnostics."""
 
-    def __init__(self, cfg):
-        super().__init__(cfg, include_control=False, include_mnt=True)
+    def __init__(self, cfg, *, auth_guard=None):
+        super().__init__(cfg, include_control=False, include_mnt=True,
+                         auth_guard=auth_guard)
 
 
 class MnTDiagnosticsClient(MnTActiveSessionClient):
@@ -518,8 +636,9 @@ class ISEOperatorClient:
     """Composition used by ise-cli when commands span control and MnT planes."""
 
     def __init__(self, cfg):
-        self.control = ISEControlPlaneClient(cfg)
-        self.mnt = MnTDiagnosticsClient(cfg)
+        auth_guard = RestAuthGuard(cfg)
+        self.control = ISEControlPlaneClient(cfg, auth_guard=auth_guard)
+        self.mnt = MnTDiagnosticsClient(cfg, auth_guard=auth_guard)
         self.host = self.control.host
         self.mnt_host = self.mnt.mnt_host
 

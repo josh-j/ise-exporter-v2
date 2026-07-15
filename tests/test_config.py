@@ -151,6 +151,8 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["ISE_DATACONNECT_SERVICE"] == "cpm10"
     assert values["ISE_DATACONNECT_SSL_VERIFY"] == "true"
     assert values["ISE_REST_SSL_VERIFY"] == "true"
+    assert values["ISE_REST_AUTH_GUARD_FILE"] == \
+        "/var/lib/ise-exporter/shared/rest-auth.guard"
     assert values["ISE_MNT_SSL_VERIFY"] == "true"
     assert values["COLLECT_MNT_ACTIVE_POSTURE"] == "true"
     assert values["MNT_ACTIVE_POSTURE_INTERVAL"] == "900"
@@ -257,3 +259,12 @@ def test_empty_state_path_cannot_disable_restart_persistence(monkeypatch):
     cfg = Config.from_env()
 
     assert cfg.state_db_path == "/var/lib/ise-exporter/state.sqlite3"
+
+
+def test_empty_rest_auth_guard_path_cannot_disable_lockout_protection(monkeypatch):
+    monkeypatch.setenv("ISE_REST_AUTH_GUARD_FILE", "")
+
+    cfg = Config.from_env()
+
+    assert cfg.rest_auth_guard_file == \
+        "/var/lib/ise-exporter/shared/rest-auth.guard"

@@ -114,6 +114,7 @@ class Config:
     slow_interval: int = 3600
     auth_failure_backoff: int = 900
     auth_failure_threshold: int = 3
+    rest_auth_guard_file: str = "/var/lib/ise-exporter/shared/rest-auth.guard"
     device_cache_ttl: int = 10800
     collect_device_details: bool = True
     collect_certificates: bool = True
@@ -202,6 +203,10 @@ class Config:
                 "AUTH_FAILURE_BACKOFF", 900, 300, 86400),
             auth_failure_threshold=_bounded_i(
                 "AUTH_FAILURE_THRESHOLD", 3, 1, 5),
+            rest_auth_guard_file=_s(
+                "ISE_REST_AUTH_GUARD_FILE",
+                "/var/lib/ise-exporter/shared/rest-auth.guard")
+                or "/var/lib/ise-exporter/shared/rest-auth.guard",
             device_cache_ttl=_bounded_i("DEVICE_CACHE_TTL", 10800, 3600),
             collect_device_details=_b("COLLECT_DEVICE_DETAILS", True),
             collect_certificates=_b("COLLECT_CERTIFICATES", True),

@@ -14,6 +14,7 @@ from ise_exporter.clients.rest import (
     ISERestClient,
     MnTActiveSessionClient,
     MnTDiagnosticsClient,
+    RestAuthGuard,
 )
 from ise_exporter.metrics import ise_api_errors_total
 
@@ -52,6 +53,7 @@ def test_runtime_and_diagnostics_clients_do_not_construct_the_other_plane():
     assert active.session is None and active.mnt_session is not None
     assert operator.control.mnt_session is None
     assert operator.mnt.session is None
+    assert operator.control._auth_guard is operator.mnt._auth_guard
 
 
 class _Resp:
@@ -336,6 +338,70 @@ def test_401s_trip_auth_backoff_before_more_requests():
     assert c._request(session, "https://ise/ers", api_name="x") is None
 
     assert session.calls == 2
+
+
+def test_auth_backoff_is_shared_across_planes_processes_and_restarts(
+        monkeypatch, tmp_path):
+    path = tmp_path / "rest-auth.guard"
+    cfg = types.SimpleNamespace(
+        ise_host="pan.example", ise_mnt_host="mnt.example", ers_port=9060,
+        ise_user="readonly", ise_pass="wrong",
+        auth_failure_threshold=2, auth_failure_backoff=60,
+        rest_auth_guard_file=str(path),
+    )
+    monkeypatch.setattr(rest_module.time, "time", lambda: 1_000)
+
+    class Resp:
+        status_code = 401
+        headers = {}
+        text = ""
+
+        def close(self):
+            pass
+
+    class Session:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, *args, **kwargs):
+            self.calls += 1
+            return Resp()
+
+    control = ISEControlPlaneClient(cfg)
+    mnt = MnTActiveSessionClient(cfg)
+    control_session = Session()
+    mnt_session = Session()
+
+    assert control._request(control_session, "https://pan/ers", api_name="ers") is None
+    assert mnt._request(mnt_session, "https://mnt/mnt", api_name="mnt") is None
+    restarted = ISEControlPlaneClient(cfg)
+    restarted_session = Session()
+    assert restarted._request(
+        restarted_session, "https://pan/ers", api_name="ers") is None
+
+    assert control_session.calls == 1
+    assert mnt_session.calls == 1
+    assert restarted_session.calls == 0
+    assert RestAuthGuard(cfg).blocked(1_001) is True
+    assert path.stat().st_mode & 0o777 == 0o660
+    assert "wrong" not in path.read_text()
+
+
+def test_auth_guard_state_is_scoped_to_account_and_cluster(tmp_path):
+    path = tmp_path / "rest-auth.guard"
+    base = dict(
+        ise_host="pan.example", ise_mnt_host="mnt.example", ise_user="readonly",
+        rest_auth_guard_file=str(path),
+    )
+    first = RestAuthGuard(types.SimpleNamespace(**base))
+    first.failure(1, 60, 1_000)
+
+    changed = RestAuthGuard(types.SimpleNamespace(**{
+        **base, "ise_user": "different-readonly",
+    }))
+
+    assert first.blocked(1_001) is True
+    assert changed.blocked(1_001) is False
 
 
 def test_unverified_https_warning_is_suppressed_at_request_boundary():

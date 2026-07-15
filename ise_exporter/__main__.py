@@ -18,7 +18,7 @@ from prometheus_client import start_http_server
 from . import __version__, build_revision, SUPPORTED_ISE_RELEASE, version_string
 from . import metrics
 from .config import Config
-from .clients.rest import ISEControlPlaneClient, MnTActiveSessionClient
+from .clients.rest import ISEControlPlaneClient, MnTActiveSessionClient, RestAuthGuard
 from .clients.dataconnect import DataConnectClient
 from .compatibility import ISECompatibilityError, validate_ise_compatibility
 from .dataconnect_schema import metadata_rows, validate_dataconnect_schema
@@ -118,7 +118,8 @@ def main(argv=None):
         logger.error("ISE_MNT_HOST is required when COLLECT_MNT_ACTIVE_POSTURE=true")
         return 1
 
-    client = ISEControlPlaneClient(cfg)
+    rest_auth_guard = RestAuthGuard(cfg)
+    client = ISEControlPlaneClient(cfg, auth_guard=rest_auth_guard)
     try:
         compatibility = validate_ise_compatibility(client)
     except ISECompatibilityError as exc:
@@ -137,7 +138,8 @@ def main(argv=None):
         logger.error("Data Connect startup validation failed: %s", exc)
         return 1
     logger.info("validated %d Cisco ISE Data Connect reporting views", len(schema))
-    mnt = MnTActiveSessionClient(cfg) if cfg.collect_mnt_active_posture else None
+    mnt = (MnTActiveSessionClient(cfg, auth_guard=rest_auth_guard)
+           if cfg.collect_mnt_active_posture else None)
 
     shutdown = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: shutdown.set())

@@ -158,6 +158,11 @@ The REST-owned network-device collector passes its latest successful in-memory
 inventory to NAD activity correlation. The Data Connect worker never performs an
 ERS request, never repeats the NAD enumeration, and refuses to publish NAD health
 after a failed current inventory refresh.
+REST authentication failures from the control and MnT planes share one persistent,
+cross-process guard keyed by a hash of the configured account and cluster hosts.
+The exporter and authorized `ise-cli` users therefore observe one failure threshold
+and backoff across process restarts; the guard contains no credential material and
+fails closed if its protected state is unavailable or malformed.
 Cross-process lock acquisition is non-blocking and cancellation-aware, so a CLI
 process holding the shared pacing gate cannot strand exporter shutdown behind a
 kernel lock during a long adaptive cooldown.
