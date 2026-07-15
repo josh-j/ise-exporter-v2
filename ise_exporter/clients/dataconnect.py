@@ -34,6 +34,7 @@ MAX_BATCH_RESULT_ROWS = 10000
 FETCH_BATCH_ROWS = 100
 MAX_FIELD_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 64 * 1024 * 1024
+MAX_FIELD_NESTING_DEPTH = 16
 MAX_BATCH_QUERIES = 5
 MIN_DUTY_CYCLE_PERCENT = 0.01
 MAX_DUTY_CYCLE_PERCENT = 0.1
@@ -83,11 +84,18 @@ def _query_view(sql):
     return "other"
 
 
-def _materialize(value):
-    """Convert Oracle LOB/binary values into deterministic CLI-safe data."""
+def _materialize(value, *, _depth=0):
+    """Convert one Oracle field without expanding an unbounded nested value."""
+    if _depth > MAX_FIELD_NESTING_DEPTH:
+        raise RuntimeError(
+            f"Data Connect field exceeded the hard "
+            f"{MAX_FIELD_NESTING_DEPTH}-level nesting ceiling")
     if hasattr(value, "read") and callable(value.read):
         size = getattr(value, "size", None)
-        if callable(size) and int(size()) > MAX_FIELD_BYTES:
+        if not callable(size):
+            raise RuntimeError(
+                "Data Connect LOB has no bounded size metadata; refusing to read it")
+        if int(size()) > MAX_FIELD_BYTES:
             raise RuntimeError(
                 f"Data Connect field exceeded the hard {MAX_FIELD_BYTES}-byte safety ceiling")
         value = value.read()
@@ -102,14 +110,39 @@ def _materialize(value):
         raise RuntimeError(
             f"Data Connect field exceeded the hard {MAX_FIELD_BYTES}-byte safety ceiling")
     if isinstance(value, list):
-        return [_materialize(item) for item in value]
+        result = []
+        retained = 0
+        for item in value:
+            materialized = _materialize(item, _depth=_depth + 1)
+            retained += _materialized_size(materialized, _depth=_depth + 1)
+            if retained > MAX_FIELD_BYTES:
+                raise RuntimeError(
+                    f"Data Connect nested field exceeded the hard "
+                    f"{MAX_FIELD_BYTES}-byte safety ceiling")
+            result.append(materialized)
+        return result
     if isinstance(value, dict):
-        return {key: _materialize(item) for key, item in value.items()}
+        result = {}
+        retained = 0
+        for key, item in value.items():
+            materialized = _materialize(item, _depth=_depth + 1)
+            retained += _materialized_size(key, _depth=_depth + 1)
+            retained += _materialized_size(materialized, _depth=_depth + 1)
+            if retained > MAX_FIELD_BYTES:
+                raise RuntimeError(
+                    f"Data Connect nested field exceeded the hard "
+                    f"{MAX_FIELD_BYTES}-byte safety ceiling")
+            result[key] = materialized
+        return result
     return value
 
 
-def _materialized_size(value):
+def _materialized_size(value, *, _depth=0):
     """Approximate retained result bytes after deterministic materialization."""
+    if _depth > MAX_FIELD_NESTING_DEPTH:
+        raise RuntimeError(
+            f"Data Connect field exceeded the hard "
+            f"{MAX_FIELD_NESTING_DEPTH}-level nesting ceiling")
     if value is None:
         return 0
     if isinstance(value, str):
@@ -117,10 +150,11 @@ def _materialized_size(value):
     if isinstance(value, (bytes, bytearray, memoryview)):
         return len(value)
     if isinstance(value, dict):
-        return sum(_materialized_size(key) + _materialized_size(item)
+        return sum(_materialized_size(key, _depth=_depth + 1)
+                   + _materialized_size(item, _depth=_depth + 1)
                    for key, item in value.items())
     if isinstance(value, (list, tuple)):
-        return sum(_materialized_size(item) for item in value)
+        return sum(_materialized_size(item, _depth=_depth + 1) for item in value)
     return 8
 
 

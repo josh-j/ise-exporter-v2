@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from .. import metrics
 from ..snapshots import replace_metric_snapshot
-from ..util import parse_ise_date
+from ..util import metric_label, parse_ise_date
 from . import CollectorFailed, observe
 from .dataconnect_common import event_window_hours, integer, recent_event_predicate
 
@@ -45,9 +45,19 @@ def collect(devices, dataconnect, cfg):
     with observe("dataconnect_nad_health"):
         if devices is None or not isinstance(devices, list):
             raise CollectorFailed("network device inventory unavailable for NAD health")
-        configured = {str(row.get("name") or "").strip(): row for row in devices
-                      if isinstance(row, dict) and str(row.get("name") or "").strip()}
-        canonical = {name.casefold(): name for name in configured}
+        configured = {}
+        canonical = {}
+        for row in devices:
+            if not isinstance(row, dict):
+                continue
+            raw_name = str(row.get("name") or "").strip()
+            if not raw_name:
+                continue
+            bounded_name = metric_label(raw_name)
+            configured[bounded_name] = row
+            # Match the reporting view against ISE's full configured name, but
+            # publish only the deterministic byte-bounded metric identity.
+            canonical[raw_name.casefold()] = bounded_name
 
         recent = recent_event_predicate(
             "timestamp", event_window_hours(

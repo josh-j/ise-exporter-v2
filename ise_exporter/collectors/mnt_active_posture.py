@@ -84,6 +84,10 @@ def _value(detail, attrs, *keys):
 def _active_mac(row):
     raw = first_nonempty(
         row, "calling_station_id", "callingStationId", "mac_address", "macAddress", "mac")
+    # Reject malformed response blobs before normalize_mac() builds a compact
+    # copy and the validation path normalizes it a second time.
+    if len(raw) > 64:
+        return ""
     return normalize_mac(raw) if is_mac(raw) else ""
 
 
@@ -199,7 +203,8 @@ def _compact_detail(detail):
     this collector. Persisting the whole response would turn a load-reduction
     cache into an unnecessary second copy of current session data.
     """
-    raw_other = first_nonempty(detail, "other_attr_string", "otherAttrString")
+    raw_other = _bounded_text(
+        first_nonempty(detail, "other_attr_string", "otherAttrString"), 131_072)
     attrs = parse_other_attr_string(raw_other)
     fields = {
         "posture_status": _value(detail, attrs, "posture_status", "PostureStatus"),
@@ -258,7 +263,12 @@ def _session_signature(row):
         "acct_session_id", "acctSessionId", "acs_server", "acsServer",
         "authentication_method", "authenticationMethod", "authen_time", "authenTime",
     )
-    material = {key: row.get(key) for key in keys if row.get(key) not in (None, "")}
+    material = {
+        key: _bounded_text(value, 1024)
+        for key in keys
+        if (value := row.get(key)) not in (None, "")
+        and isinstance(value, (str, int, float, bool))
+    }
     if not material:
         # Do not hash the whole ActiveList row: elapsed-time fields can change
         # every poll and would defeat the request budget. If this appliance omits
@@ -310,10 +320,14 @@ def _aggregate(details):
         if agent:
             coverage["posture_agent_version"] += 1
 
-        status = normalize_posture(posture_status) if posture_status else "Unknown"
+        status = metric_label(
+            normalize_posture(posture_status) if posture_status else "Unknown",
+            "Unknown", 128)
         statuses[(status, os_name, psn)] += 1
         applicable[normalize_bool_label(posture_applicable)] += 1
-        assessments[normalize_posture(assessment) if assessment else "Unknown"] += 1
+        assessment_status = metric_label(
+            normalize_posture(assessment) if assessment else "Unknown", "Unknown", 128)
+        assessments[assessment_status] += 1
         agents[metric_label(agent, "Unknown", 128)] += 1
         for policy, result in set(parse_posture_report(report)):
             policies[(metric_label(policy, "Unknown", 128), result)] += 1

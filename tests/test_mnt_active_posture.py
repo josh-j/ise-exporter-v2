@@ -100,6 +100,37 @@ def test_negative_active_count_is_invalid_not_an_empty_snapshot(count):
     }) is None
 
 
+def test_unknown_posture_statuses_are_bounded_at_the_metric_boundary():
+    raw_status = "unexpected-" + "x" * 400
+    aggregates = mnt_active_posture._aggregate([{
+        "posture_status": raw_status,
+        "posture_assessment_status": raw_status,
+    }])
+    statuses, _applicable, assessments, *_rest = aggregates
+
+    status = next(iter(statuses))[0]
+    assessment = next(iter(assessments))
+    assert status.startswith("unexpected-")
+    assert assessment.startswith("unexpected-")
+    assert len(status.encode("utf-8")) <= 128
+    assert len(assessment.encode("utf-8")) <= 128
+
+
+def test_malformed_active_identity_and_detail_are_bounded_before_processing():
+    assert mnt_active_posture._active_mac({"calling_station_id": "x" * 100_000}) == ""
+
+    signature = mnt_active_posture._session_signature({
+        "session_id": {"nested": "x" * 100_000},
+        "calling_station_id": "AA:BB:CC:DD:EE:FF",
+    })
+    assert len(signature) == 64
+
+    compact = mnt_active_posture._compact_detail({
+        "other_attr_string": "PostureReport=" + "x" * 200_000,
+    })
+    assert len(compact["posture_report"].encode("utf-8")) <= 65_536
+
+
 def test_collects_bounded_posture_and_latency_without_identity_labels():
     client = MnT()
     mnt_active_posture.collect(client, _cfg())

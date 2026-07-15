@@ -829,6 +829,9 @@ def test_query_materializes_endpoint_clob_and_binary_fields(monkeypatch):
         def __init__(self, value):
             self.value = value
 
+        def size(self):
+            return len(self.value)
+
         def read(self):
             return self.value
 
@@ -931,6 +934,59 @@ def test_query_rejects_oversized_lob_before_reading_it(monkeypatch):
         dataconnect.DataConnectClient(cfg).query("SELECT custom_attributes FROM endpoints_data")
 
     assert lob.read_called is False
+
+
+def test_query_rejects_unsized_lob_before_reading_it(monkeypatch):
+    class UnsizedLob:
+        read_called = False
+
+        def read(self):
+            self.read_called = True
+            return "should not be read"
+
+    lob = UnsizedLob()
+
+    class LobCursor(Cursor):
+        description = [types.SimpleNamespace(name="CUSTOM_ATTRIBUTES")]
+
+        def fetchmany(self, size):
+            del size
+            if getattr(self, "returned", False):
+                return []
+            self.returned = True
+            return [(lob,)]
+
+    class LobConnection(Connection):
+        def cursor(self):
+            return LobCursor()
+
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: LobConnection())
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    with pytest.raises(RuntimeError, match="no bounded size metadata"):
+        dataconnect.DataConnectClient(cfg).query(
+            "SELECT custom_attributes FROM endpoints_data")
+
+    assert lob.read_called is False
+
+
+def test_nested_field_is_bounded_during_materialization(monkeypatch):
+    monkeypatch.setattr(dataconnect, "MAX_FIELD_BYTES", 32)
+
+    with pytest.raises(RuntimeError, match="nested field exceeded"):
+        dataconnect._materialize(["x" * 16, "y" * 17])
+
+    value = "leaf"
+    for _index in range(dataconnect.MAX_FIELD_NESTING_DEPTH + 1):
+        value = [value]
+    with pytest.raises(RuntimeError, match="nesting ceiling"):
+        dataconnect._materialize(value)
 
 
 def test_query_caps_total_materialized_result_bytes(monkeypatch):

@@ -5,7 +5,7 @@ import pytest
 
 from ise_exporter import metrics
 from ise_exporter.collectors import nad_health
-from ise_exporter.util import clear_metric
+from ise_exporter.util import clear_metric, metric_label
 
 
 @pytest.fixture(autouse=True)
@@ -56,3 +56,24 @@ def test_joins_configured_nads_to_activity_without_exporting_unconfigured_names(
 def test_inventory_failure_does_not_publish_plausible_empty_health():
     nad_health.collect(None, DataConnect(), types.SimpleNamespace())
     assert not _rows(metrics.ise_nad_seen_recently, "nad")
+
+
+def test_raw_configured_nad_name_is_bounded_only_at_metric_boundary():
+    raw_name = "switch-" + "x" * 400
+
+    class LongNameActivity:
+        def query(self, _sql):
+            return [{
+                "nad": raw_name.upper(), "passed_events": 1, "failed_events": 0,
+                "last_event": datetime(2026, 7, 14, tzinfo=timezone.utc),
+            }]
+
+    nad_health.collect(
+        [{"name": raw_name}], LongNameActivity(), types.SimpleNamespace())
+
+    bounded = metric_label(raw_name)
+    assert len(bounded.encode("utf-8")) <= 256
+    assert _rows(metrics.ise_nad_authentication_events, "nad", "status") == {
+        (bounded, "passed"): 1,
+        (bounded, "failed"): 0,
+    }
