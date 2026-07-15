@@ -109,6 +109,8 @@ successful endpoint resolution when an optional MnT session or authentication
 lookup is unavailable. The affected section is returned with
 `status=unavailable` and a bounded diagnostic instead of failing the entire
 workflow.
+Valid empty MnT responses are reported as `status=no_results`, so every requested
+section remains visible even when there is no current session or recent event.
 
 ## Commands
 

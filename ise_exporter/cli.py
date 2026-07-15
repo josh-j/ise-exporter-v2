@@ -1675,6 +1675,15 @@ def _workflow_unavailable(section, source, error):
     }
 
 
+def _workflow_no_results(section, source, detail):
+    return {
+        "section": section,
+        "source": source,
+        "status": "no_results",
+        "detail": detail,
+    }
+
+
 def _endpoint_summary(client, dataconnect, identifier, *, allow_active_scan=False):
     resolved = _resolve_endpoint(
         client, identifier, dataconnect=dataconnect,
@@ -1694,7 +1703,11 @@ def _endpoint_summary(client, dataconnect, identifier, *, allow_active_scan=Fals
                 "cli_endpoint_summary_session")
         except CLIError as error:
             rows.append(_workflow_unavailable("session", "live_mnt", error))
-    rows.extend(_workflow_rows("session", sessions, "live_mnt"))
+    if sessions:
+        rows.extend(_workflow_rows("session", sessions, "live_mnt"))
+    elif not any(row.get("section") == "session" for row in rows):
+        rows.append(_workflow_no_results(
+            "session", "live_mnt", "no active MnT session found"))
     return rows
 
 
@@ -1718,7 +1731,12 @@ def _troubleshoot_auth(client, dataconnect, identifier, seconds, limit,
         rows.append(_workflow_unavailable(
             "authentication", "live_mnt", error))
     else:
-        rows.extend(_workflow_rows("authentication", auth, "live_mnt"))
+        if auth:
+            rows.extend(_workflow_rows("authentication", auth, "live_mnt"))
+        else:
+            rows.append(_workflow_no_results(
+                "authentication", "live_mnt",
+                "no MnT authentication records found in the requested window"))
     return rows
 
 

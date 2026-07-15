@@ -246,6 +246,37 @@ def test_endpoint_and_auth_workflows_keep_partial_results_when_mnt_fails(capsys)
     assert rows[-1]["source"] == "live_mnt"
 
 
+def test_endpoint_and_auth_workflows_report_empty_mnt_sections(capsys):
+    class EmptyMntClient(FakeClient):
+        def get_mnt_xml(self, path, api_name="x"):
+            self.calls.append(("mnt", path, api_name))
+            return {"total": 0, "sessions": []}
+
+    client = EmptyMntClient()
+    assert cli.main([
+        "endpoint-summary", "AA:BB:CC:DD:EE:FF", "-o", "json"
+    ], client=client) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[-1] == {
+        "detail": "no active MnT session found",
+        "section": "session",
+        "source": "live_mnt",
+        "status": "no_results",
+    }
+
+    assert cli.main([
+        "troubleshoot-auth", "AA:BB:CC:DD:EE:FF", "--limit", "5",
+        "-o", "json"
+    ], client=client) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[-1] == {
+        "detail": "no MnT authentication records found in the requested window",
+        "section": "authentication",
+        "source": "live_mnt",
+        "status": "no_results",
+    }
+
+
 def test_pxgrid_status_is_explicit_about_removed_collector(capsys):
     assert cli.main(["pxgrid-status", "-o", "json"],
                     exporter_snapshot=_exporter_snapshot()) == 0

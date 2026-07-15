@@ -144,6 +144,7 @@ the exporter. This preserves the exporter's identity-free metrics boundary rathe
 than creating an unreviewed endpoint cache. If an optional MnT lookup is
 unavailable, these compound workflows retain the successful endpoint resolution
 and mark only the affected section as `unavailable`.
+Valid empty responses remain visible as `no_results` sections.
 
 pxGrid collectors are not part of the supported ISE 3.3 Patch 11 exporter
 architecture. `Get-IsePxGridStatus` states that ownership directly; `-Live` checks
