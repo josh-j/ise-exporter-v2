@@ -1,9 +1,10 @@
-"""Low-pressure reporting-view presence and source-event freshness.
+"""Low-pressure recent reporting-view activity and source-event freshness.
 
 Collector success timestamps prove that a query completed; they do not prove that
-ISE is still inserting current rows.  This collector publishes the event-time
-newest event of every timestamped Data Connect view so operators can distinguish
-an empty, stale, and genuinely current reporting plane without exact row counts.
+ISE is still inserting current rows. This collector publishes whether every
+timestamped view has a row in the bounded recent window and that window's newest
+event. It deliberately makes no claim about older rows because proving global
+emptiness would require an unsafe full-history probe on a large production MnT.
 """
 from __future__ import annotations
 
@@ -20,8 +21,8 @@ from .dataconnect_common import event_window_hours, recent_event_predicate
 
 
 _METRICS = (
-    metrics.ise_dataconnect_view_has_rows,
-    metrics.ise_dataconnect_view_newest_event_timestamp,
+    metrics.ise_dataconnect_view_has_recent_rows,
+    metrics.ise_dataconnect_view_newest_recent_event_timestamp,
 )
 
 
@@ -108,10 +109,10 @@ def collect(dataconnect, cfg):
             labels = {"view": row["view"], "domain": row["domain"]}
             writers.extend((
                 lambda row=row, labels=labels:
-                    metrics.ise_dataconnect_view_has_rows.labels(
+                    metrics.ise_dataconnect_view_has_recent_rows.labels(
                         **labels).set(row["has_rows"]),
                 lambda row=row, labels=labels:
-                    metrics.ise_dataconnect_view_newest_event_timestamp.labels(
+                    metrics.ise_dataconnect_view_newest_recent_event_timestamp.labels(
                         **labels).set(row["newest"]),
             ))
         replace_metric_snapshot(_METRICS, writers)

@@ -894,7 +894,7 @@ def test_freshness_snapshot_view_set_tracks_tacacs_configuration(
         stored_domains, include_tacacs, expected):
     payload = {
         "metrics": {
-            metrics.ise_dataconnect_view_has_rows._name: {
+            metrics.ise_dataconnect_view_has_recent_rows._name: {
                 "labelnames": ["view", "domain"],
                 "samples": [
                     {"labels": [f"view_{index}", domain], "value": 1}

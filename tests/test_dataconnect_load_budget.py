@@ -8,6 +8,7 @@ from ise_exporter.collectors import (
     dataconnect_performance,
     dataconnect_posture,
     dataconnect_radius,
+    nad_health,
     tacacs,
 )
 from ise_exporter.collectors.dataconnect_common import event_window_hours, group_limit
@@ -104,6 +105,21 @@ def test_radius_reporting_scans_each_large_historical_view_only_once():
 def test_alternate_config_cannot_export_more_than_production_group_ceiling():
     assert group_limit(types.SimpleNamespace(dataconnect_max_groups=999_999)) == 1000
     assert len(tacacs._activity_queries(1000, cutoff_epoch=1)) == 3
+
+
+def test_nad_health_query_has_the_same_hard_group_ceiling():
+    class DataConnect:
+        def query(self, sql):
+            assert "WHERE group_rank <= 1000" in sql
+            return []
+
+    nad_health.collect(
+        [], DataConnect(),
+        types.SimpleNamespace(
+            dataconnect_max_groups=999_999,
+            dataconnect_nad_health_interval=86400,
+            dataconnect_event_window_hours=6,
+        ))
 
 
 def test_tacacs_query_builder_refuses_an_unbounded_event_scan():

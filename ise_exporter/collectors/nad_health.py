@@ -14,14 +14,25 @@ from .. import metrics
 from ..snapshots import replace_metric_snapshot
 from ..util import metric_label, parse_ise_date
 from . import CollectorFailed, observe
-from .dataconnect_common import event_window_hours, integer, recent_event_predicate
+from .dataconnect_common import (
+    event_window_hours,
+    group_limit,
+    integer,
+    recent_event_predicate,
+)
 
 
 _METRICS = (
     metrics.ise_nad_authentication_events,
     metrics.ise_nad_last_authentication_timestamp,
     metrics.ise_nad_seen_recently,
-    metrics.ise_nad_unconfigured_authentication_events_total,
+    metrics.ise_nad_unconfigured_authentication_events_topk,
+    metrics.ise_nad_inventory_selected,
+    metrics.ise_nad_inventory_total,
+    metrics.ise_nad_inventory_truncated,
+    metrics.ise_nad_activity_groups_returned,
+    metrics.ise_nad_activity_groups_total,
+    metrics.ise_nad_activity_groups_truncated,
 )
 
 
@@ -62,19 +73,34 @@ def collect(devices, dataconnect, cfg):
         recent = recent_event_predicate(
             "timestamp", event_window_hours(
                 cfg, getattr(cfg, "dataconnect_nad_health_interval", 86400)))
+        limit = group_limit(cfg)
         activity = dataconnect.query(f"""
-            SELECT NVL(device_name, 'unknown') AS nad,
-                   SUM(NVL(passed_count, 0)) AS passed_events,
-                   SUM(NVL(failed_count, 0)) AS failed_events,
-                   MAX(timestamp) AS last_event
-            FROM radius_authentication_summary
-            WHERE {recent}
-            GROUP BY NVL(device_name, 'unknown')
+            WITH grouped_activity AS (
+                SELECT NVL(device_name, 'unknown') AS nad,
+                       SUM(NVL(passed_count, 0)) AS passed_events,
+                       SUM(NVL(failed_count, 0)) AS failed_events,
+                       MAX(timestamp) AS last_event
+                FROM radius_authentication_summary
+                WHERE {recent}
+                GROUP BY NVL(device_name, 'unknown')
+            ), ranked_activity AS (
+                SELECT grouped_activity.*, COUNT(*) OVER () AS total_groups,
+                       ROW_NUMBER() OVER (
+                           ORDER BY passed_events + failed_events DESC, nad
+                       ) AS group_rank
+                FROM grouped_activity
+            )
+            SELECT * FROM ranked_activity WHERE group_rank <= {limit}
         """)
+
+        total_groups = integer(activity[0].get("total_groups")) if activity else 0
+        if total_groups < len(activity):
+            raise CollectorFailed("NAD activity total was smaller than returned groups")
 
         counts = defaultdict(int)
         last_seen = defaultdict(float)
         unconfigured = 0
+        active_configured = []
         for row in activity:
             reported = str(row.get("nad") or "unknown").strip()
             name = canonical.get(reported.casefold())
@@ -83,14 +109,32 @@ def collect(devices, dataconnect, cfg):
             if name is None:
                 unconfigured += passed + failed
                 continue
+            if name not in active_configured:
+                active_configured.append(name)
             counts[(name, "passed")] += passed
             counts[(name, "failed")] += failed
             last_seen[name] = max(last_seen[name], _timestamp(row.get("last_event")))
 
+        # Preserve the most operationally useful active devices, then fill the
+        # remaining bounded budget deterministically with inactive inventory.
+        selected = active_configured[:limit]
+        selected.extend(
+            name for name in sorted(configured, key=str.casefold)
+            if name not in selected and len(selected) < limit)
+
         writers = [
-            lambda: metrics.ise_nad_unconfigured_authentication_events_total.set(unconfigured)
+            lambda: metrics.ise_nad_unconfigured_authentication_events_topk.set(
+                unconfigured),
+            lambda: metrics.ise_nad_inventory_selected.set(len(selected)),
+            lambda: metrics.ise_nad_inventory_total.set(len(configured)),
+            lambda: metrics.ise_nad_inventory_truncated.set(
+                int(len(configured) > len(selected))),
+            lambda: metrics.ise_nad_activity_groups_returned.set(len(activity)),
+            lambda: metrics.ise_nad_activity_groups_total.set(total_groups),
+            lambda: metrics.ise_nad_activity_groups_truncated.set(
+                int(total_groups > len(activity))),
         ]
-        for name in configured:
+        for name in selected:
             writers.extend((
                 lambda name=name: metrics.ise_nad_seen_recently.labels(nad=name).set(
                     int(last_seen[name] > 0)),

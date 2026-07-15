@@ -49,9 +49,27 @@ ise_nad_last_authentication_timestamp = Gauge(
 ise_nad_seen_recently = Gauge(
     "ise_nad_seen_recently",
     "Whether a configured NAD has authentication activity in the reporting window", ["nad"])
-ise_nad_unconfigured_authentication_events_total = Gauge(
-    "ise_nad_unconfigured_authentication_events_total",
-    "Recent RADIUS authentication events whose NAD name is not configured in ERS")
+ise_nad_unconfigured_authentication_events_topk = Gauge(
+    "ise_nad_unconfigured_authentication_events_topk",
+    "Recent RADIUS authentication events in the exported top-K whose NAD is not in ERS")
+ise_nad_inventory_selected = Gauge(
+    "ise_nad_inventory_selected",
+    "Configured NADs selected for per-device health metrics")
+ise_nad_inventory_total = Gauge(
+    "ise_nad_inventory_total",
+    "Exact configured NAD inventory size supplied by ERS")
+ise_nad_inventory_truncated = Gauge(
+    "ise_nad_inventory_truncated",
+    "Whether configured NAD per-device health was truncated by the top-K ceiling")
+ise_nad_activity_groups_returned = Gauge(
+    "ise_nad_activity_groups_returned",
+    "NAD activity groups returned after the Data Connect top-K ceiling")
+ise_nad_activity_groups_total = Gauge(
+    "ise_nad_activity_groups_total",
+    "Exact NAD activity group count before the Data Connect top-K ceiling")
+ise_nad_activity_groups_truncated = Gauge(
+    "ise_nad_activity_groups_truncated",
+    "Whether NAD activity groups were truncated by the Data Connect top-K ceiling")
 
 # --- certs / license / backup / patch (slow tier) ---
 ise_certificate_expiry_days = Gauge("ise_certificate_expiry_days", "Days until cert expires", ["hostname", "cert_name", "cert_type", "usage"])
@@ -443,13 +461,13 @@ ise_dataconnect_endpoint_topk_truncated = Gauge(
     "Whether an endpoint dimensional breakdown was truncated by its top-K limit",
     ["breakdown"])
 
-ise_dataconnect_view_has_rows = Gauge(
-    "ise_dataconnect_view_has_rows",
-    "Whether each bounded Data Connect reporting view contains at least one row",
+ise_dataconnect_view_has_recent_rows = Gauge(
+    "ise_dataconnect_view_has_recent_rows",
+    "Whether each Data Connect reporting view contains a row in the bounded recent window",
     ["view", "domain"])
-ise_dataconnect_view_newest_event_timestamp = Gauge(
-    "ise_dataconnect_view_newest_event_timestamp",
-    "Newest source-event timestamp visible in each Data Connect reporting view",
+ise_dataconnect_view_newest_recent_event_timestamp = Gauge(
+    "ise_dataconnect_view_newest_recent_event_timestamp",
+    "Newest source-event timestamp inside each Data Connect view's bounded recent window",
     ["view", "domain"])
 ise_dataconnect_psn_radius_requests_per_hour = Gauge(
     "ise_dataconnect_psn_radius_requests_per_hour", "RADIUS requests per hour by ISE node",

@@ -493,8 +493,14 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_dataset_fresh",
         "ise_dataset_last_attempt_timestamp",
         "ise_dataset_last_success_timestamp",
-        "ise_dataconnect_view_has_rows",
-        "ise_dataconnect_view_newest_event_timestamp",
+        "ise_dataconnect_view_has_recent_rows",
+        "ise_dataconnect_view_newest_recent_event_timestamp",
+        "ise_nad_inventory_selected",
+        "ise_nad_inventory_total",
+        "ise_nad_inventory_truncated",
+        "ise_nad_activity_groups_returned",
+        "ise_nad_activity_groups_total",
+        "ise_nad_activity_groups_truncated",
         "ise_mnt_active_posture_detail_coverage_ratio",
         "ise_mnt_active_posture_detail_truncated",
         "ise_mnt_active_posture_field_coverage_ratio",
@@ -552,9 +558,9 @@ def test_data_quality_dashboard_does_not_render_empty_views_as_epoch_old():
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 6)
     expressions = {target["refId"]: target["expr"] for target in panel["targets"]}
 
-    assert "ise_dataconnect_view_newest_event_timestamp > 0" in expressions[
-        "Newest event age"]
-    assert "ise_dataconnect_view_has_rows" in expressions["Has rows"]
+    assert "ise_dataconnect_view_newest_recent_event_timestamp > 0" in expressions[
+        "Newest recent event age"]
+    assert "ise_dataconnect_view_has_recent_rows" in expressions["Has recent rows"]
     assert "Window span" not in expressions
 
 
@@ -676,7 +682,7 @@ def test_nad_health_panels_require_fresh_inventory_and_activity_sources():
     dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
     panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
 
-    for panel_id in (11, 12, 15):
+    for panel_id in (11, 12, 15, 40, 41):
         for target in panels[panel_id]["targets"]:
             expression = target["expr"]
             for dataset, source in (

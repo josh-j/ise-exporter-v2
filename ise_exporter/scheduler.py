@@ -91,7 +91,7 @@ _PERSISTED_DATACONNECT_METRICS = {
 def _freshness_snapshot_matches_config(payload, include_tacacs):
     """Reject a fresh-but-wrong view set after a TACACS config change."""
     try:
-        item = payload["metrics"][metrics.ise_dataconnect_view_has_rows._name]
+        item = payload["metrics"][metrics.ise_dataconnect_view_has_recent_rows._name]
         domain_index = item["labelnames"].index("domain")
         domains = {
             sample["labels"][domain_index]

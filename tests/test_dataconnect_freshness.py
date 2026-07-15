@@ -54,11 +54,11 @@ def test_collects_bounded_presence_and_newest_event_for_every_timestamped_view(
     assert sql.count("NUMTODSINTERVAL(6, 'HOUR')") == len(timestamped) - 3
     assert "COUNT(" not in sql and "MIN(" not in sql and "MAX(" not in sql
 
-    rows = _rows(metrics.ise_dataconnect_view_has_rows)
+    rows = _rows(metrics.ise_dataconnect_view_has_recent_rows)
     assert set(rows) == {(view, domain) for view, domain in timestamped.items()}
     assert rows[("radius_authentications", "radius_auth")] == 1
     assert rows[("radius_accounting", "radius_accounting")] == 0
-    assert _rows(metrics.ise_dataconnect_view_newest_event_timestamp)[
+    assert _rows(metrics.ise_dataconnect_view_newest_recent_event_timestamp)[
         ("radius_authentications", "radius_auth")] == pytest.approx(1784003400)
 
 
@@ -93,7 +93,7 @@ def test_freshness_excludes_tacacs_views_when_collection_is_disabled(monkeypatch
     expected = dataconnect_freshness._timestamped_views(include_tacacs=False)
     assert sql.count("FETCH FIRST 1 ROWS ONLY") == len(expected)
     assert all(domain != "tacacs" for _view, domain in _rows(
-        metrics.ise_dataconnect_view_has_rows))
+        metrics.ise_dataconnect_view_has_recent_rows))
 
 
 @pytest.mark.parametrize(("value", "expected"), [
