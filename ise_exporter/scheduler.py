@@ -115,6 +115,7 @@ class PollScheduler:
         self._dataconnect_inflight = set()
         self._dataconnect_queued_at = {}
         self._dataconnect_busy = False
+        self._dataconnect_stopping = False
         self._dataconnect_lock = threading.RLock()
         self._dataconnect_worker = None
         self._mnt_async = False
@@ -296,6 +297,37 @@ class PollScheduler:
                 or next_run > now + max(1, scheduled_delay)
                 + _WALL_CLOCK_SKEW_TOLERANCE)
 
+    def _failure_retry(self, name, source, effective_interval):
+        if collectors.failures(name) >= MAX_CONSECUTIVE_FAILURES:
+            if source == "dataconnect":
+                return max(self.slow_interval, effective_interval)
+            # REST and MnT share the persistent authentication guard. Recover on
+            # the dataset cadence after the account-safety backoff, not the global
+            # six-hour slow tier.
+            return max(effective_interval, self.auth_failure_backoff)
+        if source == "dataconnect":
+            # Failed reporting work can still consume substantial database time.
+            return max(300, min(effective_interval, self.slow_interval))
+        return min(effective_interval, self.scrape_interval)
+
+    def _recover_worker_exception(self, name, tier, source, worker_name):
+        """Keep an asynchronous lane alive after scheduler bookkeeping fails."""
+        logger.exception("%s worker bookkeeping failed for %s", worker_name, name)
+        completed = time.time()
+        try:
+            collectors.record_failure(name, "worker_exception")
+        except Exception:
+            logger.exception(
+                "could not publish %s worker failure for %s", worker_name, name)
+        retry = self._failure_retry(name, source, tier)
+        self.next_run[name] = completed + retry
+        self._scheduled_delay[name] = retry
+        try:
+            self._update_dataset_freshness(name, completed)
+        except Exception:
+            logger.exception(
+                "could not publish %s freshness after worker failure", name)
+
     def _run(self, name, now, tier, callback):
         if self._due(name, now, tier):
             source = self.dataset_plan[name][0]
@@ -329,27 +361,7 @@ class PollScheduler:
                         name, effective_interval,
                     )
             else:
-                if collectors.failures(name) >= MAX_CONSECUTIVE_FAILURES:
-                    if source == "dataconnect":
-                        retry = max(self.slow_interval, effective_interval)
-                    else:
-                        # REST and MnT already share the persistent authentication
-                        # guard. Do not turn a five-failure streak on a fast health
-                        # dataset into the global six-hour slow tier; recover on the
-                        # dataset cadence once the account-safety backoff expires.
-                        retry = max(
-                            effective_interval,
-                            self.auth_failure_backoff,
-                        )
-                elif source == "dataconnect":
-                    # A failed reporting query can still consume substantial ISE
-                    # database work. Never hammer it at the exporter loop cadence,
-                    # but do not leave a daily dataset empty for 24 hours after one
-                    # transient startup failure. The client-side adaptive duty-cycle
-                    # gate remains authoritative when a slow query needs more rest.
-                    retry = max(300, min(effective_interval, self.slow_interval))
-                else:
-                    retry = min(tier, self.scrape_interval)
+                retry = self._failure_retry(name, source, effective_interval)
                 self.next_run[name] = completed + retry
                 self._scheduled_delay[name] = retry
                 self._update_dataset_freshness(name, completed)
@@ -368,7 +380,8 @@ class PollScheduler:
             return
         with self._dataconnect_lock:
             now = time.time()
-            if (self._shutdown is not None and self._shutdown.is_set()
+            if (self._dataconnect_stopping
+                    or self._shutdown is not None and self._shutdown.is_set()
                     or name in self._dataconnect_inflight
                     or not self._due(name, now, tier)):
                 return
@@ -407,7 +420,15 @@ class PollScheduler:
                     self._dataconnect_busy = True
                     self._publish_worker_state()
                 try:
-                    self._run(name, time.time(), tier, callback)
+                    try:
+                        self._run(name, time.time(), tier, callback)
+                    except Exception:
+                        # Collector callbacks are already contained by _run(). An
+                        # exception here is scheduler/metrics infrastructure. Do
+                        # not silently lose the sole serialized database worker
+                        # and strand every later reporting domain in its queue.
+                        self._recover_worker_exception(
+                            name, tier, "dataconnect", "Data Connect")
                 finally:
                     with self._dataconnect_lock:
                         self._dataconnect_busy = False
@@ -417,8 +438,15 @@ class PollScheduler:
                 self._dataconnect_queue.task_done()
 
     def _start_dataconnect_worker(self, shutdown):
-        if self._dataconnect_async:
+        if self._dataconnect_async and self.dataconnect_worker_alive:
             return
+        # A prior bounded stop may have timed out and then completed later. Only
+        # after the old thread is confirmed dead may this scheduler own a new
+        # serialized database lane.
+        if self._dataconnect_stopping:
+            self._discard_dataconnect_pending()
+            self._dataconnect_async = False
+            self._dataconnect_stopping = False
         self._shutdown = shutdown
         set_shutdown = getattr(self.dataconnect, "set_shutdown_event", None)
         if set_shutdown is not None:
@@ -434,7 +462,7 @@ class PollScheduler:
     def _stop_dataconnect_worker(self):
         if not self._dataconnect_async:
             return
-        self._dataconnect_async = False
+        self._dataconnect_stopping = True
         self._dataconnect_queue.put((
             -1, next(self._dataconnect_sequence), None, None, None))
         if self._dataconnect_worker is not None:
@@ -449,21 +477,24 @@ class PollScheduler:
             if self._dataconnect_worker.is_alive():
                 logger.warning("Data Connect worker did not stop within %ss", timeout)
             else:
-                # The priority sentinel exits ahead of ordinary queued domains.
-                # Discard those abandoned callbacks so reusing this scheduler
-                # cannot execute stale work after a stop/start cycle.
-                while True:
-                    try:
-                        self._dataconnect_queue.get_nowait()
-                    except queue.Empty:
-                        break
-                    else:
-                        self._dataconnect_queue.task_done()
-                with self._dataconnect_lock:
-                    self._dataconnect_busy = False
-                    self._dataconnect_inflight.clear()
-                    self._dataconnect_queued_at.clear()
-                    self._publish_worker_state()
+                self._dataconnect_async = False
+                self._dataconnect_stopping = False
+                self._discard_dataconnect_pending()
+
+    def _discard_dataconnect_pending(self):
+        """Clear callbacks abandoned behind the priority shutdown sentinel."""
+        while True:
+            try:
+                self._dataconnect_queue.get_nowait()
+            except queue.Empty:
+                break
+            else:
+                self._dataconnect_queue.task_done()
+        with self._dataconnect_lock:
+            self._dataconnect_busy = False
+            self._dataconnect_inflight.clear()
+            self._dataconnect_queued_at.clear()
+            self._publish_worker_state()
 
     @property
     def dataconnect_worker_alive(self):
@@ -490,7 +521,10 @@ class PollScheduler:
 
         def run():
             try:
-                self._run(name, time.time(), tier, callback)
+                try:
+                    self._run(name, time.time(), tier, callback)
+                except Exception:
+                    self._recover_worker_exception(name, tier, "mnt", "MnT")
             finally:
                 with self._mnt_lock:
                     self._mnt_inflight = False

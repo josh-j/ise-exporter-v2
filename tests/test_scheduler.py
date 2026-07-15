@@ -310,6 +310,37 @@ def test_dataconnect_worker_serializes_domains_and_deduplicates_queued_runs():
     scheduler._stop_dataconnect_worker()
 
 
+def test_dataconnect_worker_survives_scheduler_bookkeeping_exception(
+        monkeypatch, caplog):
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    shutdown = threading.Event()
+    later_runs = []
+    original_run = scheduler._run
+
+    def fail_one_domain(name, now, tier, callback):
+        if name == "dataconnect_radius_active":
+            raise RuntimeError("bookkeeping failed")
+        return original_run(name, now, tier, callback)
+
+    monkeypatch.setattr(scheduler, "_run", fail_one_domain)
+    scheduler._start_dataconnect_worker(shutdown)
+    scheduler._run_dataconnect(
+        "dataconnect_radius_active", 7200, lambda: None)
+    scheduler._run_dataconnect(
+        "dataconnect_performance", 21600, lambda: later_runs.append(True))
+    scheduler._dataconnect_queue.join()
+
+    assert later_runs == [True]
+    assert scheduler.dataconnect_worker_alive
+    assert collectors.failures("dataconnect_radius_active") == 1
+    assert scheduler.next_run[
+        "dataconnect_radius_active"] > scheduler_module.time.time()
+    assert "Data Connect worker bookkeeping failed" in caplog.text
+    shutdown.set()
+    scheduler._stop_dataconnect_worker()
+
+
 def test_dataconnect_shutdown_discards_abandoned_queued_callbacks():
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
@@ -407,6 +438,40 @@ def test_paced_mnt_lane_does_not_block_rest_and_deduplicates_cycles():
     scheduler._stop_mnt_worker()
 
 
+def test_mnt_worker_bookkeeping_exception_is_accounted_and_recoverable(
+        monkeypatch, caplog):
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, request_timeout=1),
+        object(), object(), mnt=object())
+    shutdown = threading.Event()
+    original_run = scheduler._run
+    scheduler._start_mnt_worker(shutdown)
+    monkeypatch.setattr(
+        scheduler, "_run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("bookkeeping failed")),
+    )
+
+    scheduler._run_mnt("mnt_active_posture", 900, lambda: None)
+    scheduler._mnt_worker.join(1)
+
+    assert not scheduler._mnt_inflight
+    assert collectors.failures("mnt_active_posture") == 1
+    assert scheduler.next_run[
+        "mnt_active_posture"] > scheduler_module.time.time()
+    assert "MnT worker bookkeeping failed" in caplog.text
+
+    later_runs = []
+    monkeypatch.setattr(scheduler, "_run", original_run)
+    scheduler.next_run["mnt_active_posture"] = 0
+    scheduler._run_mnt(
+        "mnt_active_posture", 900, lambda: later_runs.append(True))
+    scheduler._mnt_worker.join(1)
+    assert later_runs == [True]
+    shutdown.set()
+    scheduler._stop_mnt_worker()
+
+
 def test_shutdown_rejects_new_dataconnect_and_mnt_work():
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, dataconnect_query_timeout=1, request_timeout=1),
@@ -454,6 +519,36 @@ def test_dataconnect_shutdown_wait_is_hard_bounded(configured):
     scheduler._stop_dataconnect_worker()
 
     assert worker.timeout == 17
+    assert scheduler._dataconnect_async
+    assert scheduler._dataconnect_stopping
+
+
+def test_timed_out_dataconnect_stop_rejects_work_and_second_worker(monkeypatch):
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+
+    class Worker:
+        def join(self, timeout):
+            pass
+
+        def is_alive(self):
+            return True
+
+    scheduler._dataconnect_async = True
+    scheduler._dataconnect_worker = Worker()
+    scheduler._stop_dataconnect_worker()
+    runs = []
+    scheduler._run_dataconnect(
+        "dataconnect_radius_active", 7200, lambda: runs.append(True))
+    monkeypatch.setattr(
+        scheduler_module.threading, "Thread",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("must not start a second worker")),
+    )
+    scheduler._start_dataconnect_worker(threading.Event())
+
+    assert runs == []
+    assert scheduler._dataconnect_stopping
 
 
 @pytest.mark.parametrize("configured", [3600, "invalid"])
