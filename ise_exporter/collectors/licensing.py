@@ -5,6 +5,7 @@ import math
 
 from .. import metrics
 from ..snapshots import replace_metric_snapshot
+from ..util import metric_label
 from . import observe, CollectorFailed
 
 logger = logging.getLogger(__name__)
@@ -38,10 +39,11 @@ def collect(client, cfg):
         for tier in (tiers if isinstance(tiers, list) else [tiers]):
             if not isinstance(tier, dict):
                 raise CollectorFailed("license tier-state contained a non-object")
-            name = str(tier.get("name") or "").strip()
-            if not name or len(name) > 256 or name in names:
+            raw_name = str(tier.get("name") or "").strip()
+            if not raw_name or raw_name in names:
                 raise CollectorFailed("license tier-state contained an invalid tier name")
-            names.add(name)
+            names.add(raw_name)
+            name = metric_label(raw_name)
             if "consumptionCounter" not in tier:
                 raise CollectorFailed(f"license tier {name} omitted consumption")
             try:

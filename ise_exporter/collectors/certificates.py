@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from .. import metrics
 from ..snapshots import replace_metric_snapshot
-from ..util import parse_ise_date
+from ..util import metric_label, parse_ise_date
 from . import observe, CollectorFailed
 from .nodes import get_nodes
 
@@ -71,10 +71,12 @@ def collect(client, cfg):
                     f"{cert_type} certificate has invalid selfSigned value")
             days = (expiry - now).days
             rows.append({
-                "hostname": hostname,
-                "name": cert.get("friendlyName", cert.get("id", "unknown")),
+                "hostname": metric_label(hostname),
+                "name": metric_label(
+                    cert.get("friendlyName", cert.get("id", "unknown"))),
                 "type": cert_type,
-                "usage": cert.get("usedBy", cert.get("trustedFor", "unknown")),
+                "usage": metric_label(
+                    cert.get("usedBy", cert.get("trustedFor", "unknown"))),
                 "days": days,
                 "key_size": int(cert.get("keySize") or 0),
                 "signature": str(cert.get("signatureAlgorithm") or "").casefold(),

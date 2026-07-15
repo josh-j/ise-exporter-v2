@@ -218,8 +218,12 @@ Successful Data Connect domains store their complete bounded Prometheus
 gauge snapshots and completion timestamps in that private database. A restart
 atomically rehydrates compatible, still-fresh snapshots and retains each domain's
 next scheduled deadline instead of immediately repeating every reporting query.
-Stale, corrupt, or schema-incompatible snapshots are ignored and collected from
-ISE immediately.
+Each domain snapshot is capped at 20,000 samples and 32 MiB on both write and
+restore, and restored labels must satisfy the same 256-byte limit as live
+collection. Across the eight persisted reporting domains, even the theoretical
+size ceiling remains under 256 MiB; this cannot become a local copy of an
+80--200 GB MnT database. Stale, corrupt, oversized, or schema-incompatible
+snapshots are ignored and collected from ISE immediately.
 
 TACACS hygiene adds one deliberately smaller persistent record: at most three
 last-observed activity timestamps for each currently configured internal account,

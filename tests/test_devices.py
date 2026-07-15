@@ -88,3 +88,32 @@ def test_malformed_device_group_list_invalidates_inventory(monkeypatch):
     cfg = types.SimpleNamespace(collect_device_details=True, device_cache_ttl=3600)
 
     assert devices.collect(Client(), cfg) is None
+
+
+def test_device_group_metric_labels_are_byte_bounded(monkeypatch):
+    long_value = "ä" * 300
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return [{"id": "nad-1", "name": "switch-1"}]
+            return {"NetworkDevice": {
+                "id": "nad-1", "name": "switch-1",
+                "NetworkDeviceGroupList": [
+                    f"Location#All Locations#{long_value}",
+                    f"Ops Owner#All Ops Owners#{long_value}",
+                    f"Device Type#All Device Types#{long_value}",
+                ],
+            }}
+
+    monkeypatch.setattr(devices, "_cache", None)
+    cfg = types.SimpleNamespace(collect_device_details=True, device_cache_ttl=3600)
+
+    devices.collect(Client(), cfg)
+
+    for metric in (
+            metrics.ise_network_devices_by_location,
+            metrics.ise_network_devices_by_ops_owner,
+            metrics.ise_network_devices_by_type):
+        assert all(len(label.encode("utf-8")) <= 256
+                   for labels in metric._metrics for label in labels)

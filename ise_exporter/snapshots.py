@@ -13,8 +13,11 @@ from threading import RLock
 
 from prometheus_client import REGISTRY
 
+from .util import MAX_METRIC_LABEL_BYTES
+
 
 snapshot_lock = RLock()
+MAX_PERSISTED_SNAPSHOT_SAMPLES = 20_000
 
 
 class LockedCollectorRegistry:
@@ -80,20 +83,31 @@ def serialize_metric_snapshot(metric_families):
     """Return a JSON-safe copy of gauge families at one scrape boundary."""
     families = tuple(dict.fromkeys(metric_families))
     payload = {"version": 1, "metrics": {}}
+    total_samples = 0
     with snapshot_lock:
         for metric in families:
             name = getattr(metric, "_name", "")
             if not name or name in payload["metrics"]:
                 raise TypeError(f"unsupported or duplicate metric family {metric!r}")
             if hasattr(metric, "_metrics"):
-                samples = [
-                    {"labels": list(labels), "value": child._value.get()}
-                    for labels, child in metric._metrics.items()
-                ]
+                samples = []
+                for labels, child in metric._metrics.items():
+                    if any(len(label.encode("utf-8")) > MAX_METRIC_LABEL_BYTES
+                           for label in labels):
+                        raise ValueError(
+                            f"metric snapshot label is too large for {name}")
+                    samples.append({
+                        "labels": list(labels), "value": child._value.get()})
+                total_samples += len(samples)
+                if total_samples > MAX_PERSISTED_SNAPSHOT_SAMPLES:
+                    raise ValueError("metric snapshot exceeds the persisted sample limit")
                 payload["metrics"][name] = {
                     "labelnames": list(metric._labelnames), "samples": samples,
                 }
             elif hasattr(metric, "_value"):
+                total_samples += 1
+                if total_samples > MAX_PERSISTED_SNAPSHOT_SAMPLES:
+                    raise ValueError("metric snapshot exceeds the persisted sample limit")
                 payload["metrics"][name] = {
                     "labelnames": [],
                     "samples": [{"labels": [], "value": metric._value.get()}],
@@ -113,6 +127,7 @@ def restore_metric_snapshot(metric_families, payload):
         raise ValueError("metric snapshot has no metric map")
 
     prepared = []
+    total_samples = 0
     expected_names = {getattr(metric, "_name", "") for metric in families}
     if set(stored) != expected_names:
         raise ValueError("metric snapshot families do not match this exporter revision")
@@ -124,6 +139,9 @@ def restore_metric_snapshot(metric_families, payload):
         samples = item.get("samples")
         if not isinstance(samples, list):
             raise ValueError(f"metric snapshot samples are invalid for {metric._name}")
+        total_samples += len(samples)
+        if total_samples > MAX_PERSISTED_SNAPSHOT_SAMPLES:
+            raise ValueError("metric snapshot exceeds the persisted sample limit")
         values = []
         for sample in samples:
             if not isinstance(sample, dict) or not isinstance(sample.get("labels"), list):
@@ -133,6 +151,9 @@ def restore_metric_snapshot(metric_families, payload):
                 raise ValueError(f"metric snapshot label count changed for {metric._name}")
             if any(not isinstance(label, str) for label in labels):
                 raise ValueError(f"metric snapshot label is invalid for {metric._name}")
+            if any(len(label.encode("utf-8")) > MAX_METRIC_LABEL_BYTES
+                   for label in labels):
+                raise ValueError(f"metric snapshot label is too large for {metric._name}")
             try:
                 value = float(sample["value"])
             except (KeyError, TypeError, ValueError) as error:

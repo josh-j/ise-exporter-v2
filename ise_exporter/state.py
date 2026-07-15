@@ -16,6 +16,7 @@ import stat
 import time
 
 STATE_SCHEMA_VERSION = 1
+MAX_PERSISTED_SNAPSHOT_BYTES = 32 * 1024 * 1024
 
 
 class StateStore:
@@ -265,6 +266,10 @@ class StateStore:
         raw = self.get_value(f"dataset_snapshot.{dataset}")
         if not raw:
             return None
+        if (not isinstance(raw, str)
+                or len(raw) > MAX_PERSISTED_SNAPSHOT_BYTES
+                or len(raw.encode("utf-8")) > MAX_PERSISTED_SNAPSHOT_BYTES):
+            return None
         try:
             value = json.loads(raw)
         except (TypeError, ValueError):
@@ -282,4 +287,7 @@ class StateStore:
         value = json.dumps({
             "updated_at": float(updated_at), "payload": payload,
         }, separators=(",", ":"), allow_nan=False)
+        if (len(value) > MAX_PERSISTED_SNAPSHOT_BYTES
+                or len(value.encode("utf-8")) > MAX_PERSISTED_SNAPSHOT_BYTES):
+            raise ValueError("dataset snapshot exceeds the persisted size limit")
         self.set_value(f"dataset_snapshot.{dataset}", value)

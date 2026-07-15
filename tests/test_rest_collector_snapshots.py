@@ -185,6 +185,28 @@ def test_certificate_security_binding_and_issuer_coverage(monkeypatch):
         hostname="psn-1", cert_name="EAP cert")._value.get() == 1
 
 
+def test_certificate_metric_labels_are_byte_bounded(monkeypatch):
+    long_value = "ä" * 300
+    monkeypatch.setattr(
+        certificates, "get_nodes", lambda *args, **kwargs: [{"hostname": "psn-1"}],
+    )
+
+    class Client:
+        def get_pan_api(self, path, **kwargs):
+            if "system-certificate" in path:
+                return [{
+                    "friendlyName": long_value, "expirationDate": "2030-01-01",
+                    "usedBy": long_value, "selfSigned": False,
+                }]
+            return []
+
+    certificates.collect(Client(), _cfg())
+
+    assert all(len(label.encode("utf-8")) <= 256
+               for labels in metrics.ise_certificate_expiry_days._metrics
+               for label in labels)
+
+
 def test_deployment_pan_ha_failure_preserves_previous_labelsets(monkeypatch):
     metrics.ise_deployment_status.labels(
         node="old", roles="PSN", services="none").state("Connected")
@@ -354,6 +376,20 @@ def test_invalid_license_enums_preserve_previous_snapshot(field, value):
     licensing.collect(Client(), _cfg())
 
     assert set(metrics.ise_license_consumption._metrics) == {("old",)}
+
+
+def test_license_tier_metric_label_is_byte_bounded():
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return [{
+                "name": "ä" * 300, "consumptionCounter": 42,
+                "status": "ENABLED", "compliance": "COMPLIANT",
+            }]
+
+    licensing.collect(Client(), _cfg())
+
+    label = next(iter(metrics.ise_license_consumption._metrics))[0]
+    assert len(label.encode("utf-8")) <= 256
 
 
 def test_malformed_patch_entry_preserves_version_and_patch_snapshot():

@@ -7,6 +7,7 @@ from collections import defaultdict
 
 from .. import metrics
 from ..snapshots import replace_metric_snapshot
+from ..util import metric_label
 from . import observe, CollectorFailed
 from .nodes import get_nodes
 
@@ -51,14 +52,16 @@ def collect(client, cfg):
                 raise CollectorFailed(
                     f"deployment node {hostname!r} contained invalid roles or services")
             hostnames.add(hostname)
-            roles_str = ",".join(roles) if roles else "PSN"
-            services_str = ",".join(services) if services else "none"
+            hostname = metric_label(hostname)
+            roles_str = metric_label(",".join(roles) if roles else "PSN")
+            services_str = metric_label(",".join(services) if services else "none")
+            service_labels = tuple(metric_label(service) for service in services)
             if roles:
                 for role in roles:
-                    role_counts[role] += 1
+                    role_counts[metric_label(role)] += 1
             else:
                 role_counts["PSN"] += 1
-            rows.append((hostname, roles_str, services_str, status))
+            rows.append((hostname, roles_str, services_str, service_labels, status))
 
         pan_ha = client.get_pan_api("/deployment/pan-ha", api_name="pan_ha")
         if (not isinstance(pan_ha, dict)
@@ -67,13 +70,12 @@ def collect(client, cfg):
             raise CollectorFailed("PAN HA status request failed or returned invalid data")
 
         def publish():
-            for hostname, roles_str, services_str, normalized in rows:
+            for hostname, roles_str, services_str, service_labels, normalized in rows:
                 metrics.ise_deployment_status.labels(
                     node=hostname, roles=roles_str, services=services_str).state(normalized)
-                for service in services_str.split(","):
-                    if service != "none":
-                        metrics.ise_node_service_enabled.labels(
-                            node=hostname, service=service).set(1)
+                for service in service_labels:
+                    metrics.ise_node_service_enabled.labels(
+                        node=hostname, service=service).set(1)
             for role, count in role_counts.items():
                 metrics.ise_node_count.labels(role=role).set(count)
             metrics.ise_pan_ha_enabled.set(1 if pan_ha["isEnabled"] else 0)

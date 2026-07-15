@@ -4,6 +4,7 @@ from collections import defaultdict
 
 from .. import metrics
 from ..snapshots import replace_metric_snapshot
+from ..util import metric_label
 from . import observe, CollectorFailed
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,10 @@ def _classify(det):
             ops_owner = parts[-1]
         elif parts[0] == "Device Type" and len(parts) > 2:
             device_type = parts[-1]
-    return name, ip, device_type, location, ops_owner
+    return (
+        metric_label(name), metric_label(ip), metric_label(device_type),
+        metric_label(location, "Unknown"), metric_label(ops_owner),
+    )
 
 
 def collect(client, cfg):

@@ -3,6 +3,7 @@ import stat
 
 import pytest
 
+import ise_exporter.state as state_module
 from ise_exporter.state import STATE_SCHEMA_VERSION, StateStore
 
 
@@ -109,4 +110,24 @@ def test_tacacs_user_cache_is_bounded_to_current_inventory(tmp_path):
         "u2": {"detail": {"name": "two"}, "updated_at": 10.0},
     }
     assert store.tacacs_user_count() == 1
+    store.close()
+
+
+def test_oversized_persisted_dataset_snapshot_is_ignored(tmp_path, monkeypatch):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.replace_dataset_snapshot("radius", 10, {"value": "x" * 100})
+    monkeypatch.setattr(state_module, "MAX_PERSISTED_SNAPSHOT_BYTES", 32)
+
+    assert store.dataset_snapshot("radius") is None
+    store.close()
+
+
+def test_oversized_dataset_snapshot_is_not_written(tmp_path, monkeypatch):
+    store = StateStore(tmp_path / "state.sqlite3")
+    monkeypatch.setattr(state_module, "MAX_PERSISTED_SNAPSHOT_BYTES", 32)
+
+    with pytest.raises(ValueError, match="size limit"):
+        store.replace_dataset_snapshot("radius", 10, {"value": "x" * 100})
+
+    assert store.get_value("dataset_snapshot.radius") is None
     store.close()

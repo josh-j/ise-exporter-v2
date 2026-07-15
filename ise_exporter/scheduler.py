@@ -35,6 +35,8 @@ from .collectors.dataconnect_common import event_window_hours
 
 logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
+_DATACONNECT_SHUTDOWN_TIMEOUT = 17
+_MNT_SHUTDOWN_TIMEOUT = 32
 
 # Lower values run first whenever more than one due domain is waiting. This does
 # not add query concurrency or preempt an atomic collector; it prevents daily
@@ -383,7 +385,13 @@ class PollScheduler:
         self._dataconnect_queue.put((
             -1, next(self._dataconnect_sequence), None, None, None))
         if self._dataconnect_worker is not None:
-            timeout = max(2, int(getattr(self.cfg, "dataconnect_query_timeout", 15)) + 2)
+            # The client hard-caps an individual query at 15 seconds. Keep the
+            # scheduler boundary equally strict for unchecked Config-like callers.
+            try:
+                configured = int(getattr(self.cfg, "dataconnect_query_timeout", 15))
+            except (TypeError, ValueError):
+                configured = 15
+            timeout = max(2, min(_DATACONNECT_SHUTDOWN_TIMEOUT, configured + 2))
             self._dataconnect_worker.join(timeout=timeout)
             if self._dataconnect_worker.is_alive():
                 logger.warning("Data Connect worker did not stop within %ss", timeout)
@@ -434,7 +442,13 @@ class PollScheduler:
         self._mnt_async = False
         worker = self._mnt_worker
         if worker is not None:
-            timeout = max(2, int(getattr(self.cfg, "request_timeout", 30)) + 2)
+            # MnT uses the REST transport's 30-second ceiling. Never let an
+            # unchecked config turn service shutdown into an unbounded wait.
+            try:
+                configured = int(getattr(self.cfg, "request_timeout", 30))
+            except (TypeError, ValueError):
+                configured = 30
+            timeout = max(2, min(_MNT_SHUTDOWN_TIMEOUT, configured + 2))
             worker.join(timeout=timeout)
             if worker.is_alive():
                 logger.warning("MnT worker did not stop within %ss", timeout)

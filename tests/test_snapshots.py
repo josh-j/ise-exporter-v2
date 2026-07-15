@@ -3,6 +3,7 @@ import threading
 import pytest
 from prometheus_client import CollectorRegistry, Gauge, Info
 
+import ise_exporter.snapshots as snapshots_module
 from ise_exporter.snapshots import (
     LockedCollectorRegistry,
     replace_metric_snapshot,
@@ -138,3 +139,50 @@ def test_metric_snapshot_rejects_invalid_values(invalid):
 
     with pytest.raises(ValueError, match="value is invalid"):
         restore_metric_snapshot((metric,), payload)
+
+
+def test_metric_snapshot_rejects_excessive_persisted_series(monkeypatch):
+    registry = CollectorRegistry()
+    metric = Gauge("persisted_excessive", "test", ["key"], registry=registry)
+    metric.labels(key="current").set(7)
+    payload = serialize_metric_snapshot((metric,))
+    payload["metrics"]["persisted_excessive"]["samples"] = [
+        {"labels": [f"key-{index}"], "value": index} for index in range(3)]
+    monkeypatch.setattr(snapshots_module, "MAX_PERSISTED_SNAPSHOT_SAMPLES", 2)
+
+    with pytest.raises(ValueError, match="sample limit"):
+        restore_metric_snapshot((metric,), payload)
+
+    assert {(sample.labels["key"], sample.value) for sample in metric.collect()[0].samples} == {
+        ("current", 7)}
+
+
+def test_metric_snapshot_refuses_to_serialize_excessive_series(monkeypatch):
+    registry = CollectorRegistry()
+    metric = Gauge("serialize_excessive", "test", ["key"], registry=registry)
+    metric.labels(key="first").set(1)
+    metric.labels(key="second").set(2)
+    monkeypatch.setattr(snapshots_module, "MAX_PERSISTED_SNAPSHOT_SAMPLES", 1)
+
+    with pytest.raises(ValueError, match="sample limit"):
+        serialize_metric_snapshot((metric,))
+
+
+def test_metric_snapshot_rejects_oversized_persisted_labels():
+    registry = CollectorRegistry()
+    metric = Gauge("persisted_large_label", "test", ["key"], registry=registry)
+    payload = serialize_metric_snapshot((metric,))
+    payload["metrics"]["persisted_large_label"]["samples"] = [{
+        "labels": ["x" * 257], "value": 1}]
+
+    with pytest.raises(ValueError, match="label is too large"):
+        restore_metric_snapshot((metric,), payload)
+
+
+def test_metric_snapshot_refuses_to_serialize_oversized_labels():
+    registry = CollectorRegistry()
+    metric = Gauge("serialize_large_label", "test", ["key"], registry=registry)
+    metric.labels(key="x" * 257).set(1)
+
+    with pytest.raises(ValueError, match="label is too large"):
+        serialize_metric_snapshot((metric,))

@@ -307,6 +307,54 @@ def test_paced_mnt_lane_does_not_block_rest_and_deduplicates_cycles():
     scheduler._stop_mnt_worker()
 
 
+@pytest.mark.parametrize("configured", [3600, "invalid"])
+def test_dataconnect_shutdown_wait_is_hard_bounded(configured):
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=configured),
+        object(), object())
+
+    class Worker:
+        def __init__(self):
+            self.timeout = None
+
+        def join(self, timeout):
+            self.timeout = timeout
+
+        def is_alive(self):
+            return True
+
+    worker = Worker()
+    scheduler._dataconnect_async = True
+    scheduler._dataconnect_worker = worker
+    scheduler._stop_dataconnect_worker()
+
+    assert worker.timeout == 17
+
+
+@pytest.mark.parametrize("configured", [3600, "invalid"])
+def test_mnt_shutdown_wait_is_hard_bounded(configured):
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, request_timeout=configured),
+        object(), object(), mnt=object())
+
+    class Worker:
+        def __init__(self):
+            self.timeout = None
+
+        def join(self, timeout):
+            self.timeout = timeout
+
+        def is_alive(self):
+            return True
+
+    worker = Worker()
+    scheduler._mnt_async = True
+    scheduler._mnt_worker = worker
+    scheduler._stop_mnt_worker()
+
+    assert worker.timeout == 32
+
+
 def test_loop_exception_signals_workers_before_teardown(monkeypatch):
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, dataconnect_query_timeout=1, request_timeout=1),
