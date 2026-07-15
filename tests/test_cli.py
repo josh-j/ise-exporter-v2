@@ -693,6 +693,23 @@ def test_dataconnect_schema_is_metadata_only_and_table_is_bound(capsys):
     assert "FROM endpoints_data" not in sql
 
 
+def test_named_dataconnect_schema_uses_catalog_only_client_without_eager_fallback():
+    class CatalogOnly:
+        def __init__(self):
+            self.calls = []
+
+        def query_catalog(self, sql, parameters=None):
+            self.calls.append((sql, parameters))
+            return [{"table_name": "ENDPOINTS_DATA", "column_name": "MAC_ADDRESS"}]
+
+    dataconnect = CatalogOnly()
+
+    assert cli._dataconnect_schema(dataconnect, "ENDPOINTS_DATA") == [{
+        "table_name": "ENDPOINTS_DATA", "column_name": "MAC_ADDRESS",
+    }]
+    assert dataconnect.calls[0][1] == {"table_name": "ENDPOINTS_DATA"}
+
+
 def test_dataconnect_schema_defaults_to_supported_contract_views(capsys):
     dataconnect = FakeDataConnect()
 

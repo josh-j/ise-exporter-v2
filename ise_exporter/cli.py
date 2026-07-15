@@ -1450,7 +1450,9 @@ def _dataconnect_schema(dataconnect, table=None):
     predicate = " WHERE table_name = :table_name"
     parameters["table_name"] = normalized
     try:
-        query = getattr(dataconnect, "query_catalog", dataconnect.query)
+        query = getattr(dataconnect, "query_catalog", None)
+        if query is None:
+            query = dataconnect.query
         return query(f"""
             SELECT table_name, column_id, column_name, data_type, data_length, nullable
             FROM user_tab_columns{predicate}
