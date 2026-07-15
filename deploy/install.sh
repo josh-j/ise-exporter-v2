@@ -14,6 +14,7 @@ INSTALL_DIR=/opt/ise-exporter
 CONFIG_DIR=/etc/ise-exporter
 CERTS_DIR="$CONFIG_DIR/certs"
 STATE_DIR=/var/lib/ise-exporter
+SHARED_STATE_DIR="$STATE_DIR/shared"
 ENV_FILE="$CONFIG_DIR/ise-exporter.env"
 SERVICE_USER=ise-exporter
 SERVICE_NAME=ise-exporter
@@ -98,9 +99,10 @@ echo "==> ensuring directories"
 # restricted to root + the service group.
 install -d -o root -g root -m 755 "$INSTALL_DIR"
 install -d -o root -g "$SERVICE_USER" -m 750 "$CONFIG_DIR" "$CERTS_DIR"
-# setgid keeps the shared Data Connect pacing gate in the service group even
-# when an authorized interactive CLI user creates it before the daemon does.
-install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 2770 "$STATE_DIR"
+# The private SQLite cache stays in a non-writable parent. Only the dedicated
+# pacing subdirectory is group-writable for authorized interactive CLI users.
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$STATE_DIR"
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 2770 "$SHARED_STATE_DIR"
 
 # --- venv + package (install or upgrade in place) ---------------------
 VENV="$INSTALL_DIR/.venv"

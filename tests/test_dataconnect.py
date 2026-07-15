@@ -246,6 +246,21 @@ def test_shared_pacing_gate_rejects_non_regular_file(tmp_path):
         dataconnect.DataConnectClient(cfg)._shared_gate()
 
 
+@pytest.mark.parametrize("state", (b"nan\n", b"inf\n", b"-1\n", b"1\xff\n", b"1" * 65))
+def test_shared_pacing_gate_rejects_corrupt_deadline_state(tmp_path, state):
+    path = tmp_path / "dataconnect.pacing"
+    path.write_bytes(state)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file=str(path),
+    )
+
+    with pytest.raises(RuntimeError, match="shared pacing gate unavailable"):
+        dataconnect.DataConnectClient(cfg)._shared_gate()
+
+
 def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):
     path = tmp_path / "dataconnect.pacing"
     owner = path.open("w+")

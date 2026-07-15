@@ -282,6 +282,8 @@ intended. A user who cannot access the configured pacing gate is refused rather
 than allowed to issue an uncoordinated Data Connect query.
 
 On NixOS, put authorized users and the service in a dedicated operator group and
-pre-create the shared runtime pacing file as group-writable. Do not point the CLI
+pre-create the dedicated shared pacing directory and runtime file as group-writable.
+Keep the parent state directory non-writable to the CLI group so the private SQLite
+cache cannot be replaced. Do not point the CLI
 at a `DynamicUser` state directory under `/var/lib/private`, which normal operator
 sessions cannot traverse.

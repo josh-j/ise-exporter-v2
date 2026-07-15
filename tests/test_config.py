@@ -144,7 +144,7 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert "ISE_DATACONNECT_RECONCILE_INTERVAL" not in values
     assert "ISE_DATACONNECT_MAX_BACKFILL_SECONDS" not in values
     assert values["ISE_DATACONNECT_SHARED_PACING_FILE"] == \
-        "/var/lib/ise-exporter/dataconnect.pacing"
+        "/var/lib/ise-exporter/shared/dataconnect.pacing"
     assert values["ISE_CLI_PRODUCTION_SAFE"] == "true"
     assert values["ISE_CLI_ALLOW_EXPENSIVE"] == "false"
     assert values["ISE_CLI_MAX_ROWS"] == "1000"
@@ -207,4 +207,4 @@ def test_empty_shared_pacing_path_cannot_disable_cross_process_guard(monkeypatch
     cfg = Config.from_env()
 
     assert cfg.dataconnect_shared_pacing_file == \
-        "/var/lib/ise-exporter/dataconnect.pacing"
+        "/var/lib/ise-exporter/shared/dataconnect.pacing"

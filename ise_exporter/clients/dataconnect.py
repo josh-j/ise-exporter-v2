@@ -7,6 +7,7 @@ aggregated output, and a hard result-row ceiling.
 import base64
 import fcntl
 import logging
+import math
 import os
 import ssl
 import stat
@@ -174,10 +175,12 @@ class DataConnectClient:
             metadata = os.fstat(descriptor)
             if not stat.S_ISREG(metadata.st_mode):
                 raise OSError("pacing gate is not a regular file")
+            if metadata.st_size > 64:
+                raise OSError("pacing gate state exceeds 64 bytes")
             if metadata.st_uid == os.geteuid():
                 # Authorized CLI users may create the gate before the service.
-                # Match the state directory's group explicitly in addition to
-                # requiring setgid deployment directories, so both processes
+                # Match the shared directory's group explicitly in addition to
+                # requiring a setgid deployment directory, so both processes
                 # retain access regardless of the creator's primary group.
                 os.fchown(descriptor, -1, os.stat(os.path.dirname(path)).st_gid)
                 os.fchmod(descriptor, 0o660)
@@ -195,8 +198,10 @@ class DataConnectClient:
                         os.close(descriptor)
                         return _PACING_BUSY
                     self._wait(0.25)
-            raw = os.read(descriptor, 64).decode("ascii", "ignore").strip()
+            raw = os.read(descriptor, 64).decode("ascii").strip()
             deadline = float(raw) if raw else 0.0
+            if not math.isfinite(deadline) or deadline < 0:
+                raise OSError("pacing gate deadline is not a finite non-negative value")
             remaining = deadline - time.time()
             if remaining > 0:
                 if not wait:

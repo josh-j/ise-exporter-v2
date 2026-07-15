@@ -41,8 +41,10 @@ def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     assert 'chmod 640 "$ENV_FILE"' in script
     assert 'chmod 750 "$CERTS_DIR"' in script
     assert 'STATE_DIR=/var/lib/ise-exporter' in script
-    assert 'install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 2770 "$STATE_DIR"' in script
-    assert "StateDirectoryMode=2770" in unit
+    assert 'SHARED_STATE_DIR="$STATE_DIR/shared"' in script
+    assert 'install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$STATE_DIR"' in script
+    assert 'install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 2770 "$SHARED_STATE_DIR"' in script
+    assert "StateDirectoryMode=0750" in unit
     assert "UMask=0007" in unit
     assert "StateDirectory=ise-exporter" in unit
 

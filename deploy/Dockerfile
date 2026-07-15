@@ -13,7 +13,8 @@ LABEL org.opencontainers.image.title="ise-exporter" \
 WORKDIR /app
 COPY --from=build /dist/*.whl /tmp/
 RUN pip install --no-cache-dir /tmp/*.whl && rm -f /tmp/*.whl
-RUN install -d -o 65534 -g 65534 -m 750 /var/lib/ise-exporter
+RUN install -d -o 65534 -g 65534 -m 750 /var/lib/ise-exporter \
+    && install -d -o 65534 -g 65534 -m 2770 /var/lib/ise-exporter/shared
 
 EXPOSE 9618
 # run as nobody:nogroup; only /var/lib/ise-exporter is writable for the endpoint cache
