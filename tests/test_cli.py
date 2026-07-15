@@ -749,6 +749,38 @@ def test_endpoint_accepts_common_mac_formats(value, capsys):
     assert lookup[2]["filter"] == "mac.EQ.AA:BB:CC:DD:EE:FF"
 
 
+def test_endpoint_detail_removes_api_plumbing_and_flattens_mfc_fields(capsys):
+    class NestedEndpointClient(FakeClient):
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            if path == "/config/endpoint/id-1":
+                return {"ERSEndPoint": {
+                    "id": "id-1",
+                    "mac": "AA:BB:CC:DD:EE:FF",
+                    "identityStore": "",
+                    "link": {"href": "https://ise.invalid/ers/config/endpoint/id-1",
+                             "rel": "self"},
+                    "customAttributes": {"customAttributes": {}},
+                    "mfcAttributes": {
+                        "mfcDeviceType": [],
+                        "mfcHardwareManufacturer": ["Zabbly"],
+                        "mfcHardwareModel": ["Model A", "Model B"],
+                        "mfcOperatingSystem": [],
+                    },
+                }}
+            return super().get_ers(path, params, get_all, api_name)
+
+    assert cli.main([
+        "endpoint", "AA:BB:CC:DD:EE:FF", "-o", "json"
+    ], client=NestedEndpointClient()) == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        "hardwareManufacturer": "Zabbly",
+        "hardwareModel": "Model A, Model B",
+        "id": "id-1",
+        "mac": "AA:BB:CC:DD:EE:FF",
+    }
+
+
 def test_ip_resolution_prefers_dataconnect_and_enriches_from_ers(capsys):
     client = FakeClient()
     dataconnect = FakeDataConnect()
@@ -797,6 +829,11 @@ def test_endpoint_resolution_does_not_select_absent_optional_row_ids():
     assert "SELECT MAC_ADDRESS, ENDPOINT_IP, HOSTNAME" in sql
     assert "SELECT ID," not in sql
     assert "ENDPOINT_ID" not in sql
+    assert "LOWER(HOSTNAME)" not in sql
+    assert "HOSTNAME IN" in sql
+    parameters = dataconnect.calls[0][1]
+    assert parameters["identifier_lower"] == "client-25.example.test"
+    assert parameters["identifier_upper"] == "CLIENT-25.EXAMPLE.TEST"
 
 
 def test_endpoint_resolution_does_not_order_by_absent_optional_timestamp():

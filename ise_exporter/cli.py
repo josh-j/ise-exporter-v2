@@ -794,7 +794,42 @@ def _endpoint_detail_by_id(client, endpoint_id):
     raw = client.get_ers(f"/config/endpoint/{endpoint_id}", api_name="cli_endpoint_detail")
     if raw is None:
         raise CLIError(f"endpoint detail unavailable for {endpoint_id}")
-    return raw.get("ERSEndPoint", raw) if isinstance(raw, dict) else raw
+    detail = raw.get("ERSEndPoint", raw) if isinstance(raw, dict) else raw
+    return _operator_endpoint_detail(detail)
+
+
+def _operator_endpoint_detail(detail):
+    """Remove ERS plumbing and flatten endpoint attributes for shell output."""
+    if not isinstance(detail, dict):
+        return detail
+    result = dict(detail)
+    result.pop("link", None)
+
+    custom = result.pop("customAttributes", None)
+    if isinstance(custom, dict):
+        custom = custom.get("customAttributes", custom)
+    if custom:
+        result["customAttributes"] = custom
+
+    mfc = result.pop("mfcAttributes", None)
+    if isinstance(mfc, dict):
+        field_names = {
+            "mfcDeviceType": "deviceType",
+            "mfcHardwareManufacturer": "hardwareManufacturer",
+            "mfcHardwareModel": "hardwareModel",
+            "mfcOperatingSystem": "operatingSystem",
+        }
+        for source, destination in field_names.items():
+            value = mfc.get(source)
+            if isinstance(value, list):
+                value = ", ".join(str(item) for item in value if item not in (None, ""))
+            if value not in (None, "", [], {}):
+                result[destination] = value
+
+    return {
+        key: value for key, value in result.items()
+        if value not in (None, "", [], {})
+    }
 
 
 def _identifier_kind(identifier, by_id=False):
@@ -859,15 +894,29 @@ def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
     order_column = next(
         (column for column in ("UPDATE_TIME", "CREATE_TIME") if column in columns), None)
     order = f"ORDER BY {order_column} DESC NULLS LAST" if order_column else ""
-    comparison = (f"{comparison_column} = :identifier" if kind == "ip"
-                  else f"LOWER({comparison_column}) = LOWER(:identifier)")
+    parameters = {"identifier": identifier}
+    if kind == "ip":
+        comparison = f"{comparison_column} = :identifier"
+    else:
+        # Keep the normal HOSTNAME index usable. LOWER(HOSTNAME) forced a full
+        # scan of large ENDPOINTS_DATA deployments and made an exact lookup
+        # appear to hang. Hostnames are conventionally stored in one of these
+        # three casings, so indexed equality remains case-friendly in practice.
+        comparison = (
+            f"{comparison_column} IN "
+            "(:identifier, :identifier_lower, :identifier_upper)"
+        )
+        parameters.update({
+            "identifier_lower": identifier.lower(),
+            "identifier_upper": identifier.upper(),
+        })
     return dataconnect.query(f"""
         SELECT {", ".join(selected)}
         FROM endpoints_data
         WHERE {comparison}
         {order}
         FETCH FIRST 10 ROWS ONLY
-    """, {"identifier": identifier})
+    """, parameters)
 
 
 def _session_mac(session):
