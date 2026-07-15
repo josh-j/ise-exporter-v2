@@ -58,6 +58,10 @@ class FakeClient:
             return []
         return [{"name": "pan-1", "roles": ["PrimaryAdmin"]}]
 
+    def get_pan_api_all(self, path, api_name="x", params=None, **kwargs):
+        self.calls.append(("openapi_all", path, api_name, params, kwargs))
+        return []
+
     def get_mnt_xml(self, path, api_name="x"):
         self.calls.append(("mnt", path, api_name))
         if path == "/Session/ActiveList":
@@ -307,6 +311,41 @@ def test_auth_status_allows_bounded_expensive_troubleshooting(capsys):
     assert client.calls == [(
         "mnt", "/AuthStatus/MACAddress/AA:BB:CC:DD:EE:FF/7200/200/All",
         "cli_auth_status")]
+
+
+def test_certificates_uses_bounded_complete_openapi_pagination(capsys):
+    class Client(FakeClient):
+        def get_pan_api(self, path, api_name="x", unwrap=True, params=None):
+            self.calls.append(("openapi", path, unwrap, api_name, params))
+            return [{"hostname": "pan-1"}]
+
+        def get_pan_api_all(self, path, api_name="x", params=None, **kwargs):
+            self.calls.append(("openapi_all", path, api_name, params, kwargs))
+            return [{"friendlyName": "certificate"}]
+
+    client = Client()
+
+    assert cli.main(["certificates", "-o", "json"], client=client) == 0
+
+    rows = json.loads(capsys.readouterr().out)
+    assert {(row["store"], row["hostname"]) for row in rows} == {
+        ("system", "pan-1"), ("trusted", "trust_store")}
+    paginated = [call for call in client.calls if call[0] == "openapi_all"]
+    assert len(paginated) == 2
+    assert all(call[3] == {"size": 100} for call in paginated)
+    assert all(call[4] == {"max_pages": 10, "max_rows": 1000}
+               for call in paginated)
+
+
+def test_certificates_rejects_unsafe_node_before_request(capsys):
+    client = FakeClient()
+
+    assert cli.main([
+        "certificates", "--node", "pan-1/../../patch",
+    ], client=client) == 2
+
+    assert client.calls == []
+    assert "DNS-safe ISE hostname" in capsys.readouterr().err
 
 
 def test_endpoints_are_bounded_and_paginated(capsys):

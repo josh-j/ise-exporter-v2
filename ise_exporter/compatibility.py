@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 SUPPORTED_ISE_VERSION = "3.3.0.430"
 SUPPORTED_PATCH_LEVEL = 11
+MAX_CERTIFICATES_PER_STORE = 1000
+MAX_CERTIFICATE_ROWS = 5000
 DEPLOYMENT_NODE_STATES = (
     "Connected", "Disconnected", "InProgress", "NotApplicable", "NotInSync",
     "NotUpgraded", "RegistrationFailed", "ReplicationStopped",

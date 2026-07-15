@@ -6,14 +6,13 @@ import logging
 from datetime import datetime, timezone
 
 from .. import metrics
+from ..compatibility import MAX_CERTIFICATES_PER_STORE, MAX_CERTIFICATE_ROWS
 from ..snapshots import replace_metric_snapshot
 from ..util import metric_label, parse_ise_date
 from . import observe, CollectorFailed
 from .nodes import get_nodes
 
 logger = logging.getLogger(__name__)
-MAX_CERTIFICATES_PER_STORE = 1000
-MAX_CERTIFICATE_ROWS = 5000
 
 _METRICS = (
     metrics.ise_certificate_expiry_days,

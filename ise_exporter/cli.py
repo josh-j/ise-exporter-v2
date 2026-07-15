@@ -32,6 +32,8 @@ from . import version_string
 from .clients.dataconnect import DataConnectClient
 from .clients.rest import ERS_MAX_PAGES, ISEOperatorClient
 from .collectors.dataconnect_common import recent_event_predicate
+from .collectors.nodes import valid_hostname, validated_node_rows
+from .compatibility import MAX_CERTIFICATES_PER_STORE, MAX_CERTIFICATE_ROWS
 from .config import Config
 from .dataconnect_schema import metadata_rows, schema_by_table, table_columns
 from .util import (first_nonempty, is_mac, normalize_agent_version, normalize_mac,
@@ -1505,9 +1507,10 @@ def _execute(args, client, cfg, dataconnect=None):
             raise CLIError("no REST/MnT or Data Connect credentials are configured")
         return result
     if command == "nodes":
-        result = client.get_pan_api("/deployment/node", api_name="cli_nodes")
+        result = validated_node_rows(
+            client.get_pan_api("/deployment/node", api_name="cli_nodes"))
         if result is None:
-            raise CLIError("ISE returned no deployment-node response")
+            raise CLIError("ISE returned an invalid or oversized deployment-node response")
         return result
     if command in ERS_INVENTORIES:
         _guard_row_limit(args, cfg)
@@ -1592,21 +1595,41 @@ def _execute(args, client, cfg, dataconnect=None):
             raise CLIError("--trusted-only and --system-only are mutually exclusive")
         rows = []
         if not args.trusted_only:
-            nodes = ([{"hostname": args.node}] if args.node else client.get_pan_api(
-                "/deployment/node", api_name="cli_certificate_nodes")) or []
-            for node in _response_rows(nodes):
+            if args.node and not valid_hostname(args.node):
+                raise CLIError("--node must be a DNS-safe ISE hostname")
+            nodes = ([{"hostname": args.node}] if args.node else validated_node_rows(
+                client.get_pan_api(
+                    "/deployment/node", api_name="cli_certificate_nodes")))
+            if nodes is None:
+                raise CLIError("ISE returned an invalid or oversized deployment-node response")
+            for node in nodes:
                 hostname = _field(node, "hostname")
-                if not hostname:
-                    continue
-                certificates = client.get_pan_api(
-                    f"/certs/system-certificate/{hostname}", api_name="cli_system_certificates")
-                for certificate in _response_rows(certificates):
-                    rows.append({"store": "system", "hostname": hostname, **certificate})
+                certificates = client.get_pan_api_all(
+                    f"/certs/system-certificate/{hostname}",
+                    params={"size": 100}, max_pages=10,
+                    max_rows=MAX_CERTIFICATES_PER_STORE,
+                    api_name="cli_system_certificates")
+                if certificates is None:
+                    raise CLIError(f"system certificate inventory failed for {hostname}")
+                if any(not isinstance(certificate, dict) for certificate in certificates):
+                    raise CLIError(f"system certificate inventory was malformed for {hostname}")
+                if len(rows) + len(certificates) > MAX_CERTIFICATE_ROWS:
+                    raise CLIError("certificate inventory exceeded the production row ceiling")
+                for certificate in certificates:
+                    rows.append({**certificate, "store": "system", "hostname": hostname})
         if not args.system_only:
-            trusted = client.get_pan_api(
-                "/certs/trusted-certificate", api_name="cli_trusted_certificates")
-            rows.extend({"store": "trusted", "hostname": "trust_store", **certificate}
-                        for certificate in _response_rows(trusted))
+            trusted = client.get_pan_api_all(
+                "/certs/trusted-certificate", params={"size": 100}, max_pages=10,
+                max_rows=MAX_CERTIFICATES_PER_STORE,
+                api_name="cli_trusted_certificates")
+            if trusted is None:
+                raise CLIError("trusted certificate inventory failed")
+            if any(not isinstance(certificate, dict) for certificate in trusted):
+                raise CLIError("trusted certificate inventory was malformed")
+            if len(rows) + len(trusted) > MAX_CERTIFICATE_ROWS:
+                raise CLIError("certificate inventory exceeded the production row ceiling")
+            rows.extend({**certificate, "store": "trusted", "hostname": "trust_store"}
+                        for certificate in trusted)
         return rows
     if command == "schema":
         return COMMAND_SCHEMAS if args.name is None else COMMAND_SCHEMAS[args.name]

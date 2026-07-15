@@ -9,7 +9,7 @@ _cache = {"nodes": None, "ts": 0.0}
 MAX_DEPLOYMENT_NODES = 100
 
 
-def _valid_hostname(value):
+def valid_hostname(value):
     if not isinstance(value, str) or not value or len(value) > 253:
         return False
     labels = value.split(".")
@@ -22,18 +22,26 @@ def _valid_hostname(value):
         for label in labels)
 
 
+def validated_node_rows(value):
+    """Validate the bounded identity portion shared by node-list consumers."""
+    hostnames = [node.get("hostname") for node in value] \
+        if isinstance(value, list) and all(isinstance(node, dict) for node in value) \
+        else []
+    if (not isinstance(value, list) or len(value) > MAX_DEPLOYMENT_NODES
+            or len(hostnames) != len(value)
+            or any(not valid_hostname(hostname) for hostname in hostnames)
+            or len({hostname.casefold() for hostname in hostnames}) != len(hostnames)):
+        return None
+    return value
+
+
 def get_nodes(client, cfg, force=False):
     now = time.time()
     if not force and _cache["nodes"] is not None and (now - _cache["ts"]) < cfg.medium_interval:
         return _cache["nodes"]
-    nodes = client.get_pan_api("/deployment/node", api_name="pan_nodes")
-    hostnames = [node.get("hostname") for node in nodes] \
-        if isinstance(nodes, list) and all(isinstance(node, dict) for node in nodes) \
-        else []
-    if (not isinstance(nodes, list) or len(nodes) > MAX_DEPLOYMENT_NODES
-            or len(hostnames) != len(nodes)
-            or any(not _valid_hostname(hostname) for hostname in hostnames)
-            or len({hostname.casefold() for hostname in hostnames}) != len(hostnames)):
+    nodes = validated_node_rows(
+        client.get_pan_api("/deployment/node", api_name="pan_nodes"))
+    if nodes is None:
         _cache.update(nodes=None, ts=0.0)
         return None
     if nodes:
