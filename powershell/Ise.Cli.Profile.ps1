@@ -41,9 +41,9 @@ function global:Show-IseCliHelp {
             'Get-IseCertificate | Get-IseRepository')
         'advanced' = @(
             'Get-IseSchema [COMMAND]               Routes and response contracts',
-            'Get-IseDataConnectTable [PATTERN]     Walk accessible Oracle views',
-            'Get-IseDataConnectSchema [TABLE]      Reporting-view metadata',
-            'Search-IseDataConnect TABLE           Bounded live reporting-view search',
+            'Get-IseDataConnectTable [PATTERN]     List every accessible Oracle table/view',
+            'Get-IseDataConnectColumn TABLE        Inspect columns in any table/view',
+            'Get-IseDataConnectRow TABLE           Get bounded rows as PowerShell objects',
             'Test-IseDataConnect                   Oracle session and catalog health',
             'Invoke-IseReadOnlyRequest             Explicit bounded GET diagnostic',
             'Get-Command -Module Ise.Cli           Complete command inventory')
@@ -65,7 +65,7 @@ function global:Show-IseCliHelp {
     Write-Host "  Get-IseCollectorStatus '*radius*' | Format-Table"
     Write-Host "  Debug-IseAuthentication 'LAB-PC01' | Group-Object section"
     Write-Host "  Find-Endpoint 'LAB-*' | Select-Object hostname,mac_address,posture_status"
-    Write-Host "  Search-IseDataConnect RADIUS_AUTHENTICATIONS -Like @{ USERNAME='admin*' } -Limit 50"
+    Write-Host "  Get-IseDataConnectRow RADIUS_AUTHENTICATIONS -Like @{ USERNAME='admin*' } -Limit 50"
     Write-Host "`nUse: ise-help CATEGORY, Get-Help COMMAND -Full, or Get-Command -Module Ise.Cli"
 }
 

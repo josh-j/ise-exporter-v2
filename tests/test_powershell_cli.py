@@ -24,7 +24,8 @@ def test_powershell_cli_is_a_pwsh_module_over_private_bounded_backend():
         "Get-IsePxGridStatus",
         "Find-IseEndpoint", "Get-IseEndpoint", "Get-IseSecureClient",
         "Get-IseRadiusAuthentication", "Get-IseTacacsActivity",
-        "Get-IseDataConnectTable", "Search-IseDataConnect", "Get-IseAlert",
+        "Get-IseDataConnectTable", "Get-IseDataConnectColumn",
+        "Get-IseDataConnectRow", "Search-IseDataConnect", "Get-IseAlert",
         "Get-IseSystemDiagnostic", "Get-IseAaaDiagnostic", "Test-IseDataConnect",
         "Get-IseSchema", "Invoke-IseReadOnlyRequest",
     ):
@@ -70,8 +71,8 @@ def test_powershell_module_imports_and_exports_native_commands():
         $ErrorActionPreference = 'Stop'
         Import-Module '{MODULE}' -Force
         $commands = @(Get-Command -Module Ise.Cli | Select-Object -ExpandProperty Name)
-        if ($commands.Count -lt 44) {{ throw "only $($commands.Count) commands exported" }}
-        foreach ($required in @('Find-IseEndpoint','Find-Endpoint','Get-IseEndpoint','Get-IseCliVersion','Get-IseOverview','Debug-IseAuthentication','Debug-IsePsn','Get-IseNadSummary','Get-IsePxGridStatus')) {{
+        if ($commands.Count -lt 46) {{ throw "only $($commands.Count) commands exported" }}
+        foreach ($required in @('Find-IseEndpoint','Find-Endpoint','Get-IseEndpoint','Get-IseCliVersion','Get-IseOverview','Debug-IseAuthentication','Debug-IsePsn','Get-IseNadSummary','Get-IsePxGridStatus','Get-IseDataConnectColumn','Get-IseDataConnectRow')) {{
             if ($required -notin $commands) {{ throw "missing $required" }}
         }}
     """
@@ -155,6 +156,9 @@ def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path
             throw 'table detail did not return typed column objects'
         }}
         if ($schema[0].data_length -ne 64) {{ throw 'non-display properties were lost' }}
+        $tableObject = [pscustomobject]@{{ table_name='ENDPOINTS_DATA' }}
+        $pipelineSchema = @($tableObject | Get-IseDataConnectColumn)
+        if ($pipelineSchema.Count -ne 2) {{ throw 'column pipeline did not use table_name' }}
         $allColumns = @(Get-IseDataConnectSchema -AllColumns)
         if ($allColumns.Count -ne 3) {{ throw 'AllColumns did not preserve the full schema' }}
         if ($allColumns[0].PSObject.TypeNames[0] -ne 'Ise.Cli.DataConnectColumn') {{
@@ -166,6 +170,11 @@ def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path
             -Column TIMESTAMP,USERNAME -Where @{{ DEVICE_NAME='nad-1' }} `
             -Like @{{ USERNAME='ali*' }} -OrderBy TIMESTAMP -Descending -Limit 25)
         if ($query[0].username -ne 'alice') {{ throw 'Data Connect query object missing' }}
+        $pipelineQuery = @([pscustomobject]@{{ table_name='RADIUS_AUTHENTICATIONS' }} |
+            Get-IseDataConnectRow -Column TIMESTAMP,USERNAME -Limit 25)
+        if ($pipelineQuery[0].PSObject.TypeNames[0] -ne 'Ise.Cli.DataConnectRow.RADIUS_AUTHENTICATIONS') {{
+            throw 'row pipeline did not return a table-specific typed object'
+        }}
         Get-IseRadiusError
     """
     result = subprocess.run(
@@ -176,9 +185,11 @@ def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path
     assert calls.read_text().splitlines() == [
         "dataconnect-schema --output json",
         "dataconnect-schema ENDPOINTS_DATA --output json",
+        "dataconnect-schema ENDPOINTS_DATA --output json",
         "dataconnect-schema --output json",
         "dataconnect-schema --help",
         "dataconnect-query RADIUS_AUTHENTICATIONS --limit 25 --column TIMESTAMP --column USERNAME --where DEVICE_NAME=nad-1 --like USERNAME=ali* --order-by TIMESTAMP --descending --output json",
+        "dataconnect-query RADIUS_AUTHENTICATIONS --limit 25 --column TIMESTAMP --column USERNAME --output json",
         "radius-errors --limit 100 --output json",
     ]
 

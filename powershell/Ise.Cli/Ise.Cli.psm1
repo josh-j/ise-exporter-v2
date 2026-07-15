@@ -528,20 +528,30 @@ function Get-IseDataConnectSchema {
 Update-TypeData -TypeName Ise.Cli.DataConnectColumn `
     -DefaultDisplayPropertySet column_id,column_name,data_type,nullable -Force
 
-function Search-IseDataConnect {
+function Get-IseDataConnectColumn {
     <#
     .SYNOPSIS
-    Searches a live ISE Data Connect reporting view with bounded, validated filters.
+    Gets the columns exposed by any Data Connect table or view.
     .DESCRIPTION
-    Table and column names are checked against live Data Connect metadata. Filter
-    values are always bound, event views are constrained to the configured recent
-    window, and results default to 100 rows. Use Get-IseDataConnectSchema first to
-    discover views and columns.
+    Accepts a table name directly or a table object from Get-IseDataConnectTable.
+    Returns normal column metadata objects suitable for filtering and selection.
     .EXAMPLE
-    Search-IseDataConnect TACACS_AUTHORIZATION_LAST_TWO_DAYS -Column LOGGED_TIME,USERNAME,DEVICE_NAME,AUTHORIZATION_POLICY,COMMAND_FROM_DEVICE -Like @{ USERNAME='admin*' }
+    Get-IseDataConnectColumn AAA_DIAGNOSTICS_VIEW
     .EXAMPLE
-    Search-IseDataConnect RADIUS_AUTHENTICATIONS -Where @{ USERNAME='alice' } -OrderBy TIMESTAMP -Descending -Limit 50
+    Get-IseDataConnectTable '*TACACS*' | Get-IseDataConnectColumn
     #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory,Position=0,ValueFromPipeline,ValueFromPipelineByPropertyName)]
+        [Alias('table_name')][string]$Table,
+        [string]$ConfigFile
+    )
+    process {
+        Get-IseDataConnectSchema -Table $Table -ConfigFile $ConfigFile
+    }
+}
+
+function Invoke-IseDataConnectRowQuery {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory, Position=0)][string]$Table,
@@ -571,7 +581,62 @@ function Search-IseDataConnect {
     if ($PSBoundParameters.ContainsKey('Hours')) {
         [void]$arguments.Add('--hours'); [void]$arguments.Add([string]$Hours)
     }
-    Invoke-IseBackend -Command dataconnect-query -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
+    foreach ($row in @(Invoke-IseBackend -Command dataconnect-query -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile)) {
+        if ($row) {
+            $row.PSObject.TypeNames.Insert(0, "Ise.Cli.DataConnectRow.$Table")
+            $row.PSObject.TypeNames.Insert(1, 'Ise.Cli.DataConnectRow')
+        }
+        Write-Output $row
+    }
+}
+
+function Get-IseDataConnectRow {
+    <#
+    .SYNOPSIS
+    Gets bounded rows from any discovered Data Connect table or view.
+    .DESCRIPTION
+    Table and column names are checked against live Data Connect metadata. Filter
+    values are always bound, event views are constrained to the configured recent
+    window, and results default to 100 rows. The returned values are normal typed
+    PowerShell objects. Use Get-IseDataConnectTable and Get-IseDataConnectColumn to
+    walk the database before selecting rows.
+    .EXAMPLE
+    Get-IseDataConnectRow AAA_DIAGNOSTICS_VIEW -Like @{ MESSAGE_TEXT='*timeout*' }
+    .EXAMPLE
+    Get-IseDataConnectRow RADIUS_AUTHENTICATIONS -Where @{ USERNAME='alice' } -OrderBy TIMESTAMP -Descending -Limit 50
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory,Position=0,ValueFromPipeline,ValueFromPipelineByPropertyName)]
+        [Alias('table_name')][string]$Table,
+        [string[]]$Column = @(),
+        [hashtable]$Where = @{},
+        [hashtable]$Like = @{},
+        [string]$OrderBy,
+        [switch]$Descending,
+        [ValidateRange(1,48)][int]$Hours,
+        [ValidateRange(1,5000)][int]$Limit = 100,
+        [switch]$AllowExpensive,
+        [string]$ConfigFile
+    )
+    process {
+        Invoke-IseDataConnectRowQuery @PSBoundParameters
+    }
+}
+
+function Search-IseDataConnect {
+    <# .SYNOPSIS Compatibility name for Get-IseDataConnectRow. #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory,Position=0,ValueFromPipeline,ValueFromPipelineByPropertyName)]
+        [Alias('table_name')][string]$Table,
+        [string[]]$Column = @(), [hashtable]$Where = @{}, [hashtable]$Like = @{},
+        [string]$OrderBy, [switch]$Descending,
+        [ValidateRange(1,48)][int]$Hours,
+        [ValidateRange(1,5000)][int]$Limit = 100,
+        [switch]$AllowExpensive, [string]$ConfigFile
+    )
+    process { Get-IseDataConnectRow @PSBoundParameters }
 }
 
 function Get-IseDataConnectTable {
@@ -610,7 +675,7 @@ function Invoke-IseDiagnosticView {
         OrderBy = 'TIMESTAMP'; Descending = $true
     }
     if ($Hours -gt 0) { $parameters.Hours = $Hours }
-    foreach ($row in @(Search-IseDataConnect @parameters)) {
+    foreach ($row in @(Get-IseDataConnectRow @parameters)) {
         if ($row -and $TypeName) { $row.PSObject.TypeNames.Insert(0, $TypeName) }
         Write-Output $row
     }
@@ -805,7 +870,8 @@ $dataConnectTableCompleter = {
     New-IseCompletionResult (Get-IseLegacyCompletion "dataconnect-schema $wordToComplete")
 }
 Register-ArgumentCompleter -CommandName @(
-    'Get-IseDataConnectSchema','Search-IseDataConnect'
+    'Get-IseDataConnectSchema','Get-IseDataConnectColumn',
+    'Get-IseDataConnectRow','Search-IseDataConnect'
 ) -ParameterName Table -ScriptBlock $dataConnectTableCompleter
 
 $dataConnectColumnCompleter = {
@@ -820,9 +886,9 @@ $dataConnectColumnCompleter = {
     }
     catch { return }
 }
-Register-ArgumentCompleter -CommandName Search-IseDataConnect `
+Register-ArgumentCompleter -CommandName Get-IseDataConnectRow,Search-IseDataConnect `
     -ParameterName Column -ScriptBlock $dataConnectColumnCompleter
-Register-ArgumentCompleter -CommandName Search-IseDataConnect `
+Register-ArgumentCompleter -CommandName Get-IseDataConnectRow,Search-IseDataConnect `
     -ParameterName OrderBy -ScriptBlock $dataConnectColumnCompleter
 
 $nativeCompleter = {
@@ -851,7 +917,8 @@ Export-ModuleMember -Function @(
     'Get-IseTacacsShellProfile','Get-IseCertificate','Get-IseRadiusAuthentication',
     'Get-IseEndpointReport','Get-IseRadiusError','Get-IseRadiusAccounting',
     'Get-IsePostureAssessment','Get-IsePsnMetric','Get-IseTacacsActivity',
-    'Get-IseDataConnectSchema','Get-IseDataConnectTable','Search-IseDataConnect','Get-IseAlert',
+    'Get-IseDataConnectTable','Get-IseDataConnectColumn','Get-IseDataConnectRow',
+    'Get-IseDataConnectSchema','Search-IseDataConnect','Get-IseAlert',
     'Get-IseSystemDiagnostic','Get-IseAaaDiagnostic','Test-IseDataConnect',
     'Get-IseSchema','Invoke-IseReadOnlyRequest'
 ) -Alias 'Find-Endpoint'

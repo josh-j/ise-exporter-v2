@@ -111,7 +111,10 @@ ActiveList, and the hard 5,000-row Data Connect ceiling.
 | `Get-IsePostureAssessment` | Endpoint- or condition-level posture reports |
 | `Get-IsePsnMetric` | PSN key-performance metrics |
 | `Get-IseTacacsActivity` | TACACS authentication, authorization, or accounting |
-| `Get-IseDataConnectSchema` | Catalog metadata only |
+| `Get-IseDataConnectTable` | Every table or view visible to the Data Connect account |
+| `Get-IseDataConnectColumn` | Column metadata for any table or piped table object |
+| `Get-IseDataConnectRow` | Bounded, validated rows from any discovered table or view |
+| `Get-IseDataConnectSchema`, `Search-IseDataConnect` | Compatibility names for older scripts |
 | `Get-IseSchema` | Backend route and response contracts without an ISE call |
 | `Invoke-IseReadOnlyRequest` | Explicit GET-only ERS/OpenAPI/MnT diagnostic |
 | `Invoke-IseCommand` | Compatibility dispatcher for an existing `ise-cli` subcommand |
@@ -166,20 +169,26 @@ and endpoint profiles. These completers use the backend's same completion protoc
 
 Press Tab repeatedly or use PowerShell's menu completion to see multiple choices.
 
-## Compatibility launcher
+## Walking every Data Connect table
 
-Existing scripts can temporarily retain subcommand spelling:
+The three generic cmdlets cover the complete live catalog, including tables that
+are not used by an exporter collector:
 
-```console
-ise-cli endpoints LAB-* --limit 25
-ise-cli radius-auth --status failed --limit 50
-ise-cli schema secure-client
+```powershell
+$table = Get-IseDataConnectTable 'AAA_DIAGNOSTICS_VIEW' | Select-Object -First 1
+$columns = @($table | Get-IseDataConnectColumn)
+$rows = @($table | Get-IseDataConnectRow -Limit 20)
+
+$columns | Where-Object data_type -Like '*CHAR*' | Format-Table
+$rows | Get-Member
+$rows | Group-Object MESSAGE_CODE | Sort-Object Count -Descending
+$rows | Export-Csv ./aaa-diagnostics.csv -NoTypeInformation
 ```
 
-The launcher runs through PowerShell and returns PowerShell-formatted output. New
-automation should import `Ise.Cli` and use cmdlets so objects remain typed inside
-the calling pipeline. Use `ConvertTo-Json`, `Export-Csv`, or `Format-Table` at the
-pipeline boundary instead of asking the backend to pre-render output.
+`-Where` supplies exact bound filters, `-Like` supplies wildcard filters, and
+`-Column` selects returned properties. `-OrderBy`, `-Descending`, `-Hours`, and
+`-Limit` stay native PowerShell parameters. Tab completion discovers table and
+column names without requiring backend syntax.
 
 ## Configuration and authorization
 

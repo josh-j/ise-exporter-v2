@@ -52,6 +52,8 @@
         'Get-IseTacacsActivity',
         'Get-IseDataConnectSchema',
         'Get-IseDataConnectTable',
+        'Get-IseDataConnectColumn',
+        'Get-IseDataConnectRow',
         'Search-IseDataConnect',
         'Get-IseAlert',
         'Get-IseSystemDiagnostic',

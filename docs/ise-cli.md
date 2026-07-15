@@ -163,11 +163,10 @@ real rows as ordinary PowerShell objects:
 
 ```powershell
 Get-IseDataConnectTable
-Get-IseDataConnectTable '*TACACS*' | Get-IseDataConnectSchema
-Get-IseDataConnectSchema
-Get-IseDataConnectSchema TACACS_AUTHORIZATION_LAST_TWO_DAYS
+Get-IseDataConnectTable '*TACACS*' | Get-IseDataConnectColumn
+Get-IseDataConnectColumn TACACS_AUTHORIZATION_LAST_TWO_DAYS
 
-Search-IseDataConnect TACACS_AUTHORIZATION_LAST_TWO_DAYS `
+Get-IseDataConnectRow TACACS_AUTHORIZATION_LAST_TWO_DAYS `
   -Column LOGGED_TIME,USERNAME,DEVICE_NAME,AUTHORIZATION_POLICY,COMMAND_FROM_DEVICE `
   -Like @{ USERNAME = 'admin*' } -Limit 100 |
   Format-Table -AutoSize
@@ -177,13 +176,13 @@ Exact filters use `-Where`; wildcard filters use `-Like` with `*` and `?`.
 Hashtables make multiple criteria readable, and the result remains composable:
 
 ```powershell
-Search-IseDataConnect RADIUS_AUTHENTICATIONS `
+Get-IseDataConnectRow RADIUS_AUTHENTICATIONS `
   -Column TIMESTAMP,USERNAME,CALLING_STATION_ID,DEVICE_NAME,POLICY_SET_NAME,FAILED `
   -Where @{ DEVICE_NAME = 'laba-sw-001' } -Like @{ USERNAME = 'svc-*' } `
   -OrderBy TIMESTAMP -Descending -Limit 200 |
   Group-Object POLICY_SET_NAME | Sort-Object Count -Descending
 
-Search-IseDataConnect TACACS_AUTHORIZATION_LAST_TWO_DAYS `
+Get-IseDataConnectRow TACACS_AUTHORIZATION_LAST_TWO_DAYS `
   -Column USERNAME,DEVICE_NAME,AUTHORIZATION_POLICY,COMMAND_FROM_DEVICE `
   -Like @{ COMMAND_FROM_DEVICE = 'show*' } -Hours 48 -AllowExpensive |
   Export-Csv ./tacacs-show-commands.csv -NoTypeInformation
