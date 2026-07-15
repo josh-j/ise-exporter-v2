@@ -4,6 +4,7 @@ import pytest
 from prometheus_client import CollectorRegistry, Gauge, Info
 
 from ise_exporter import collectors, metrics
+from ise_exporter.collectors import deployment, tacacs
 import ise_exporter.snapshots as snapshots_module
 from ise_exporter.snapshots import (
     LockedCollectorRegistry,
@@ -191,6 +192,11 @@ def test_staged_metadata_failure_rolls_back_domain_and_metadata():
 
     assert domain._value.get() == 1
     assert health._value.get() == 0
+
+
+def test_domain_success_indicators_share_their_snapshot_boundary():
+    assert metrics.ise_up in deployment._METRICS
+    assert metrics.ise_tacacs_dataconnect_up in tacacs._ACTIVITY_METRICS
 
 
 def test_metric_snapshot_round_trip_restores_labelled_and_scalar_gauges():

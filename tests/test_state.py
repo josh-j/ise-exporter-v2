@@ -1,3 +1,4 @@
+import fcntl
 import sqlite3
 import stat
 from concurrent.futures import ThreadPoolExecutor
@@ -98,6 +99,24 @@ def test_reset_cannot_delete_its_runtime_lock(tmp_path):
 
     with pytest.raises(ValueError, match="runtime lock"):
         reset_exporter_state(state, (runtime_lock,))
+
+
+def test_reset_refuses_busy_guard_without_deleting_other_state(tmp_path):
+    state = tmp_path / "state.sqlite3"
+    state.write_bytes(b"preserve state")
+    guard = tmp_path / "auth.guard"
+    guard.write_bytes(b"preserve guard")
+    descriptor = guard.open("r+b")
+    try:
+        fcntl.flock(descriptor.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(RuntimeError, match="target is in use"):
+            reset_exporter_state(state, (guard,))
+    finally:
+        fcntl.flock(descriptor.fileno(), fcntl.LOCK_UN)
+        descriptor.close()
+
+    assert state.read_bytes() == b"preserve state"
+    assert guard.read_bytes() == b"preserve guard"
 
 
 def test_reset_refuses_while_exporter_runtime_owns_state(tmp_path):

@@ -175,6 +175,7 @@ _ACTIVITY_METRICS = (
     metrics.ise_tacacs_topk_groups_returned,
     metrics.ise_tacacs_topk_groups_total,
     metrics.ise_tacacs_topk_truncated,
+    metrics.ise_tacacs_dataconnect_up,
 )
 
 
@@ -406,6 +407,7 @@ def _collect_dataconnect(dataconnect, cfg):
                 event_type=event_type).set(total_groups)
             metrics.ise_tacacs_topk_truncated.labels(
                 event_type=event_type).set(returned < total_groups)
+        metrics.ise_tacacs_dataconnect_up.set(1)
 
     replace_snapshot(_ACTIVITY_METRICS, (publish,))
 
@@ -691,7 +693,6 @@ def collect_activity(dataconnect, cfg):
     with observe("tacacs_activity"):
         try:
             _collect_dataconnect(dataconnect, cfg)
-            metrics.ise_tacacs_dataconnect_up.set(1)
         except Exception:
             metrics.ise_tacacs_dataconnect_up.set(0)
             raise

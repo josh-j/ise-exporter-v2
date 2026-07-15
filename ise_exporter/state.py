@@ -120,6 +120,7 @@ def reset_exporter_state(state_path, guard_paths=()):
         runtime_state = str(target)
     descriptor = acquire_runtime_lock(runtime_state)
     removed = []
+    target_descriptors = []
     try:
         candidates = tuple(dict.fromkeys(candidates))
         runtime_lock_path = Path(f"{Path(runtime_state)}.runtime.lock")
@@ -137,10 +138,43 @@ def reset_exporter_state(state_path, guard_paths=()):
                 raise OSError(
                     f"exporter reset target is not a regular file: {candidate}")
             existing.append(candidate)
+        # Auth and pacing users coordinate with flock. Hold every target before
+        # deleting any one of them so an active CLI operation cannot retain an
+        # unlinked old guard while reset creates a second state generation.
+        flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
         for candidate in existing:
+            target_descriptor = os.open(candidate, flags)
+            try:
+                metadata = os.fstat(target_descriptor)
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise OSError(
+                        f"exporter reset target is not a regular file: {candidate}")
+                try:
+                    fcntl.flock(
+                        target_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as error:
+                    raise RuntimeError(
+                        f"exporter reset target is in use: {candidate}") from error
+                target_descriptors.append((candidate, target_descriptor, metadata))
+            except Exception:
+                os.close(target_descriptor)
+                raise
+        # Recheck path identity after acquiring all locks. Replacing any target
+        # during preflight aborts the complete reset before the first unlink.
+        for candidate, _target_descriptor, metadata in target_descriptors:
+            current = candidate.lstat()
+            if (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino):
+                raise RuntimeError(f"exporter reset target changed: {candidate}")
+        for candidate, _target_descriptor, _metadata in target_descriptors:
             candidate.unlink()
             removed.append(str(candidate))
     finally:
+        for _candidate, target_descriptor, _metadata in reversed(target_descriptors):
+            try:
+                fcntl.flock(target_descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(target_descriptor)
         release_runtime_lock(descriptor)
     return tuple(removed)
 

@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 
 _info_set = False
 _METRICS = (metrics.ise_deployment_status, metrics.ise_node_count,
-            metrics.ise_pan_ha_enabled, metrics.ise_node_service_enabled)
+            metrics.ise_pan_ha_enabled, metrics.ise_node_service_enabled,
+            metrics.ise_up)
 
 
 def collect(client, cfg):
@@ -87,9 +88,9 @@ def collect(client, cfg):
             for role, count in role_counts.items():
                 metrics.ise_node_count.labels(role=role).set(count)
             metrics.ise_pan_ha_enabled.set(1 if pan_ha["isEnabled"] else 0)
+            metrics.ise_up.set(1)
 
         replace_metric_snapshot(_METRICS, (publish,))
-        metrics.ise_up.set(1)
         if not _info_set:
             metrics.ise_info.info({"hostname": client.host})
             _info_set = True
