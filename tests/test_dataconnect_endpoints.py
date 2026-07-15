@@ -31,12 +31,13 @@ class DataConnect:
                      "mdm": 16000, "udid": 8000, "unknown_profile": 50,
                      "posture_yes": 60000, "posture_no": 20000,
                      "stale_30": 12000, "stale_90": 7000, "stale_180": 3000}]
-        if "grouped_profiles" in lowered:
-            return [{"endpoint_policy": "Windows10-Workstation", "endpoints": 40000,
-                     "total_groups": 51}]
-        if "grouped_identity" in lowered:
-            return [{"identity_group_id": "group-1", "endpoints": 50000,
-                     "total_groups": 12}]
+        if "dimension_groups" in lowered:
+            return [
+                {"dimension": "profile", "dimension_value": "Windows10-Workstation",
+                 "endpoints": 40000, "total_groups": 51},
+                {"dimension": "identity_group", "dimension_value": "group-1",
+                 "endpoints": 50000, "total_groups": 12},
+            ]
         return [{"endpoint_profile": "Windows10-Workstation", "source": "RADIUS Probe",
                  "endpoint_action_name": "Profiled", "identity_group": "Workstations",
                  "endpoints": 1000, "total_memberships": 81000, "total_groups": 75}]
@@ -76,4 +77,7 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     coverage_sql = next(sql for sql in client.sql if "AS stale_180" in sql)
     assert "NUMTODSINTERVAL(180, 'DAY')" in coverage_sql
     assert "AS unknown_profile" in coverage_sql
-    assert len(client.sql) == 4
+    dimensions_sql = next(sql for sql in client.sql if "dimension_groups" in sql)
+    assert "GROUP BY GROUPING SETS" in dimensions_sql
+    assert dimensions_sql.count("FROM endpoints_data") == 1
+    assert len(client.sql) == 3

@@ -4,6 +4,7 @@ get_network_devices, ...) collapse into the collectors, which now call the gener
 get_ers / get_ers_total / get_pan_api / get_mnt_xml directly. Pure plumbing, no
 metric writes except the api_requests/api_errors counters."""
 import logging
+import re
 import threading
 import time
 import warnings
@@ -23,6 +24,14 @@ logger = logging.getLogger(__name__)
 # This ceiling still permits inventories twice the supported 100k endpoint scale,
 # while bounding a broken server that emits an endless chain of unique next links.
 ERS_MAX_PAGES = 2000
+HTTP_READ_CHUNK_BYTES = 64 * 1024
+MAX_HTTP_RESPONSE_BYTES = 64 * 1024 * 1024
+HTTP_ERROR_SNIPPET_BYTES = 200
+UNSAFE_XML_DECLARATION = re.compile(br"<!DOCTYPE|<!ENTITY", re.IGNORECASE)
+
+
+class ResponseTooLarge(RuntimeError):
+    """The remote API attempted to return more data than this process retains."""
 
 
 def _strip_ns(tag):
@@ -79,7 +88,18 @@ class ISERestClient:
         # Keep trust deterministic: explicit configuration, not ambient process
         # REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE state, owns each plane's trust policy.
         s.trust_env = False
-        retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        retry = Retry(
+            total=3,
+            connect=3,
+            read=3,
+            status=3,
+            redirect=0,
+            allowed_methods=frozenset({"GET"}),
+            backoff_factor=1,
+            backoff_max=10,
+            respect_retry_after_header=False,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
         s.mount("https://", HTTPAdapter(max_retries=retry))
         # Accept-only — Content-Type on a GET is non-standard and has tripped DoD WAFs.
         s.headers.update({"Accept": content_type})
@@ -102,12 +122,32 @@ class ISERestClient:
             # unverified lab TLS; this keeps CLI JSON/table output machine-readable.
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", InsecureRequestWarning)
-                r = session.get(url, params=params, timeout=timeout)
-            r.raise_for_status()
+                r = session.get(
+                    url, params=params, timeout=timeout, stream=True,
+                    allow_redirects=False)
+            status = int(getattr(r, "status_code", 200))
+            if not 200 <= status < 300:
+                snippet = self._read_error_snippet(r)
+                logger.warning("HTTP %s for %s  body: %s", status, url, snippet)
+                if status == 401:
+                    self._record_auth_failure()
+                ise_api_requests_total.labels(
+                    api=api_name, status=f"http_{status}").inc()
+                ise_api_errors_total.labels(
+                    api=api_name, error_type="http_error", http_code=str(status)).inc()
+                return None
+            self._buffer_response(r)
             self._auth_failures = 0
             self._auth_block_until = 0.0
             ise_api_requests_total.labels(api=api_name, status="success").inc()
             return r
+        except ResponseTooLarge as error:
+            logger.warning("Oversized response for %s: %s", url, error)
+            ise_api_requests_total.labels(
+                api=api_name, status="response_too_large").inc()
+            ise_api_errors_total.labels(
+                api=api_name, error_type="response_too_large", http_code="0").inc()
+            return None
         except requests.exceptions.Timeout:
             logger.warning("Timeout for %s", url)
             ise_api_requests_total.labels(api=api_name, status="timeout").inc()
@@ -121,10 +161,7 @@ class ISERestClient:
         except requests.exceptions.HTTPError as e:
             if e.response is not None:
                 status = e.response.status_code
-                try:
-                    snippet = e.response.text[:200].replace("\n", " ").replace("\r", " ")
-                except Exception:
-                    snippet = ""
+                snippet = self._read_error_snippet(e.response)
                 logger.warning("HTTP %s for %s  body: %s", status, url, snippet)
                 if status == 401:
                     self._record_auth_failure()
@@ -139,6 +176,77 @@ class ISERestClient:
             ise_api_requests_total.labels(api=api_name, status="error").inc()
             ise_api_errors_total.labels(api=api_name, error_type="unknown", http_code="0").inc()
             return None
+
+    @staticmethod
+    def _close_response(response):
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
+
+    @classmethod
+    def _buffer_response(cls, response):
+        """Retain a successful body only when it fits the hard process ceiling."""
+        raw_length = str(getattr(response, "headers", {}).get(
+            "Content-Length", "") or "").strip()
+        try:
+            content_length = int(raw_length)
+        except (TypeError, ValueError):
+            content_length = None
+        if content_length is not None and content_length > MAX_HTTP_RESPONSE_BYTES:
+            cls._close_response(response)
+            raise ResponseTooLarge(
+                f"Content-Length {content_length} exceeds {MAX_HTTP_RESPONSE_BYTES} bytes")
+
+        iterator = getattr(response, "iter_content", None)
+        if not callable(iterator):
+            body = bytes(getattr(response, "content", b"") or b"")
+            if len(body) > MAX_HTTP_RESPONSE_BYTES:
+                cls._close_response(response)
+                raise ResponseTooLarge(
+                    f"body exceeds {MAX_HTTP_RESPONSE_BYTES} bytes")
+        else:
+            retained = bytearray()
+            try:
+                for chunk in iterator(chunk_size=HTTP_READ_CHUNK_BYTES):
+                    if not chunk:
+                        continue
+                    if len(retained) + len(chunk) > MAX_HTTP_RESPONSE_BYTES:
+                        raise ResponseTooLarge(
+                            f"streamed body exceeds {MAX_HTTP_RESPONSE_BYTES} bytes")
+                    retained.extend(chunk)
+                body = bytes(retained)
+            finally:
+                cls._close_response(response)
+
+        # requests.Response uses these fields for content/text/json after a
+        # streamed body is consumed. Lightweight test doubles simply accept them.
+        response._content = body
+        response._content_consumed = True
+
+    @classmethod
+    def _read_error_snippet(cls, response):
+        """Read at most a log-sized prefix from an error without retaining its body."""
+        iterator = getattr(response, "iter_content", None)
+        try:
+            if callable(iterator):
+                body = bytearray()
+                for chunk in iterator(chunk_size=HTTP_ERROR_SNIPPET_BYTES):
+                    if chunk:
+                        body.extend(chunk[:HTTP_ERROR_SNIPPET_BYTES - len(body)])
+                    if len(body) >= HTTP_ERROR_SNIPPET_BYTES:
+                        break
+                raw = bytes(body)
+            else:
+                content = getattr(response, "content", None)
+                if content is None:
+                    content = str(getattr(response, "text", "") or "").encode(
+                        "utf-8", "replace")
+                raw = bytes(content)[:HTTP_ERROR_SNIPPET_BYTES]
+        except Exception:
+            raw = b""
+        finally:
+            cls._close_response(response)
+        return raw.decode("utf-8", "replace").replace("\n", " ").replace("\r", " ")
 
     def _record_auth_failure(self):
         self._auth_failures += 1
@@ -300,6 +408,11 @@ class ISERestClient:
         url = f"{self.mnt_xml_url}{path}"
         r = self._request(self.mnt_session, url, api_name=api_name)
         if r is None or not r.content:
+            return None
+        if UNSAFE_XML_DECLARATION.search(r.content):
+            ise_api_errors_total.labels(
+                api=api_name, error_type="unsafe_xml", http_code="200").inc()
+            logger.error("Rejected XML with a DTD or entity declaration from %s", url)
             return None
         try:
             root = ET.fromstring(r.content)

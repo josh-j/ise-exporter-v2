@@ -305,6 +305,98 @@ def test_unverified_https_warning_is_suppressed_at_request_boundary():
     assert not [item for item in caught if issubclass(item.category, InsecureRequestWarning)]
 
 
+def test_api_requests_stream_without_redirects_and_reject_login_redirects():
+    client = ISERestClient.__new__(ISERestClient)
+    client._auth_failures = 0
+    client._auth_block_until = 0.0
+
+    class Response:
+        status_code = 302
+        headers = {}
+
+        def iter_content(self, chunk_size):
+            assert chunk_size == rest_module.HTTP_ERROR_SNIPPET_BYTES
+            yield b"interactive login"
+
+    class Session:
+        def __init__(self):
+            self.kwargs = None
+
+        def get(self, *_args, **kwargs):
+            self.kwargs = kwargs
+            return Response()
+
+    session = Session()
+    assert client._request(session, "https://ise.example/ers") is None
+    assert session.kwargs["stream"] is True
+    assert session.kwargs["allow_redirects"] is False
+
+
+def test_api_response_content_length_is_rejected_before_body_read(monkeypatch):
+    monkeypatch.setattr(rest_module, "MAX_HTTP_RESPONSE_BYTES", 10)
+    client = ISERestClient.__new__(ISERestClient)
+    client._auth_failures = 0
+    client._auth_block_until = 0.0
+
+    class Response:
+        status_code = 200
+        headers = {"Content-Length": "11"}
+        closed = False
+
+        def iter_content(self, chunk_size):
+            raise AssertionError("oversized body should not be read")
+
+        def close(self):
+            self.closed = True
+
+    response = Response()
+    session = types.SimpleNamespace(get=lambda *_args, **_kwargs: response)
+    counter = ise_api_errors_total.labels(
+        api="bounded", error_type="response_too_large", http_code="0")
+    before = counter._value.get()
+
+    assert client._request(session, "https://ise.example/api", api_name="bounded") is None
+    assert response.closed is True
+    assert counter._value.get() == before + 1
+
+
+def test_chunked_api_response_is_stopped_at_hard_byte_ceiling(monkeypatch):
+    monkeypatch.setattr(rest_module, "MAX_HTTP_RESPONSE_BYTES", 10)
+    client = ISERestClient.__new__(ISERestClient)
+    client._auth_failures = 0
+    client._auth_block_until = 0.0
+
+    class Response:
+        status_code = 200
+        headers = {}
+        closed = False
+
+        def iter_content(self, chunk_size):
+            yield b"123456"
+            yield b"78901"
+
+        def close(self):
+            self.closed = True
+
+    response = Response()
+    session = types.SimpleNamespace(get=lambda *_args, **_kwargs: response)
+
+    assert client._request(session, "https://ise.example/api") is None
+    assert response.closed is True
+
+
+def test_retry_policy_is_get_only_and_has_bounded_backoff():
+    cfg = types.SimpleNamespace(
+        ise_host="h", ise_mnt_host="m", ers_port=9060, ise_user="u", ise_pass="p")
+    client = ISERestClient(cfg)
+    retry = client.session.get_adapter("https://").max_retries
+
+    assert retry.allowed_methods == frozenset({"GET"})
+    assert retry.redirect == 0
+    assert retry.backoff_max == 10
+    assert retry.respect_retry_after_header is False
+
+
 def test_invalid_json_is_reported_as_api_parse_error():
     client = ISERestClient.__new__(ISERestClient)
 
@@ -322,6 +414,21 @@ def test_invalid_json_is_reported_as_api_parse_error():
     assert client._get_json(
         object(), "https://ise.example/ers/config/endpoint",
         api_name="ers_endpoint") is None
+    assert counter._value.get() == before + 1
+
+
+def test_mnt_xml_rejects_dtd_and_entity_declarations():
+    client = ISERestClient.__new__(ISERestClient)
+    client.mnt_xml_url = "https://mnt.example/admin/API/mnt"
+    client.mnt_session = object()
+    client._request = lambda *_args, **_kwargs: _Resp(
+        b'<!DOCTYPE session [<!ENTITY value "expanded">]>'
+        b'<session><value>&value;</value></session>')
+    counter = ise_api_errors_total.labels(
+        api="mnt_safe_xml", error_type="unsafe_xml", http_code="200")
+    before = counter._value.get()
+
+    assert client.get_mnt_xml("/Session/test", api_name="mnt_safe_xml") is None
     assert counter._value.get() == before + 1
 
 

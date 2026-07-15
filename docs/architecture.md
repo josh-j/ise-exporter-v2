@@ -104,7 +104,7 @@ authentication view remains bounded and is used only for dimensions the summary
 does not expose: method, protocol, exact authorization policy, and status-specific
 latency. NAD activity health also uses a single per-device aggregation from the
 summary view, not an additional raw authentication scan.
-The steady-state scheduled workload is about 8.4 statements per hour after startup.
+The steady-state scheduled workload is about 8.3 statements per hour after startup.
 Daily RADIUS reporting scans 24 hours, while a disjoint active-session query
 scans only its configured stale window every 30 minutes. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
@@ -124,6 +124,11 @@ normalized back to the protected service-state path rather than disabling this
 guard. The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
 invocations before adaptive cooldown is considered.
+The daily endpoint inventory uses one current-row coverage scan and one Oracle
+`GROUPING SETS` scan for both endpoint-policy and identity-group dimensions; it
+does not scan `ENDPOINTS_DATA` separately for each breakdown. This keeps that
+work proportional to the current endpoint inventory (up to 100,000 rows), not
+to an 80--200 GB MnT event-history database.
 Data Connect runs on one dedicated serialized worker lane, while the single MnT
 active-posture dataset runs on its own non-overlapping lane. Long adaptive cooldowns
 and paced endpoint-detail cycles therefore cannot delay REST/OpenAPI health or each

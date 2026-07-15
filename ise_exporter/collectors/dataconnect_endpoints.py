@@ -57,21 +57,27 @@ def _queries(limit, window_hours=6):
                             OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_180
             FROM endpoints_data
         """,
-        "profiles": f"""
-            SELECT grouped_profiles.*, COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT endpoint_policy, COUNT(*) AS endpoints
-                FROM endpoints_data GROUP BY endpoint_policy
-            ) grouped_profiles
-            ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
-        """,
-        "groups": f"""
-            SELECT grouped_identity.*, COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT identity_group_id, COUNT(*) AS endpoints
-                FROM endpoints_data GROUP BY identity_group_id
-            ) grouped_identity
-            ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
+        "dimensions": f"""
+            WITH dimension_groups AS (
+                SELECT CASE WHEN GROUPING(endpoint_policy) = 0
+                            THEN 'profile' ELSE 'identity_group' END AS dimension,
+                       CASE WHEN GROUPING(endpoint_policy) = 0
+                            THEN endpoint_policy ELSE identity_group_id END AS dimension_value,
+                       COUNT(*) AS endpoints
+                FROM endpoints_data
+                GROUP BY GROUPING SETS ((endpoint_policy), (identity_group_id))
+            ), ranked_dimensions AS (
+                SELECT dimension, dimension_value, endpoints,
+                       COUNT(*) OVER (PARTITION BY dimension) AS total_groups,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY dimension ORDER BY endpoints DESC
+                       ) AS group_rank
+                FROM dimension_groups
+            )
+            SELECT dimension, dimension_value, endpoints, total_groups
+            FROM ranked_dimensions
+            WHERE group_rank <= {limit}
+            ORDER BY dimension, group_rank
         """,
         "profiling": f"""
             SELECT grouped_profiling.*,
@@ -98,17 +104,21 @@ def collect(dataconnect, cfg):
                         cfg, getattr(cfg, "dataconnect_endpoints_interval", 86400))).items()}
         coverage = rows["coverage"][0] if rows["coverage"] else {}
         total = integer(coverage.get("endpoints"))
-        profile_summary = rows["profiles"][0] if rows["profiles"] else {}
-        group_summary = rows["groups"][0] if rows["groups"] else {}
+        profiles_rows = [row for row in rows["dimensions"]
+                         if row.get("dimension") == "profile"]
+        identity_rows = [row for row in rows["dimensions"]
+                         if row.get("dimension") == "identity_group"]
+        profile_summary = profiles_rows[0] if profiles_rows else {}
+        group_summary = identity_rows[0] if identity_rows else {}
         profiling_summary = rows["profiling"][0] if rows["profiling"] else {}
         profile_groups = integer(profile_summary.get("total_groups"))
         identity_groups = integer(group_summary.get("total_groups"))
         profiling_groups = integer(profiling_summary.get("total_groups"))
         profiling_memberships = integer(profiling_summary.get("total_memberships"))
-        profiles = [(label(row.get("endpoint_policy"), "Unknown"),
-                     integer(row.get("endpoints"))) for row in rows["profiles"]]
-        groups = [(label(row.get("identity_group_id"), "none"),
-                   integer(row.get("endpoints"))) for row in rows["groups"]]
+        profiles = [(label(row.get("dimension_value"), "Unknown"),
+                     integer(row.get("endpoints"))) for row in profiles_rows]
+        groups = [(label(row.get("dimension_value"), "none"),
+                   integer(row.get("endpoints"))) for row in identity_rows]
         posture = [
             ("yes", integer(coverage.get("posture_yes"))),
             ("no", integer(coverage.get("posture_no"))),
