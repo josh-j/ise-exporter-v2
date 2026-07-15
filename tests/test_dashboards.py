@@ -595,18 +595,23 @@ def test_data_quality_lists_each_unavailable_dataset_and_latest_reason():
     assert panel["title"] == "Unavailable Dataset Details"
     assert panel["type"] == "table"
     assert "ise_dataset_last_failure_info" in expression
+    assert "ise_dataset_last_failure_detail_info" in expression
     assert "ise_dataset_enabled == 1" in expression
     assert "ise_dataset_up == 0" in expression
     assert '"not_attempted"' in expression
+    assert '"NONE"' in expression
+    assert '"All enabled datasets are available"' in expression
+    assert "absent(count(" in expression
     assert panel["targets"][0]["format"] == "table"
     assert panel["targets"][0]["instant"] is True
     assert len(panel["targets"]) == 1
     organize = panel["transformations"][0]
     assert organize["id"] == "organize"
     assert organize["options"]["indexByName"] == {
-        "dataset": 0, "source": 1, "reason": 2,
+        "dataset": 0, "source": 1, "reason": 2, "detail": 3,
     }
-    assert organize["options"]["renameByName"]["reason"] == "Why unavailable"
+    assert organize["options"]["renameByName"]["reason"] == "Failure category"
+    assert organize["options"]["renameByName"]["detail"] == "Why unavailable"
 
     age_panel = next(
         item for item in _panels(dashboard["panels"]) if item.get("id") == 42)

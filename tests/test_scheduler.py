@@ -5,6 +5,7 @@ import pytest
 from prometheus_client import CollectorRegistry, Gauge
 
 from ise_exporter import collectors, metrics
+from ise_exporter.dataconnect_schema import VIEW_CONTRACTS
 import ise_exporter.scheduler as scheduler_module
 from ise_exporter.scheduler import PollScheduler, _next_deadline
 
@@ -45,6 +46,8 @@ def _cfg(**overrides):
 def _reset_collector_runtime_state():
     collectors._failures.clear()
     collectors._outcomes.clear()
+    collectors._failure_reasons.clear()
+    collectors._failure_details.clear()
 
 
 def test_collection_plan_has_one_writer_per_reporting_domain(monkeypatch):
@@ -145,7 +148,121 @@ def test_schema_incompatible_dataset_is_visible_and_never_queried(caplog):
     assert metrics.ise_dataset_last_failure_info.labels(
         dataset="dataconnect_performance", source="dataconnect",
         reason="schema_missing_view_system_summary")._value.get() == 1
+    detail_samples = [
+        sample
+        for sample in metrics.ise_dataset_last_failure_detail_info.collect()[0].samples
+        if sample.labels.get("dataset") == "dataconnect_performance"
+    ]
+    assert len(detail_samples) == 1
+    assert detail_samples[0].labels["detail"] == "missing view SYSTEM_SUMMARY"
     assert "blocked=true reason=schema_missing_view_system_summary" in caplog.text
+
+
+def _schema_rows(include_tacacs=False):
+    return [
+        {
+            "table_name": table,
+            "column_name": column,
+            "data_type": "VARCHAR2",
+        }
+        for table, contract in VIEW_CONTRACTS.items()
+        if include_tacacs or contract.domain != "tacacs"
+        for column in contract.required
+    ]
+
+
+def test_schema_discovery_unblocks_compatible_datasets_and_restores_snapshots(
+        monkeypatch):
+    class DataConnect:
+        schema_ready = False
+        dataset_schema_failures = {}
+
+        def query_catalog(self, _sql, _parameters=None):
+            return _schema_rows()
+
+        def set_schema(self, schema, failures):
+            self.schema = schema
+            self.dataset_schema_failures = failures
+            self.schema_ready = True
+
+    dataconnect = DataConnect()
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False), object(), dataconnect, mnt=object())
+    restored = []
+    monkeypatch.setattr(
+        scheduler, "_restore_dataconnect_state", lambda: restored.append(True))
+    called = []
+
+    scheduler._run_dataconnect(
+        "dataconnect_performance", 1, lambda: called.append("premature"))
+    scheduler._collect_dataconnect_schema()
+    scheduler._run_dataconnect(
+        "dataconnect_performance", 1, lambda: called.append("ready"))
+
+    assert scheduler._dataconnect_schema_ready is True
+    assert scheduler._dataconnect_schema_failures == {}
+    assert dataconnect.schema_ready is True
+    assert restored == [True]
+    assert called == ["ready"]
+    pending = [
+        sample for sample in metrics.ise_dataset_last_failure_info.collect()[0].samples
+        if sample.labels.get("dataset") == "dataconnect_performance"
+        and sample.labels.get("reason") == "schema_validation_pending"
+    ]
+    assert pending == []
+    pending_details = [
+        sample
+        for sample in metrics.ise_dataset_last_failure_detail_info.collect()[0].samples
+        if sample.labels.get("dataset") == "dataconnect_performance"
+        and sample.labels.get("reason") == "schema_validation_pending"
+    ]
+    assert pending_details == []
+
+
+def test_schema_transport_failure_keeps_rest_reporting_lane_retryable(monkeypatch):
+    class DataConnect:
+        schema_ready = False
+        dataset_schema_failures = {}
+
+        def __init__(self):
+            self.fail = True
+
+        def query_catalog(self, _sql, _parameters=None):
+            if self.fail:
+                raise RuntimeError("database unavailable")
+            return _schema_rows()
+
+        def set_schema(self, schema, failures):
+            self.schema_ready = True
+            self.dataset_schema_failures = failures
+
+    dataconnect = DataConnect()
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False), object(), dataconnect, mnt=object())
+    monkeypatch.setattr(scheduler, "_restore_dataconnect_state", lambda: None)
+
+    scheduler._collect_dataconnect_schema()
+
+    assert scheduler._dataconnect_schema_ready is False
+    assert collectors.outcome("dataconnect_schema") is False
+    assert metrics.ise_dataset_up.labels(
+        dataset="deployment", source="rest")._value.get() == 0
+    dataconnect.fail = False
+    scheduler._collect_dataconnect_schema()
+    assert scheduler._dataconnect_schema_ready is True
+    assert collectors.outcome("dataconnect_schema") is True
+
+
+def test_schema_discovery_retries_hourly_then_returns_to_daily_cadence():
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, slow_interval=21600), object(), object())
+
+    collectors._failures["dataconnect_schema"] = 1
+    assert scheduler._failure_retry(
+        "dataconnect_schema", "dataconnect", 86400) == 3600
+    collectors._failures["dataconnect_schema"] = 5
+    assert scheduler._failure_retry(
+        "dataconnect_schema", "dataconnect", 86400) == 86400
 
 
 def test_startup_rate_limit_spaces_only_each_datasets_first_attempt(monkeypatch):
@@ -195,6 +312,7 @@ def test_scheduler_respects_valid_explicit_cadences_but_preserves_auth_backoff()
         auth_failure_backoff=1,
         mnt_active_posture_interval=1,
         dataconnect_radius_interval=1,
+        dataconnect_schema_interval=1,
         dataconnect_radius_active_interval=1,
         dataconnect_performance_interval=1,
         dataconnect_posture_interval=1,
@@ -215,6 +333,7 @@ def test_scheduler_respects_valid_explicit_cadences_but_preserves_auth_backoff()
         "backup": 1,
         "patches": 1,
         "dataconnect_radius": 1,
+        "dataconnect_schema": 1,
         "dataconnect_radius_active": 1,
         "dataconnect_performance": 1,
         "dataconnect_posture": 1,

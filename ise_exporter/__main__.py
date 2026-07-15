@@ -26,7 +26,6 @@ from .compatibility import (
     validate_ise_compatibility,
 )
 from .dataconnect_schema import (
-    inspect_dataconnect_schema,
     metadata_rows,
     validate_dataconnect_schema,
 )
@@ -214,24 +213,8 @@ def main(argv=None):
                     ", ".join(compatibility.deployment_nodes))
 
         dataconnect = DataConnectClient(cfg)
-        try:
-            schema, schema_failures = inspect_dataconnect_schema(
-                dataconnect, include_tacacs=getattr(cfg, "collect_tacacs", True))
-        except Exception as exc:
-            logger.error("Data Connect startup validation failed: %s", exc)
-            return 1
-        dataconnect.set_schema(schema, schema_failures)
-        if schema_failures:
-            logger.warning(
-                "Data Connect schema has %d incompatible datasets; REST/OpenAPI and "
-                "compatible reporting datasets will remain available",
-                len(schema_failures),
-            )
-            for dataset, failure in sorted(schema_failures.items()):
-                logger.warning(
-                    "Data Connect dataset %s unavailable: %s", dataset, failure.detail)
-        else:
-            logger.info("validated %d Cisco ISE Data Connect reporting views", len(schema))
+        logger.info(
+            "Data Connect schema discovery is scheduled on the serialized reporting lane")
         mnt = (MnTActiveSessionClient(cfg, auth_guard=rest_auth_guard)
                if cfg.collect_mnt_active_posture else None)
 

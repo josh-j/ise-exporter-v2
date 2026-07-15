@@ -230,6 +230,7 @@ class DataConnectClient:
         self._batch_rows = 0
         self._batch_result_bytes = 0
         self.schema = {}
+        self.schema_ready = False
         self.dataset_schema_failures = {}
         metrics.ise_dataconnect_query_pacing_seconds.set(self.min_query_interval)
         metrics.ise_dataconnect_max_duty_cycle_percent.set(self.max_duty_cycle)
@@ -250,6 +251,7 @@ class DataConnectClient:
             if isinstance(columns, dict)
         }
         self.dataset_schema_failures = dict(dataset_failures or {})
+        self.schema_ready = True
         radius_columns = self.schema.get("RADIUS_AUTHENTICATIONS", {})
         if (radius_columns and "AUTHORIZATION_POLICY" not in radius_columns
                 and "POLICY_SET_NAME" in radius_columns):

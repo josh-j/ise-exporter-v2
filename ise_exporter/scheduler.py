@@ -36,6 +36,10 @@ from .collectors import (
     tacacs,
 )
 from .collectors.dataconnect_common import event_window_hours
+from .dataconnect_schema import (
+    DatasetSchemaFailure,
+    inspect_dataconnect_schema,
+)
 
 logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
@@ -66,6 +70,7 @@ def _configured_interval(value, default):
 # inventory/freshness work from keeping current operational health behind a cold-
 # start backlog under a deliberately low Data Connect duty-cycle ceiling.
 _DATACONNECT_PRIORITY = {
+    "dataconnect_schema": -1,
     "dataconnect_radius_active": 0,
     "dataconnect_performance": 1,
     "dataconnect_nad_health": 2,
@@ -162,9 +167,24 @@ class PollScheduler:
         self._mnt_worker = None
         self._shutdown = None
         self._nad_inventory = None
+        self._schema_managed = hasattr(dataconnect, "schema_ready")
+        self._dataconnect_schema_ready = bool(getattr(
+            dataconnect, "schema_ready", True))
         self._dataconnect_schema_failures = dict(getattr(
             dataconnect, "dataset_schema_failures", {}) or {})
         self.dataset_plan = self._dataset_plan()
+        if self._schema_managed and not self._dataconnect_schema_ready:
+            pending = DatasetSchemaFailure(
+                reason="schema_validation_pending",
+                detail="Data Connect schema discovery has not completed successfully",
+            )
+            self._dataconnect_schema_failures = {
+                name: pending
+                for name, (source, _interval, enabled) in self.dataset_plan.items()
+                if source == "dataconnect" and name != "dataconnect_schema" and enabled
+            }
+        self._schema_metric_reasons = {}
+        self._schema_metric_details = {}
         self._initialize_dataset_state()
         self._publish_worker_state(time.time())
         self._restore_dataconnect_state()
@@ -233,6 +253,10 @@ class PollScheduler:
             "dataconnect_radius": (
                 "dataconnect", _configured_interval(
                     getattr(cfg, "dataconnect_radius_interval", 86400), 86400), True),
+            "dataconnect_schema": (
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_schema_interval", 86400), 86400),
+                self._schema_managed),
             "dataconnect_radius_active": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_radius_active_interval", 7200), 7200), True),
@@ -278,6 +302,12 @@ class PollScheduler:
             reason = str(getattr(failure, "reason", "schema_incompatible"))
             metrics.ise_dataset_last_failure_info.labels(
                 dataset=name, source="dataconnect", reason=reason).set(1)
+            detail = collectors.failure_detail(reason, getattr(failure, "detail", None))
+            metrics.ise_dataset_last_failure_detail_info.labels(
+                dataset=name, source="dataconnect", reason=reason,
+                detail=detail).set(1)
+            self._schema_metric_reasons[name] = reason
+            self._schema_metric_details[name] = detail
         # The scan window may intentionally be shorter than the protected run
         # cadence, so report the collector's configured sampling window rather
         # than implying that a full cadence interval is queried.
@@ -410,6 +440,8 @@ class PollScheduler:
             # the dataset cadence after the account-safety backoff, not the global
             # six-hour slow tier.
             return max(effective_interval, self.auth_failure_backoff)
+        if name == "dataconnect_schema":
+            return max(300, min(effective_interval, 3600))
         if source == "dataconnect":
             # Failed reporting work can still consume substantial database time.
             return max(300, min(effective_interval, self.slow_interval))
@@ -513,7 +545,9 @@ class PollScheduler:
         collection, while the one-worker queue still guarantees that reporting
         statements never execute concurrently.
         """
-        if name in self._dataconnect_schema_failures:
+        if (name != "dataconnect_schema"
+                and (not self._dataconnect_schema_ready
+                     or name in self._dataconnect_schema_failures)):
             return
         if not self._dataconnect_async:
             self._run(name, time.time(), tier, callback)
@@ -532,6 +566,66 @@ class PollScheduler:
                 next(self._dataconnect_sequence), name, tier, callback,
             ))
             self._publish_worker_state(now)
+
+    def _apply_dataconnect_schema(self, schema, failures):
+        """Atomically publish schema capability and unblock compatible domains."""
+        failures = dict(failures or {})
+        was_ready = self._dataconnect_schema_ready
+        failure_logs = []
+        with snapshot_lock:
+            self.dataconnect.set_schema(schema, failures)
+            for name, old_reason in tuple(self._schema_metric_reasons.items()):
+                metrics.ise_dataset_last_failure_info.remove(
+                    name, "dataconnect", old_reason)
+                old_detail = self._schema_metric_details.get(name)
+                if old_detail:
+                    metrics.ise_dataset_last_failure_detail_info.remove(
+                        name, "dataconnect", old_reason, old_detail)
+            self._schema_metric_reasons.clear()
+            self._schema_metric_details.clear()
+            self._dataconnect_schema_failures = failures
+            self._dataconnect_schema_ready = True
+            for name, failure in failures.items():
+                if name not in self.dataset_plan or not self.dataset_plan[name][2]:
+                    continue
+                reason = str(getattr(failure, "reason", "schema_incompatible"))
+                metrics.ise_dataset_up.labels(
+                    dataset=name, source="dataconnect").set(0)
+                metrics.ise_dataset_fresh.labels(
+                    dataset=name, source="dataconnect").set(0)
+                metrics.ise_dataset_last_failure_info.labels(
+                    dataset=name, source="dataconnect", reason=reason).set(1)
+                detail = collectors.failure_detail(
+                    reason, getattr(failure, "detail", None))
+                metrics.ise_dataset_last_failure_detail_info.labels(
+                    dataset=name, source="dataconnect", reason=reason,
+                    detail=detail).set(1)
+                self._schema_metric_reasons[name] = reason
+                self._schema_metric_details[name] = detail
+                failure_logs.append((
+                    name, getattr(failure, "detail", "schema incompatible")))
+        for name, detail in failure_logs:
+            logger.warning("Data Connect dataset %s unavailable: %s", name, detail)
+        return not was_ready
+
+    def _collect_dataconnect_schema(self):
+        restore_after_success = False
+        with collectors.observe("dataconnect_schema"):
+            schema, failures = inspect_dataconnect_schema(
+                self.dataconnect,
+                include_tacacs=getattr(self.cfg, "collect_tacacs", True),
+            )
+            restore_after_success = self._apply_dataconnect_schema(schema, failures)
+            logger.info(
+                "discovered %d Data Connect reporting views; incompatible_datasets=%d",
+                len(schema), len(failures),
+            )
+        if (restore_after_success
+                and collectors.outcome("dataconnect_schema") is True):
+            # Startup snapshots are held back until the live schema proves each
+            # dataset compatible. Restore them outside the schema collector's
+            # transaction so a large set cannot become one oversized commit.
+            self._restore_dataconnect_state()
 
     def _publish_worker_state(self, now=None):
         now = time.time() if now is None else now
@@ -744,6 +838,11 @@ class PollScheduler:
         if cfg.collect_patches:
             self._run("patches", now, self.dataset_plan["patches"][1],
                       lambda: patches.collect(self.client, cfg))
+
+        if self._schema_managed:
+            self._run_dataconnect(
+                "dataconnect_schema", self.dataset_plan["dataconnect_schema"][1],
+                self._collect_dataconnect_schema)
 
         # Exact historical reporting and current active-session reconstruction
         # have disjoint metric families and independent production-safe cadences.

@@ -188,6 +188,7 @@ class Config:
     dataconnect_min_query_interval_ms: int = 5000
     dataconnect_max_duty_cycle_percent: float = 0.1
     dataconnect_event_window_hours: int = 6
+    dataconnect_schema_interval: int = 86400
     dataconnect_radius_interval: int = 86400
     dataconnect_radius_active_interval: int = 7200
     dataconnect_performance_interval: int = 21600
@@ -330,6 +331,9 @@ class Config:
                 "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.1, 0.01, 0.1),
             dataconnect_event_window_hours=_bounded_i(
                 "ISE_DATACONNECT_EVENT_WINDOW_HOURS", 6, 1, 6),
+            dataconnect_schema_interval=_recommended_i(
+                "ISE_DATACONNECT_SCHEMA_INTERVAL", 86400, 86400,
+                valid_minimum=1),
             dataconnect_radius_interval=_recommended_i(
                 "ISE_DATACONNECT_RADIUS_INTERVAL", 86400, 86400, valid_minimum=1),
             dataconnect_radius_active_interval=_recommended_i(

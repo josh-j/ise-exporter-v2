@@ -173,6 +173,13 @@ def test_failed_observation_discards_staged_snapshot():
     assert metrics.ise_dataset_last_failure_info.labels(
         dataset=name, source="rest",
         reason="incomplete_snapshot")._value.get() == 1
+    details = [
+        sample
+        for sample in metrics.ise_dataset_last_failure_detail_info.collect()[0].samples
+        if sample.labels.get("dataset") == name
+    ]
+    assert len(details) == 1
+    assert details[0].labels["detail"] == "incomplete snapshot"
 
 
 def test_collector_failure_reason_is_operator_readable_and_bounded():
@@ -184,12 +191,37 @@ def test_collector_failure_reason_is_operator_readable_and_bounded():
     assert set(error.reason) <= set("abcdefghijklmnopqrstuvwxyz0123456789_")
 
 
+def test_dataset_failure_detail_is_single_line_and_bounded():
+    detail = collectors.failure_detail(
+        "schema_incompatible", "missing  view\n" + ("AUTHORIZATION " * 30))
+
+    assert detail.startswith("missing view AUTHORIZATION")
+    assert "\n" not in detail
+    assert len(detail) == 240
+
+
+def test_exception_failure_detail_uses_fixed_operator_explanation():
+    name = "fixed_failure_detail_test"
+    collectors.record_failure(name, "authentication_failed")
+
+    samples = [
+        sample
+        for sample in metrics.ise_dataset_last_failure_detail_info.collect()[0].samples
+        if sample.labels.get("dataset") == name
+    ]
+    assert len(samples) == 1
+    assert samples[0].labels["detail"] == "The configured credentials were rejected"
+
+
 @pytest.mark.parametrize(("error", "reason"), (
     (RuntimeError("HTTP 401 from control API"), "authentication_failed"),
+    (RuntimeError("ORA-01017: invalid username/password"), "authentication_failed"),
     (RuntimeError("HTTP 403 from MnT API"), "authorization_failed"),
+    (RuntimeError("ORA-01031: insufficient privileges"), "authorization_failed"),
     (RuntimeError("TLS certificate verify failed"), "tls_failed"),
     (TimeoutError("timed out"), "timeout"),
     (ConnectionError("connection reset"), "connection_failed"),
+    (RuntimeError("ORA-12541: no listener"), "connection_failed"),
     (RuntimeError("Oracle database unavailable"), "database_failed"),
     (ValueError("something novel"), "unexpected_error"),
 ))
@@ -209,6 +241,12 @@ def test_success_clears_latest_dataset_failure_reason():
         if sample.labels.get("dataset") == name
     ]
     assert samples == []
+    detail_samples = [
+        sample
+        for sample in metrics.ise_dataset_last_failure_detail_info.collect()[0].samples
+        if sample.labels.get("dataset") == name
+    ]
+    assert detail_samples == []
 
 
 def test_staged_metadata_failure_rolls_back_domain_and_metadata():

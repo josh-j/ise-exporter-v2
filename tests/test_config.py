@@ -149,6 +149,7 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["MEDIUM_INTERVAL"] == "900"
     assert values["SLOW_INTERVAL"] == "21600"
     assert values["ISE_DATACONNECT_EVENT_WINDOW_HOURS"] == "6"
+    assert values["ISE_DATACONNECT_SCHEMA_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_RADIUS_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL"] == "7200"
     assert values["ISE_DATACONNECT_PERFORMANCE_INTERVAL"] == "21600"
@@ -202,6 +203,7 @@ def test_hard_limits_clamp_but_valid_tuning_is_respected_with_warnings(monkeypat
         "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS": "0",
         "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT": "99",
         "ISE_DATACONNECT_EVENT_WINDOW_HOURS": "999",
+        "ISE_DATACONNECT_SCHEMA_INTERVAL": "1",
         "ISE_DATACONNECT_RADIUS_INTERVAL": "1",
         "ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL": "1",
         "ISE_DATACONNECT_PERFORMANCE_INTERVAL": "1",
@@ -244,6 +246,7 @@ def test_hard_limits_clamp_but_valid_tuning_is_respected_with_warnings(monkeypat
     assert cfg.dataconnect_min_query_interval_ms == 0
     assert cfg.dataconnect_max_duty_cycle_percent == 99
     assert cfg.dataconnect_event_window_hours == 6
+    assert cfg.dataconnect_schema_interval == 1
     assert cfg.dataconnect_radius_interval == 1
     assert cfg.dataconnect_radius_active_interval == 1
     assert cfg.dataconnect_performance_interval == 1

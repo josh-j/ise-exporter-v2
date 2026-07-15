@@ -24,6 +24,27 @@ logger = logging.getLogger(__name__)
 _failures = {}
 _outcomes = {}
 _failure_reasons = {}
+_failure_details = {}
+
+_GENERIC_FAILURE_DETAILS = {
+    "authentication_failed": "The configured credentials were rejected",
+    "authorization_failed": "The configured account lacks required access",
+    "connection_failed": "The configured collection host could not be reached",
+    "database_failed": "The Data Connect database operation failed",
+    "invalid_response": "ISE returned a response the exporter could not parse",
+    "tls_failed": "TLS certificate or protocol validation failed",
+    "timeout": "The collection request exceeded its bounded timeout",
+    "unexpected_error": "The collector failed unexpectedly; inspect the exporter journal",
+    "worker_exception": "The serialized collection worker failed unexpectedly",
+    "unhandled_exception": "The scheduled collector failed unexpectedly",
+}
+
+
+def failure_detail(reason, detail=None):
+    """Return a bounded, single-line operator explanation safe for a metric label."""
+    value = detail or _GENERIC_FAILURE_DETAILS.get(
+        reason, str(reason).replace("_", " "))
+    return re.sub(r"\s+", " ", str(value)).strip()[:240] or "No detail available"
 
 
 def source(name):
@@ -52,17 +73,24 @@ def _exception_reason(error):
     """Classify arbitrary exceptions without exporting their unbounded text."""
     name = type(error).__name__.lower()
     message = str(error).lower()
-    if "401" in message or "authentication" in message or "credential" in message:
+    if ("401" in message or "authentication" in message or "credential" in message
+            or "invalid username/password" in message
+            or any(code in message for code in (
+                "ora-01005", "ora-01017", "ora-28000", "ora-28001", "dpy-4001"))):
         return "authentication_failed"
-    if "403" in message or "authorization" in message or "permission" in message:
+    if ("403" in message or "authorization" in message or "permission" in message
+            or "ora-01031" in message):
         return "authorization_failed"
     if "certificate" in message or "ssl" in message or "tls" in message:
         return "tls_failed"
     if "timeout" in name or "timed out" in message:
         return "timeout"
-    if "connection" in name or "connection" in message:
+    if ("connection" in name or "connection" in message
+            or any(code in message for code in (
+                "ora-12170", "ora-12514", "ora-12541", "dpy-6005"))):
         return "connection_failed"
-    if "database" in name or "oracle" in name or "database" in message:
+    if ("database" in name or "oracle" in name or "database" in message
+            or "ora-" in message or "dpy-" in message):
         return "database_failed"
     if "json" in name or "decode" in name:
         return "invalid_response"
@@ -83,7 +111,7 @@ def outcome(name):
     return _outcomes.get(name)
 
 
-def record_failure(name, error_type):
+def record_failure(name, error_type, detail=None):
     """Bump the scrape-error counter + consecutive-failure gauge for a failed collect."""
     with snapshot_lock:
         metrics.ise_scrape_errors_total.labels(
@@ -93,12 +121,21 @@ def record_failure(name, error_type):
             collector=name).set(_failures[name])
         dataset_source = source(name)
         previous_reason = _failure_reasons.get(name)
+        previous_detail = _failure_details.get(name)
         if previous_reason and previous_reason != error_type:
             metrics.ise_dataset_last_failure_info.remove(
                 name, dataset_source, previous_reason)
+        if previous_reason and previous_detail:
+            metrics.ise_dataset_last_failure_detail_info.remove(
+                name, dataset_source, previous_reason, previous_detail)
+        bounded_detail = failure_detail(error_type, detail)
         metrics.ise_dataset_last_failure_info.labels(
             dataset=name, source=dataset_source, reason=error_type).set(1)
+        metrics.ise_dataset_last_failure_detail_info.labels(
+            dataset=name, source=dataset_source, reason=error_type,
+            detail=bounded_detail).set(1)
         _failure_reasons[name] = error_type
+        _failure_details[name] = bounded_detail
         _outcomes[name] = False
         metrics.ise_dataset_up.labels(
             dataset=name, source=dataset_source).set(0)
@@ -115,6 +152,7 @@ def observe(name):
             completed = time.time()
             dataset_source = source(name)
             previous_reason = _failure_reasons.get(name)
+            previous_detail = _failure_details.get(name)
 
             def publish_success():
                 metrics.ise_last_successful_scrape.labels(
@@ -129,6 +167,9 @@ def observe(name):
                 if previous_reason:
                     metrics.ise_dataset_last_failure_info.remove(
                         name, dataset_source, previous_reason)
+                if previous_reason and previous_detail:
+                    metrics.ise_dataset_last_failure_detail_info.remove(
+                        name, dataset_source, previous_reason, previous_detail)
 
             commit_metric_snapshots(
                 replacements,
@@ -139,16 +180,18 @@ def observe(name):
                     metrics.ise_dataset_last_success_timestamp,
                     metrics.ise_consecutive_failures,
                     metrics.ise_dataset_last_failure_info,
+                    metrics.ise_dataset_last_failure_detail_info,
                 ),
                 (publish_success,),
             )
             if previous_reason:
                 _failure_reasons.pop(name, None)
+                _failure_details.pop(name, None)
             _outcomes[name] = True
             _failures[name] = 0
         except CollectorFailed as e:
             logger.warning("%s: %s", name, e)
-            record_failure(name, e.reason)
+            record_failure(name, e.reason, str(e))
         except Exception as e:
             logger.error("%s collection error: %s", name, e)
             record_failure(name, _exception_reason(e))

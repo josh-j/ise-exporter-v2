@@ -115,9 +115,18 @@ capped at 1,000 series per breakdown. Operators may lower the duty-cycle below
 0.01% for exceptionally low-pressure collection; the shared-deadline validity
 window expands with the configured duty cycle so a deliberate long cooldown is
 not mistaken for corrupt pacing state.
-The startup schema check is a single allowlisted `USER_TAB_COLUMNS` dictionary
-read. It retains the global cross-process lock, session safety setup, 15-second
-timeout, and all result ceilings, but uses only the configured post-query
+Schema discovery is a single allowlisted `USER_TAB_COLUMNS` dictionary read on
+the serialized Data Connect scheduler lane. The metrics listener and independent
+REST/MnT collection start before this database operation, so Oracle routing,
+authentication, TLS, or availability failures cannot take down control-plane
+metrics. Until discovery succeeds, reporting datasets remain visibly blocked by
+`schema_validation_pending`; the `dataconnect_schema` dataset reports the bounded
+failure category and retries under the normal protected Data Connect failure
+cadence: hourly for the first five failures, then at the configured daily schema
+interval by default. A later success unblocks compatible datasets without a
+process restart.
+The catalog read retains the global cross-process lock, session safety setup,
+15-second timeout, and all result ceilings, but uses only the configured post-query
 gap instead of multiplying its duration by the reporting-view duty-cycle ratio.
 Oracle dictionary size does not scale with the 80--200 GB event history, and this
 prevents a harmless one-second compatibility check from postponing the first real
@@ -125,10 +134,10 @@ reporting query by roughly 17 minutes. Arbitrary views and joins cannot use this
 catalog-only path. Schema incompatibility is contained by an explicit
 dataset-to-view dependency map: the exporter starts its REST/OpenAPI and compatible
 reporting collectors, marks each affected dataset unavailable with a bounded reason,
-and never issues SQL for that dataset. A transport, authentication, TLS, pacing-gate,
-or catalog-query failure still fails startup because no live view contract was
-discovered. The operator-only `--dataconnect-check` remains strict and returns a
-failure if any enabled contract is incompatible.
+and never issues SQL for that dataset. Restart-persistent reporting snapshots are
+restored only after live discovery proves their dataset contract compatible. The
+operator-only `--dataconnect-check` remains strict and returns a failure if any
+enabled contract is inaccessible or incompatible.
 Multi-view domains execute as atomic batches of at most five statements under one
 shared lease. Statements remain sequential and retain the fixed five-second gap;
 the adaptive cooldown is calculated from their combined Oracle execution time and
@@ -383,6 +392,14 @@ they emit distinct metric families and never substitute for one another.
 ## Failure semantics
 
 - Failure of one dataset records collector failure without changing ownership.
+  `ise_dataset_last_failure_info` retains the bounded category and
+  `ise_dataset_last_failure_detail_info` adds one bounded, single-line operator
+  explanation. Both are removed after recovery. The data-quality dashboard lists
+  dataset, source, category, and explanation; when none are unavailable it shows
+  an explicit healthy row instead of an ambiguous empty table.
+- Data Connect schema discovery is itself a retryable dataset. Its transport or
+  authentication failure leaves REST and MnT collection running and never allows
+  reporting SQL before a live contract has been discovered.
 - A missing Data Connect view or required column blocks only the datasets that
   depend on it. Incompatible datasets remain enabled-but-unavailable, are listed
   with their schema reason, do not restore an older snapshot, and issue no SQL.

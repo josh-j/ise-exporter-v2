@@ -168,8 +168,9 @@ def test_compatibility_failure_closes_control_plane_client(monkeypatch):
     assert closed == ["control"]
 
 
-def test_schema_failure_closes_database_and_control_clients(monkeypatch):
+def test_schema_discovery_is_scheduler_owned_after_metrics_start(monkeypatch):
     closed = []
+    events = []
 
     class Control:
         def __init__(self, cfg, auth_guard=None):
@@ -180,11 +181,25 @@ def test_schema_failure_closes_database_and_control_clients(monkeypatch):
 
     class DataConnect:
         def __init__(self, cfg):
-            pass
+            self.schema_ready = False
+            self.dataset_schema_failures = {}
+
+        def query(self, *_args, **_kwargs):
+            raise AssertionError("main must not query Data Connect before metrics start")
 
         def close(self):
             closed.append("dataconnect")
             raise RuntimeError("database close failed")
+
+    class Scheduler:
+        dataconnect_worker_alive = False
+        mnt_worker_alive = False
+
+        def __init__(self, cfg, client, dataconnect, mnt):
+            events.append(("scheduler", dataconnect.schema_ready))
+
+        def loop(self, shutdown):
+            events.append(("loop", shutdown.is_set()))
 
     compatibility = types.SimpleNamespace(
         ise_version="3.3.0.430", patch_level=11, deployment_nodes=("ise-1",))
@@ -194,68 +209,15 @@ def test_schema_failure_closes_database_and_control_clients(monkeypatch):
     monkeypatch.setattr(app, "DataConnectClient", DataConnect)
     monkeypatch.setattr(app, "validate_ise_compatibility", lambda _client: compatibility)
     monkeypatch.setattr(
-        app, "inspect_dataconnect_schema",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("schema failed")),
-    )
-
-    assert app.main([]) == 1
-    assert closed == ["dataconnect", "control"]
-
-
-def test_partial_schema_starts_exporter_with_dataset_failures(monkeypatch):
-    seen = {}
-
-    class Client:
-        def __init__(self, cfg, auth_guard=None):
-            pass
-
-        def close(self):
-            pass
-
-    class DataConnect:
-        def __init__(self, cfg):
-            seen["dataconnect"] = self
-
-        def set_schema(self, schema, failures):
-            self.schema = schema
-            self.dataset_schema_failures = failures
-
-        def close(self):
-            pass
-
-    class Scheduler:
-        dataconnect_worker_alive = False
-        mnt_worker_alive = False
-
-        def __init__(self, cfg, client, dataconnect, mnt):
-            seen["scheduler_failures"] = dataconnect.dataset_schema_failures
-
-        def loop(self, shutdown):
-            seen["loop"] = True
-
-    compatibility = types.SimpleNamespace(
-        ise_version="3.3.0.430", patch_level=11, deployment_nodes=("ise-1",))
-    failure = types.SimpleNamespace(
-        reason="schema_missing_view_system_summary",
-        detail="missing view SYSTEM_SUMMARY",
-    )
-    monkeypatch.setattr(app, "Config", types.SimpleNamespace(from_env=lambda: _cfg(
-        ise_mnt_host="", collect_mnt_active_posture=False, collect_tacacs=True)))
-    monkeypatch.setattr(app, "ISEControlPlaneClient", Client)
-    monkeypatch.setattr(app, "DataConnectClient", DataConnect)
-    monkeypatch.setattr(app, "validate_ise_compatibility", lambda _client: compatibility)
-    monkeypatch.setattr(
-        app, "inspect_dataconnect_schema",
-        lambda *_args, **_kwargs: ({"RADIUS_ACCOUNTING": {}}, {
-            "dataconnect_performance": failure,
-        }),
-    )
-    monkeypatch.setattr(app, "start_http_server", lambda *_args, **_kwargs: None)
+        app, "start_http_server",
+        lambda *_args, **_kwargs: events.append(("metrics", True)))
     monkeypatch.setattr(app, "PollScheduler", Scheduler)
 
     assert app.main([]) == 0
-    assert seen["scheduler_failures"] == {"dataconnect_performance": failure}
-    assert seen["loop"] is True
+    assert events == [
+        ("metrics", True), ("scheduler", False), ("loop", False),
+    ]
+    assert closed == ["dataconnect", "control"]
 
 
 def test_stop_metrics_server_closes_listener_and_joins_thread():

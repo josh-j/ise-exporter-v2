@@ -21,7 +21,7 @@
   "tags": ["cisco", "ise", "data-quality", "dataconnect"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "30s",
   "editable": true,
   "graphTooltip": 1,
@@ -87,15 +87,15 @@
       "id": 5,
       "type": "table",
       "title": "Unavailable Dataset Details",
-      "description": "Every enabled unavailable dataset, its collection source, and the latest bounded failure reason. not_attempted means no collection attempt has failed or completed yet; the exporter journal contains the full exception text.",
+      "description": "Every enabled unavailable dataset, its collection source, bounded failure category, and operator-safe detail. A NONE row explicitly confirms that all enabled datasets are available.",
       "gridPos": {"h": 11, "w": 24, "x": 0, "y": 4},
       "targets": [
-        {"expr": "(ise_dataset_last_failure_info or (label_replace(ise_dataset_up, \"reason\", \"not_attempted\", \"dataset\", \".+\") unless on(dataset,source) ise_dataset_last_failure_info)) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))", "format": "table", "instant": true, "refId": "Unavailable", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "((ise_dataset_last_failure_detail_info or label_replace((ise_dataset_last_failure_info unless on(dataset,source) ise_dataset_last_failure_detail_info), \"detail\", \"Failure category: $1; inspect exporter journal\", \"reason\", \"(.+)\") or (label_replace(label_replace(ise_dataset_up, \"reason\", \"not_attempted\", \"dataset\", \".+\"), \"detail\", \"No collection attempt has completed or failed yet\", \"dataset\", \".+\") unless on(dataset,source) (ise_dataset_last_failure_info or ise_dataset_last_failure_detail_info))) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))) or label_replace(label_replace(label_replace(label_replace(absent(count((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))), \"dataset\", \"NONE\", \"\", \".*\"), \"source\", \"-\", \"\", \".*\"), \"reason\", \"healthy\", \"\", \".*\"), \"detail\", \"All enabled datasets are available\", \"\", \".*\")", "format": "table", "instant": true, "refId": "Unavailable", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
       "options": {"showHeader": true},
       "transformations": [
-        {"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}, "indexByName": {"dataset": 0, "source": 1, "reason": 2}, "renameByName": {"dataset": "Dataset", "source": "Source", "reason": "Why unavailable"}}}
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}, "indexByName": {"dataset": 0, "source": 1, "reason": 2, "detail": 3}, "renameByName": {"dataset": "Dataset", "source": "Source", "reason": "Failure category", "detail": "Why unavailable"}}}
       ]
     },
     {
