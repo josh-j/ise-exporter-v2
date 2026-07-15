@@ -307,6 +307,7 @@ def _collect_dataconnect(dataconnect, cfg):
         cfg, getattr(cfg, "dataconnect_tacacs_interval", 86400))
     cutoff = max(0, int(time.time()) - window * 3600)
     internal_accounts = _internal_accounts(cfg)
+    internal_label_by_raw = {raw: label_name for label_name, raw in internal_accounts}
     parameters = {"minimum_epoch": cutoff}
     parameters.update({f"internal_user_{index}": raw
                        for index, (_label_name, raw) in enumerate(internal_accounts)})
@@ -319,7 +320,9 @@ def _collect_dataconnect(dataconnect, cfg):
     observed_last_seen = {}
     for event_type, event_rows in combined.items():
         for row in event_rows:
-            username = _label(row.get("username"))
+            raw_username = str(row.get("username") or "").strip().casefold()
+            username = internal_label_by_raw.get(
+                raw_username, _label(row.get("username")))
             observed_last_seen[(username, event_type)] = max(
                 observed_last_seen.get((username, event_type), 0),
                 int(row.get("last_seen") or 0))

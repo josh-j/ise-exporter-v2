@@ -527,3 +527,42 @@ def test_internal_account_last_seen_is_not_lost_outside_dimensional_topk(tmp_pat
 
     tacacs.collect_config(Client(), cfg)
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
+
+
+def test_internal_activity_case_is_joined_to_configured_account_label(tmp_path):
+    state_path = str(tmp_path / "state.sqlite3")
+    cfg = types.SimpleNamespace(
+        dataconnect_max_groups=1, state_db_path=state_path,
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=1)
+
+    class MixedCaseClient(Client):
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            result = super().get_ers(path, params, get_all, api_name)
+            if path == "/config/internaluser":
+                result[0]["name"] = "NetAdmin"
+            elif path == "/config/internaluser/u1":
+                result["InternalUser"]["name"] = "NetAdmin"
+            return result
+
+    tacacs.collect_config(MixedCaseClient(), cfg)
+    now = int(time.time())
+
+    class LowerCaseActivity:
+        def query(self, sql, parameters=None):
+            assert parameters["internal_user_0"] == "netadmin"
+            return [{
+                "breakdown": "internal_last_seen", "username": "netadmin",
+                "hits": 1, "last_seen": now, "total_events": 1,
+                "total_groups": 1,
+            }]
+
+    tacacs.collect_activity(LowerCaseActivity(), cfg)
+
+    assert _rows(metrics.ise_tacacs_account_last_seen_timestamp,
+                 "username", "event_type") == {
+        ("NetAdmin", "authentication"): float(now),
+        ("NetAdmin", "authorization"): float(now),
+        ("NetAdmin", "accounting"): float(now),
+    }
+    tacacs.collect_config(MixedCaseClient(), cfg)
+    assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
