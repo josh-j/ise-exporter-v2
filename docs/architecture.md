@@ -110,7 +110,7 @@ summary view, not an additional raw authentication scan.
 The three large daily RADIUS sources each use one `GROUPING SETS` statement for
 their paired breakdowns (authentication/latency, volume/failure context, and
 accounting/session duration), rather than rescanning the same 24-hour window.
-The steady-state scheduled workload is about 8.2 statements per hour after startup.
+The steady-state scheduled workload is about 7.9 statements per hour after startup.
 Daily RADIUS reporting scans 24 hours, while a disjoint active-session query
 scans only its configured stale window every 30 minutes. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
@@ -119,6 +119,9 @@ Other scheduled event scans match their cadence: one hour for PSN performance
 and diagnostics, six hours for posture and NAD health, and 24 hours for endpoint
 profiling. `ISE_DATACONNECT_EVENT_WINDOW_HOURS` is an absolute 24-hour-or-lower
 ceiling; setting it below a domain cadence is an explicit sampling tradeoff.
+The posture snapshot materializes its bounded latest-assessment set once and uses
+one `GROUPING SETS` pass for status/version and failure breakdowns plus eligible
+endpoint coverage; it does not rebuild the same assessment window per dashboard.
 TACACS also runs every six hours and applies an `EPOCH_TIME` lower bound to
 Cisco's two-day views before grouping, so the view's retention does not become
 the exporter's scan size. The 14-view source-freshness diagnostic runs daily and

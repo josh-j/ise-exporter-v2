@@ -58,7 +58,7 @@ def _latest_posture_cte(window_hours=6):
             FROM posture_assessment_by_endpoint p
             WHERE {posture_recent}
         ), latest_posture AS (
-            SELECT * FROM ranked_posture WHERE row_num = 1
+            SELECT /*+ MATERIALIZE */ * FROM ranked_posture WHERE row_num = 1
         )
     """
 
@@ -69,33 +69,64 @@ def _queries(limit, window_hours=6):
     posture_mac = _normalized_mac("p.endpoint_mac_address")
     inventory_mac = _normalized_mac("e.mac_address")
     return {
-        "coverage": latest + f"""
-            SELECT COUNT(*) AS eligible_endpoints,
-                   SUM(CASE WHEN p.endpoint_mac_address IS NOT NULL THEN 1 ELSE 0 END)
-                       AS recently_assessed,
-                   SUM(CASE WHEN p.endpoint_mac_address IS NULL THEN 1 ELSE 0 END)
-                       AS without_recent_assessment
-            FROM endpoints_data e
-            LEFT JOIN latest_posture p ON {posture_mac} = {inventory_mac}
-            WHERE NVL(e.posture_applicable, 0) = 1
-        """,
-        "endpoints": latest + f"""
-            SELECT grouped_posture.*,
-                   SUM(endpoints) OVER () AS total_endpoints,
-                   SUM(CASE WHEN status_key IN ('compliant', 'passed')
-                            THEN endpoints ELSE 0 END) OVER () AS compliant_endpoints,
-                   SUM(CASE WHEN status_key IN ('noncompliant', 'failed', 'error')
-                            THEN endpoints ELSE 0 END) OVER () AS failed_endpoints,
-                   COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT {_STATUS_KEY} AS status_key, posture_status,
+        "snapshot": latest + f"""
+            , eligible_coverage AS (
+                SELECT COUNT(*) AS eligible_endpoints,
+                       SUM(CASE WHEN p.endpoint_mac_address IS NOT NULL THEN 1 ELSE 0 END)
+                           AS recently_assessed,
+                       SUM(CASE WHEN p.endpoint_mac_address IS NULL THEN 1 ELSE 0 END)
+                           AS without_recent_assessment
+                FROM endpoints_data e
+                LEFT JOIN latest_posture p ON {posture_mac} = {inventory_mac}
+                WHERE NVL(e.posture_applicable, 0) = 1
+            ), grouped_posture AS (
+                SELECT CASE WHEN GROUPING(message_code) = 1
+                            THEN 'endpoints' ELSE 'failures' END AS breakdown,
+                       {_STATUS_KEY} AS status_key, posture_status,
                        endpoint_operating_system, posture_agent_version,
-                       posture_policy_matched, ise_node, COUNT(*) AS endpoints
+                       posture_policy_matched, ise_node, message_code,
+                       COUNT(*) AS endpoints
                 FROM latest_posture
-                GROUP BY {_STATUS_KEY}, posture_status, endpoint_operating_system,
-                         posture_agent_version, posture_policy_matched, ise_node
-            ) grouped_posture
-            ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
+                GROUP BY GROUPING SETS (
+                    ({_STATUS_KEY}, posture_status, endpoint_operating_system,
+                     posture_agent_version, posture_policy_matched, ise_node),
+                    ({_STATUS_KEY}, posture_status, posture_policy_matched,
+                     ise_node, message_code)
+                )
+            ), filtered_posture AS (
+                SELECT * FROM grouped_posture
+                WHERE breakdown = 'endpoints'
+                   OR status_key IN ('noncompliant', 'failed', 'error')
+            ), ranked_posture_groups AS (
+                SELECT filtered_posture.*,
+                       SUM(CASE WHEN breakdown = 'endpoints'
+                                THEN endpoints ELSE 0 END) OVER () AS total_endpoints,
+                       SUM(CASE WHEN breakdown = 'endpoints'
+                                     AND status_key IN ('compliant', 'passed')
+                                THEN endpoints ELSE 0 END) OVER () AS compliant_endpoints,
+                       SUM(CASE WHEN breakdown = 'endpoints'
+                                     AND status_key IN (
+                                         'noncompliant', 'failed', 'error')
+                                THEN endpoints ELSE 0 END) OVER () AS failed_endpoints,
+                       COUNT(*) OVER (PARTITION BY breakdown) AS total_groups,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY breakdown ORDER BY endpoints DESC
+                       ) AS group_rank
+                FROM filtered_posture
+            )
+            SELECT breakdown, status_key, posture_status,
+                   endpoint_operating_system, posture_agent_version,
+                   posture_policy_matched, ise_node, message_code, endpoints,
+                   total_endpoints, compliant_endpoints, failed_endpoints,
+                   total_groups, NULL AS eligible_endpoints,
+                   NULL AS recently_assessed, NULL AS without_recent_assessment
+            FROM ranked_posture_groups
+            WHERE group_rank <= {limit}
+            UNION ALL
+            SELECT 'coverage' AS breakdown, NULL, NULL, NULL, NULL, NULL, NULL,
+                   NULL, NULL, NULL, NULL, NULL, NULL, eligible_endpoints,
+                   recently_assessed, without_recent_assessment
+            FROM eligible_coverage
         """,
         "conditions": f"""
             SELECT grouped_conditions.*, COUNT(*) OVER () AS total_groups
@@ -109,17 +140,6 @@ def _queries(limit, window_hours=6):
             ) grouped_conditions
             ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
         """,
-        "failures": latest + f"""
-            SELECT grouped_failures.*, COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT message_code, posture_status, posture_policy_matched, ise_node,
-                       COUNT(*) AS endpoints
-                FROM latest_posture
-                WHERE {_STATUS_KEY} IN ('noncompliant', 'failed', 'error')
-                GROUP BY message_code, posture_status, posture_policy_matched, ise_node
-            ) grouped_failures
-            ORDER BY endpoints DESC FETCH FIRST {limit} ROWS ONLY
-        """,
     }
 
 
@@ -130,7 +150,16 @@ def collect(dataconnect, cfg):
                 for name, sql in _queries(
                     group_limit(cfg), event_window_hours(
                         cfg, getattr(cfg, "dataconnect_posture_interval", 21600))).items()}
-        summaries = {name: (values[0] if values else {}) for name, values in rows.items()}
+        snapshot = rows["snapshot"]
+        snapshot_groups = {
+            breakdown: [row for row in snapshot if row.get("breakdown") == breakdown]
+            for breakdown in ("endpoints", "failures")
+        }
+        summaries = {
+            **{name: (values[0] if values else {})
+               for name, values in snapshot_groups.items()},
+            "conditions": rows["conditions"][0] if rows["conditions"] else {},
+        }
         endpoints = [{
             "status": label(row.get("posture_status"), "NotApplicable"),
             "os": label(row.get("endpoint_operating_system"), "Unknown"),
@@ -138,7 +167,7 @@ def collect(dataconnect, cfg):
             "policy": label(row.get("posture_policy_matched"), "none"),
             "psn": label(row.get("ise_node")),
             "count": integer(row.get("endpoints")),
-        } for row in rows["endpoints"]]
+        } for row in snapshot_groups["endpoints"]]
         conditions = [{
             "policy": label(row.get("policy"), "none"),
             "policy_status": label(row.get("policy_status")),
@@ -153,7 +182,7 @@ def collect(dataconnect, cfg):
             "policy": label(row.get("posture_policy_matched"), "none"),
             "psn": label(row.get("ise_node")),
             "count": integer(row.get("endpoints")),
-        } for row in rows["failures"]]
+        } for row in snapshot_groups["failures"]]
 
         writers = [
             lambda row=row: metrics.ise_dataconnect_posture_endpoint_assessments.labels(
@@ -177,7 +206,8 @@ def collect(dataconnect, cfg):
         total = integer(summaries["endpoints"].get("total_endpoints"))
         compliant = integer(summaries["endpoints"].get("compliant_endpoints"))
         failed = integer(summaries["endpoints"].get("failed_endpoints"))
-        coverage = rows["coverage"][0] if rows["coverage"] else {}
+        coverage = next((row for row in snapshot
+                         if row.get("breakdown") == "coverage"), {})
         eligible = integer(coverage.get("eligible_endpoints"))
         eligible_assessed = integer(coverage.get("recently_assessed"))
         eligible_unassessed = integer(coverage.get("without_recent_assessment"))

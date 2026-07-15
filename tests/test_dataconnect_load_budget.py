@@ -46,14 +46,23 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
         "radius": 4,
         "radius_active": 1,
         "performance": 4,
-        "posture": 4,
+        "posture": 2,
         "endpoints": 3,
         "freshness": 14,
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(8.208333333333334)
-    assert statements_per_hour < 8.25
+    assert statements_per_hour == pytest.approx(7.875)
+    assert statements_per_hour < 8
+
+
+def test_posture_reuses_one_bounded_latest_assessment_snapshot():
+    queries = dataconnect_posture._queries(Config().dataconnect_max_groups)
+
+    assert list(queries) == ["snapshot", "conditions"]
+    assert queries["snapshot"].lower().count(
+        "from posture_assessment_by_endpoint") == 1
+    assert "/*+ MATERIALIZE */" in queries["snapshot"]
 
 
 def test_radius_reporting_scans_each_large_historical_view_only_once():

@@ -26,40 +26,49 @@ def _rows(metric, *labels):
 
 
 class DataConnect:
+    def __init__(self):
+        self.sql = []
+
     def query(self, sql):
+        self.sql.append(sql)
         lowered = sql.lower()
-        if "eligible_endpoints" in lowered:
-            return [{"eligible_endpoints": 10, "recently_assessed": 8,
-                     "without_recent_assessment": 2}]
         if "grouped_conditions" in lowered:
             return [{"policy": "Firewall", "policy_status": "Failed",
                      "condition_name": "Firewall enabled", "condition_status": "Failed",
                      "enforcement_name": "Optional", "endpoints": 2,
                      "total_groups": 4}]
-        if "grouped_failures" in lowered:
-            return [{"message_code": "8701", "posture_status": "NonCompliant",
-                     "posture_policy_matched": "Firewall", "ise_node": "psn-1",
-                     "endpoints": 2, "total_groups": 2}]
         return [
-            {"posture_status": "Compliant", "endpoint_operating_system": "Windows",
+            {"breakdown": "endpoints", "posture_status": "Compliant",
+             "endpoint_operating_system": "Windows",
              "posture_agent_version": "5.1.18.314",
              "posture_policy_matched": "Corporate posture", "ise_node": "psn-1",
              "endpoints": 8, "total_endpoints": 12, "compliant_endpoints": 8,
              "failed_endpoints": 2, "total_groups": 3},
-            {"posture_status": "NonCompliant", "endpoint_operating_system": "Windows",
+            {"breakdown": "endpoints", "posture_status": "NonCompliant",
+             "endpoint_operating_system": "Windows",
              "posture_agent_version": "5.1.18.314",
              "posture_policy_matched": "Corporate posture", "ise_node": "psn-1",
              "endpoints": 2, "total_endpoints": 12, "compliant_endpoints": 8,
              "failed_endpoints": 2, "total_groups": 3},
-            {"posture_status": "NotApplicable", "endpoint_operating_system": "Linux",
+            {"breakdown": "endpoints", "posture_status": "NotApplicable",
+             "endpoint_operating_system": "Linux",
              "posture_agent_version": None, "posture_policy_matched": None,
              "ise_node": "psn-1", "endpoints": 2, "total_endpoints": 12,
              "compliant_endpoints": 8, "failed_endpoints": 2, "total_groups": 3},
+            {"breakdown": "failures", "message_code": "8701",
+             "posture_status": "NonCompliant",
+             "posture_policy_matched": "Firewall", "ise_node": "psn-1",
+             "endpoints": 2, "total_groups": 2},
+            {"breakdown": "coverage", "eligible_endpoints": 10,
+             "recently_assessed": 8, "without_recent_assessment": 2},
         ]
 
 
 def test_collects_posture_without_endpoint_identity_labels():
-    dataconnect_posture.collect(DataConnect(), types.SimpleNamespace(dataconnect_max_groups=20))
+    client = DataConnect()
+    dataconnect_posture.collect(client, types.SimpleNamespace(dataconnect_max_groups=20))
+
+    assert len(client.sql) == 2
 
     assert _rows(metrics.ise_dataconnect_posture_endpoint_assessments,
                  "status", "os", "agent_version") == {
@@ -92,10 +101,13 @@ def test_posture_uses_latest_endpoint_state_and_explicit_failure_statuses():
     queries = dataconnect_posture._queries(20)
 
     assert all("NUMTODSINTERVAL(6, 'HOUR')" in sql for sql in queries.values())
-    assert "ROW_NUMBER() OVER" in queries["endpoints"]
-    assert "PARTITION BY CASE" in queries["endpoints"]
-    assert "'mac:' || UPPER(REPLACE(REPLACE(REPLACE(" in queries["endpoints"]
-    assert "p.endpoint_mac_address = e.mac_address" not in queries["coverage"]
-    assert queries["coverage"].count("UPPER(REPLACE(REPLACE(REPLACE(") >= 3
-    assert "failure_reason" not in queries["failures"].lower()
-    assert "('noncompliant', 'failed', 'error')" in queries["failures"]
+    assert set(queries) == {"snapshot", "conditions"}
+    assert "ROW_NUMBER() OVER" in queries["snapshot"]
+    assert "PARTITION BY CASE" in queries["snapshot"]
+    assert "/*+ MATERIALIZE */" in queries["snapshot"]
+    assert "GROUP BY GROUPING SETS" in queries["snapshot"]
+    assert "'mac:' || UPPER(REPLACE(REPLACE(REPLACE(" in queries["snapshot"]
+    assert "p.endpoint_mac_address = e.mac_address" not in queries["snapshot"]
+    assert queries["snapshot"].count("UPPER(REPLACE(REPLACE(REPLACE(") >= 3
+    assert "failure_reason" not in queries["snapshot"].lower()
+    assert "('noncompliant', 'failed', 'error')" in queries["snapshot"]
