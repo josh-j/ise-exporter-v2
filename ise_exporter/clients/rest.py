@@ -34,6 +34,7 @@ PAN_MAX_PAGES = 100
 HTTP_READ_CHUNK_BYTES = 64 * 1024
 MAX_HTTP_RESPONSE_BYTES = 64 * 1024 * 1024
 HTTP_ERROR_SNIPPET_BYTES = 200
+MAX_AUTH_BACKOFF_SECONDS = 86400
 UNSAFE_XML_DECLARATION = re.compile(br"<!DOCTYPE|<!ENTITY", re.IGNORECASE)
 
 
@@ -117,14 +118,20 @@ class RestAuthGuard:
                 os.close(descriptor)
 
     def blocked(self, now):
-        return self._update(
-            lambda failures, deadline: ((failures, deadline), deadline > now))
+        def update(failures, deadline):
+            # A forward clock jump followed by correction must not turn a
+            # configured one-day maximum into a months-long persistent outage.
+            deadline = min(deadline, now + MAX_AUTH_BACKOFF_SECONDS)
+            return (failures, deadline), deadline > now
+        return self._update(update)
 
     def failure(self, threshold, backoff, now):
         def update(failures, deadline):
             failures += 1
+            deadline = min(deadline, now + MAX_AUTH_BACKOFF_SECONDS)
             if failures >= threshold and backoff:
-                deadline = max(deadline, now + backoff)
+                deadline = max(deadline, now + min(
+                    backoff, MAX_AUTH_BACKOFF_SECONDS))
             return (failures, deadline), (failures, deadline)
         return self._update(update)
 

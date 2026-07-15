@@ -585,6 +585,19 @@ def test_auth_guard_state_is_scoped_to_account_and_cluster(tmp_path):
     assert changed.blocked(1_001) is False
 
 
+def test_auth_guard_caps_future_deadline_after_clock_correction(tmp_path):
+    cfg = types.SimpleNamespace(
+        ise_host="pan.example", ise_mnt_host="mnt.example", ise_user="readonly",
+        rest_auth_guard_file=str(tmp_path / "rest-auth.guard"),
+    )
+    guard = RestAuthGuard(cfg)
+    guard.failure(1, 86400, 1_000_000)
+
+    assert guard.blocked(1_000) is True
+    assert float((tmp_path / "rest-auth.guard").read_text().split()[3]) == 87_400
+    assert guard.blocked(87_401) is False
+
+
 def test_unverified_https_warning_is_suppressed_at_request_boundary():
     client = ISERestClient.__new__(ISERestClient)
     client._auth_failures = 0
