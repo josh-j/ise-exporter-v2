@@ -3,7 +3,7 @@ import types
 import pytest
 
 from ise_exporter import metrics
-from ise_exporter.collectors import backup, certificates, deployment
+from ise_exporter.collectors import backup, certificates, deployment, licensing, patches
 from ise_exporter.util import clear_metric
 
 
@@ -18,6 +18,11 @@ def _clear_metrics():
         if hasattr(metric, "_value"):
             metric.set(0)
     metrics.ise_up.set(0)
+    for metric in licensing._METRICS:
+        clear_metric(metric)
+    metrics.ise_version_info.info({})
+    metrics.ise_patch_level.set(0)
+    clear_metric(metrics.ise_patch_installed)
 
 
 def _cfg():
@@ -179,3 +184,86 @@ def test_deployment_success_replaces_removed_nodes(monkeypatch):
     assert any("new" in key for key in keys)
     assert metrics.ise_pan_ha_enabled._value.get() == 0
     assert metrics.ise_up._value.get() == 1
+
+
+@pytest.mark.parametrize("state, expected", [
+    ("COMPLIANT", 1),
+    ("FULL_COMPLIANCE", 1),
+    ("RESERVED_IN_COMPLIANCE", 1),
+    ("NONCOMPLIANT", 0),
+    ("EVALUATION", 0),
+    ("EVALUATION_EXPIRED", 0),
+    ("RELEASED_ENTITLEMENT", 0),
+    ("", 0),
+])
+def test_license_compliance_matches_ise_33_enum(state, expected):
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return [{
+                "name": "Advantage",
+                "consumptionCounter": 42,
+                "status": "ENABLED",
+                "compliance": state,
+            }]
+
+    licensing.collect(Client(), _cfg())
+
+    assert metrics.ise_license_compliance.labels(
+        tier="Advantage")._value.get() == expected
+    assert metrics.ise_license_consumption.labels(tier="Advantage")._value.get() == 42
+
+
+def test_malformed_license_tier_preserves_previous_snapshot():
+    metrics.ise_license_consumption.labels(tier="old").set(7)
+    metrics.ise_license_compliance.labels(tier="old").set(1)
+    metrics.ise_license_enabled.labels(tier="old").set(1)
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return [
+                {"name": "new", "consumptionCounter": 8},
+                {"name": "broken", "consumptionCounter": "not-a-number"},
+            ]
+
+    licensing.collect(Client(), _cfg())
+
+    assert set(metrics.ise_license_consumption._metrics) == {("old",)}
+    assert metrics.ise_license_consumption.labels(tier="old")._value.get() == 7
+
+
+def test_malformed_patch_entry_preserves_version_and_patch_snapshot():
+    metrics.ise_version_info.info({"version": "3.3.0-old"})
+    metrics.ise_patch_level.set(10)
+    metrics.ise_patch_installed.labels(patch_number="10").set(1)
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return {
+                "iseVersion": "3.3.0-new",
+                "patchVersion": [{"patchNumber": 11}, {"patchNumber": "broken"}],
+            }
+
+    patches.collect(Client(), _cfg())
+
+    assert metrics.ise_version_info._value == {"version": "3.3.0-old"}
+    assert metrics.ise_patch_level._value.get() == 10
+    assert set(metrics.ise_patch_installed._metrics) == {("10",)}
+
+
+def test_patch_success_atomically_replaces_version_and_installed_set():
+    metrics.ise_version_info.info({"version": "3.2.0"})
+    metrics.ise_patch_level.set(9)
+    metrics.ise_patch_installed.labels(patch_number="9").set(1)
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return {
+                "iseVersion": "3.3.0.430",
+                "patchVersion": [{"patchNumber": "10"}, {"patchNumber": 11}],
+            }
+
+    patches.collect(Client(), _cfg())
+
+    assert metrics.ise_version_info._value == {"version": "3.3.0.430"}
+    assert metrics.ise_patch_level._value.get() == 11
+    assert set(metrics.ise_patch_installed._metrics) == {("10",), ("11",)}

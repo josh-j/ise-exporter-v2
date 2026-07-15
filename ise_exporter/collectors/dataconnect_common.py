@@ -3,11 +3,11 @@ from datetime import datetime, timezone
 import math
 
 from ..snapshots import replace_metric_snapshot
+from ..util import metric_label
 
 
 def label(value, default="unknown"):
-    text = str(value or "").strip()
-    return text or default
+    return metric_label(value, default)
 
 
 def number(value, default=0.0):

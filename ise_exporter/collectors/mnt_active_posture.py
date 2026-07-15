@@ -24,6 +24,7 @@ from ..util import (
     SECURECLIENT_VERSION_KEYS,
     first_nonempty,
     is_mac,
+    metric_label,
     normalize_agent_version,
     normalize_bool_label,
     normalize_mac,
@@ -291,7 +292,7 @@ def _aggregate(details):
                 detail, attrs, "posture_agent_version", "PostureAgentVersion"))
         os_name = _agent_os(agent)
         psn = _value(detail, attrs, "server", "acs_server", "ise_node", "Server")
-        psn = (psn or "Unknown")[:128]
+        psn = metric_label(psn, "Unknown", 128)
 
         if posture_status:
             coverage["posture_status"] += 1
@@ -308,9 +309,9 @@ def _aggregate(details):
         statuses[(status, os_name, psn)] += 1
         applicable[normalize_bool_label(posture_applicable)] += 1
         assessments[normalize_posture(assessment) if assessment else "Unknown"] += 1
-        agents[(agent or "Unknown")[:128]] += 1
+        agents[metric_label(agent, "Unknown", 128)] += 1
         for policy, result in set(parse_posture_report(report)):
-            policies[(policy[:128], result)] += 1
+            policies[(metric_label(policy, "Unknown", 128), result)] += 1
 
         execution_steps = _value(
             detail, attrs, "execution_steps", "ExecutionSteps", "Steps")

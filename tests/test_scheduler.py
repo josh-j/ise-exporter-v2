@@ -345,6 +345,19 @@ def test_failed_dataconnect_attempt_never_retries_faster_than_five_minutes(monke
     assert len(attempts) == 2
 
 
+def test_transient_daily_dataconnect_failure_retries_after_slow_interval(monkeypatch):
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: 100.0)
+    scheduler = PollScheduler(_cfg(slow_interval=3600), object(), object())
+
+    def fail():
+        with collectors.observe("dataconnect_radius"):
+            raise RuntimeError("temporary database failure")
+
+    scheduler._run("dataconnect_radius", 100.0, 86400, fail)
+
+    assert scheduler.next_run["dataconnect_radius"] == 3700.0
+
+
 def test_success_schedules_from_completion_and_publishes_freshness(monkeypatch, caplog):
     caplog.set_level("INFO", logger="ise_exporter.scheduler")
     monkeypatch.setattr(scheduler_module.time, "time", lambda: 400.0)

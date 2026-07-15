@@ -46,6 +46,9 @@ def replace_metric_snapshot(metric_families, writers):
         for metric in families:
             if hasattr(metric, "_metrics"):
                 backups[metric] = ("labelled", dict(metric._metrics))
+            elif hasattr(metric, "info") and isinstance(
+                    getattr(metric, "_value", None), dict):
+                backups[metric] = ("info", dict(metric._value))
             elif hasattr(metric, "_value"):
                 backups[metric] = ("scalar", metric._value.get())
             else:
@@ -55,6 +58,8 @@ def replace_metric_snapshot(metric_families, writers):
                 kind, _previous = backups[metric]
                 if kind == "labelled":
                     metric._metrics.clear()
+                elif kind == "info":
+                    metric.info({})
                 else:
                     metric.set(0)
             for writer in writers:
@@ -64,6 +69,8 @@ def replace_metric_snapshot(metric_families, writers):
                 if kind == "labelled":
                     metric._metrics.clear()
                     metric._metrics.update(previous)
+                elif kind == "info":
+                    metric.info(previous)
                 else:
                     metric.set(previous)
             raise

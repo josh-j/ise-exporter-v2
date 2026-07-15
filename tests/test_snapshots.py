@@ -1,7 +1,7 @@
 import threading
 
 import pytest
-from prometheus_client import CollectorRegistry, Gauge
+from prometheus_client import CollectorRegistry, Gauge, Info
 
 from ise_exporter.snapshots import (
     LockedCollectorRegistry,
@@ -55,6 +55,24 @@ def test_snapshot_replacement_includes_scalar_gauges_and_rolls_them_back():
     labelled_samples = {(sample.labels["key"], sample.value)
                         for sample in labelled.collect()[0].samples}
     assert labelled_samples == {("old", 1)}
+
+
+def test_snapshot_replacement_includes_info_and_rolls_it_back():
+    registry = CollectorRegistry()
+    version = Info("snapshot_version", "test", registry=registry)
+    level = Gauge("snapshot_level", "test", registry=registry)
+    version.info({"version": "old"})
+    level.set(10)
+
+    with pytest.raises(RuntimeError):
+        replace_metric_snapshot((version, level), (
+            lambda: version.info({"version": "new"}),
+            lambda: level.set(11),
+            lambda: (_ for _ in ()).throw(RuntimeError("stop")),
+        ))
+
+    assert version._value == {"version": "old"}
+    assert level._value.get() == 10
 
 
 def test_locked_registry_waits_for_snapshot_publication_boundary():

@@ -1,12 +1,23 @@
 """licensing collector (port of collect_license_metrics). Smart-licensing tier
 state via PAN OpenAPI: per-tier consumption counter, enabled flag, compliance."""
 import logging
+import math
 
 from .. import metrics
-from ..util import clear_metric
+from ..snapshots import replace_metric_snapshot
 from . import observe, CollectorFailed
 
 logger = logging.getLogger(__name__)
+_METRICS = (
+    metrics.ise_license_consumption,
+    metrics.ise_license_compliance,
+    metrics.ise_license_enabled,
+)
+_COMPLIANT_STATES = frozenset({
+    "COMPLIANT",
+    "FULL_COMPLIANCE",
+    "RESERVED_IN_COMPLIANCE",
+})
 
 
 def collect(client, cfg):
@@ -15,19 +26,46 @@ def collect(client, cfg):
         tiers = client.get_pan_api("/license/system/tier-state", api_name="pan_license", unwrap=False)
         if not tiers:
             raise CollectorFailed("no license tier-state")
+        if not isinstance(tiers, (dict, list)):
+            raise CollectorFailed("license tier-state was not an object or list")
 
-        clear_metric(metrics.ise_license_consumption)
-        clear_metric(metrics.ise_license_compliance)
-        clear_metric(metrics.ise_license_enabled)
-
+        rows = []
+        names = set()
         for tier in (tiers if isinstance(tiers, list) else [tiers]):
-            name = tier.get("name", "unknown")
-            metrics.ise_license_consumption.labels(tier=name).set(tier.get("consumptionCounter", 0))
-            metrics.ise_license_enabled.labels(tier=name).set(
-                1 if tier.get("status", "DISABLED") == "ENABLED" else 0)
-            compliance = tier.get("compliance", "")
-            # str(): ISE returns this as a string, but coerce so a stray non-string value
-            # can't AttributeError and fail the whole collector. Empty/absent -> compliant.
-            is_compliant = "IN_COMPLIANCE" in str(compliance).upper() if compliance else True
-            metrics.ise_license_compliance.labels(tier=name).set(1 if is_compliant else 0)
-        logger.info("Licensing: %d tiers", len(tiers) if isinstance(tiers, list) else 1)
+            if not isinstance(tier, dict):
+                raise CollectorFailed("license tier-state contained a non-object")
+            name = str(tier.get("name") or "").strip()
+            if not name or len(name) > 256 or name in names:
+                raise CollectorFailed("license tier-state contained an invalid tier name")
+            names.add(name)
+            try:
+                consumption = float(tier.get("consumptionCounter", 0) or 0)
+            except (TypeError, ValueError) as error:
+                raise CollectorFailed(
+                    f"license tier {name} contained invalid consumption") from error
+            if not math.isfinite(consumption) or consumption < 0:
+                raise CollectorFailed(f"license tier {name} contained invalid consumption")
+            compliance = str(tier.get("compliance") or "").strip().upper()
+            # These values come from ISE 3.3's TierStateSettings enum. Exact
+            # membership avoids both false positives and the former false
+            # negatives for COMPLIANT and FULL_COMPLIANCE.
+            is_compliant = compliance in _COMPLIANT_STATES
+            rows.append({
+                "name": name,
+                "consumption": consumption,
+                "enabled": int(str(tier.get("status") or "").strip().upper() == "ENABLED"),
+                "compliant": int(is_compliant),
+            })
+
+        writers = []
+        for row in rows:
+            writers.extend((
+                lambda row=row: metrics.ise_license_consumption.labels(
+                    tier=row["name"]).set(row["consumption"]),
+                lambda row=row: metrics.ise_license_enabled.labels(
+                    tier=row["name"]).set(row["enabled"]),
+                lambda row=row: metrics.ise_license_compliance.labels(
+                    tier=row["name"]).set(row["compliant"]),
+            ))
+        replace_metric_snapshot(_METRICS, writers)
+        logger.info("Licensing: %d tiers", len(rows))

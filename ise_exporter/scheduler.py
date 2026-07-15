@@ -281,8 +281,11 @@ class PollScheduler:
                     retry = max(self.cfg.slow_interval, effective_interval)
                 elif source == "dataconnect":
                     # A failed reporting query can still consume substantial ISE
-                    # database work. Never hammer it at the exporter loop cadence.
-                    retry = max(300, effective_interval)
+                    # database work. Never hammer it at the exporter loop cadence,
+                    # but do not leave a daily dataset empty for 24 hours after one
+                    # transient startup failure. The client-side adaptive duty-cycle
+                    # gate remains authoritative when a slow query needs more rest.
+                    retry = max(300, min(effective_interval, self.cfg.slow_interval))
                 else:
                     retry = min(tier, getattr(self.cfg, "scrape_interval", tier))
                 self.next_run[name] = completed + retry

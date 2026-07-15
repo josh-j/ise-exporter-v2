@@ -2,7 +2,21 @@ from ise_exporter.util import (normalize_mac, normalize_location,
                                parse_other_attr_string, first_nonempty,
                                normalize_posture, normalize_bool_label,
                                parse_posture_report, normalize_agent_version,
-                               parse_step_latencies)
+                               parse_step_latencies, metric_label)
+
+
+def test_metric_label_bounds_bytes_and_preserves_long_value_identity():
+    first = "policy-" + "x" * 300 + "-one"
+    second = "policy-" + "x" * 300 + "-two"
+
+    first_label = metric_label(first, max_bytes=128)
+    second_label = metric_label(second, max_bytes=128)
+
+    assert len(first_label.encode("utf-8")) <= 128
+    assert len(second_label.encode("utf-8")) <= 128
+    assert first_label != second_label
+    assert metric_label("short") == "short"
+    assert metric_label("", "none") == "none"
 
 
 def test_normalize_mac():

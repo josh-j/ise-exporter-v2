@@ -80,7 +80,10 @@ Data Connect owns historical monitoring and reporting state:
 Queries are read-only, aggregated in Oracle, time-bounded where the view is an
 event history, and capped by `ISE_DATACONNECT_MAX_GROUPS`. Endpoint identities,
 session IDs, raw posture reports, and free-form failure text must not become
-unbounded Prometheus labels.
+unbounded Prometheus labels. Every reporting-derived label is capped at 256 UTF-8
+bytes (128 bytes for current MnT policy, agent, and PSN labels); values that exceed
+the cap retain a hash suffix so shared prefixes cannot silently merge distinct
+series.
 
 Data Connect safety applies to the whole ISE deployment. Connecting to a
 secondary MnT does not imply that every exposed view is executed only on that
@@ -269,11 +272,16 @@ they emit distinct metric families and never substitute for one another.
 ## Failure semantics
 
 - Failure of one dataset records collector failure without changing ownership.
-- The exporter retries the same authoritative source at its configured cadence;
-  it never switches between Data Connect, MnT XML, pxGrid, or per-endpoint ERS.
+- The exporter retries the same authoritative source and never switches between
+  Data Connect, MnT XML, pxGrid, or per-endpoint ERS. An early Data Connect failure
+  retries no faster than five minutes and normally at the one-hour slow interval,
+  so one transient startup failure cannot leave a daily dashboard empty for 24
+  hours. Five consecutive failures return to the full protected domain cadence.
 - A reporting-plane failure must not be represented as a valid empty snapshot.
 - Successful grouped query results replace their metric snapshot atomically so
   removed groups do not linger.
+- Licensing and version/patch payloads are fully validated and replace all related
+  gauges and Info labels in one rollback-capable snapshot.
 - Repeated collector failure is rate-limited by the scheduler to protect ISE.
 - Failure of the exact-version startup check prevents the metrics server from
   starting against an unsupported appliance.

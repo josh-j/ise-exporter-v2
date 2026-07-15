@@ -11,7 +11,7 @@ import time
 
 from .. import metrics
 from ..state import StateStore
-from ..util import normalize_bool_label
+from ..util import metric_label, normalize_bool_label
 from . import CollectorFailed, observe
 from .dataconnect_common import event_window_hours, group_limit, replace_snapshot
 
@@ -136,8 +136,7 @@ def _timestamp(value):
 
 
 def _label(value):
-    text = str(value or "").strip()
-    return text or "none"
+    return metric_label(value, "none")
 
 
 _FAILURE_CLASS_SQL = """CASE
@@ -418,7 +417,7 @@ def collect_config(client, cfg):
         review_days = max(1, getattr(cfg, "tacacs_unused_account_days", 180))
         cutoff = datetime.now(timezone.utc).timestamp() - review_days * 86400
         usernames = [
-            str(resource.get("name")) for resource in selected
+            _label(resource.get("name")) for resource in selected
             if isinstance(resource, dict) and resource.get("name")
         ]
         try:
@@ -447,7 +446,7 @@ def collect_config(client, cfg):
             metrics.ise_tacacs_internal_user_detail_refresh_deferred.set(refresh_deferred)
             metrics.ise_tacacs_unused_account_review_seconds.set(review_days * 86400)
             for user in users:
-                username = str(user.get("name") or "unknown")
+                username = _label(user.get("name"))
                 enabled = normalize_bool_label(user.get("enabled"))
                 password_never_expires = normalize_bool_label(user.get("passwordNeverExpires"))
                 change_password = normalize_bool_label(user.get("changePassword"))
@@ -455,7 +454,7 @@ def collect_config(client, cfg):
                     username=username, enabled=enabled,
                     password_never_expires=password_never_expires,
                     change_password=change_password,
-                    identity_store=str(user.get("passwordIDStore") or "unknown")).set(1)
+                    identity_store=_label(user.get("passwordIDStore"))).set(1)
                 if enabled == "true" and password_never_expires == "true":
                     metrics.ise_tacacs_internal_user_hygiene_risk.labels(
                         username=username, risk="password_never_expires").set(1)

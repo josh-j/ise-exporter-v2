@@ -1,12 +1,26 @@
 """Stateless helpers shared across collectors. (Moved verbatim from the
 monolithic ise_exporter.py.)"""
 from datetime import datetime, timezone
+import hashlib
 import logging
 import math
 import re
 
 logger = logging.getLogger(__name__)
 MAX_ISE_STEP_CODE = 99_999
+MAX_METRIC_LABEL_BYTES = 256
+
+
+def metric_label(value, default="unknown", max_bytes=MAX_METRIC_LABEL_BYTES):
+    """Return a readable, deterministic, byte-bounded Prometheus label."""
+    text = str(value or "").strip() or default
+    limit = max(32, min(MAX_METRIC_LABEL_BYTES, int(max_bytes)))
+    encoded = text.encode("utf-8")
+    if len(encoded) <= limit:
+        return text
+    digest = hashlib.sha256(encoded).hexdigest()[:16]
+    prefix = encoded[:limit - len(digest) - 1].decode("utf-8", "ignore")
+    return f"{prefix}~{digest}"
 
 
 def clear_metric(metric):
