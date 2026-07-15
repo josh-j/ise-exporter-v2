@@ -28,6 +28,8 @@ MAX_STATE_KEY_BYTES = 256
 MAX_STATE_VALUE_BYTES = 32 * 1024 * 1024
 MAX_CACHE_CYCLE_KEYS = 250_000
 MAX_CORRUPT_STATE_GENERATIONS = 2
+STATE_OPEN_LOCK_RETRIES = 5
+STATE_OPEN_LOCK_RETRY_SECONDS = 0.01
 _REQUIRED_SCHEMA = {
     "mnt_posture_cache": (
         ("mac", "TEXT", 1),
@@ -74,7 +76,7 @@ class StateStore:
         self._file_path = None if self.path == ":memory:" else Path(self.path)
         self._prepare_state_file()
         try:
-            self._open_and_initialize()
+            self._open_with_lock_retry()
         except sqlite3.DatabaseError as error:
             self._close_quietly()
             if (self._file_path is None
@@ -84,15 +86,28 @@ class StateStore:
                 # Another exporter process may have recovered the pathname while
                 # this connection still referenced the old corrupt inode.
                 try:
-                    self._open_and_initialize()
+                    self._open_with_lock_retry()
                 except sqlite3.DatabaseError as retry_error:
                     self._close_quietly()
                     if not self._recoverable_corruption(retry_error):
                         raise
                     self._quarantine_corrupt_files()
                     self._prepare_state_file()
-                    self._open_and_initialize()
+                    self._open_with_lock_retry()
                 self._prune_corrupt_files()
+
+    def _open_with_lock_retry(self):
+        """Tolerate a brief WAL/schema lock while another connection initializes."""
+        for attempt in range(STATE_OPEN_LOCK_RETRIES):
+            try:
+                self._open_and_initialize()
+                return
+            except sqlite3.OperationalError as error:
+                self._close_quietly()
+                if ("locked" not in str(error).casefold()
+                        or attempt == STATE_OPEN_LOCK_RETRIES - 1):
+                    raise
+                time.sleep(STATE_OPEN_LOCK_RETRY_SECONDS * (2 ** attempt))
 
     def _prepare_state_file(self):
         if self._file_path is None:

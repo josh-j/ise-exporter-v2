@@ -154,6 +154,39 @@ def test_concurrent_corruption_recovery_quarantines_only_once(tmp_path):
     store.close()
 
 
+def test_state_open_retries_only_transient_sqlite_lock_errors(monkeypatch):
+    attempts = []
+
+    def initially_locked(self):
+        attempts.append(True)
+        if len(attempts) < 3:
+            raise sqlite3.OperationalError("database is locked")
+        self.db = sqlite3.connect(":memory:")
+
+    monkeypatch.setattr(StateStore, "_open_and_initialize", initially_locked)
+    monkeypatch.setattr(state_module.time, "sleep", lambda _seconds: None)
+
+    store = StateStore(":memory:")
+    store.close()
+
+    assert len(attempts) == 3
+
+
+def test_state_open_does_not_retry_non_lock_operational_error(monkeypatch):
+    attempts = []
+
+    def unavailable(_self):
+        attempts.append(True)
+        raise sqlite3.OperationalError("unable to open database file")
+
+    monkeypatch.setattr(StateStore, "_open_and_initialize", unavailable)
+
+    with pytest.raises(sqlite3.OperationalError, match="unable to open"):
+        StateStore(":memory:")
+
+    assert len(attempts) == 1
+
+
 def test_corruption_recovery_retains_only_two_newest_generations(tmp_path):
     path = tmp_path / "state.sqlite3"
 
