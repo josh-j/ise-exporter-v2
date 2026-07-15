@@ -722,9 +722,15 @@ def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
         return []
     comparison = ("endpoint_ip = :identifier" if kind == "ip"
                   else "LOWER(hostname) = LOWER(:identifier)")
+    candidates = (
+        "ID", "ENDPOINT_ID", "MAC_ADDRESS", "ENDPOINT_IP", "HOSTNAME",
+        "ENDPOINT_POLICY", "IDENTITY_GROUP_ID",
+    )
+    schema = getattr(dataconnect, "schema", {})
+    columns = schema.get("ENDPOINTS_DATA", {}) if isinstance(schema, dict) else {}
+    selected = [column for column in candidates if not columns or column in columns]
     return dataconnect.query(f"""
-        SELECT id, endpoint_id, mac_address, endpoint_ip, hostname,
-               endpoint_policy, identity_group_id
+        SELECT {", ".join(selected)}
         FROM endpoints_data
         WHERE {comparison}
         ORDER BY update_time DESC NULLS LAST

@@ -65,6 +65,24 @@ def test_client_retains_normalized_startup_schema_without_querying(caplog):
     assert "using 'none'" in caplog.text
 
 
+def test_client_warns_when_authentication_policy_dimensions_are_absent(caplog):
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    client.set_schema({
+        "radius_authentications": {"authentication_method": "varchar2"},
+    })
+
+    assert "no optional authorization-policy column" in caplog.text
+    assert "using 'none'" in caplog.text
+
+
 def test_connection_disables_parallel_query_before_reporting_sql(monkeypatch):
     statements = []
 

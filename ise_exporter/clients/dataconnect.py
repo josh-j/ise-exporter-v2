@@ -250,6 +250,11 @@ class DataConnectClient:
             logger.warning(
                 "RADIUS_AUTHENTICATIONS has no optional AUTHORIZATION_POLICY column; "
                 "using POLICY_SET_NAME for the authorization-policy metric dimension")
+        elif (radius_columns and "AUTHORIZATION_POLICY" not in radius_columns
+              and "POLICY_SET_NAME" not in radius_columns):
+            logger.warning(
+                "RADIUS_AUTHENTICATIONS has no optional authorization-policy column; "
+                "using 'none' for the authorization-policy metric dimension")
         accounting_columns = self.schema.get("RADIUS_ACCOUNTING", {})
         if accounting_columns and "AUTHORIZATION_POLICY" not in accounting_columns:
             logger.warning(

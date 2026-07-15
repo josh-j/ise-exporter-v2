@@ -171,6 +171,21 @@ def test_authentication_query_falls_back_to_policy_set_for_mnt_schema_variant():
     assert "authentication_protocol, device_name,\n                     policy_set_name" in query
 
 
+def test_authentication_query_uses_stable_label_without_policy_columns():
+    client = DataConnect()
+    client.schema = {
+        "RADIUS_AUTHENTICATIONS": {"AUTHENTICATION_METHOD": "VARCHAR2"},
+        "RADIUS_ACCOUNTING": {"AUTHORIZATION_POLICY": "VARCHAR2"},
+    }
+
+    dataconnect_radius.collect_reporting(
+        client, types.SimpleNamespace(dataconnect_max_groups=25))
+
+    query = next(sql for sql in client.sql if "grouped_auth" in sql.lower())
+    assert "'none' AS authorization_policy" in query
+    assert "device_name,\n                     'none', ise_node" in query
+
+
 def test_exact_volume_uses_patch11_aggregate_view_not_raw_authentication_rows():
     queries = dataconnect_radius._queries(25)
 

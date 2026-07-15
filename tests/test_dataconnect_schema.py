@@ -75,7 +75,8 @@ def test_contract_requires_columns_used_unconditionally_by_latest_session_querie
 
 def test_contract_negotiates_optional_radius_authorization_policy():
     assert "AUTHORIZATION_POLICY" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].optional
-    assert "POLICY_SET_NAME" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].required
+    assert "POLICY_SET_NAME" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].optional
+    assert "POLICY_SET_NAME" not in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].required
     assert "AUTHORIZATION_POLICY" in VIEW_CONTRACTS["RADIUS_ACCOUNTING"].optional
     assert "AUTHORIZATION_POLICY" not in VIEW_CONTRACTS["RADIUS_ACCOUNTING"].required
     assert {

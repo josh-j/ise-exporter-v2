@@ -597,6 +597,26 @@ def test_hostname_is_resolved_for_secure_client_via_dataconnect(capsys):
         "mnt", "/Session/MACAddress/AA:BB:CC:DD:EE:FF", "cli_secure_client")
 
 
+def test_endpoint_resolution_does_not_select_absent_optional_row_ids():
+    dataconnect = FakeDataConnect()
+    dataconnect.schema = {
+        "ENDPOINTS_DATA": {
+            "MAC_ADDRESS": "VARCHAR2", "ENDPOINT_IP": "VARCHAR2",
+            "HOSTNAME": "VARCHAR2", "ENDPOINT_POLICY": "VARCHAR2",
+            "IDENTITY_GROUP_ID": "VARCHAR2", "UPDATE_TIME": "TIMESTAMP",
+        },
+    }
+
+    rows = cli._dataconnect_endpoint_candidates(
+        dataconnect, "client-25.example.test", "hostname")
+
+    assert rows[0]["mac_address"] == "AA:BB:CC:DD:EE:FF"
+    sql = dataconnect.calls[0][0].upper()
+    assert "SELECT MAC_ADDRESS, ENDPOINT_IP, HOSTNAME" in sql
+    assert "SELECT ID," not in sql
+    assert "ENDPOINT_ID" not in sql
+
+
 def test_mac_required_commands_reject_ambiguous_hostname_resolution():
     class AmbiguousDataConnect(FakeDataConnect):
         def query(self, sql, parameters=None):

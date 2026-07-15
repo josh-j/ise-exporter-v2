@@ -28,9 +28,9 @@ def _view(required, *, optional=(), time_column="", domain=""):
 VIEW_CONTRACTS = {
     "RADIUS_AUTHENTICATIONS": _view({
         "TIMESTAMP", "FAILED", "AUTHENTICATION_METHOD", "AUTHENTICATION_PROTOCOL",
-        "DEVICE_NAME", "POLICY_SET_NAME", "ISE_NODE", "RESPONSE_TIME",
+        "DEVICE_NAME", "ISE_NODE", "RESPONSE_TIME",
     }, optional={"AUTHORIZATION_POLICY", "CALLING_STATION_ID", "FAILURE_REASON",
-                 "FRAMED_IP_ADDRESS", "LOCATION", "USERNAME"},
+                 "FRAMED_IP_ADDRESS", "LOCATION", "POLICY_SET_NAME", "USERNAME"},
        time_column="TIMESTAMP", domain="radius_auth"),
     "RADIUS_AUTHENTICATION_SUMMARY": _view({
         "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "DEVICE_NAME", "LOCATION",

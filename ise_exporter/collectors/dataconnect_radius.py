@@ -108,7 +108,7 @@ def _queries(limit, stale_minutes=60, window_hours=6,
              accounting_policy_expression="authorization_policy"):
     authentication_policy_column = str(authentication_policy_column).lower()
     if authentication_policy_column not in {
-            "authorization_policy", "policy_set_name"}:
+            "authorization_policy", "policy_set_name", "'none'"}:
         raise ValueError("unsupported RADIUS authentication policy column")
     accounting_policy_expression = str(accounting_policy_expression).lower()
     if accounting_policy_expression not in {"authorization_policy", "'none'"}:
@@ -266,8 +266,10 @@ def _authentication_policy_column(dataconnect):
         if isinstance(schema, dict) else {}
     if "AUTHORIZATION_POLICY" in columns:
         return "authorization_policy"
-    if columns and "POLICY_SET_NAME" in columns:
+    if "POLICY_SET_NAME" in columns:
         return "policy_set_name"
+    if columns:
+        return "'none'"
     # Direct collector integrations predating capability negotiation retain the
     # lab Patch 11 behavior. The production client always has discovered schema.
     return "authorization_policy"
