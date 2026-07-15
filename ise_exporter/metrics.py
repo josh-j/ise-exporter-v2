@@ -516,6 +516,10 @@ ise_dataset_last_attempt_timestamp = Gauge(
 ise_dataset_last_success_timestamp = Gauge(
     "ise_dataset_last_success_timestamp",
     "Last successful authoritative dataset replacement", ["dataset", "source"])
+ise_dataset_last_failure_info = Gauge(
+    "ise_dataset_last_failure_info",
+    "Latest authoritative dataset failure category (removed after recovery)",
+    ["dataset", "source", "reason"])
 ise_scrape_duration_seconds = Histogram("ise_scrape_duration_seconds", "Scrape time", buckets=[1, 5, 10, 30, 60, 120, 300])
 ise_scrape_errors_total = Counter("ise_scrape_errors_total", "Scrape errors", ["collector", "error_type"])
 ise_api_requests_total = Counter("ise_api_requests_total", "API requests", ["api", "status"])

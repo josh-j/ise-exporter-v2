@@ -581,6 +581,24 @@ def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
     assert truncation.count(" and on() ((max(ise_dataset_up") == 7
 
 
+def test_data_quality_lists_each_unavailable_dataset_and_latest_reason():
+    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 5)
+    expression = panel["targets"][0]["expr"]
+
+    assert panel["title"] == "Unavailable Dataset Details"
+    assert panel["type"] == "table"
+    assert "ise_dataset_last_failure_info" in expression
+    assert "ise_dataset_enabled == 1" in expression
+    assert "ise_dataset_up == 0" in expression
+    assert '"not_attempted"' in expression
+    assert panel["targets"][0]["format"] == "table"
+    assert panel["targets"][0]["instant"] is True
+    expressions = {target["refId"]: target["expr"] for target in panel["targets"]}
+    assert "ise_dataset_last_attempt_timestamp" in expressions["Attempt age"]
+    assert "ise_dataset_last_success_timestamp" in expressions["Success age"]
+
+
 def test_sessions_dashboard_collection_age_thresholds_match_domain_cadences():
     dashboard = json.loads((DASHBOARDS / "ise-sessions-auth.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 91)

@@ -88,6 +88,22 @@ _PERSISTED_DATACONNECT_METRICS = {
 }
 
 
+def _freshness_snapshot_matches_config(payload, include_tacacs):
+    """Reject a fresh-but-wrong view set after a TACACS config change."""
+    try:
+        item = payload["metrics"][metrics.ise_dataconnect_view_has_rows._name]
+        domain_index = item["labelnames"].index("domain")
+        domains = {
+            sample["labels"][domain_index]
+            for sample in item["samples"]
+        }
+    except (AttributeError, KeyError, TypeError, ValueError, IndexError):
+        # The normal snapshot validator will report malformed/old payloads with
+        # its more precise compatibility error.
+        return True
+    return ("tacacs" in domains) == bool(include_tacacs)
+
+
 def _next_deadline(deadline, now, interval):
     """Advance to the first future cadence boundary, skipping missed ticks."""
     interval = max(1, interval)
@@ -300,6 +316,13 @@ class PollScheduler:
                     continue
                 if now - updated_at > 2 * interval:
                     logger.info("ignoring stale %s snapshot; collecting immediately", name)
+                    continue
+                if (name == "dataconnect_freshness"
+                        and not _freshness_snapshot_matches_config(
+                            payload, getattr(self.cfg, "collect_tacacs", True))):
+                    logger.info(
+                        "ignoring Data Connect freshness snapshot after TACACS "
+                        "collection setting changed; collecting immediately")
                     continue
                 try:
                     with snapshot_lock:

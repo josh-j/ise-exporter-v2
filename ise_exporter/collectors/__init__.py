@@ -22,6 +22,7 @@ from ..snapshots import (
 logger = logging.getLogger(__name__)
 _failures = {}
 _outcomes = {}
+_failure_reasons = {}
 
 
 def source(name):
@@ -34,6 +35,10 @@ def source(name):
 
 class CollectorFailed(Exception):
     """Raised by a collector when a primary API call yields no usable data."""
+
+    def __init__(self, message, *, reason="no_data"):
+        super().__init__(message)
+        self.reason = reason
 
 
 def failures(name):
@@ -58,9 +63,17 @@ def record_failure(name, error_type):
         _failures[name] = _failures.get(name, 0) + 1
         metrics.ise_consecutive_failures.labels(
             collector=name).set(_failures[name])
+        dataset_source = source(name)
+        previous_reason = _failure_reasons.get(name)
+        if previous_reason and previous_reason != error_type:
+            metrics.ise_dataset_last_failure_info.remove(
+                name, dataset_source, previous_reason)
+        metrics.ise_dataset_last_failure_info.labels(
+            dataset=name, source=dataset_source, reason=error_type).set(1)
+        _failure_reasons[name] = error_type
         _outcomes[name] = False
         metrics.ise_dataset_up.labels(
-            dataset=name, source=source(name)).set(0)
+            dataset=name, source=dataset_source).set(0)
 
 
 @contextmanager
@@ -73,6 +86,7 @@ def observe(name):
             yield
             completed = time.time()
             dataset_source = source(name)
+            previous_reason = _failure_reasons.get(name)
 
             def publish_success():
                 metrics.ise_last_successful_scrape.labels(
@@ -84,6 +98,9 @@ def observe(name):
                 metrics.ise_dataset_last_success_timestamp.labels(
                     dataset=name, source=dataset_source).set(completed)
                 metrics.ise_consecutive_failures.labels(collector=name).set(0)
+                if previous_reason:
+                    metrics.ise_dataset_last_failure_info.remove(
+                        name, dataset_source, previous_reason)
 
             commit_metric_snapshots(
                 replacements,
@@ -93,14 +110,17 @@ def observe(name):
                     metrics.ise_dataset_fresh,
                     metrics.ise_dataset_last_success_timestamp,
                     metrics.ise_consecutive_failures,
+                    metrics.ise_dataset_last_failure_info,
                 ),
                 (publish_success,),
             )
+            if previous_reason:
+                _failure_reasons.pop(name, None)
             _outcomes[name] = True
             _failures[name] = 0
         except CollectorFailed as e:
             logger.warning("%s: %s", name, e)
-            record_failure(name, "no_data")
+            record_failure(name, e.reason)
         except Exception as e:
             logger.error("%s collection error: %s", name, e)
             record_failure(name, "exception")

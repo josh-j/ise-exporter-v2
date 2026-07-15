@@ -352,8 +352,9 @@ def _collect_dataconnect(dataconnect, cfg):
     try:
         internal_last_seen = _merge_internal_last_seen(cfg, observed_last_seen)
     except Exception as exc:
-        logger.warning("could not persist bounded TACACS activity high-water state: %s", exc)
-        internal_last_seen = {}
+        raise CollectorFailed(
+            "TACACS activity high-water state is unavailable; preserving the "
+            "previous activity snapshot", reason="state_unavailable") from exc
 
     def publish():
         for row in rows["authentication"]:
@@ -616,8 +617,9 @@ def collect_config(client, cfg):
         try:
             internal_last_seen = _sync_internal_user_state(cfg, usernames)
         except Exception as exc:
-            logger.warning("could not persist bounded TACACS internal-user state: %s", exc)
-            internal_last_seen = {}
+            raise CollectorFailed(
+                "TACACS internal-user activity state is unavailable; preserving "
+                "the previous hygiene snapshot", reason="state_unavailable") from exc
         object_counts = {
             "policy_sets": len(policy_sets),
             "authentication_rules": sum(

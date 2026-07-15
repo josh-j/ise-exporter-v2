@@ -884,6 +884,57 @@ def test_restart_contract_keeps_radius_reporting_and_active_snapshots_disjoint()
     assert not set(reporting) & set(active)
 
 
+@pytest.mark.parametrize(("stored_domains", "include_tacacs", "expected"), (
+    (("radius_auth", "tacacs"), True, True),
+    (("radius_auth",), False, True),
+    (("radius_auth", "tacacs"), False, False),
+    (("radius_auth",), True, False),
+))
+def test_freshness_snapshot_view_set_tracks_tacacs_configuration(
+        stored_domains, include_tacacs, expected):
+    payload = {
+        "metrics": {
+            metrics.ise_dataconnect_view_has_rows._name: {
+                "labelnames": ["view", "domain"],
+                "samples": [
+                    {"labels": [f"view_{index}", domain], "value": 1}
+                    for index, domain in enumerate(stored_domains)
+                ],
+            },
+        },
+    }
+
+    assert scheduler_module._freshness_snapshot_matches_config(
+        payload, include_tacacs) is expected
+
+
+def test_tacacs_setting_change_skips_freshness_restore(monkeypatch, tmp_path, caplog):
+    registry = CollectorRegistry()
+    persisted = Gauge("freshness_config_persisted", "test", registry=registry)
+    monkeypatch.setattr(
+        scheduler_module, "_PERSISTED_DATACONNECT_METRICS",
+        {"dataconnect_freshness": (persisted,)},
+    )
+    monkeypatch.setattr(
+        scheduler_module, "_freshness_snapshot_matches_config",
+        lambda _payload, _include_tacacs: False,
+    )
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: 401.0)
+    cfg = _cfg(
+        state_db_path=str(tmp_path / "state.sqlite3"), collect_tacacs=False)
+    store = scheduler_module.StateStore(cfg.state_db_path)
+    store.replace_dataset_snapshot(
+        "dataconnect_freshness", 400.0,
+        scheduler_module.serialize_metric_snapshot((persisted,)))
+    store.close()
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
+
+    restarted = PollScheduler(cfg, object(), object())
+
+    assert "dataconnect_freshness" not in restarted.last_success
+    assert "setting changed; collecting immediately" in caplog.text
+
+
 def test_stale_dataconnect_snapshot_is_not_restored(monkeypatch, tmp_path):
     registry = CollectorRegistry()
     persisted = Gauge("stale_persisted", "test", registry=registry)

@@ -170,6 +170,22 @@ def test_failed_observation_discards_staged_snapshot():
             for sample in domain.collect()[0].samples} == {("old", 1)}
     assert metrics.ise_dataset_up.labels(
         dataset=name, source="rest")._value.get() == 0
+    assert metrics.ise_dataset_last_failure_info.labels(
+        dataset=name, source="rest", reason="no_data")._value.get() == 1
+
+
+def test_success_clears_latest_dataset_failure_reason():
+    name = "failure_reason_recovery_test"
+    collectors.record_failure(name, "unhandled_exception")
+
+    with collectors.observe(name):
+        pass
+
+    samples = [
+        sample for sample in metrics.ise_dataset_last_failure_info.collect()[0].samples
+        if sample.labels.get("dataset") == name
+    ]
+    assert samples == []
 
 
 def test_staged_metadata_failure_rolls_back_domain_and_metadata():

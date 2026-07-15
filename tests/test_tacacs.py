@@ -554,6 +554,53 @@ def test_internal_last_seen_survives_view_rollover_and_restart(tmp_path):
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
 
 
+def test_activity_state_failure_preserves_previous_snapshot(monkeypatch):
+    metrics.ise_tacacs_account_last_seen_timestamp.labels(
+        username="previous", event_type="authentication").set(123)
+    metrics.ise_tacacs_dataconnect_up.set(1)
+
+    class Activity:
+        def query(self, sql, parameters=None):
+            return [{
+                "breakdown": "detail", "username": "netadmin", "status": "Pass",
+                "device_name": "switch-1", "hits": 1, "last_seen": 456,
+                "total_events": 1, "total_groups": 1,
+            }]
+
+    monkeypatch.setattr(
+        tacacs, "_merge_internal_last_seen",
+        lambda *_args: (_ for _ in ()).throw(OSError("state unavailable")))
+
+    tacacs.collect_activity(
+        Activity(), types.SimpleNamespace(dataconnect_max_groups=50))
+
+    assert collectors.outcome("tacacs_activity") is False
+    assert metrics.ise_tacacs_dataconnect_up._value.get() == 0
+    assert _rows(metrics.ise_tacacs_account_last_seen_timestamp,
+                 "username", "event_type") == {
+        ("previous", "authentication"): 123.0,
+    }
+
+
+def test_hygiene_state_failure_preserves_previous_snapshot(tmp_path, monkeypatch):
+    metrics.ise_tacacs_suspected_unused_internal_user.labels(
+        username="previous", reason="previous_assessment").set(1)
+    monkeypatch.setattr(
+        tacacs, "_sync_internal_user_state",
+        lambda *_args: (_ for _ in ()).throw(OSError("state unavailable")))
+
+    tacacs.collect_config(Client(), types.SimpleNamespace(
+        state_db_path=str(tmp_path / "state.sqlite3"),
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=1,
+    ))
+
+    assert collectors.outcome("tacacs_config") is False
+    assert _rows(metrics.ise_tacacs_suspected_unused_internal_user,
+                 "username", "reason") == {
+        ("previous", "previous_assessment"): 1.0,
+    }
+
+
 def test_internal_account_last_seen_is_not_lost_outside_dimensional_topk(tmp_path):
     state_path = str(tmp_path / "state.sqlite3")
     cfg = types.SimpleNamespace(

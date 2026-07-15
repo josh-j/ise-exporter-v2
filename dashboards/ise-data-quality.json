@@ -86,16 +86,13 @@
     {
       "id": 5,
       "type": "table",
-      "title": "Authoritative Dataset Plan",
-      "description": "Configured ownership, cadence, availability, freshness, and attempt/success timestamps for every dataset.",
+      "title": "Unavailable Dataset Details",
+      "description": "Every enabled unavailable dataset, its collection source, and the latest bounded failure reason. not_attempted means no collection attempt has failed or completed yet; the exporter journal contains the full exception text.",
       "gridPos": {"h": 11, "w": 24, "x": 0, "y": 4},
       "targets": [
-        {"expr": "ise_dataset_enabled", "format": "table", "instant": true, "refId": "Enabled", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_dataset_up", "format": "table", "instant": true, "refId": "Available", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_dataset_fresh", "format": "table", "instant": true, "refId": "Fresh", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_dataset_interval_seconds", "format": "table", "instant": true, "refId": "Interval", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "time() - ise_dataset_last_attempt_timestamp", "format": "table", "instant": true, "refId": "Attempt age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "time() - ise_dataset_last_success_timestamp", "format": "table", "instant": true, "refId": "Success age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "(ise_dataset_last_failure_info or (label_replace(ise_dataset_up, \"reason\", \"not_attempted\", \"dataset\", \".+\") unless on(dataset,source) ise_dataset_last_failure_info)) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))", "format": "table", "instant": true, "refId": "Unavailable", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "(time() - ise_dataset_last_attempt_timestamp) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))", "format": "table", "instant": true, "refId": "Attempt age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "(time() - ise_dataset_last_success_timestamp) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))", "format": "table", "instant": true, "refId": "Success age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
       "options": {"showHeader": true}
