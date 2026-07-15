@@ -8,6 +8,7 @@ an empty, stale, and genuinely current reporting plane without exact row counts.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import math
 import time
 
 from .. import metrics
@@ -34,7 +35,16 @@ def _timestamp(value):
     if isinstance(value, (int, float)):
         numeric = float(value)
         return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
-    parsed = parse_ise_date(str(value))
+    text = str(value).strip()
+    try:
+        numeric = float(text)
+    except ValueError:
+        numeric = None
+    if numeric is not None:
+        if not math.isfinite(numeric):
+            return 0.0
+        return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
+    parsed = parse_ise_date(text)
     if not parsed:
         return 0.0
     if parsed.tzinfo is None:
@@ -47,31 +57,46 @@ def _timestamped_views():
                  if contract.time_column)
 
 
-def collect(dataconnect, cfg):
-    """Atomically replace low-pressure row-presence and newest-event probes."""
-    with observe("dataconnect_freshness"):
-        rows = []
-        window = event_window_hours(
-            cfg, getattr(cfg, "dataconnect_freshness_interval", 86400))
-        minimum_epoch = int(time.time()) - window * 3600
-        for view, contract in _timestamped_views():
-            column = contract.time_column
-            # TACACS exposes numeric Unix time, while all other contracts expose
-            # Oracle timestamps. Keep the indexed column bare on the left of each
-            # predicate so the configured window bounds eligible source rows.
-            predicate = (f"{column} >= {minimum_epoch}" if view.startswith("TACACS_") else
-                         recent_event_predicate(column, window))
-            result = dataconnect.query(f"""
-                SELECT {column} AS newest_event
+def _query(cfg, now=None):
+    """Build one bounded statement for every source-view freshness marker."""
+    window = event_window_hours(
+        cfg, getattr(cfg, "dataconnect_freshness_interval", 86400))
+    minimum_epoch = int(time.time() if now is None else now) - window * 3600
+    branches = []
+    for view, contract in _timestamped_views():
+        column = contract.time_column
+        if view.startswith("TACACS_"):
+            predicate = f"{column} >= {minimum_epoch}"
+            projection = f"TO_CHAR({column})"
+        else:
+            predicate = recent_event_predicate(column, window)
+            projection = f"TO_CHAR({column}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF')"
+        branches.append(f"""
+            SELECT '{view.lower()}' AS view_name,
+                   '{contract.domain}' AS domain, newest_event
+            FROM (
+                SELECT {projection} AS newest_event
                 FROM {view}
                 WHERE {predicate}
                 ORDER BY {column} DESC NULLS LAST FETCH FIRST 1 ROWS ONLY
-            """)
-            row = result[0] if result else {}
+            )
+        """)
+    return "\nUNION ALL\n".join(branches)
+
+
+def collect(dataconnect, cfg):
+    """Atomically replace low-pressure row-presence and newest-event probes."""
+    with observe("dataconnect_freshness"):
+        result = dataconnect.query(_query(cfg))
+        by_view = {str(row.get("view_name") or "").lower(): row for row in result}
+        rows = []
+        for view, contract in _timestamped_views():
+            name = view.lower()
+            row = by_view.get(name, {})
             rows.append({
-                "view": view.lower(),
+                "view": name,
                 "domain": contract.domain,
-                "has_rows": int(bool(result)),
+                "has_rows": int(bool(row)),
                 "newest": _timestamp(row.get("newest_event")),
             })
 

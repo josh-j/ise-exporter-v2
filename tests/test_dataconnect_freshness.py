@@ -26,11 +26,11 @@ class DataConnect:
 
     def query(self, sql):
         self.sql.append(sql)
-        if "RADIUS_AUTHENTICATIONS" in sql:
-            return [{
+        return [{
+                "view_name": "radius_authentications",
+                "domain": "radius_auth",
                 "newest_event": datetime(2026, 7, 14, 4, 30, tzinfo=timezone.utc),
-            }]
-        return []
+        }]
 
 
 def test_collects_bounded_presence_and_newest_event_for_every_timestamped_view(
@@ -44,17 +44,15 @@ def test_collects_bounded_presence_and_newest_event_for_every_timestamped_view(
 
     timestamped = {name.lower(): contract.domain
                    for name, contract in VIEW_CONTRACTS.items() if contract.time_column}
-    assert len(client.sql) == len(timestamped)
-    tacacs_sql = [sql for sql in client.sql if "TACACS_" in sql]
-    assert len(tacacs_sql) == 3
-    assert all("EPOCH_TIME >= 1999913600" in sql and "INTERVAL '2' DAY" not in sql
-               for sql in tacacs_sql)
-    assert all("NUMTODSINTERVAL(24, 'HOUR')" in sql
-               for sql in client.sql if "TACACS_" not in sql)
-    assert all("COUNT(" not in sql and "MIN(" not in sql and "MAX(" not in sql
-               for sql in client.sql)
-    assert all("FETCH FIRST 1 ROWS ONLY" in sql for sql in client.sql)
-    assert all("DESC NULLS LAST" in sql for sql in client.sql)
+    assert len(client.sql) == 1
+    sql = client.sql[0]
+    assert sql.count("UNION ALL") == len(timestamped) - 1
+    assert sql.count("FETCH FIRST 1 ROWS ONLY") == len(timestamped)
+    assert sql.count("DESC NULLS LAST") == len(timestamped)
+    assert sql.count("EPOCH_TIME >= 1999913600") == 3
+    assert "INTERVAL '2' DAY" not in sql
+    assert sql.count("NUMTODSINTERVAL(24, 'HOUR')") == len(timestamped) - 3
+    assert "COUNT(" not in sql and "MIN(" not in sql and "MAX(" not in sql
 
     rows = _rows(metrics.ise_dataconnect_view_has_rows)
     assert set(rows) == {(view, domain) for view, domain in timestamped.items()}
@@ -73,16 +71,18 @@ def test_freshness_honors_lower_production_scan_ceiling(monkeypatch):
         dataconnect_freshness_interval=86400,
     ))
 
-    assert all("EPOCH_TIME >= 1999985600" in sql
-               for sql in client.sql if "TACACS_" in sql)
-    assert all("NUMTODSINTERVAL(4, 'HOUR')" in sql
-               for sql in client.sql if "TACACS_" not in sql)
+    assert len(client.sql) == 1
+    assert client.sql[0].count("EPOCH_TIME >= 1999985600") == 3
+    assert client.sql[0].count("NUMTODSINTERVAL(4, 'HOUR')") == \
+        len(dataconnect_freshness._timestamped_views()) - 3
 
 
 @pytest.mark.parametrize(("value", "expected"), [
     (None, 0),
     (1784003400, 1784003400),
     (1784003400000, 1784003400),
+    ("1784003400", 1784003400),
+    ("2026-07-14T04:30:00.000000", 1784003400),
     (datetime(2026, 7, 14, 4, 30), 1784003400),
 ])
 def test_timestamp_normalization(value, expected):

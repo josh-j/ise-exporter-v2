@@ -110,7 +110,7 @@ summary view, not an additional raw authentication scan.
 The three large daily RADIUS sources each use one `GROUPING SETS` statement for
 their paired breakdowns (authentication/latency, volume/failure context, and
 accounting/session duration), rather than rescanning the same 24-hour window.
-The steady-state scheduled workload is about 7.8 statements per hour after startup.
+The steady-state scheduled workload is about 7.3 statements per hour after startup.
 Daily RADIUS reporting scans 24 hours, while a disjoint active-session query
 scans only its configured stale window every 30 minutes. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
@@ -124,8 +124,10 @@ one `GROUPING SETS` pass for status/version and failure breakdowns plus eligible
 endpoint coverage; it does not rebuild the same assessment window per dashboard.
 TACACS also runs every six hours and applies an `EPOCH_TIME` lower bound to
 Cisco's two-day views before grouping, so the view's retention does not become
-the exporter's scan size. The 14-view source-freshness diagnostic runs daily and
-applies the same at-most-24-hour timestamp or numeric-epoch ceiling to every view.
+the exporter's scan size. The 14-view source-freshness diagnostic runs daily as
+one bounded `UNION ALL` statement, applying the same at-most-24-hour timestamp or
+numeric-epoch ceiling to every view. This avoids 14 adaptive pacing waits holding
+the serialized worker while retaining one atomic freshness snapshot.
 Production cadence settings are minimum intervals: operators may collect less
 often, but environment overrides cannot restore the former aggressive schedule.
 The exporter and CLI also serialize through one persistent pacing gate so separate

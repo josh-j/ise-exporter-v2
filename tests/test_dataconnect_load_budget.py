@@ -22,7 +22,7 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
         "performance": len(dataconnect_performance._queries(cfg.dataconnect_max_groups)),
         "posture": len(dataconnect_posture._queries(cfg.dataconnect_max_groups)),
         "endpoints": len(dataconnect_endpoints._queries(cfg.dataconnect_max_groups)),
-        "freshness": len(dataconnect_freshness._timestamped_views()),
+        "freshness": 1,
         "nad_health": 1,
         "tacacs": len(tacacs._activity_queries(cfg.dataconnect_max_groups)),
     }
@@ -48,12 +48,21 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
         "performance": 4,
         "posture": 2,
         "endpoints": 2,
-        "freshness": 14,
+        "freshness": 1,
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(7.833333333333333)
-    assert statements_per_hour < 8
+    assert statements_per_hour == pytest.approx(7.291666666666667)
+    assert statements_per_hour < 7.3
+
+
+def test_freshness_uses_one_statement_for_every_timestamped_view():
+    query = dataconnect_freshness._query(Config(), now=2_000_000_000)
+
+    assert query.count("UNION ALL") == len(
+        dataconnect_freshness._timestamped_views()) - 1
+    assert query.count("FETCH FIRST 1 ROWS ONLY") == len(
+        dataconnect_freshness._timestamped_views())
 
 
 def test_posture_reuses_one_bounded_latest_assessment_snapshot():
