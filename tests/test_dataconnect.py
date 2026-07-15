@@ -532,6 +532,52 @@ def test_catalog_query_cannot_bypass_reporting_duty_cycle(sql):
         client.query_catalog(sql)
 
 
+def test_bounded_endpoint_lookup_bypasses_aggregate_duty_cooldown(monkeypatch):
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    calls = []
+    monkeypatch.setattr(
+        client, "_query",
+        lambda sql, parameters=None, **kwargs:
+        calls.append((sql, parameters, kwargs)) or [{"hostname": "client"}],
+    )
+    sql = """
+        SELECT ID, MAC_ADDRESS, HOSTNAME
+        FROM ENDPOINTS_DATA
+        WHERE HOSTNAME IN (:identifier, :identifier_lower, :identifier_upper)
+        FETCH FIRST 10 ROWS ONLY
+    """
+
+    assert client.query_endpoint_lookup(sql, {"identifier": "client"}) == [
+        {"hostname": "client"}]
+    assert calls[0][2] == {"adaptive_duty": False}
+
+
+@pytest.mark.parametrize("sql", (
+    "SELECT * FROM ENDPOINTS_DATA",
+    "SELECT * FROM ENDPOINTS_DATA WHERE HOSTNAME = :identifier FETCH FIRST 10 ROWS ONLY",
+    "SELECT * FROM ENDPOINTS_DATA WHERE ENDPOINT_IP = :identifier",
+    "SELECT * FROM ENDPOINTS_DATA JOIN RADIUS_AUTHENTICATIONS ON 1=1 "
+    "WHERE ENDPOINT_IP = :identifier FETCH FIRST 10 ROWS ONLY",
+))
+def test_endpoint_lookup_cooldown_bypass_rejects_broad_queries(sql):
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    with pytest.raises(ValueError, match="bounded indexed SELECT"):
+        client.query_endpoint_lookup(sql)
+
+
 def test_catalog_crash_lease_is_bounded_to_metadata_attempt(monkeypatch, tmp_path):
     path = tmp_path / "dataconnect.pacing"
     monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)

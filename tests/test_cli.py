@@ -855,6 +855,27 @@ def test_endpoint_resolution_does_not_order_by_absent_optional_timestamp():
     assert "FETCH FIRST 10 ROWS ONLY" in sql
 
 
+def test_endpoint_resolution_uses_interactive_point_lookup_path():
+    class PointLookupDataConnect(FakeDataConnect):
+        schema = {"ENDPOINTS_DATA": {
+            "MAC_ADDRESS": "VARCHAR2", "HOSTNAME": "VARCHAR2",
+        }}
+
+        def query(self, _sql, _parameters=None):
+            raise AssertionError("aggregate reporting path must not be used")
+
+        def query_endpoint_lookup(self, sql, parameters=None):
+            self.calls.append((sql, parameters or {}))
+            return [{"mac_address": "AA:BB:CC:DD:EE:FF", "hostname": "client"}]
+
+    dataconnect = PointLookupDataConnect()
+
+    rows = cli._dataconnect_endpoint_candidates(dataconnect, "client", "hostname")
+
+    assert rows[0]["mac_address"] == "AA:BB:CC:DD:EE:FF"
+    assert "HOSTNAME IN" in dataconnect.calls[0][0]
+
+
 def test_endpoint_resolution_discovers_uncached_schema_before_reporting_query():
     class UncachedVariant:
         schema = {}

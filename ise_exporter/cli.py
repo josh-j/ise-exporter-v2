@@ -910,7 +910,8 @@ def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
             "identifier_lower": identifier.lower(),
             "identifier_upper": identifier.upper(),
         })
-    return dataconnect.query(f"""
+    query = getattr(dataconnect, "query_endpoint_lookup", dataconnect.query)
+    return query(f"""
         SELECT {", ".join(selected)}
         FROM endpoints_data
         WHERE {comparison}

@@ -684,6 +684,36 @@ class DataConnectClient:
             sql, parameters, wait_for_pacing=wait_for_pacing, adaptive_duty=True)
 
     @staticmethod
+    def _validate_endpoint_lookup_query(sql):
+        """Restrict the interactive cooldown bypass to one bounded point lookup."""
+        normalized = " ".join(str(sql or "").lower().split())
+        referenced = re.findall(
+            r"\b(?:from|join)\s+([a-z][a-z0-9_$#.]*)", normalized)
+        indexed_predicate = (
+            "endpoint_ip = :identifier" in normalized
+            or "hostname in (:identifier, :identifier_lower, :identifier_upper)"
+            in normalized
+        )
+        if (not normalized.startswith("select ")
+                or referenced != ["endpoints_data"]
+                or not indexed_predicate
+                or " fetch first 10 rows only" not in normalized
+                or any(token in normalized for token in (
+                    ";", "--", "/*", " union ", " group by ", " having "))):
+            raise ValueError(
+                "endpoint lookup must be a bounded indexed SELECT from ENDPOINTS_DATA")
+
+    def query_endpoint_lookup(self, sql, parameters=None):
+        """Run one exact operator lookup without waiting through aggregate duty pacing.
+
+        The strict query shape, ten-row ceiling, normal global lock, hard Oracle
+        timeout, and existing cooldown preservation keep this materially cheaper
+        than the scheduled aggregate scans that create the adaptive delay.
+        """
+        self._validate_endpoint_lookup_query(sql)
+        return self._query(sql, parameters, adaptive_duty=False)
+
+    @staticmethod
     def _validate_catalog_query(sql):
         """Allow fixed Oracle dictionary reads, never reporting-view bypasses."""
         normalized = " ".join(str(sql or "").lower().split())
