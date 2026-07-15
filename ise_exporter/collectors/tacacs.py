@@ -426,8 +426,8 @@ def collect_config(client, cfg):
             86400, int(getattr(cfg, "tacacs_internal_user_detail_ttl", 604800)))
         refresh_limit = max(1, min(250, int(getattr(
             cfg, "tacacs_internal_user_detail_max_requests", 100))))
-        request_interval = max(0, int(getattr(
-            cfg, "tacacs_internal_user_detail_request_interval_ms", 0))) / 1000
+        request_interval = max(0.1, int(getattr(
+            cfg, "tacacs_internal_user_detail_request_interval_ms", 250)) / 1000)
         selected_by_id = {
             str(resource["id"]): resource for resource in selected
             if isinstance(resource, dict) and resource.get("id")

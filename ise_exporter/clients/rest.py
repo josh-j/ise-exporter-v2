@@ -361,8 +361,10 @@ class ISERestClient:
 
     def _record_auth_failure(self):
         cfg = getattr(self, "cfg", None)
-        threshold = max(1, getattr(cfg, "auth_failure_threshold", 3))
-        backoff = max(0, getattr(cfg, "auth_failure_backoff", 900))
+        threshold = max(1, min(5, int(getattr(
+            cfg, "auth_failure_threshold", 3))))
+        backoff = max(300, min(86400, int(getattr(
+            cfg, "auth_failure_backoff", 900))))
         failures, deadline = self._auth_guard_state().failure(
             threshold, backoff, time.time())
         if deadline:

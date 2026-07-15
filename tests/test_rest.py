@@ -502,6 +502,25 @@ def test_401s_trip_auth_backoff_before_more_requests():
     assert session.calls == 2
 
 
+def test_programmatic_config_cannot_disable_rest_auth_backoff(monkeypatch):
+    captured = {}
+
+    class Guard:
+        def failure(self, threshold, backoff, now):
+            captured.update(threshold=threshold, backoff=backoff, now=now)
+            return threshold, now + backoff
+
+    client = ISERestClient.__new__(ISERestClient)
+    client.cfg = types.SimpleNamespace(
+        auth_failure_threshold=999, auth_failure_backoff=0)
+    client._auth_guard = Guard()
+    monkeypatch.setattr(rest_module.time, "time", lambda: 1000)
+
+    client._record_auth_failure()
+
+    assert captured == {"threshold": 5, "backoff": 300, "now": 1000}
+
+
 def test_auth_backoff_is_shared_across_planes_processes_and_restarts(
         monkeypatch, tmp_path):
     path = tmp_path / "rest-auth.guard"

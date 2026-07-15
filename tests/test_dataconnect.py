@@ -349,13 +349,15 @@ def test_client_cannot_relax_production_pressure_invariants():
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
         dataconnect_min_query_interval_ms=1,
         dataconnect_max_duty_cycle_percent=100,
-        auth_failure_threshold=3, auth_failure_backoff=900,
+        auth_failure_threshold=999, auth_failure_backoff=0,
     )
 
     client = dataconnect.DataConnectClient(cfg)
 
     assert client.max_duty_cycle == 0.1
     assert client.min_query_interval == 5.0
+    assert client.failure_threshold == 5
+    assert client.failure_backoff == 300
 
 
 def test_client_honors_more_conservative_duty_cycle():

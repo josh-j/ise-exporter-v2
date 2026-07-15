@@ -138,8 +138,10 @@ class DataConnectClient:
         # Keep it hard here as well as in the environment parser: CLI callers,
         # tests, and integrations can construct Config-like objects directly.
         self.timeout = max(1, min(15, int(cfg.dataconnect_query_timeout)))
-        self.failure_threshold = max(1, getattr(cfg, "auth_failure_threshold", 3))
-        self.failure_backoff = max(0, getattr(cfg, "auth_failure_backoff", 900))
+        self.failure_threshold = max(1, min(5, int(getattr(
+            cfg, "auth_failure_threshold", 3))))
+        self.failure_backoff = max(300, min(86400, int(getattr(
+            cfg, "auth_failure_backoff", 900))))
         # These are hard client invariants, not only environment-parser defaults.
         # CLI/tests/extensions can construct a client from another config object;
         # none may silently relax the production database-pressure ceiling.

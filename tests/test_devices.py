@@ -54,6 +54,35 @@ def test_failed_device_detail_keeps_authoritative_inventory_with_zero_coverage(
     assert metrics.ise_network_device_detail_refresh_failures._value.get() == 1
 
 
+def test_programmatic_config_cannot_relax_device_detail_load_ceilings(
+        tmp_path, monkeypatch):
+    inventory = [{"id": f"nad-{index}", "name": f"switch-{index}"}
+                 for index in range(101)]
+    detail_calls = []
+    sleeps = []
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return inventory
+            device_id = path.rsplit("/", 1)[-1]
+            detail_calls.append(device_id)
+            return {"NetworkDevice": {"id": device_id, "name": device_id}}
+
+    monkeypatch.setattr(devices.time, "sleep", sleeps.append)
+    cfg = _cfg(
+        tmp_path,
+        device_cache_ttl=0,
+        device_detail_max_requests=999999,
+        device_detail_request_interval_ms=0,
+    )
+
+    assert devices.collect(Client(), cfg) == inventory
+    assert len(detail_calls) == 100
+    assert sleeps == [0.1] * 99
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 1
+
+
 def test_device_detail_cache_prunes_removed_inventory_entries(tmp_path, monkeypatch):
     inventories = iter((
         [{"id": "old", "name": "old-switch"}],

@@ -625,7 +625,7 @@ def _require_expensive(args, cfg, reason):
 
 
 def _guard_row_limit(args, cfg):
-    maximum = int(getattr(cfg, "cli_max_rows", 1000))
+    maximum = max(100, min(5000, int(getattr(cfg, "cli_max_rows", 1000))))
     if getattr(args, "limit", 0) > maximum:
         _require_expensive(args, cfg, f"--limit above the production-safe maximum {maximum}")
 

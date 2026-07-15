@@ -157,7 +157,7 @@ def test_internal_user_detail_cache_survives_restart_and_detail_failure(tmp_path
     assert "password" not in cached
 
 
-def test_internal_user_detail_refresh_is_bounded_and_converges(tmp_path):
+def test_internal_user_detail_refresh_is_bounded_and_converges(tmp_path, monkeypatch):
     class ManyUsers(Client):
         detail_requests = []
 
@@ -177,11 +177,15 @@ def test_internal_user_detail_refresh_is_bounded_and_converges(tmp_path):
         state_db_path=str(tmp_path / "state.sqlite3"), tacacs_internal_user_max=1000,
         tacacs_unused_account_days=180,
         tacacs_internal_user_detail_max_requests=2,
-        tacacs_internal_user_detail_ttl=604800)
+        tacacs_internal_user_detail_ttl=604800,
+        tacacs_internal_user_detail_request_interval_ms=0)
     client = ManyUsers()
+    sleeps = []
+    monkeypatch.setattr(tacacs.time, "sleep", sleeps.append)
 
     tacacs.collect_config(client, cfg)
     assert client.detail_requests == ["u0", "u1"]
+    assert 0.1 in sleeps
     assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == pytest.approx(2 / 3)
     assert metrics.ise_tacacs_internal_user_detail_refresh_deferred._value.get() == 1
 

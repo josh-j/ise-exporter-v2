@@ -266,6 +266,16 @@ def test_sessions_rejects_nonpositive_limit_before_network_access(capsys):
     assert "usage:" not in error
 
 
+def test_programmatic_config_cannot_raise_safe_cli_row_limit():
+    args = types.SimpleNamespace(limit=5001, allow_expensive=False)
+    cfg = types.SimpleNamespace(
+        cli_max_rows=999999, cli_production_safe=True,
+        cli_allow_expensive=False)
+
+    with pytest.raises(cli.CLIError, match="production-safe maximum 5000"):
+        cli._guard_row_limit(args, cfg)
+
+
 def test_auth_status_default_stays_in_production_safe_envelope(capsys):
     client = FakeClient()
 

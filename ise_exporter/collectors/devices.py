@@ -98,10 +98,12 @@ def collect(client, cfg):
             return devices
 
         now = time.time()
-        ttl = getattr(cfg, "device_cache_ttl", 2592000)
-        max_requests = getattr(cfg, "device_detail_max_requests", 25)
-        request_interval = getattr(
-            cfg, "device_detail_request_interval_ms", 250) / 1000.0
+        ttl = max(86400, min(31536000, int(getattr(
+            cfg, "device_cache_ttl", 2592000))))
+        max_requests = max(1, min(100, int(getattr(
+            cfg, "device_detail_max_requests", 25))))
+        request_interval = max(100, min(10000, int(getattr(
+            cfg, "device_detail_request_interval_ms", 250)))) / 1000.0
         store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
         try:
             cached = store.network_device_entries(device_ids)
