@@ -142,7 +142,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_total",
+          "expr": "ise_network_devices_total and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -296,7 +296,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_by_location",
+          "expr": "ise_network_devices_by_location and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
           "legendFormat": "{{location}}",
           "refId": "A",
           "datasource": {
@@ -318,7 +318,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_by_ops_owner",
+          "expr": "ise_network_devices_by_ops_owner and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
           "legendFormat": "{{ops_owner}}",
           "refId": "A",
           "datasource": {
@@ -340,7 +340,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_by_type",
+          "expr": "ise_network_devices_by_type and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
           "legendFormat": "{{device_type}}",
           "refId": "A",
           "datasource": {

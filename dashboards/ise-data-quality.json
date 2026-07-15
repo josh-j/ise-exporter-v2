@@ -62,7 +62,7 @@
       "description": "Timestamped Data Connect views with no rows in the bounded two-day reporting window. Presence uses a one-row newest-event probe rather than an exact full-window count.",
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
       "targets": [{
-        "expr": "count(ise_dataconnect_view_has_rows == 0) and on() (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)",
+        "expr": "(count(ise_dataconnect_view_has_rows == 0) and on() (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1))",
         "instant": true,
         "refId": "A",
         "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}

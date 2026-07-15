@@ -456,7 +456,7 @@
       },
       "targets": [
         {
-          "expr": "ise_deployment_status == 1",
+          "expr": "(ise_deployment_status == 1) and on() (max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1)",
           "format": "table",
           "instant": true,
           "refId": "A",

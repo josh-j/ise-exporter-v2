@@ -171,12 +171,16 @@ def test_domain_dashboards_expose_authoritative_dataset_availability():
         },
         "ise-failure-triage.json": {("dataconnect_radius", "dataconnect")},
         "ise-endpoint-profiles.json": {("dataconnect_endpoints", "dataconnect")},
-        "ise-endpoints-devices.json": {("dataconnect_endpoints", "dataconnect")},
+        "ise-endpoints-devices.json": {
+            ("dataconnect_endpoints", "dataconnect"), ("devices", "rest"),
+        },
         "ise-secureclient.json": {
             ("mnt_active_posture", "mnt"),
             ("dataconnect_posture", "dataconnect"),
         },
-        "ise-psn-troubleshooting.json": {("dataconnect_performance", "dataconnect")},
+        "ise-psn-troubleshooting.json": {
+            ("dataconnect_performance", "dataconnect"), ("deployment", "rest"),
+        },
         "ise-tacacs.json": {
             ("tacacs_config", "rest"),
             ("tacacs_activity", "dataconnect"),
@@ -256,6 +260,12 @@ def test_every_domain_data_query_is_gated_by_its_authoritative_dataset():
         (r"ise_tacacs_(?:internal_user|policy_objects)", "tacacs_config", "rest"),
         (r"ise_tacacs_(?:account|events|dataconnect)",
          "tacacs_activity", "dataconnect"),
+        (r"ise_network_devices(?:_|_total)", "devices", "rest"),
+        (r"ise_(?:deployment_status|node_count|pan_ha_enabled)", "deployment", "rest"),
+        (r"ise_certificate", "certificates", "rest"),
+        (r"ise_license_", "licensing", "rest"),
+        (r"ise_backup_", "backup", "rest"),
+        (r"ise_(?:patch_|version_info)", "patches", "rest"),
     )
     violations = []
     for path in sorted(DASHBOARDS.glob("*.json")):
@@ -528,6 +538,8 @@ def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
     assert "0 * (count(ise_dataset_up) > 0)" in panels[1]["targets"][0]["expr"]
     assert "0 * (count(ise_dataset_up) > 0)" in panels[2]["targets"][0]["expr"]
     assert 'dataset="dataconnect_freshness"' in panels[3]["targets"][0]["expr"]
+    assert "or on() (0 *" in panels[3]["targets"][0]["expr"]
+    assert "== 1" in panels[3]["targets"][0]["expr"]
     truncation = panels[4]["targets"][0]["expr"]
     for dataset in (
             "dataconnect_radius", "dataconnect_radius_active",
@@ -634,6 +646,16 @@ def test_endpoint_dashboard_exposes_dataconnect_field_coverage():
     assert panel["fieldConfig"]["defaults"]["unit"] == "percentunit"
 
 
+def test_endpoint_dashboard_hides_stale_rest_device_snapshots():
+    dashboard = json.loads((DASHBOARDS / "ise-endpoints-devices.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+
+    for panel_id in (2, 9, 10, 11):
+        expression = panels[panel_id]["targets"][0]["expr"]
+        assert 'ise_dataset_up{dataset="devices",source="rest"}' in expression
+        assert "== 1" in expression
+
+
 def test_psn_diagnostic_headline_uses_exact_total_not_topk_breakdown():
     dashboard = json.loads((DASHBOARDS / "ise-psn-troubleshooting.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 4)
@@ -641,6 +663,15 @@ def test_psn_diagnostic_headline_uses_exact_total_not_topk_breakdown():
 
     assert "ise_dataconnect_diagnostic_events_total" in expression
     assert "sum(ise_dataconnect_diagnostic_events)" not in expression
+
+
+def test_psn_dashboard_hides_stale_deployment_snapshot():
+    dashboard = json.loads((DASHBOARDS / "ise-psn-troubleshooting.json").read_text())
+    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 14)
+    expression = panel["targets"][0]["expr"]
+
+    assert 'ise_dataset_up{dataset="deployment",source="rest"}' in expression
+    assert "== 1" in expression
 
 
 def test_disconnected_node_stat_is_zero_when_all_nodes_are_healthy():
