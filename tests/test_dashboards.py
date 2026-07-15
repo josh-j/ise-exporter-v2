@@ -13,6 +13,16 @@ def _panels(panels):
         yield from _panels(panel.get("panels", []))
 
 
+def _dashboard(name):
+    return json.loads((DASHBOARDS / name).read_text())
+
+
+def _panel(dashboard, title):
+    return next(
+        panel for panel in _panels(dashboard["panels"])
+        if panel.get("title") == title)
+
+
 def test_visible_table_footers_include_legacy_reducer():
     """Grafana 13's table migration reads reducer[0] when a footer is shown."""
     missing = []
@@ -28,8 +38,8 @@ def test_visible_table_footers_include_legacy_reducer():
 
 
 def test_failure_work_queue_uses_failed_authentication_dimensions():
-    dashboard = json.loads((DASHBOARDS / "ise-failure-triage.json").read_text())
-    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 10)
+    dashboard = _dashboard("ise-access-troubleshooting.json")
+    panel = _panel(dashboard, "RADIUS Failure Work Queue")
     work_queue = next(target for target in panel["targets"] if target["refId"] == "A")
 
     assert "ise_dataconnect_radius_authentication_events" in work_queue["expr"]
@@ -40,23 +50,22 @@ def test_failure_work_queue_uses_failed_authentication_dimensions():
 
 
 def test_failure_nad_panels_use_all_failed_authentications_not_sparse_error_view():
-    dashboard = json.loads((DASHBOARDS / "ise-failure-triage.json").read_text())
-    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+    dashboard = _dashboard("ise-access-troubleshooting.json")
 
-    for panel_id in (6, 7):
-        expression = panels[panel_id]["targets"][0]["expr"]
+    for title in ("Failing NADs", "Auth Methods at Failing NADs"):
+        expression = _panel(dashboard, title)["targets"][0]["expr"]
         assert "ise_dataconnect_radius_authentication_events" in expression
         assert "status=~" in expression
         assert "ise_dataconnect_radius_errors" not in expression
 
 
 def test_failure_context_panels_expose_summary_reason_profile_and_location():
-    dashboard = json.loads((DASHBOARDS / "ise-failure-triage.json").read_text())
-    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+    dashboard = _dashboard("ise-access-troubleshooting.json")
 
-    for panel_id, label in ((11, "failure_class"), (12, "authorization_profile"),
-                            (13, "location")):
-        expression = panels[panel_id]["targets"][0]["expr"]
+    for title, label in (("Failure Classes", "failure_class"),
+                         ("Failed Authorization Profiles", "authorization_profile"),
+                         ("Failure Locations", "location")):
+        expression = _panel(dashboard, title)["targets"][0]["expr"]
         assert "ise_dataconnect_radius_failure_events" in expression
         assert label in expression
         assert 'ise_dataset_up{dataset="dataconnect_radius"' in expression
@@ -64,40 +73,24 @@ def test_failure_context_panels_expose_summary_reason_profile_and_location():
 
 def test_radius_headline_stats_use_exact_totals_not_topk_breakdowns():
     expected = {
-        "ise-auth-troubleshooting.json": {
-            1: ("ise_dataconnect_radius_authentication_events_total",
-                "ise_dataconnect_radius_failure_events_total"),
-            2: ("ise_dataconnect_radius_failure_events_total",),
-        },
-        "ise-failure-triage.json": {
-            1: ("ise_dataconnect_radius_failure_events_total",),
-            2: ("ise_dataconnect_radius_authentication_events_total",
-                "ise_dataconnect_radius_failure_events_total"),
-        },
-        "ise-sessions-auth.json": {
-            2: ("ise_dataconnect_radius_authentication_events_total",),
-            3: ("ise_dataconnect_radius_active_sessions_total",),
-            4: ("ise_dataconnect_radius_accounting_event_type_total",),
-            12: ("ise_dataconnect_radius_accounting_event_type_total",),
-        },
+        "Pass Rate": ("ise_dataconnect_radius_authentication_events_total",
+                      "ise_dataconnect_radius_failure_events_total"),
+        "Failed Auth": (
+            "ise_dataconnect_radius_failure_events_total",),
+        "Active Sessions": ("ise_dataconnect_radius_active_sessions_total",),
+        "Acct Starts": ("ise_dataconnect_radius_accounting_event_type_total",),
     }
 
-    for name, panel_contracts in expected.items():
-        dashboard = json.loads((DASHBOARDS / name).read_text())
-        panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
-        for panel_id, exact_metrics in panel_contracts.items():
-            expression = panels[panel_id]["targets"][0]["expr"]
-            for metric in exact_metrics:
-                assert metric in expression
-            assert "sum(ise_dataconnect_radius_authentication_events" not in expression
-            if "ise_dataconnect_radius_active_sessions_total" in exact_metrics:
-                assert "sum(ise_dataconnect_radius_active_sessions)" not in expression
-            if "ise_dataconnect_radius_accounting_event_type_total" in exact_metrics:
-                assert "sum(ise_dataconnect_radius_accounting_events" not in expression
-
-    for name in ("ise-auth-troubleshooting.json", "ise-failure-triage.json"):
-        text = (DASHBOARDS / name).read_text()
-        assert "ise_dataconnect_radius_failure_events_total" in text
+    dashboard = _dashboard("ise-access-troubleshooting.json")
+    for title, exact_metrics in expected.items():
+        expression = _panel(dashboard, title)["targets"][0]["expr"]
+        for metric in exact_metrics:
+            assert metric in expression
+        assert "sum(ise_dataconnect_radius_authentication_events" not in expression
+        if "ise_dataconnect_radius_active_sessions_total" in exact_metrics:
+            assert "sum(ise_dataconnect_radius_active_sessions)" not in expression
+        if "ise_dataconnect_radius_accounting_event_type_total" in exact_metrics:
+            assert "sum(ise_dataconnect_radius_accounting_events" not in expression
 
 
 def test_dashboards_do_not_reference_removed_collection_planes():
@@ -114,6 +107,34 @@ def test_dashboards_do_not_reference_removed_collection_planes():
 
 def test_pxgrid_dashboard_is_removed():
     assert not (DASHBOARDS / "ise-pxgrid-health.json").exists()
+
+
+def test_dashboard_set_is_consolidated_around_operator_workflows():
+    assert {path.name for path in DASHBOARDS.glob("*.json")} == {
+        "ise-access-troubleshooting.json",
+        "ise-endpoints-devices.json",
+        "ise-exporter-health.json",
+        "ise-overview.json",
+        "ise-psn-troubleshooting.json",
+        "ise-secureclient.json",
+        "ise-tacacs.json",
+    }
+
+
+def test_exporter_health_owns_exporter_data_quality_and_freshness():
+    health = (DASHBOARDS / "ise-exporter-health.json").read_text()
+    overview = (DASHBOARDS / "ise-overview.json").read_text()
+
+    for metric in (
+        "ise_dataset_last_attempt_timestamp",
+        "ise_dataset_last_success_timestamp",
+        "ise_dataconnect_view_newest_recent_event_timestamp",
+        "ise_dataconnect_queue_depth",
+        "ise_dataconnect_query_last_duration_seconds",
+        "ise_exporter_build_info",
+    ):
+        assert metric in health
+        assert metric not in overview
 
 
 def test_removed_runtime_cannot_return_through_config_or_imports():
@@ -157,20 +178,17 @@ def test_every_dashboard_defines_prometheus_variable_for_file_provisioning():
     assert not missing, "Prometheus template variable missing: " + ", ".join(missing)
 
 
-def test_sessions_dashboard_exposes_accounting_derived_active_sessions():
-    text = (DASHBOARDS / "ise-sessions-auth.json").read_text()
+def test_access_dashboard_exposes_accounting_derived_active_sessions():
+    text = (DASHBOARDS / "ise-access-troubleshooting.json").read_text()
     assert "ise_dataconnect_radius_active_sessions" in text
 
 
 def test_domain_dashboards_expose_authoritative_dataset_availability():
     expected = {
-        "ise-auth-troubleshooting.json": {("dataconnect_radius", "dataconnect")},
-        "ise-sessions-auth.json": {
+        "ise-access-troubleshooting.json": {
             ("dataconnect_radius", "dataconnect"),
             ("dataconnect_radius_active", "dataconnect"),
         },
-        "ise-failure-triage.json": {("dataconnect_radius", "dataconnect")},
-        "ise-endpoint-profiles.json": {("dataconnect_endpoints", "dataconnect")},
         "ise-endpoints-devices.json": {
             ("dataconnect_endpoints", "dataconnect"), ("devices", "rest"),
         },
@@ -242,7 +260,7 @@ def test_domain_queries_do_not_mask_outages_as_unconditional_zero():
                         "ise_dataset_up" in expression and "== 1" in expression):
                     violations.append(
                         f"{path.name}: panel {panel.get('id')} zero fallback is not up-gated")
-                if (path.name != "ise-data-quality.json"
+                if (path.name != "ise-exporter-health.json"
                         and "or on() (0 *" in expression
                         and "and on()" not in expression.split(" or on() (0 *", 1)[0]):
                     violations.append(
@@ -484,8 +502,8 @@ def test_dashboard_grouping_references_real_metric_labels():
     assert not invalid, "dashboard grouping references unknown labels: " + ", ".join(invalid)
 
 
-def test_data_quality_dashboard_exposes_collection_and_source_freshness():
-    text = (DASHBOARDS / "ise-data-quality.json").read_text()
+def test_exporter_health_exposes_collection_and_source_freshness():
+    text = (DASHBOARDS / "ise-exporter-health.json").read_text()
     for metric in (
         "ise_dataset_enabled",
         "ise_exporter_build_info",
@@ -503,10 +521,6 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_nad_activity_groups_truncated",
         "ise_mnt_active_posture_detail_coverage_ratio",
         "ise_mnt_active_posture_detail_truncated",
-        "ise_mnt_active_posture_field_coverage_ratio",
-        "ise_mnt_active_posture_cache_entries",
-        "ise_mnt_active_posture_refresh_deferred",
-        "ise_mnt_active_posture_cache_oldest_age_seconds",
         "ise_dataconnect_radius_active_groups_truncated",
         "ise_tacacs_topk_truncated",
         "ise_tacacs_internal_user_inventory_truncated",
@@ -544,18 +558,18 @@ def test_dataset_validity_gates_require_both_availability_and_freshness():
     assert not missing, "dataset gates omit freshness: " + ", ".join(missing)
 
 
-def test_sessions_dashboard_gates_active_count_on_active_dataset():
-    dashboard = json.loads((DASHBOARDS / "ise-sessions-auth.json").read_text())
-    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 3)
+def test_access_dashboard_gates_active_count_on_active_dataset():
+    dashboard = _dashboard("ise-access-troubleshooting.json")
+    panel = _panel(dashboard, "Active Sessions")
     expression = panel["targets"][0]["expr"]
 
     assert 'dataset="dataconnect_radius_active"' in expression
     assert 'dataset="dataconnect_radius",' not in expression
 
 
-def test_data_quality_dashboard_does_not_render_empty_views_as_epoch_old():
-    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
-    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 6)
+def test_exporter_health_does_not_render_empty_views_as_epoch_old():
+    dashboard = _dashboard("ise-exporter-health.json")
+    panel = _panel(dashboard, "Data Connect Source-Event Freshness")
     expressions = {target["refId"]: target["expr"] for target in panel["targets"]}
 
     assert "ise_dataconnect_view_newest_recent_event_timestamp > 0" in expressions[
@@ -564,16 +578,18 @@ def test_data_quality_dashboard_does_not_render_empty_views_as_epoch_old():
     assert "Window span" not in expressions
 
 
-def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
-    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
-    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+def test_exporter_health_summary_stats_are_gated_by_authoritative_datasets():
+    dashboard = _dashboard("ise-exporter-health.json")
 
-    assert "0 * (count(ise_dataset_up) > 0)" in panels[1]["targets"][0]["expr"]
-    assert "0 * (count(ise_dataset_up) > 0)" in panels[2]["targets"][0]["expr"]
-    assert 'dataset="dataconnect_freshness"' in panels[3]["targets"][0]["expr"]
-    assert "or on() (0 *" in panels[3]["targets"][0]["expr"]
-    assert "== 1" in panels[3]["targets"][0]["expr"]
-    truncation = panels[4]["targets"][0]["expr"]
+    unavailable = _panel(dashboard, "Unavailable")["targets"][0]["expr"]
+    stale = _panel(dashboard, "Stale Datasets")["targets"][0]["expr"]
+    views = _panel(dashboard, "Empty Recent Views")["targets"][0]["expr"]
+    assert "0 * (count(ise_dataset_up) > 0)" in unavailable
+    assert "0 * (count(ise_dataset_up) > 0)" in stale
+    assert 'dataset="dataconnect_freshness"' in views
+    assert "or on() (0 *" in views
+    assert "== 1" in views
+    truncation = _panel(dashboard, "Truncation")["targets"][0]["expr"]
     for dataset in (
             "dataconnect_radius", "dataconnect_radius_active",
             "dataconnect_posture", "dataconnect_endpoints",
@@ -587,9 +603,9 @@ def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
     assert truncation.count(" and on() ((max(ise_dataset_up") == 7
 
 
-def test_data_quality_lists_each_unavailable_dataset_and_latest_reason():
-    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
-    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 5)
+def test_exporter_health_lists_each_unavailable_dataset_and_latest_reason():
+    dashboard = _dashboard("ise-exporter-health.json")
+    panel = _panel(dashboard, "Unavailable Dataset Details")
     expression = panel["targets"][0]["expr"]
 
     assert panel["title"] == "Unavailable Dataset Details"
@@ -616,16 +632,15 @@ def test_data_quality_lists_each_unavailable_dataset_and_latest_reason():
     assert organize["options"]["renameByName"]["reason"] == "Failure category"
     assert organize["options"]["renameByName"]["detail"] == "Why unavailable"
 
-    age_panel = next(
-        item for item in _panels(dashboard["panels"]) if item.get("id") == 42)
+    age_panel = _panel(dashboard, "Dataset Collection Attempt and Success Age")
     ages = {target["refId"]: target["expr"] for target in age_panel["targets"]}
     assert "ise_dataset_last_attempt_timestamp" in ages["Attempt age"]
     assert "ise_dataset_last_success_timestamp" in ages["Success age"]
 
 
-def test_sessions_dashboard_collection_age_thresholds_match_domain_cadences():
-    dashboard = json.loads((DASHBOARDS / "ise-sessions-auth.json").read_text())
-    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 91)
+def test_access_dashboard_collection_age_thresholds_match_domain_cadences():
+    dashboard = _dashboard("ise-access-troubleshooting.json")
+    panel = _panel(dashboard, "Collection Age")
 
     defaults = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
     assert [step["value"] for step in defaults] == [None, 129600, 172800]
@@ -640,68 +655,53 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
     slow_interval = int(re.search(
         r"^SLOW_INTERVAL=(\d+)$", sample, re.MULTILINE).group(1))
     expected = {
-        ("ise-auth-troubleshooting.json", 91): (129600, 172800),
-        ("ise-failure-triage.json", 91): (129600, 172800),
-        ("ise-endpoint-profiles.json", 91): (129600, 172800),
-        ("ise-endpoints-devices.json", 91): (129600, 172800),
-        ("ise-psn-troubleshooting.json", 91): (5400, 7200),
-        ("ise-secureclient.json", 91): (1350, 1800),
-        ("ise-secureclient.json", 93): (32400, 43200),
-        ("ise-tacacs.json", 92): (
+        ("ise-access-troubleshooting.json", "Collection Age"):
+            (129600, 172800),
+        ("ise-endpoints-devices.json", "Dataset Collection Age"):
+            (129600, 172800),
+        ("ise-psn-troubleshooting.json", "Dataset Collection Age"): (5400, 7200),
+        ("ise-secureclient.json", "Active Snapshot Age (MnT)"): (1350, 1800),
+        ("ise-secureclient.json", "Historical Snapshot Age (Data Connect)"):
+            (32400, 43200),
+        ("ise-tacacs.json", "Configuration Collection Age"): (
             slow_interval * 3 // 2, slow_interval * 2),
-        ("ise-tacacs.json", 93): (32400, 43200),
-        ("ise-data-quality.json", 18): (1350, 1800),
+        ("ise-tacacs.json", "Activity Collection Age"): (32400, 43200),
     }
-    for (filename, panel_id), thresholds in expected.items():
-        dashboard = json.loads((DASHBOARDS / filename).read_text())
-        panel = next(
-            panel for panel in _panels(dashboard["panels"]) if panel.get("id") == panel_id)
+    for (filename, title), thresholds in expected.items():
+        dashboard = _dashboard(filename)
+        panel = _panel(dashboard, title)
         steps = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
         assert tuple(step["value"] for step in steps[1:]) == thresholds
 
 
-def test_data_quality_domain_panels_do_not_publish_stale_values_during_outages():
-    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
-    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+def test_exporter_health_domain_panels_do_not_publish_stale_values_during_outages():
+    dashboard = _dashboard("ise-exporter-health.json")
     ownership = {
-        7: "dataconnect_posture",
-        8: "dataconnect_endpoints",
-        9: "dataconnect_endpoints",
-        10: "dataconnect_radius",
-        11: "dataconnect_nad_health",
-        12: "dataconnect_nad_health",
-        13: "certificates",
-        14: "deployment",
-        15: "dataconnect_nad_health",
-        16: "certificates",
-        19: "mnt_active_posture",
-        20: "mnt_active_posture",
-        21: "mnt_active_posture",
-        30: "mnt_active_posture",
-        31: "mnt_active_posture",
-        32: "mnt_active_posture",
-        33: ("dataconnect_radius", "dataconnect_radius_active"),
+        "Posture Coverage": "dataconnect_posture",
+        "Unknown Endpoint Profiles": "dataconnect_endpoints",
+        "Endpoints Stale 90d": "dataconnect_endpoints",
+        "MnT Detail Coverage": "mnt_active_posture",
+        "MnT Detail Truncated": "mnt_active_posture",
     }
 
-    for panel_id, datasets in ownership.items():
+    for title, datasets in ownership.items():
         if isinstance(datasets, str):
             datasets = (datasets,)
-        targets = panels[panel_id]["targets"]
+        targets = _panel(dashboard, title)["targets"]
         expected = datasets if len(datasets) > 1 else datasets * len(targets)
         assert len(targets) == len(expected)
         for target, dataset in zip(targets, expected, strict=True):
             expression = target["expr"]
-            assert f'dataset="{dataset}"' in expression, (panel_id, expression)
-            assert "ise_dataset_up" in expression, (panel_id, expression)
-            assert "== 1" in expression, (panel_id, expression)
+            assert f'dataset="{dataset}"' in expression, (title, expression)
+            assert "ise_dataset_up" in expression, (title, expression)
+            assert "== 1" in expression, (title, expression)
 
 
 def test_nad_health_panels_require_fresh_inventory_and_activity_sources():
-    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
-    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+    dashboard = _dashboard("ise-exporter-health.json")
 
-    for panel_id in (11, 12, 15, 40, 41):
-        for target in panels[panel_id]["targets"]:
+    for title in ("NAD Inventory Export Coverage", "NAD Activity Group Coverage"):
+        for target in _panel(dashboard, title)["targets"]:
             expression = target["expr"]
             for dataset, source in (
                     ("dataconnect_nad_health", "dataconnect"),
@@ -712,8 +712,8 @@ def test_nad_health_panels_require_fresh_inventory_and_activity_sources():
 
 
 def test_unknown_endpoint_profile_stat_uses_exact_inventory_total():
-    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
-    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 8)
+    dashboard = _dashboard("ise-exporter-health.json")
+    panel = _panel(dashboard, "Unknown Endpoint Profiles")
     expression = panel["targets"][0]["expr"]
 
     assert "ise_dataconnect_endpoints_unknown_profile_total" in expression
@@ -775,18 +775,9 @@ def test_psn_dashboard_hides_stale_deployment_snapshot():
     assert "== 1" in expression
 
 
-def test_disconnected_node_stat_is_zero_when_all_nodes_are_healthy():
-    text = (DASHBOARDS / "ise-data-quality.json").read_text()
-
-    assert ('sum(ise_deployment_status{ise_deployment_status=\\"Disconnected\\"})'
-            in text)
-    assert "sum(ise_deployment_status == bool 2)" not in text
-    assert "sum(ise_deployment_status == 2)" not in text
-
-
-def test_data_quality_query_duration_survives_sparse_production_cadence():
-    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
-    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 24)
+def test_exporter_health_query_duration_survives_sparse_production_cadence():
+    dashboard = _dashboard("ise-exporter-health.json")
+    panel = _panel(dashboard, "Latest Data Connect Query Duration")
     target = panel["targets"][0]
 
     assert panel["type"] == "bargauge"
@@ -796,39 +787,48 @@ def test_data_quality_query_duration_survives_sparse_production_cadence():
     assert "histogram_quantile" not in target["expr"]
 
 
-def test_overview_freshness_uses_each_datasets_published_effective_interval():
-    dashboard = json.loads((DASHBOARDS / "ise-overview.json").read_text())
-    panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 29)
-    expression = panel["targets"][0]["expr"]
+def test_exporter_health_exposes_attempt_and_success_age_per_dataset():
+    dashboard = _dashboard("ise-exporter-health.json")
+    panel = _panel(dashboard, "Dataset Collection Attempt and Success Age")
+    expressions = {target["refId"]: target["expr"] for target in panel["targets"]}
 
-    assert "ise_dataset_last_success_timestamp" in expression
-    assert "on(dataset,source) ise_dataset_effective_interval_seconds" in expression
-    assert "/ 60" not in expression
-    assert "/ 300" not in expression
-    assert "/ 3600" not in expression
+    assert "ise_dataset_last_attempt_timestamp" in expressions["Attempt age"]
+    assert "ise_dataset_last_success_timestamp" in expressions["Success age"]
+    assert all("ise_dataset_enabled == 1" in expr for expr in expressions.values())
 
 
 def test_overview_operational_panels_hide_stale_rest_snapshots():
-    dashboard = json.loads((DASHBOARDS / "ise-overview.json").read_text())
-    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+    dashboard = _dashboard("ise-overview.json")
     ownership = {
-        2: "deployment", 3: "deployment", 4: "certificates",
-        5: "certificates", 6: "backup", 7: "patches",
-        8: "deployment", 9: "deployment", 10: "deployment",
-        11: "patches", 19: "certificates", 20: "licensing",
-        21: "licensing", 23: "licensing", 24: "patches",
-        25: "backup", 26: "backup",
+        "ISE Up": "deployment",
+        "PAN HA Enabled": "deployment",
+        "Certificates Expired": "certificates",
+        "Certs Expiring Soon": "certificates",
+        "Backup Age": "backup",
+        "Patch Level": "patches",
+        "Nodes by Role": "deployment",
+        "Deployment Status": "deployment",
+        "ISE Info": "deployment",
+        "ISE Version": "patches",
+        "Certificate Expiry (days, soonest first)": "certificates",
+        "License Consumption": "licensing",
+        "License Compliance": "licensing",
+        "License Tiers Enabled": "licensing",
+        "Patch Installed": "patches",
+        "Backup Configured": "backup",
+        "Time Since Last Backup Success": "backup",
     }
 
-    for panel_id, dataset in ownership.items():
-        expression = panels[panel_id]["targets"][0]["expr"]
+    for title, dataset in ownership.items():
+        expression = _panel(dashboard, title)["targets"][0]["expr"]
         assert f'dataset="{dataset}",source="rest"' in expression, (
-            panel_id, expression)
-        assert "ise_dataset_up" in expression, (panel_id, expression)
+            title, expression)
+        assert "ise_dataset_up" in expression, (title, expression)
 
     # ISE Up must show DOWN rather than a stale UP or a blank panel.
-    assert "ise_up * on() max(ise_dataset_up" in panels[2]["targets"][0]["expr"]
+    assert "ise_up * on() max(ise_dataset_up" in \
+        _panel(dashboard, "ISE Up")["targets"][0]["expr"]
     # A healthy certificate snapshot with no expiring certs is a real zero.
-    expiring = panels[5]["targets"][0]["expr"]
+    expiring = _panel(dashboard, "Certs Expiring Soon")["targets"][0]["expr"]
     assert "or on() (0 *" in expiring
     assert "== 1" in expiring

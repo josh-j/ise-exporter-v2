@@ -22,7 +22,7 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Dataset Availability",
+      "title": "Datasets",
       "description": "Authoritative Data Connect dataset health. DOWN is not a valid zero.",
       "gridPos": {
         "h": 4,
@@ -87,7 +87,7 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Dataset Collection Age",
+      "title": "Collection Age",
       "description": "Seconds since the last successful snapshot replacement; thresholds are based on this dataset cadence.",
       "gridPos": {
         "h": 4,
@@ -201,7 +201,7 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Failed Authentication Events",
+      "title": "Failed Auth",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -223,7 +223,7 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "Likely Active Sessions",
+      "title": "Active Sessions",
       "description": "Latest accounting record per session ID is Start or Interim, not Stop. Depends on NAD accounting quality.",
       "gridPos": {
         "h": 4,
@@ -246,7 +246,7 @@
     {
       "id": 7,
       "type": "stat",
-      "title": "Accounting Starts",
+      "title": "Acct Starts",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -466,7 +466,7 @@
       "title": "Accounting Session Duration",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 38
       },
@@ -691,7 +691,7 @@
       "description": "One row per failed-authentication combination of NAD, method, protocol, authorization policy, and PSN. Error-code panels above remain sourced from the separate RADIUS errors view.",
       "gridPos": {
         "h": 12,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 79
       },
