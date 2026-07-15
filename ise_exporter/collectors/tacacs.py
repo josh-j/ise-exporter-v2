@@ -48,6 +48,7 @@ _CONFIG_METRICS = (
 
 _INTERNAL_USERS_STATE = "tacacs.internal_users"
 _INTERNAL_LAST_SEEN_STATE = "tacacs.internal_last_seen"
+_INTERNAL_STATE_MAX_BYTES = 1024 * 1024
 _INTERNAL_USER_DETAIL_FIELDS = (
     "id", "name", "enabled", "passwordNeverExpires", "changePassword",
     "passwordIDStore", "dateCreated", "dateModified",
@@ -68,8 +69,9 @@ def _state_path(cfg):
 
 def _load_json(store, key, default):
     try:
-        value = json.loads(store.get_value(key, ""))
-    except (TypeError, ValueError):
+        value = json.loads(store.get_value(
+            key, "", max_bytes=_INTERNAL_STATE_MAX_BYTES))
+    except (RecursionError, TypeError, ValueError):
         return default
     return value
 
@@ -91,10 +93,12 @@ def _sync_internal_user_state(cfg, accounts):
             if isinstance(previous, dict) and isinstance(previous.get(username), dict)
             for events in (previous[username],)
         }
-        store.set_value(_INTERNAL_USERS_STATE, json.dumps(accounts, separators=(",", ":")),
-                        commit=False)
+        store.set_value(
+            _INTERNAL_USERS_STATE, json.dumps(accounts, separators=(",", ":")),
+            commit=False, max_bytes=_INTERNAL_STATE_MAX_BYTES)
         store.set_value(_INTERNAL_LAST_SEEN_STATE,
-                        json.dumps(high_water, separators=(",", ":")), commit=False)
+                        json.dumps(high_water, separators=(",", ":")), commit=False,
+                        max_bytes=_INTERNAL_STATE_MAX_BYTES)
         store.commit()
         return high_water
     finally:
@@ -145,7 +149,8 @@ def _merge_internal_last_seen(cfg, observed):
                 high_water[username][event_type] = max(
                     high_water[username].get(event_type, 0), int(timestamp))
         store.set_value(_INTERNAL_LAST_SEEN_STATE,
-                        json.dumps(high_water, separators=(",", ":")))
+                        json.dumps(high_water, separators=(",", ":")),
+                        max_bytes=_INTERNAL_STATE_MAX_BYTES)
         return high_water
     finally:
         store.close()

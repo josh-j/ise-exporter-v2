@@ -536,9 +536,10 @@ class ISERestClient:
             self._ers_protocol_error(
                 api_name, "Malformed ERS total for %s: %r", url, total)
             return None
-        if total < 0:
+        if not 0 <= total <= ERS_MAX_ROWS:
             self._ers_protocol_error(
-                api_name, "Negative ERS total for %s: %d", url, total)
+                api_name, "ERS total outside the 0-%d row bound for %s: %d",
+                ERS_MAX_ROWS, url, total)
             return None
         return total
 

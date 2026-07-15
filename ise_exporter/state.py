@@ -444,16 +444,39 @@ class StateStore:
             raise ValueError("cache timestamp must be finite and non-negative")
         return value
 
-    def get_value(self, key, default=None):
-        row = self.db.execute(
-            "SELECT value FROM exporter_state WHERE key=?", (key,)).fetchone()
-        return row[0] if row else default
+    def get_value(self, key, default=None, *, max_bytes=None):
+        if max_bytes is None:
+            row = self.db.execute(
+                "SELECT value FROM exporter_state WHERE key=?", (key,)).fetchone()
+            return row[0] if row else default
+        max_bytes = int(max_bytes)
+        if max_bytes < 1:
+            raise ValueError("state value size limit must be positive")
+        row = self.db.execute("""
+            SELECT CASE WHEN typeof(value) = 'text'
+                              AND length(CAST(value AS BLOB)) <= ?
+                        THEN value END AS value
+            FROM exporter_state WHERE key=?
+        """, (max_bytes, key)).fetchone()
+        if row is None:
+            return default
+        if row["value"] is None:
+            self._delete_state_key(key)
+            return default
+        return row["value"]
 
-    def set_value(self, key, value, *, commit=True):
+    def set_value(self, key, value, *, commit=True, max_bytes=None):
+        value = str(value)
+        if max_bytes is not None:
+            max_bytes = int(max_bytes)
+            if max_bytes < 1:
+                raise ValueError("state value size limit must be positive")
+            if len(value.encode("utf-8")) > max_bytes:
+                raise ValueError("state value exceeds the persisted size limit")
         self.db.execute("""
             INSERT INTO exporter_state(key, value) VALUES (?, ?)
             ON CONFLICT(key) DO UPDATE SET value=excluded.value
-        """, (key, str(value)))
+        """, (key, value))
         if commit:
             self.commit()
 

@@ -473,6 +473,17 @@ def test_get_ers_total_returns_a_nonnegative_integer():
     assert c.get_ers_total("/config/endpoint") == 100000
 
 
+def test_get_ers_total_rejects_a_count_above_the_supported_inventory(monkeypatch):
+    c = ISERestClient.__new__(ISERestClient)
+    c.ers_url = "https://h:9060/ers"
+    c.session = None
+    monkeypatch.setattr(rest_module, "ERS_MAX_ROWS", 100000)
+    c._get_json = lambda *_args, **_kwargs: {
+        "SearchResult": {"total": "100001"}}
+
+    assert c.get_ers_total("/config/endpoint") is None
+
+
 def test_401s_trip_auth_backoff_before_more_requests():
     cfg = types.SimpleNamespace(auth_failure_threshold=2, auth_failure_backoff=60)
     c = ISERestClient.__new__(ISERestClient)

@@ -219,6 +219,25 @@ def test_invalid_dataset_snapshot_is_pruned(tmp_path):
     store.close()
 
 
+def test_bounded_state_value_is_not_materialized_and_is_pruned(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.set_value("bounded", "x" * 100)
+
+    assert store.get_value("bounded", "fallback", max_bytes=32) == "fallback"
+    assert store.get_value("bounded") is None
+    store.close()
+
+
+def test_oversized_bounded_state_value_is_not_written(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+
+    with pytest.raises(ValueError, match="size limit"):
+        store.set_value("bounded", "x" * 100, max_bytes=32)
+
+    assert store.get_value("bounded") is None
+    store.close()
+
+
 @pytest.mark.parametrize(("method", "table", "message"), (
     ("posture", "mnt_posture_cache", "posture cache detail"),
     ("tacacs", "tacacs_internal_user_cache", "TACACS cache detail"),

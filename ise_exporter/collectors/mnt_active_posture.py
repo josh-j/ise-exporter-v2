@@ -99,7 +99,7 @@ def _active_count(payload):
         value = int(raw)
     except (TypeError, ValueError):
         return None
-    return max(0, value)
+    return value if value >= 0 else None
 
 
 def _milliseconds(value):
@@ -368,9 +368,17 @@ def collect(client, cfg):
 
         rows = active["sessions"]
         try:
-            active_total = max(0, int(active.get("total", len(rows))))
+            active_total = int(active.get("total"))
         except (TypeError, ValueError):
-            active_total = len(rows)
+            raise CollectorFailed("MnT ActiveList returned an invalid session count") from None
+        if active_total < 0 or active_total != len(rows):
+            raise CollectorFailed(
+                f"MnT ActiveList count mismatch: declared {active_total}, "
+                f"parsed {len(rows)}")
+        if active_total > list_ceiling or len(rows) > list_ceiling:
+            raise CollectorFailed(
+                f"MnT ActiveList refused after preflight: {len(rows)} parsed sessions "
+                f"exceed production ceiling {list_ceiling}")
         # Preserve ActiveList order while avoiding duplicate detail requests for
         # endpoints with more than one active session.
         active_rows = {}

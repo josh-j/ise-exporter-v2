@@ -23,6 +23,21 @@ def _rows(metric, *labels):
             for sample in metric.collect()[0].samples}
 
 
+def test_oversized_internal_account_state_is_pruned_before_json_load(
+        tmp_path, monkeypatch):
+    path = tmp_path / "state.sqlite3"
+    store = StateStore(path)
+    store.set_value(tacacs._INTERNAL_USERS_STATE, '{"value":"' + "x" * 100 + '"}')
+    store.close()
+    monkeypatch.setattr(tacacs, "_INTERNAL_STATE_MAX_BYTES", 32)
+
+    assert tacacs._internal_accounts(types.SimpleNamespace(state_db_path=path)) == []
+
+    store = StateStore(path)
+    assert store.get_value(tacacs._INTERNAL_USERS_STATE) is None
+    store.close()
+
+
 class Client:
     def get_ers(self, path, params=None, get_all=False, api_name="x"):
         if path == "/config/internaluser":

@@ -93,6 +93,13 @@ def test_detail_request_pacing_is_interruptible_during_shutdown():
         pacer.wait()
 
 
+@pytest.mark.parametrize("count", ("-1", -999))
+def test_negative_active_count_is_invalid_not_an_empty_snapshot(count):
+    assert mnt_active_posture._active_count({
+        "total": 1, "sessions": [{"count": count}],
+    }) is None
+
+
 def test_collects_bounded_posture_and_latency_without_identity_labels():
     client = MnT()
     mnt_active_posture.collect(client, _cfg())
@@ -225,6 +232,25 @@ def test_large_unpaged_active_list_is_refused_after_small_count_preflight():
     assert metrics.ise_mnt_session_list_preflight_count._value.get() == 100001
     assert metrics.ise_mnt_session_list_ceiling._value.get() == 10000
     assert metrics.ise_mnt_session_list_skipped._value.get() == 1
+
+
+def test_active_list_growth_past_preflight_ceiling_fails_closed():
+    class GrewAfterPreflight:
+        def get_mnt_xml(self, path, api_name="mnt"):
+            if path == "/Session/ActiveCount":
+                return {"total": 1, "sessions": [{"count": "1"}]}
+            if path == "/Session/ActiveList":
+                return {"total": 2, "sessions": [
+                    {"calling_station_id": "AA:BB:CC:DD:EE:01"},
+                    {"calling_station_id": "AA:BB:CC:DD:EE:02"},
+                ]}
+            raise AssertionError("oversized list must not trigger detail requests")
+
+    mnt_active_posture.collect(
+        GrewAfterPreflight(), _cfg(mnt_active_posture_max_active_list_sessions=1))
+
+    assert collectors.outcome("mnt_active_posture") is False
+    assert not _rows(metrics.ise_mnt_active_posture_endpoints, "status")
 
 
 def test_programmatic_config_cannot_relax_posture_load_ceilings(monkeypatch):
