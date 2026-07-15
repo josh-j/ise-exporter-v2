@@ -383,6 +383,8 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         "ise_mnt_active_posture_refresh_deferred",
         "ise_mnt_active_posture_cache_oldest_age_seconds",
         "ise_dataconnect_radius_active_groups_truncated",
+        "ise_tacacs_topk_truncated",
+        "ise_tacacs_internal_user_inventory_truncated",
         "ise_dataconnect_worker_busy",
         "ise_dataconnect_queue_depth",
         "ise_dataconnect_oldest_queued_seconds",
@@ -427,9 +429,11 @@ def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
             "dataconnect_posture", "dataconnect_endpoints",
             "dataconnect_performance"):
         assert dataset in truncation
-    # The active-session term has an explicit available-zero fallback, so its
-    # dataset gate appears twice; all other top-K terms already use count-or-zero.
-    assert truncation.count("max(ise_dataset_up") == 6
+    for dataset in ("tacacs_activity", "tacacs_config"):
+        assert dataset in truncation
+    # Every term gates both its preserved value and its valid-zero fallback.
+    assert truncation.count("max(ise_dataset_up") == 14
+    assert truncation.count(" and on() (max(ise_dataset_up") == 7
 
 
 def test_sessions_dashboard_collection_age_thresholds_match_domain_cadences():
@@ -453,7 +457,7 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
         ("ise-psn-troubleshooting.json", 91): (5400, 7200),
         ("ise-secureclient.json", 91): (1350, 1800),
         ("ise-secureclient.json", 93): (32400, 43200),
-        ("ise-tacacs.json", 92): (32400, 43200),
+        ("ise-tacacs.json", 92): (5400, 7200),
         ("ise-tacacs.json", 93): (32400, 43200),
         ("ise-data-quality.json", 18): (1350, 1800),
     }
