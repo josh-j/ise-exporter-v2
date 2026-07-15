@@ -196,6 +196,7 @@ def test_schema_discovery_is_scheduler_owned_after_metrics_start(monkeypatch):
         mnt_worker_alive = False
 
         def __init__(self, cfg, client, dataconnect, mnt):
+            assert client.propagate_failures is True
             events.append(("scheduler", dataconnect.schema_ready))
 
         def loop(self, shutdown):

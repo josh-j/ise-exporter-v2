@@ -56,6 +56,15 @@ class XMLResponseTooComplex(RuntimeError):
     """The bounded MnT XML shape exceeded safe structural limits."""
 
 
+class APIRequestFailed(RuntimeError):
+    """Bounded REST/MnT failure propagated to an authoritative collector."""
+
+    def __init__(self, reason, detail):
+        super().__init__(detail)
+        self.reason = reason
+        self.detail = detail
+
+
 def _redact_log_text(value):
     """Remove common credential forms from bounded remote error text."""
     text = str(value or "")
@@ -206,6 +215,10 @@ class ISERestClient:
             "application/xml", self._tls_verify("mnt")) if include_mnt else None
         self._auth_guard = auth_guard or RestAuthGuard(cfg)
         self._request_lock = threading.RLock()
+        # CLI and compatibility probes retain the established None-on-failure
+        # surface. The exporter runtime enables propagation after its strict
+        # compatibility preflight so collectors retain the real outage category.
+        self.propagate_failures = False
         self.shutdown_event = None
 
     def set_shutdown_event(self, shutdown):
@@ -282,6 +295,11 @@ class ISERestClient:
             return self._request_serialized(
                 session, url, params=params, timeout=timeout, api_name=api_name)
 
+    def _failure(self, reason, detail):
+        if getattr(self, "propagate_failures", False):
+            raise APIRequestFailed(reason, detail)
+        return None
+
     def _request_serialized(self, session, url, params=None, timeout=None,
                             api_name="unknown"):
         shutdown = getattr(self, "shutdown_event", None)
@@ -296,12 +314,15 @@ class ISERestClient:
             ise_api_requests_total.labels(api=api_name, status="auth_guard_error").inc()
             ise_api_errors_total.labels(
                 api=api_name, error_type="auth_guard", http_code="0").inc()
-            return None
+            return self._failure(
+                "state_unavailable", "The shared REST authentication guard is unavailable")
         if auth_blocked:
             ise_api_requests_total.labels(api=api_name, status="auth_blocked").inc()
             ise_api_errors_total.labels(api=api_name, error_type="auth_blocked",
                                         http_code="401").inc()
-            return None
+            return self._failure(
+                "authentication_backoff",
+                "REST requests are paused by the shared authentication safety backoff")
         try:
             # Suppress only urllib3's warning when an operator explicitly selected
             # unverified lab TLS; this keeps CLI JSON/table output machine-readable.
@@ -319,50 +340,80 @@ class ISERestClient:
                 snippet = self._read_error_snippet(r)
                 logger.warning("HTTP %s for %s  body: %s", status, url, snippet)
                 if status == 401:
-                    self._record_auth_failure()
+                    self._record_auth_failure(api_name)
                 ise_api_requests_total.labels(
                     api=api_name, status=f"http_{status}").inc()
                 ise_api_errors_total.labels(
                     api=api_name, error_type="http_error", http_code=str(status)).inc()
-                return None
+                if status == 401:
+                    reason = "authentication_failed"
+                    detail = "ISE rejected the configured REST credentials"
+                elif status == 403:
+                    reason = "authorization_failed"
+                    detail = "The configured REST account lacks access to this API"
+                else:
+                    reason = "http_error"
+                    detail = f"ISE returned HTTP {status} for the requested API"
+                return self._failure(reason, detail)
             self._buffer_response(r)
             ise_api_requests_total.labels(api=api_name, status="success").inc()
             return r
+        except APIRequestFailed:
+            raise
         except ResponseTooLarge as error:
             logger.warning("Oversized response for %s: %s", url, error)
             ise_api_requests_total.labels(
                 api=api_name, status="response_too_large").inc()
             ise_api_errors_total.labels(
                 api=api_name, error_type="response_too_large", http_code="0").inc()
-            return None
+            return self._failure(
+                "response_too_large", "ISE returned a response above the 64 MiB safety limit")
         except requests.exceptions.Timeout:
             logger.warning("Timeout for %s", url)
             ise_api_requests_total.labels(api=api_name, status="timeout").inc()
             ise_api_errors_total.labels(api=api_name, error_type="timeout", http_code="0").inc()
-            return None
+            return self._failure("timeout", "The REST request exceeded its bounded timeout")
+        except requests.exceptions.SSLError as error:
+            logger.warning("TLS error for %s: %s", url, error)
+            ise_api_requests_total.labels(api=api_name, status="tls_error").inc()
+            ise_api_errors_total.labels(
+                api=api_name, error_type="tls_error", http_code="0").inc()
+            return self._failure(
+                "tls_failed", "TLS certificate or protocol validation failed")
         except requests.exceptions.ConnectionError as e:
             logger.warning("Connection error for %s: %s", url, e)
             ise_api_requests_total.labels(api=api_name, status="connection_error").inc()
             ise_api_errors_total.labels(api=api_name, error_type="connection_error", http_code="0").inc()
-            return None
+            return self._failure(
+                "connection_failed", "The configured REST or MnT host could not be reached")
         except requests.exceptions.HTTPError as e:
             if e.response is not None:
                 status = e.response.status_code
                 snippet = self._read_error_snippet(e.response)
                 logger.warning("HTTP %s for %s  body: %s", status, url, snippet)
                 if status == 401:
-                    self._record_auth_failure()
+                    self._record_auth_failure(api_name)
             else:
                 status = "no_response"
                 logger.warning("HTTP error with no response for %s: %s", url, e)
             ise_api_requests_total.labels(api=api_name, status=f"http_{status}").inc()
             ise_api_errors_total.labels(api=api_name, error_type="http_error", http_code=str(status)).inc()
-            return None
+            if status == 401:
+                reason = "authentication_failed"
+                detail = "ISE rejected the configured REST credentials"
+            elif status == 403:
+                reason = "authorization_failed"
+                detail = "The configured REST account lacks access to this API"
+            else:
+                reason = "http_error"
+                detail = f"ISE returned HTTP {status} for the requested API"
+            return self._failure(reason, detail)
         except Exception as e:
             logger.error("Request failed for %s: %s", url, e)
             ise_api_requests_total.labels(api=api_name, status="error").inc()
             ise_api_errors_total.labels(api=api_name, error_type="unknown", http_code="0").inc()
-            return None
+            return self._failure(
+                "unexpected_error", "The REST transport failed unexpectedly")
 
     @staticmethod
     def _close_response(response):
@@ -436,14 +487,25 @@ class ISERestClient:
         text = raw.decode("utf-8", "replace").replace("\n", " ").replace("\r", " ")
         return _redact_log_text(text)
 
-    def _record_auth_failure(self):
+    def _record_auth_failure(self, api_name="unknown"):
         cfg = getattr(self, "cfg", None)
         threshold = max(1, min(5, int(getattr(
             cfg, "auth_failure_threshold", 3))))
         backoff = max(300, min(86400, int(getattr(
             cfg, "auth_failure_backoff", 900))))
-        failures, deadline = self._auth_guard_state().failure(
-            threshold, backoff, time.time())
+        try:
+            failures, deadline = self._auth_guard_state().failure(
+                threshold, backoff, time.time())
+        except Exception as error:
+            logger.error("REST authentication guard unavailable: %s", error)
+            ise_api_errors_total.labels(
+                api=api_name, error_type="auth_guard", http_code="0").inc()
+            if getattr(self, "propagate_failures", False):
+                raise APIRequestFailed(
+                    "state_unavailable",
+                    "The shared REST authentication guard could not record failure",
+                ) from error
+            return
         if deadline:
             logger.error("ISE API authentication failed %d times; suppressing further API "
                          "requests for %ds to avoid account lockout", failures, backoff)
@@ -456,6 +518,11 @@ class ISERestClient:
             logger.error("REST authentication guard unavailable: %s", error)
             ise_api_errors_total.labels(
                 api=api_name, error_type="auth_guard", http_code="0").inc()
+            if getattr(self, "propagate_failures", False):
+                raise APIRequestFailed(
+                    "state_unavailable",
+                    "The shared REST authentication guard could not record success",
+                ) from error
             return False
 
     def _auth_guard_state(self):
@@ -479,14 +546,16 @@ class ISERestClient:
             logger.warning("Invalid JSON from %s: %s", url, error)
             ise_api_errors_total.labels(
                 api=api_name, error_type="parse", http_code=status).inc()
-            return None
+            return self._failure(
+                "invalid_response", "ISE returned invalid JSON for the requested API")
         return data if self._record_auth_success(api_name) else None
 
-    @staticmethod
-    def _ers_protocol_error(api_name, message, *args):
+    def _ers_protocol_error(self, api_name, message, *args):
         logger.warning(message, *args)
         ise_api_errors_total.labels(
             api=api_name, error_type="protocol", http_code="200").inc()
+        self._failure(
+            "invalid_response", "ISE returned a malformed or incomplete API response")
 
     # --- generic accessors used by collectors ---
     def get_ers(self, path, params=None, get_all=False, api_name="ers"):
@@ -703,24 +772,31 @@ class ISERestClient:
         record as the sole session, namespace-stripped, populated fields only."""
         url = f"{self.mnt_xml_url}{path}"
         r = self._request(self.mnt_session, url, api_name=api_name)
-        if r is None or not r.content:
+        if r is None:
             return None
+        if not r.content:
+            return self._failure(
+                "invalid_response", "ISE returned an empty response for the MnT API")
         if UNSAFE_XML_DECLARATION.search(r.content):
             ise_api_errors_total.labels(
                 api=api_name, error_type="unsafe_xml", http_code="200").inc()
             logger.error("Rejected XML with a DTD or entity declaration from %s", url)
-            return None
+            return self._failure(
+                "invalid_response", "ISE returned XML containing a prohibited DTD or entity")
         try:
             raw_total, active, auth_status, detail = _parse_mnt_xml(r.content)
         except ET.ParseError as e:
             ise_api_errors_total.labels(api=api_name, error_type="parse", http_code="0").inc()
             logger.error("XML parse error from %s: %s", url, e)
-            return None
+            return self._failure(
+                "invalid_response", "ISE returned malformed XML for the requested MnT API")
         except XMLResponseTooComplex as error:
             ise_api_errors_total.labels(
                 api=api_name, error_type="response_too_complex", http_code="200").inc()
             logger.error("Rejected structurally complex XML from %s: %s", url, error)
-            return None
+            return self._failure(
+                "response_too_large",
+                "ISE returned XML above the bounded structural safety limits")
 
         if not self._record_auth_success(api_name):
             return None
@@ -736,7 +812,9 @@ class ISERestClient:
                 logger.error(
                     "MnT ActiveList count mismatch from %s: declared %r, parsed %d",
                     url, raw_total, len(active))
-                return None
+                return self._failure(
+                    "invalid_response",
+                    "ISE returned an inconsistent active-session count")
             return {"total": total, "sessions": active}
 
         if auth_status:

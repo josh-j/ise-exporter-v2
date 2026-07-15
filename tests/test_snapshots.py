@@ -4,6 +4,7 @@ import pytest
 from prometheus_client import CollectorRegistry, Gauge, Info
 
 from ise_exporter import collectors, metrics
+from ise_exporter.clients.rest import APIRequestFailed
 from ise_exporter.collectors import deployment, tacacs
 import ise_exporter.snapshots as snapshots_module
 from ise_exporter.snapshots import (
@@ -211,6 +212,31 @@ def test_exception_failure_detail_uses_fixed_operator_explanation():
     ]
     assert len(samples) == 1
     assert samples[0].labels["detail"] == "The configured credentials were rejected"
+
+
+def test_authoritative_api_failure_reason_and_detail_reach_dataset_metrics():
+    name = "api_failure_propagation_test"
+
+    with collectors.observe(name):
+        raise APIRequestFailed(
+            "authorization_failed",
+            "The configured REST account lacks access to this API",
+        )
+
+    category = [
+        sample for sample in metrics.ise_dataset_last_failure_info.collect()[0].samples
+        if sample.labels.get("dataset") == name
+    ]
+    detail = [
+        sample
+        for sample in metrics.ise_dataset_last_failure_detail_info.collect()[0].samples
+        if sample.labels.get("dataset") == name
+    ]
+    assert len(category) == 1
+    assert category[0].labels["reason"] == "authorization_failed"
+    assert len(detail) == 1
+    assert detail[0].labels["detail"] == \
+        "The configured REST account lacks access to this API"
 
 
 @pytest.mark.parametrize(("error", "reason"), (

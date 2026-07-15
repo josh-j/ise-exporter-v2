@@ -71,6 +71,9 @@ def _failure_reason(message):
 
 def _exception_reason(error):
     """Classify arbitrary exceptions without exporting their unbounded text."""
+    explicit = getattr(error, "reason", None)
+    if isinstance(explicit, str) and re.fullmatch(r"[a-z0-9_]{1,96}", explicit):
+        return explicit
     name = type(error).__name__.lower()
     message = str(error).lower()
     if ("401" in message or "authentication" in message or "credential" in message
@@ -194,7 +197,8 @@ def observe(name):
             record_failure(name, e.reason, str(e))
         except Exception as e:
             logger.error("%s collection error: %s", name, e)
-            record_failure(name, _exception_reason(e))
+            record_failure(
+                name, _exception_reason(e), getattr(e, "detail", None))
         finally:
             duration = max(0.0, time.monotonic() - start)
             with snapshot_lock:

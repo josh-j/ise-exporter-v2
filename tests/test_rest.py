@@ -10,6 +10,7 @@ from urllib3.exceptions import InsecureRequestWarning
 
 import ise_exporter.clients.rest as rest_module
 from ise_exporter.clients.rest import (
+    APIRequestFailed,
     ISEControlPlaneClient,
     ISEOperatorClient,
     ISERestClient,
@@ -170,6 +171,80 @@ def test_shutdown_rejects_queued_rest_request_before_wire_attempt():
         if item.name.endswith("_total")
         and item.labels == {"api": "shutdown_test", "status": "shutdown"})
     assert sample.value >= 1
+
+
+@pytest.mark.parametrize(("wire_error", "reason", "detail"), (
+    (requests.exceptions.Timeout(), "timeout", "bounded timeout"),
+    (requests.exceptions.SSLError(), "tls_failed", "TLS certificate"),
+    (requests.exceptions.ConnectionError(), "connection_failed", "could not be reached"),
+))
+def test_runtime_transport_failures_retain_operator_reason(
+        wire_error, reason, detail):
+    client = ISERestClient.__new__(ISERestClient)
+    client.cfg = types.SimpleNamespace(request_timeout=10)
+    client.propagate_failures = True
+    client.shutdown_event = None
+    client._request_lock = threading.RLock()
+    client._auth_guard = types.SimpleNamespace(blocked=lambda _now: False)
+
+    class Session:
+        def get(self, *_args, **_kwargs):
+            raise wire_error
+
+    with pytest.raises(APIRequestFailed) as raised:
+        client._request(Session(), "https://ise.example/api", api_name="runtime")
+
+    assert raised.value.reason == reason
+    assert detail in raised.value.detail
+
+
+def test_runtime_http_authorization_failure_is_not_reduced_to_no_data():
+    client = ISERestClient.__new__(ISERestClient)
+    client.cfg = types.SimpleNamespace(request_timeout=10)
+    client.propagate_failures = True
+    client.shutdown_event = None
+    client._request_lock = threading.RLock()
+    client._auth_guard = types.SimpleNamespace(blocked=lambda _now: False)
+
+    class Response:
+        status_code = 403
+        content = b"forbidden"
+
+    class Session:
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    with pytest.raises(APIRequestFailed) as raised:
+        client._request(Session(), "https://ise.example/api", api_name="runtime")
+
+    assert raised.value.reason == "authorization_failed"
+    assert raised.value.detail == "The configured REST account lacks access to this API"
+
+
+@pytest.mark.parametrize(("guard", "reason", "detail"), (
+    (types.SimpleNamespace(blocked=lambda _now: True),
+     "authentication_backoff", "safety backoff"),
+    (types.SimpleNamespace(
+        blocked=lambda _now: (_ for _ in ()).throw(OSError("state unavailable"))),
+     "state_unavailable", "guard is unavailable"),
+))
+def test_runtime_auth_guard_state_is_visible_without_wire_attempt(
+        guard, reason, detail):
+    client = ISERestClient.__new__(ISERestClient)
+    client.propagate_failures = True
+    client.shutdown_event = None
+    client._request_lock = threading.RLock()
+    client._auth_guard = guard
+
+    class Session:
+        def get(self, *_args, **_kwargs):
+            raise AssertionError("guarded request reached the wire")
+
+    with pytest.raises(APIRequestFailed) as raised:
+        client._request(Session(), "https://ise.example/api", api_name="runtime_guard")
+
+    assert raised.value.reason == reason
+    assert detail in raised.value.detail
 
 
 def test_operator_client_delegates_bounded_pan_pagination():
@@ -949,6 +1024,25 @@ def test_invalid_json_is_reported_as_api_parse_error():
     assert counter._value.get() == before + 1
 
 
+def test_runtime_invalid_json_propagates_bounded_failure_detail():
+    client = ISERestClient.__new__(ISERestClient)
+    client.propagate_failures = True
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            raise ValueError("secret remote body must not become a metric label")
+
+    client._request = lambda *_args, **_kwargs: Response()
+
+    with pytest.raises(APIRequestFailed) as raised:
+        client._get_json(object(), "https://ise.example/api", api_name="runtime_json")
+
+    assert raised.value.reason == "invalid_response"
+    assert raised.value.detail == "ISE returned invalid JSON for the requested API"
+
+
 def test_deep_json_recursion_is_reported_as_api_parse_error():
     client = ISERestClient.__new__(ISERestClient)
 
@@ -982,6 +1076,20 @@ def test_mnt_xml_rejects_dtd_and_entity_declarations():
 
     assert client.get_mnt_xml("/Session/test", api_name="mnt_safe_xml") is None
     assert counter._value.get() == before + 1
+
+
+def test_runtime_mnt_protocol_failure_propagates_to_authoritative_collector():
+    client = ISERestClient.__new__(ISERestClient)
+    client.propagate_failures = True
+    client.mnt_xml_url = "https://mnt.example/admin/API/mnt"
+    client.mnt_session = object()
+    client._request = lambda *_args, **_kwargs: _Resp(b"<activeList")
+
+    with pytest.raises(APIRequestFailed) as raised:
+        client.get_mnt_xml("/Session/ActiveList", api_name="runtime_mnt")
+
+    assert raised.value.reason == "invalid_response"
+    assert raised.value.detail == "ISE returned malformed XML for the requested MnT API"
 
 
 @pytest.mark.parametrize(("constant", "limit", "xml"), (

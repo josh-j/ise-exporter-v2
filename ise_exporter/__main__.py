@@ -211,12 +211,15 @@ def main(argv=None):
         logger.info("validated Cisco ISE %s Patch %d on %s",
                     compatibility.ise_version, compatibility.patch_level,
                     ", ".join(compatibility.deployment_nodes))
+        client.propagate_failures = True
 
         dataconnect = DataConnectClient(cfg)
         logger.info(
             "Data Connect schema discovery is scheduled on the serialized reporting lane")
         mnt = (MnTActiveSessionClient(cfg, auth_guard=rest_auth_guard)
                if cfg.collect_mnt_active_posture else None)
+        if mnt is not None:
+            mnt.propagate_failures = True
 
         shutdown = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: shutdown.set())

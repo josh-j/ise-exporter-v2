@@ -397,6 +397,13 @@ they emit distinct metric families and never substitute for one another.
   explanation. Both are removed after recovery. The data-quality dashboard lists
   dataset, source, category, and explanation; when none are unavailable it shows
   an explicit healthy row instead of an ambiguous empty table.
+- After the strict startup compatibility preflight, exporter-owned REST and MnT
+  clients propagate bounded typed failures into the authoritative collector.
+  Authentication, authorization, authentication-backoff state, TLS, connection,
+  timeout, HTTP, malformed-response, and response-safety-limit failures therefore
+  remain distinct in dataset health instead of collapsing into a generic no-data
+  message. Operator CLI clients retain their user-friendly `None`/diagnostic
+  behavior and never receive unhandled transport exceptions.
 - Data Connect schema discovery is itself a retryable dataset. Its transport or
   authentication failure leaves REST and MnT collection running and never allows
   reporting SQL before a live contract has been discovered.
