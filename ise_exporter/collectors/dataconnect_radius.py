@@ -104,11 +104,15 @@ def _active_cte(stale_minutes):
 
 
 def _queries(limit, stale_minutes=60, window_hours=6,
-             authentication_policy_column="authorization_policy"):
+             authentication_policy_column="authorization_policy",
+             accounting_policy_expression="authorization_policy"):
     authentication_policy_column = str(authentication_policy_column).lower()
     if authentication_policy_column not in {
             "authorization_policy", "policy_set_name"}:
         raise ValueError("unsupported RADIUS authentication policy column")
+    accounting_policy_expression = str(accounting_policy_expression).lower()
+    if accounting_policy_expression not in {"authorization_policy", "'none'"}:
+        raise ValueError("unsupported RADIUS accounting policy expression")
     active_cte = _active_cte(stale_minutes)
     auth_recent = recent_event_predicate("timestamp", window_hours)
     auth_summary_recent = recent_event_predicate("timestamp", window_hours)
@@ -182,7 +186,8 @@ def _queries(limit, stale_minutes=60, window_hours=6,
             WITH grouped_accounting AS (
                 SELECT CASE WHEN GROUPING(acct_status_type) = 0
                             THEN 'accounting' ELSE 'accounting_sessions' END AS breakdown,
-                       acct_status_type, device_name, authorization_policy, ise_node,
+                       acct_status_type, device_name,
+                       {accounting_policy_expression} AS authorization_policy, ise_node,
                        COUNT(*) AS events,
                        COUNT(CASE WHEN acct_session_time > 0
                                   THEN acct_session_time END) AS samples,
@@ -193,7 +198,8 @@ def _queries(limit, stale_minutes=60, window_hours=6,
                 FROM radius_accounting
                 WHERE {accounting_recent}
                 GROUP BY GROUPING SETS (
-                    (acct_status_type, device_name, authorization_policy, ise_node),
+                    (acct_status_type, device_name,
+                     {accounting_policy_expression}, ise_node),
                     (device_name, ise_node)
                 )
             ), ranked_accounting AS (
@@ -245,10 +251,12 @@ def _queries(limit, stale_minutes=60, window_hours=6,
 
 
 def _reporting_queries(limit, window_hours=6,
-                       authentication_policy_column="authorization_policy"):
+                       authentication_policy_column="authorization_policy",
+                       accounting_policy_expression="authorization_policy"):
     return {name: sql for name, sql in _queries(
                 limit, window_hours=window_hours,
-                authentication_policy_column=authentication_policy_column).items()
+                authentication_policy_column=authentication_policy_column,
+                accounting_policy_expression=accounting_policy_expression).items()
             if name != "active_sessions"}
 
 
@@ -265,6 +273,19 @@ def _authentication_policy_column(dataconnect):
     return "authorization_policy"
 
 
+def _accounting_policy_expression(dataconnect):
+    schema = getattr(dataconnect, "schema", {})
+    columns = schema.get("RADIUS_ACCOUNTING", {}) \
+        if isinstance(schema, dict) else {}
+    if "AUTHORIZATION_POLICY" in columns:
+        return "authorization_policy"
+    if columns:
+        return "'none'"
+    # Direct collector integrations predating capability negotiation retain the
+    # lab Patch 11 behavior. The production client always has discovered schema.
+    return "authorization_policy"
+
+
 def collect_reporting(dataconnect, cfg):
     """Atomically replace a bounded recent RADIUS reporting snapshot."""
     with observe("dataconnect_radius"):
@@ -274,7 +295,8 @@ def collect_reporting(dataconnect, cfg):
             _reporting_queries(
                 limit, event_window_hours(
                     cfg, getattr(cfg, "dataconnect_radius_interval", 86400)),
-                _authentication_policy_column(dataconnect)),
+                authentication_policy_column=_authentication_policy_column(dataconnect),
+                accounting_policy_expression=_accounting_policy_expression(dataconnect)),
         )
         rows = {
             "authentication": [row for row in combined["authentication"]

@@ -77,6 +77,25 @@ def test_freshness_honors_lower_production_scan_ceiling(monkeypatch):
         len(dataconnect_freshness._timestamped_views()) - 3
 
 
+def test_freshness_excludes_tacacs_views_when_collection_is_disabled(monkeypatch):
+    client = DataConnect()
+    monkeypatch.setattr(dataconnect_freshness.time, "time", lambda: 2_000_000_000)
+
+    dataconnect_freshness.collect(client, types.SimpleNamespace(
+        collect_tacacs=False,
+        dataconnect_event_window_hours=4,
+        dataconnect_freshness_interval=86400,
+    ))
+
+    sql = client.sql[0]
+    assert "tacacs_" not in sql.lower()
+    assert "EPOCH_TIME" not in sql
+    expected = dataconnect_freshness._timestamped_views(include_tacacs=False)
+    assert sql.count("FETCH FIRST 1 ROWS ONLY") == len(expected)
+    assert all(domain != "tacacs" for _view, domain in _rows(
+        metrics.ise_dataconnect_view_has_rows))
+
+
 @pytest.mark.parametrize(("value", "expected"), [
     (None, 0),
     (1784003400, 1784003400),

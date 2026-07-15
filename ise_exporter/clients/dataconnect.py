@@ -250,6 +250,11 @@ class DataConnectClient:
             logger.warning(
                 "RADIUS_AUTHENTICATIONS has no optional AUTHORIZATION_POLICY column; "
                 "using POLICY_SET_NAME for the authorization-policy metric dimension")
+        accounting_columns = self.schema.get("RADIUS_ACCOUNTING", {})
+        if accounting_columns and "AUTHORIZATION_POLICY" not in accounting_columns:
+            logger.warning(
+                "RADIUS_ACCOUNTING has no optional AUTHORIZATION_POLICY column; "
+                "using 'none' for the authorization-policy metric dimension")
 
     def set_shutdown_event(self, shutdown):
         """Make long adaptive pacing waits interruptible during service stop."""

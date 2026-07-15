@@ -195,6 +195,27 @@ def test_accounting_breakdowns_share_one_bounded_view_scan():
     assert "CASE WHEN acct_session_time > 0" in query
 
 
+def test_accounting_query_uses_stable_label_when_policy_column_is_absent():
+    client = DataConnect()
+    client.schema = {
+        "RADIUS_ACCOUNTING": {"ACCT_STATUS_TYPE": "VARCHAR2"},
+    }
+
+    dataconnect_radius.collect_reporting(
+        client, types.SimpleNamespace(dataconnect_max_groups=25))
+
+    query = next(sql for sql in client.sql if "grouped_accounting" in sql.lower())
+    assert "'none' AS authorization_policy" in query
+    assert "device_name,\n                     'none', ise_node" in query
+    assert "device_name, authorization_policy" not in query
+
+
+def test_accounting_query_rejects_untrusted_policy_expression():
+    with pytest.raises(ValueError, match="accounting policy expression"):
+        dataconnect_radius._queries(
+            25, accounting_policy_expression="authorization_policy from users")
+
+
 def test_query_failure_preserves_previous_snapshot():
     metrics.ise_dataconnect_radius_errors.labels(
         message_code="old", nad="old", authentication_method="old", psn="old").set(9)

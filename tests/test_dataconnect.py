@@ -54,12 +54,15 @@ def test_client_retains_normalized_startup_schema_without_querying(caplog):
 
     client.set_schema({
         "radius_authentications": {"policy_set_name": "varchar2"},
+        "radius_accounting": {"acct_status_type": "varchar2"},
     })
 
     assert client.schema == {
         "RADIUS_AUTHENTICATIONS": {"POLICY_SET_NAME": "VARCHAR2"},
+        "RADIUS_ACCOUNTING": {"ACCT_STATUS_TYPE": "VARCHAR2"},
     }
     assert "using POLICY_SET_NAME" in caplog.text
+    assert "using 'none'" in caplog.text
 
 
 def test_connection_disables_parallel_query_before_reporting_sql(monkeypatch):

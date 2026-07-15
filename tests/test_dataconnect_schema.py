@@ -76,17 +76,37 @@ def test_contract_requires_columns_used_unconditionally_by_latest_session_querie
 def test_contract_negotiates_optional_radius_authorization_policy():
     assert "AUTHORIZATION_POLICY" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].optional
     assert "POLICY_SET_NAME" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].required
+    assert "AUTHORIZATION_POLICY" in VIEW_CONTRACTS["RADIUS_ACCOUNTING"].optional
+    assert "AUTHORIZATION_POLICY" not in VIEW_CONTRACTS["RADIUS_ACCOUNTING"].required
     assert {
         "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "PASSED_COUNT", "FAILED_COUNT",
     } <= VIEW_CONTRACTS["RADIUS_AUTHENTICATION_SUMMARY"].required
     assert VIEW_CONTRACTS["RADIUS_AUTHENTICATION_SUMMARY"].time_column == "TIMESTAMP"
 
 
+def test_contract_does_not_require_unqueried_schema_variant_columns():
+    optional = {
+        "RADIUS_AUTHENTICATIONS": {
+            "CALLING_STATION_ID", "FAILURE_REASON", "FRAMED_IP_ADDRESS", "LOCATION",
+            "USERNAME",
+        },
+        "RADIUS_AUTHENTICATION_SUMMARY": {
+            "ACCESS_SERVICE", "ISE_NODE", "MAX_RESPONSE_TIME", "TOTAL_RESPONSE_TIME",
+        },
+        "ENDPOINTS_DATA": {"ENDPOINT_ID", "ID"},
+        "TACACS_AUTHORIZATION_LAST_TWO_DAYS": {"COMMAND_FROM_DEVICE"},
+        "TACACS_ACCOUNTING_LAST_TWO_DAYS": {"COMMAND_ARGS"},
+    }
+    for view, columns in optional.items():
+        assert columns <= VIEW_CONTRACTS[view].optional
+        assert columns.isdisjoint(VIEW_CONTRACTS[view].required)
+
+
 def test_contract_requires_columns_used_unconditionally_by_endpoint_queries():
     assert {
-        "ENDPOINT_ID", "ENDPOINT_IP", "HOSTNAME", "ENDPOINT_POLICY", "IDENTITY_GROUP_ID",
+        "ENDPOINT_IP", "HOSTNAME", "ENDPOINT_POLICY", "IDENTITY_GROUP_ID",
         "POSTURE_APPLICABLE", "CUSTOM_ATTRIBUTES", "PORTAL_USER", "MDM_GUID",
-        "NATIVE_UDID", "UPDATE_TIME",
+        "NATIVE_UDID", "UPDATE_TIME", "MAC_ADDRESS",
     } <= VIEW_CONTRACTS["ENDPOINTS_DATA"].required
 
 

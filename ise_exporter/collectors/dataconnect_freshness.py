@@ -52,9 +52,10 @@ def _timestamp(value):
     return parsed.timestamp()
 
 
-def _timestamped_views():
+def _timestamped_views(include_tacacs=True):
     return tuple((name, contract) for name, contract in VIEW_CONTRACTS.items()
-                 if contract.time_column)
+                 if contract.time_column
+                 and (include_tacacs or contract.domain != "tacacs"))
 
 
 def _query(cfg, now=None):
@@ -63,7 +64,8 @@ def _query(cfg, now=None):
         cfg, getattr(cfg, "dataconnect_freshness_interval", 86400))
     minimum_epoch = int(time.time() if now is None else now) - window * 3600
     branches = []
-    for view, contract in _timestamped_views():
+    views = _timestamped_views(getattr(cfg, "collect_tacacs", True))
+    for view, contract in views:
         column = contract.time_column
         if view.startswith("TACACS_"):
             predicate = f"{column} >= {minimum_epoch}"
@@ -91,7 +93,7 @@ def collect(dataconnect, cfg):
         result = dataconnect.query(_query(cfg))
         by_view = {str(row.get("view_name") or "").lower(): row for row in result}
         rows = []
-        for view, contract in _timestamped_views():
+        for view, contract in _timestamped_views(getattr(cfg, "collect_tacacs", True)):
             name = view.lower()
             row = by_view.get(name, {})
             rows.append({
