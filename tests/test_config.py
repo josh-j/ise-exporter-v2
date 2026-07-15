@@ -3,7 +3,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-from ise_exporter.config import Config, _b, _i, _s
+from ise_exporter.config import Config, _b, _f, _i, _log_level, _s
 
 
 def test_b_accepts_true_false_case_insensitive(monkeypatch):
@@ -53,6 +53,26 @@ def test_i_falls_back_and_warns_on_non_integer(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         assert _i("X", 120) == 120
     assert any("not a valid integer" in r.message for r in caplog.records)
+
+
+def test_f_rejects_non_finite_values(monkeypatch, caplog):
+    for value in ("nan", "inf", "-inf"):
+        monkeypatch.setenv("X", value)
+        with caplog.at_level(logging.WARNING):
+            assert _f("X", 0.1) == 0.1
+    assert sum("not a finite number" in record.message
+               for record in caplog.records) == 3
+
+
+def test_log_level_normalizes_warn_and_rejects_invalid_values(monkeypatch, caplog):
+    monkeypatch.setenv("LOG_LEVEL", "warn")
+    assert _log_level() == "WARNING"
+
+    monkeypatch.setenv("LOG_LEVEL", "verbose")
+    with caplog.at_level(logging.WARNING):
+        assert _log_level() == "INFO"
+    assert any("not a supported log level" in record.message
+               for record in caplog.records)
 
 
 def test_s_strips_trailing_cr(monkeypatch):
@@ -229,3 +249,11 @@ def test_empty_shared_pacing_path_cannot_disable_cross_process_guard(monkeypatch
 
     assert cfg.dataconnect_shared_pacing_file == \
         "/var/lib/ise-exporter/shared/dataconnect.pacing"
+
+
+def test_empty_state_path_cannot_disable_restart_persistence(monkeypatch):
+    monkeypatch.setenv("ISE_EXPORTER_STATE_DB", "")
+
+    cfg = Config.from_env()
+
+    assert cfg.state_db_path == "/var/lib/ise-exporter/state.sqlite3"

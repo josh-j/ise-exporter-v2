@@ -2,6 +2,7 @@
 module-level os.getenv() constants with one immutable object loaded once."""
 from __future__ import annotations
 import logging
+import math
 import os
 from dataclasses import dataclass
 
@@ -31,10 +32,25 @@ def _f(v, d):
     if not raw:
         return d
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         logger.warning("%s=%r is not a valid number — defaulting to %s", v, raw, d)
         return d
+    if not math.isfinite(value):
+        logger.warning("%s=%r is not a finite number — defaulting to %s", v, raw, d)
+        return d
+    return value
+
+
+def _log_level(v="LOG_LEVEL", d="INFO"):
+    raw = _s(v, d).upper()
+    if raw == "WARN":
+        return "WARNING"
+    if raw in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        return raw
+    logger.warning("%s=%r is not a supported log level — defaulting to %s",
+                   v, raw, d)
+    return d
 
 
 def _bounded_i(v, d, minimum=None, maximum=None):
@@ -166,12 +182,14 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
-            log_level=_s("LOG_LEVEL", "INFO").upper(),
+            log_level=_log_level(),
             ise_host=_s("ISE_HOST"), ise_mnt_host=_s("ISE_MNT_HOST"),
             ise_user=_s("ISE_USER", "ers.readonly"), ise_pass=_s("ISE_PASS"),
             ers_port=_bounded_i("ERS_PORT", 9060, 1, 65535),
             exporter_port=_bounded_i("EXPORTER_PORT", 9618, 1, 65535),
-            state_db_path=_s("ISE_EXPORTER_STATE_DB", "/var/lib/ise-exporter/state.sqlite3"),
+            state_db_path=_s(
+                "ISE_EXPORTER_STATE_DB", "/var/lib/ise-exporter/state.sqlite3")
+                or "/var/lib/ise-exporter/state.sqlite3",
             rest_ca_bundle=_s("ISE_REST_CA_BUNDLE"),
             rest_ssl_verify=_b("ISE_REST_SSL_VERIFY", True),
             mnt_ca_bundle=_s("ISE_MNT_CA_BUNDLE", _s("ISE_REST_CA_BUNDLE")),

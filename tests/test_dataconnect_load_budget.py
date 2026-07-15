@@ -47,12 +47,12 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
         "radius_active": 1,
         "performance": 4,
         "posture": 2,
-        "endpoints": 3,
+        "endpoints": 2,
         "freshness": 14,
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(7.875)
+    assert statements_per_hour == pytest.approx(7.833333333333333)
     assert statements_per_hour < 8
 
 
@@ -63,6 +63,15 @@ def test_posture_reuses_one_bounded_latest_assessment_snapshot():
     assert queries["snapshot"].lower().count(
         "from posture_assessment_by_endpoint") == 1
     assert "/*+ MATERIALIZE */" in queries["snapshot"]
+
+
+def test_endpoint_inventory_uses_one_current_table_scan():
+    queries = dataconnect_endpoints._queries(Config().dataconnect_max_groups)
+
+    assert list(queries) == ["inventory", "profiling"]
+    assert queries["inventory"].lower().count("from endpoints_data") == 1
+    assert "GROUPING SETS ((), (endpoint_policy), (identity_group_id))" in \
+        queries["inventory"]
 
 
 def test_radius_reporting_scans_each_large_historical_view_only_once():

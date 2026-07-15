@@ -31,52 +31,55 @@ _METRICS = (
 def _queries(limit, window_hours=6):
     profiling_recent = recent_event_predicate("timestamp", window_hours)
     return {
-        "coverage": """
-            SELECT COUNT(*) AS endpoints,
-                   SUM(CASE WHEN TRIM(hostname) IS NOT NULL THEN 1 ELSE 0 END) AS hostname,
-                   SUM(CASE WHEN TRIM(endpoint_ip) IS NOT NULL THEN 1 ELSE 0 END) AS ip,
-                   SUM(CASE WHEN TRIM(custom_attributes) IS NOT NULL THEN 1 ELSE 0 END)
-                       AS custom_attributes,
-                   SUM(CASE WHEN TRIM(portal_user) IS NOT NULL THEN 1 ELSE 0 END)
-                       AS portal_user,
-                   SUM(CASE WHEN TRIM(mdm_guid) IS NOT NULL THEN 1 ELSE 0 END) AS mdm,
-                   SUM(CASE WHEN TRIM(native_udid) IS NOT NULL THEN 1 ELSE 0 END) AS udid,
-                   SUM(CASE WHEN NVL(posture_applicable, 0) = 1 THEN 1 ELSE 0 END)
-                       AS posture_yes,
-                   SUM(CASE WHEN NVL(posture_applicable, 0) = 1 THEN 0 ELSE 1 END)
-                       AS posture_no,
-                   SUM(CASE WHEN TRIM(endpoint_policy) IS NULL
-                                  OR LOWER(TRIM(endpoint_policy)) IN
-                                      ('unknown', 'none', 'missing')
-                            THEN 1 ELSE 0 END) AS unknown_profile,
-                   SUM(CASE WHEN update_time < SYSTIMESTAMP - NUMTODSINTERVAL(30, 'DAY')
-                            OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_30,
-                   SUM(CASE WHEN update_time < SYSTIMESTAMP - NUMTODSINTERVAL(90, 'DAY')
-                            OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_90,
-                   SUM(CASE WHEN update_time < SYSTIMESTAMP - NUMTODSINTERVAL(180, 'DAY')
-                            OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_180
-            FROM endpoints_data
-        """,
-        "dimensions": f"""
-            WITH dimension_groups AS (
-                SELECT CASE WHEN GROUPING(endpoint_policy) = 0
-                            THEN 'profile' ELSE 'identity_group' END AS dimension,
+        "inventory": f"""
+            WITH inventory_groups AS (
+                SELECT CASE
+                           WHEN GROUPING(endpoint_policy) = 1
+                            AND GROUPING(identity_group_id) = 1 THEN 'coverage'
+                           WHEN GROUPING(endpoint_policy) = 0 THEN 'profile'
+                           ELSE 'identity_group'
+                       END AS dimension,
                        CASE WHEN GROUPING(endpoint_policy) = 0
                             THEN endpoint_policy ELSE identity_group_id END AS dimension_value,
-                       COUNT(*) AS endpoints
+                       COUNT(*) AS endpoints,
+                       SUM(CASE WHEN TRIM(hostname) IS NOT NULL THEN 1 ELSE 0 END)
+                           AS hostname,
+                       SUM(CASE WHEN TRIM(endpoint_ip) IS NOT NULL THEN 1 ELSE 0 END) AS ip,
+                       SUM(CASE WHEN TRIM(custom_attributes) IS NOT NULL THEN 1 ELSE 0 END)
+                           AS custom_attributes,
+                       SUM(CASE WHEN TRIM(portal_user) IS NOT NULL THEN 1 ELSE 0 END)
+                           AS portal_user,
+                       SUM(CASE WHEN TRIM(mdm_guid) IS NOT NULL THEN 1 ELSE 0 END) AS mdm,
+                       SUM(CASE WHEN TRIM(native_udid) IS NOT NULL THEN 1 ELSE 0 END) AS udid,
+                       SUM(CASE WHEN NVL(posture_applicable, 0) = 1 THEN 1 ELSE 0 END)
+                           AS posture_yes,
+                       SUM(CASE WHEN NVL(posture_applicable, 0) = 1 THEN 0 ELSE 1 END)
+                           AS posture_no,
+                       SUM(CASE WHEN TRIM(endpoint_policy) IS NULL
+                                      OR LOWER(TRIM(endpoint_policy)) IN
+                                          ('unknown', 'none', 'missing')
+                                THEN 1 ELSE 0 END) AS unknown_profile,
+                       SUM(CASE WHEN update_time < SYSTIMESTAMP -
+                                          NUMTODSINTERVAL(30, 'DAY')
+                                      OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_30,
+                       SUM(CASE WHEN update_time < SYSTIMESTAMP -
+                                          NUMTODSINTERVAL(90, 'DAY')
+                                      OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_90,
+                       SUM(CASE WHEN update_time < SYSTIMESTAMP -
+                                          NUMTODSINTERVAL(180, 'DAY')
+                                      OR update_time IS NULL THEN 1 ELSE 0 END) AS stale_180
                 FROM endpoints_data
-                GROUP BY GROUPING SETS ((endpoint_policy), (identity_group_id))
-            ), ranked_dimensions AS (
-                SELECT dimension, dimension_value, endpoints,
+                GROUP BY GROUPING SETS ((), (endpoint_policy), (identity_group_id))
+            ), ranked_inventory AS (
+                SELECT inventory_groups.*,
                        COUNT(*) OVER (PARTITION BY dimension) AS total_groups,
                        ROW_NUMBER() OVER (
                            PARTITION BY dimension ORDER BY endpoints DESC
                        ) AS group_rank
-                FROM dimension_groups
+                FROM inventory_groups
             )
-            SELECT dimension, dimension_value, endpoints, total_groups
-            FROM ranked_dimensions
-            WHERE group_rank <= {limit}
+            SELECT * FROM ranked_inventory
+            WHERE dimension = 'coverage' OR group_rank <= {limit}
             ORDER BY dimension, group_rank
         """,
         "profiling": f"""
@@ -102,11 +105,12 @@ def collect(dataconnect, cfg):
                 for name, sql in _queries(
                     group_limit(cfg), event_window_hours(
                         cfg, getattr(cfg, "dataconnect_endpoints_interval", 86400))).items()}
-        coverage = rows["coverage"][0] if rows["coverage"] else {}
+        coverage = next((row for row in rows["inventory"]
+                         if row.get("dimension") == "coverage"), {})
         total = integer(coverage.get("endpoints"))
-        profiles_rows = [row for row in rows["dimensions"]
+        profiles_rows = [row for row in rows["inventory"]
                          if row.get("dimension") == "profile"]
-        identity_rows = [row for row in rows["dimensions"]
+        identity_rows = [row for row in rows["inventory"]
                          if row.get("dimension") == "identity_group"]
         profile_summary = profiles_rows[0] if profiles_rows else {}
         group_summary = identity_rows[0] if identity_rows else {}

@@ -25,14 +25,13 @@ class DataConnect:
     def query(self, sql):
         self.sql.append(sql)
         lowered = sql.lower()
-        if "as stale_30" in lowered:
-            return [{"endpoints": 80000, "hostname": 72000, "ip": 64000,
+        if "inventory_groups" in lowered:
+            return [{"dimension": "coverage", "endpoints": 80000,
+                     "hostname": 72000, "ip": 64000,
                      "custom_attributes": 40000, "portal_user": 20000,
                      "mdm": 16000, "udid": 8000, "unknown_profile": 50,
                      "posture_yes": 60000, "posture_no": 20000,
-                     "stale_30": 12000, "stale_90": 7000, "stale_180": 3000}]
-        if "dimension_groups" in lowered:
-            return [
+                     "stale_30": 12000, "stale_90": 7000, "stale_180": 3000},
                 {"dimension": "profile", "dimension_value": "Windows10-Workstation",
                  "endpoints": 40000, "total_groups": 51},
                 {"dimension": "identity_group", "dimension_value": "group-1",
@@ -77,7 +76,8 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     coverage_sql = next(sql for sql in client.sql if "AS stale_180" in sql)
     assert "NUMTODSINTERVAL(180, 'DAY')" in coverage_sql
     assert "AS unknown_profile" in coverage_sql
-    dimensions_sql = next(sql for sql in client.sql if "dimension_groups" in sql)
-    assert "GROUP BY GROUPING SETS" in dimensions_sql
-    assert dimensions_sql.count("FROM endpoints_data") == 1
-    assert len(client.sql) == 3
+    inventory_sql = next(sql for sql in client.sql if "inventory_groups" in sql)
+    assert "GROUP BY GROUPING SETS" in inventory_sql
+    assert "GROUPING SETS ((), (endpoint_policy), (identity_group_id))" in inventory_sql
+    assert inventory_sql.count("FROM endpoints_data") == 1
+    assert len(client.sql) == 2
