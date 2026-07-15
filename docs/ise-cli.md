@@ -104,6 +104,12 @@ multiple inventory rows. Commands that require one MAC (`session`, `auth-status`
 `secure-client`, and filtered reports) refuse an ambiguous hostname instead of
 silently choosing a different endpoint; rerun with the intended MAC or ERS ID.
 
+The compound `endpoint-summary` and `troubleshoot-auth` workflows preserve a
+successful endpoint resolution when an optional MnT session or authentication
+lookup is unavailable. The affected section is returned with
+`status=unavailable` and a bounded diagnostic instead of failing the entire
+workflow.
+
 ## Commands
 
 | Command | Purpose |

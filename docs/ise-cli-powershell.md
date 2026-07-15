@@ -141,7 +141,9 @@ Endpoint identities are deliberately absent from exporter metrics. Consequently,
 `Get-IseEndpointSummary` and `Debug-IseAuthentication` use bounded live ERS/MnT
 queries while retaining the same authentication guard and Data Connect pacing as
 the exporter. This preserves the exporter's identity-free metrics boundary rather
-than creating an unreviewed endpoint cache.
+than creating an unreviewed endpoint cache. If an optional MnT lookup is
+unavailable, these compound workflows retain the successful endpoint resolution
+and mark only the affected section as `unavailable`.
 
 pxGrid collectors are not part of the supported ISE 3.3 Patch 11 exporter
 architecture. `Get-IsePxGridStatus` states that ownership directly; `-Live` checks

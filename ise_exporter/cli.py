@@ -1663,6 +1663,18 @@ def _workflow_rows(section, value, source):
     return [{"section": section, "source": source, **row} for row in rows]
 
 
+def _workflow_unavailable(section, source, error):
+    detail = " ".join(str(error).split())
+    if len(detail) > 240:
+        detail = detail[:237] + "..."
+    return {
+        "section": section,
+        "source": source,
+        "status": "unavailable",
+        "detail": detail,
+    }
+
+
 def _endpoint_summary(client, dataconnect, identifier, *, allow_active_scan=False):
     resolved = _resolve_endpoint(
         client, identifier, dataconnect=dataconnect,
@@ -1676,8 +1688,12 @@ def _endpoint_summary(client, dataconnect, identifier, *, allow_active_scan=Fals
     sessions = resolved.get("sessions") or []
     mac = resolved.get("mac")
     if not sessions and mac:
-        sessions = _mnt_sessions(
-            client, f"/Session/MACAddress/{mac}", "cli_endpoint_summary_session")
+        try:
+            sessions = _mnt_sessions(
+                client, f"/Session/MACAddress/{mac}",
+                "cli_endpoint_summary_session")
+        except CLIError as error:
+            rows.append(_workflow_unavailable("session", "live_mnt", error))
     rows.extend(_workflow_rows("session", sessions, "live_mnt"))
     return rows
 
@@ -1694,10 +1710,15 @@ def _troubleshoot_auth(client, dataconnect, identifier, seconds, limit,
     mac = resolution.get("mac")
     if not mac:
         raise CLIError(f"could not resolve a MAC address for {identifier!r}")
-    auth = _mnt_sessions(
-        client, f"/AuthStatus/MACAddress/{mac}/{seconds}/{limit}/All",
-        "cli_troubleshoot_auth")
-    rows.extend(_workflow_rows("authentication", auth, "live_mnt"))
+    try:
+        auth = _mnt_sessions(
+            client, f"/AuthStatus/MACAddress/{mac}/{seconds}/{limit}/All",
+            "cli_troubleshoot_auth")
+    except CLIError as error:
+        rows.append(_workflow_unavailable(
+            "authentication", "live_mnt", error))
+    else:
+        rows.extend(_workflow_rows("authentication", auth, "live_mnt"))
     return rows
 
 
