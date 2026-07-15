@@ -120,7 +120,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_endpoints_total and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
+          "expr": "ise_dataconnect_endpoints_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -142,7 +142,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_total and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "expr": "ise_network_devices_total and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -164,7 +164,7 @@
       },
       "targets": [
         {
-          "expr": "(count(ise_dataconnect_endpoints_by_profile) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(ise_dataconnect_endpoints_by_profile) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -186,7 +186,7 @@
       },
       "targets": [
         {
-          "expr": "(count(ise_dataconnect_endpoints_by_identity_group) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(ise_dataconnect_endpoints_by_identity_group) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -208,7 +208,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, ise_dataconnect_endpoints_by_profile) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
+          "expr": "topk(20, ise_dataconnect_endpoints_by_profile) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{profile}}",
           "refId": "A",
           "datasource": {
@@ -230,7 +230,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, ise_dataconnect_endpoints_by_identity_group) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
+          "expr": "topk(20, ise_dataconnect_endpoints_by_identity_group) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{identity_group}}",
           "refId": "A",
           "datasource": {
@@ -252,7 +252,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_endpoints_by_posture_applicable and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
+          "expr": "ise_dataconnect_endpoints_by_posture_applicable and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{applicable}}",
           "refId": "A",
           "datasource": {
@@ -274,7 +274,7 @@
       },
       "targets": [
         {
-          "expr": "topk(25, sum by (profile, source, action) (ise_dataconnect_profile_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
+          "expr": "topk(25, sum by (profile, source, action) (ise_dataconnect_profile_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{profile}} / {{source}} / {{action}}",
           "refId": "A",
           "datasource": {
@@ -296,7 +296,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_by_location and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "expr": "ise_network_devices_by_location and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
           "legendFormat": "{{location}}",
           "refId": "A",
           "datasource": {
@@ -318,7 +318,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_by_ops_owner and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "expr": "ise_network_devices_by_ops_owner and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
           "legendFormat": "{{ops_owner}}",
           "refId": "A",
           "datasource": {
@@ -340,7 +340,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_by_type and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "expr": "ise_network_devices_by_type and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
           "legendFormat": "{{device_type}}",
           "refId": "A",
           "datasource": {
@@ -363,7 +363,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_device_detail_coverage and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "expr": "ise_network_device_detail_coverage and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -394,7 +394,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_device_detail_refresh_deferred and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "expr": "ise_network_device_detail_refresh_deferred and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -417,7 +417,7 @@
       },
       "targets": [
         {
-          "expr": "ise_network_device_detail_refresh_failures and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "expr": "ise_network_device_detail_refresh_failures and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -440,7 +440,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_endpoint_field_coverage_ratio and on() (max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)",
+          "expr": "ise_dataconnect_endpoint_field_coverage_ratio and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{field}}",
           "refId": "A",
           "datasource": {

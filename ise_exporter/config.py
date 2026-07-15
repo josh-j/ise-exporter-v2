@@ -112,6 +112,7 @@ class Config:
     scrape_interval: int = 120
     medium_interval: int = 300
     slow_interval: int = 3600
+    startup_rate_limit_seconds: int = 5
     auth_failure_backoff: int = 900
     auth_failure_threshold: int = 3
     rest_auth_guard_file: str = "/var/lib/ise-exporter/shared/rest-auth.guard"
@@ -190,6 +191,7 @@ class Config:
                 f"dataconnect_max_duty_cycle_percent="
                 f"{self.dataconnect_max_duty_cycle_percent} "
                 f"dataconnect_max_groups={self.dataconnect_max_groups} "
+                f"startup_rate_limit_seconds={self.startup_rate_limit_seconds} "
                 f"dataconnect_event_window_ceiling_hours="
                 f"{self.dataconnect_event_window_hours} "
                 f"ise_host={self.ise_host!r} ise_mnt_host={self.ise_mnt_host!r} "
@@ -214,6 +216,8 @@ class Config:
             scrape_interval=_bounded_i("SCRAPE_INTERVAL", 120, 60),
             medium_interval=_bounded_i("MEDIUM_INTERVAL", 300, 300),
             slow_interval=_bounded_i("SLOW_INTERVAL", 3600, 3600),
+            startup_rate_limit_seconds=_bounded_i(
+                "ISE_STARTUP_RATE_LIMIT_SECONDS", 5, 0, 300),
             auth_failure_backoff=_bounded_i(
                 "AUTH_FAILURE_BACKOFF", 900, 300, 86400),
             auth_failure_threshold=_bounded_i(

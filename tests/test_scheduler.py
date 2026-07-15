@@ -108,6 +108,45 @@ def test_scheduler_freshness_fallback_matches_daily_production_cadence():
         "dataconnect", 86400, True)
 
 
+def test_startup_rate_limit_spaces_only_each_datasets_first_attempt(monkeypatch):
+    clock = [100.0]
+    sleeps = []
+    monkeypatch.setattr(scheduler_module.time, "monotonic", lambda: clock[0])
+
+    def sleep(delay):
+        sleeps.append(delay)
+        clock[0] += delay
+
+    monkeypatch.setattr(scheduler_module.time, "sleep", sleep)
+    scheduler = PollScheduler(
+        _cfg(startup_rate_limit_seconds=7), object(), object(), mnt=object())
+
+    assert scheduler._wait_for_startup_slot("deployment") is True
+    assert scheduler._wait_for_startup_slot("devices") is True
+    assert scheduler._wait_for_startup_slot("deployment") is True
+    assert scheduler._wait_for_startup_slot("dataconnect_radius_active") is True
+
+    assert sleeps == [7, 7]
+
+
+def test_startup_rate_limit_wait_is_interruptible(monkeypatch):
+    monkeypatch.setattr(scheduler_module.time, "monotonic", lambda: 100.0)
+    scheduler = PollScheduler(
+        _cfg(startup_rate_limit_seconds=7), object(), object(), mnt=object())
+    assert scheduler._wait_for_startup_slot("deployment") is True
+
+    waits = []
+
+    class Shutdown:
+        def wait(self, delay):
+            waits.append(delay)
+            return True
+
+    scheduler._shutdown = Shutdown()
+    assert scheduler._wait_for_startup_slot("devices") is False
+    assert waits == [7]
+
+
 def test_unchecked_config_cannot_relax_production_scheduler_cadences():
     scheduler = PollScheduler(_cfg(
         scrape_interval=1,

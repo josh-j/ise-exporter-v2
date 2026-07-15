@@ -120,7 +120,7 @@
       },
       "targets": [
         {
-          "expr": "(ise_dataconnect_radius_failure_events_total and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(ise_dataconnect_radius_failure_events_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -150,7 +150,7 @@
       },
       "targets": [
         {
-          "expr": "((100 * ise_dataconnect_radius_failure_events_total / clamp_min(ise_dataconnect_radius_authentication_events_total, 1)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "((100 * ise_dataconnect_radius_failure_events_total / clamp_min(ise_dataconnect_radius_authentication_events_total, 1)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -172,7 +172,7 @@
       },
       "targets": [
         {
-          "expr": "(count(count by (nad) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(count by (nad) (ise_dataconnect_radius_errors)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -194,7 +194,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{status}}",
           "refId": "A",
           "datasource": {
@@ -216,7 +216,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (message_code) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "topk(20, sum by (message_code) (ise_dataconnect_radius_errors)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{message_code}}",
           "refId": "A",
           "datasource": {
@@ -238,7 +238,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -260,7 +260,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (nad, authentication_method) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(sum by (nad, authentication_method) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{nad}} / {{authentication_method}}",
           "refId": "A",
           "datasource": {
@@ -282,7 +282,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn, message_code) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(sum by (psn, message_code) (ise_dataconnect_radius_errors)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{psn}} / {{message_code}}",
           "refId": "A",
           "datasource": {
@@ -305,7 +305,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_dataconnect_radius_errors{message_code=~\"12300|12321|12500|12501|12511|12625|22056\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(sum(ise_dataconnect_radius_errors{message_code=~\"12300|12321|12500|12501|12511|12625|22056\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -328,7 +328,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (failure_class) (ise_dataconnect_radius_failure_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(sum by (failure_class) (ise_dataconnect_radius_failure_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "legendFormat": "{{failure_class}}",
           "refId": "A",
@@ -352,7 +352,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (authorization_profile) (ise_dataconnect_radius_failure_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "topk(20, sum by (authorization_profile) (ise_dataconnect_radius_failure_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "legendFormat": "{{authorization_profile}}",
           "refId": "A",
@@ -376,7 +376,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (location) (ise_dataconnect_radius_failure_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "topk(20, sum by (location) (ise_dataconnect_radius_failure_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "legendFormat": "{{location}}",
           "refId": "A",
@@ -400,7 +400,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",

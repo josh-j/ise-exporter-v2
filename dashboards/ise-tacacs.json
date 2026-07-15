@@ -204,7 +204,7 @@
       },
       "targets": [
         {
-          "expr": "(ise_tacacs_internal_users_total and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "expr": "(ise_tacacs_internal_users_total and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -227,7 +227,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_tacacs_suspected_unused_internal_user unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
+          "expr": "(sum(ise_tacacs_suspected_unused_internal_user unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -291,7 +291,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_tacacs_events_total) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
+          "expr": "(sum(ise_tacacs_events_total) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -313,7 +313,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_internal_user_info and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "expr": "ise_tacacs_internal_user_info and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -352,7 +352,7 @@
       },
       "targets": [
         {
-          "expr": "(ise_tacacs_suspected_unused_internal_user unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)",
+          "expr": "(ise_tacacs_suspected_unused_internal_user unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -362,7 +362,7 @@
           }
         },
         {
-          "expr": "ise_tacacs_internal_user_hygiene_risk and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "expr": "ise_tacacs_internal_user_hygiene_risk and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "B",
@@ -388,7 +388,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (username, status, device) (ise_tacacs_account_authentication_events)) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(sum by (username, status, device) (ise_tacacs_account_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{username}} / {{status}} / {{device}}",
           "refId": "A",
           "datasource": {
@@ -410,7 +410,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_tacacs_account_authorization_events) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_tacacs_account_authorization_events) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -436,7 +436,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_tacacs_accounting_events) and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_tacacs_accounting_events) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -463,7 +463,7 @@
       },
       "targets": [
         {
-          "expr": "time() - ise_tacacs_account_last_seen_timestamp and on() (max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)",
+          "expr": "time() - ise_tacacs_account_last_seen_timestamp and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -495,7 +495,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_policy_objects_total and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "expr": "ise_tacacs_policy_objects_total and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "legendFormat": "{{object_type}}",
           "refId": "A",
           "datasource": {
@@ -518,7 +518,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_internal_user_detail_coverage and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "expr": "ise_tacacs_internal_user_detail_coverage and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -549,7 +549,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_internal_user_detail_refresh_deferred and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "expr": "ise_tacacs_internal_user_detail_refresh_deferred and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -572,7 +572,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_internal_user_detail_refresh_failures and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "expr": "ise_tacacs_internal_user_detail_refresh_failures and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -595,7 +595,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_policy_rule_coverage and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "expr": "ise_tacacs_policy_rule_coverage and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -626,7 +626,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_policy_rule_refresh_deferred and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "expr": "ise_tacacs_policy_rule_refresh_deferred and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -649,7 +649,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_policy_rule_refresh_failures and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "expr": "ise_tacacs_policy_rule_refresh_failures and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "instant": true,
           "refId": "A",
           "datasource": {

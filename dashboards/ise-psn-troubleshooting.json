@@ -142,7 +142,7 @@
       },
       "targets": [
         {
-          "expr": "(count(ise_dataconnect_psn_radius_requests_per_hour) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(ise_dataconnect_psn_radius_requests_per_hour) and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -164,7 +164,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_dataconnect_psn_radius_requests_per_hour) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "expr": "(sum(ise_dataconnect_psn_radius_requests_per_hour) and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -186,7 +186,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_dataconnect_diagnostic_events_total) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "expr": "(sum(ise_dataconnect_diagnostic_events_total) and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -208,7 +208,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_psn_radius_requests_per_hour) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_dataconnect_psn_radius_requests_per_hour) and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -236,7 +236,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_psn_average_latency_seconds) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_dataconnect_psn_average_latency_seconds) and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -258,7 +258,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_psn_average_tps) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_dataconnect_psn_average_tps) and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -286,7 +286,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_psn_load_percent and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "ise_dataconnect_psn_load_percent and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{node}} / {{stat}}",
           "refId": "A",
           "datasource": {
@@ -314,7 +314,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_node_cpu_utilization_percent and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "ise_dataconnect_node_cpu_utilization_percent and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -342,7 +342,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_node_memory_utilization_percent and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "ise_dataconnect_node_memory_utilization_percent and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{node}}",
           "refId": "A",
           "datasource": {
@@ -370,7 +370,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_node_disk_utilization_percent) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_dataconnect_node_disk_utilization_percent) and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{node}} / {{partition}}",
           "refId": "A",
           "datasource": {
@@ -393,7 +393,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_psn_mnt_logs_per_hour and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "ise_dataconnect_psn_mnt_logs_per_hour and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "logs / {{node}}",
           "refId": "A",
           "datasource": {
@@ -402,7 +402,7 @@
           }
         },
         {
-          "expr": "ise_dataconnect_psn_noise_per_hour and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "ise_dataconnect_psn_noise_per_hour and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "noise / {{node}}",
           "refId": "B",
           "datasource": {
@@ -411,7 +411,7 @@
           }
         },
         {
-          "expr": "ise_dataconnect_psn_suppression_per_hour and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "ise_dataconnect_psn_suppression_per_hour and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "suppressed / {{node}}",
           "refId": "C",
           "datasource": {
@@ -433,7 +433,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_diagnostic_events) and on() (max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_dataconnect_diagnostic_events) and on() ((max(ise_dataset_up{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -456,7 +456,7 @@
       },
       "targets": [
         {
-          "expr": "(ise_deployment_status == 1) and on() (max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1)",
+          "expr": "(ise_deployment_status == 1) and on() ((max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"deployment\",source=\"rest\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",

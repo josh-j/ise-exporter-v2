@@ -137,6 +137,10 @@ The three large daily RADIUS sources each use one `GROUPING SETS` statement for
 their paired breakdowns (authentication/latency, volume/failure context, and
 accounting/session duration), rather than rescanning the same six-hour window.
 The nominal due workload is below two statements per hour after startup.
+Cold-start attempts across REST, MnT, and Data Connect share an interruptible
+startup limiter. `ISE_STARTUP_RATE_LIMIT_SECONDS` sets the minimum spacing
+between each dataset's first attempt (five seconds by default, zero disables it)
+without changing any recurring collection cadence.
 Daily RADIUS reporting samples six hours, while a disjoint active-session query
 scans at most its hard 60-minute stale window every two hours. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a

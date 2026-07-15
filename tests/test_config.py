@@ -182,6 +182,7 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert "ISE_DATACONNECT_MAX_BACKFILL_SECONDS" not in values
     assert values["ISE_DATACONNECT_SHARED_PACING_FILE"] == \
         "/var/lib/ise-exporter/shared/dataconnect.pacing"
+    assert values["ISE_STARTUP_RATE_LIMIT_SECONDS"] == "5"
     assert values["ISE_CLI_PRODUCTION_SAFE"] == "true"
     assert values["ISE_CLI_ALLOW_EXPENSIVE"] == "false"
     assert values["ISE_CLI_MAX_ROWS"] == "1000"
@@ -228,6 +229,7 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
         "DEVICE_DETAIL_REQUEST_INTERVAL_MS": "0",
         "ISE_DATACONNECT_PORT": "99999",
         "TACACS_UNUSED_ACCOUNT_DAYS": "0",
+        "ISE_STARTUP_RATE_LIMIT_SECONDS": "999",
     }
     for name, value in unsafe.items():
         monkeypatch.setenv(name, value)
@@ -268,6 +270,15 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.device_detail_request_interval_ms == 100
     assert cfg.dataconnect_port == 65535
     assert cfg.tacacs_unused_account_days == 1
+    assert cfg.startup_rate_limit_seconds == 300
+
+
+def test_startup_rate_limit_can_be_tuned_or_disabled(monkeypatch):
+    monkeypatch.setenv("ISE_STARTUP_RATE_LIMIT_SECONDS", "17")
+    assert Config.from_env().startup_rate_limit_seconds == 17
+
+    monkeypatch.setenv("ISE_STARTUP_RATE_LIMIT_SECONDS", "0")
+    assert Config.from_env().startup_rate_limit_seconds == 0
 
 
 def test_dataconnect_accepts_a_more_conservative_duty_cycle(monkeypatch):

@@ -520,6 +520,24 @@ def test_data_quality_dashboard_exposes_collection_and_source_freshness():
         assert metric in text
 
 
+def test_dataset_validity_gates_require_both_availability_and_freshness():
+    missing = []
+    gate = re.compile(r"max\(ise_dataset_up\{([^{}]+)\}\) == 1")
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        for panel in _panels(dashboard.get("panels", [])):
+            for target in panel.get("targets", []):
+                expression = target.get("expr", "")
+                for selector in gate.findall(expression):
+                    expected = (
+                        f"max(ise_dataset_fresh{{{selector}}}) == 1")
+                    if expected not in expression:
+                        missing.append(
+                            f"{path.name}: panel {panel.get('id')}: {selector}")
+
+    assert not missing, "dataset gates omit freshness: " + ", ".join(missing)
+
+
 def test_sessions_dashboard_gates_active_count_on_active_dataset():
     dashboard = json.loads((DASHBOARDS / "ise-sessions-auth.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 3)
@@ -559,7 +577,8 @@ def test_data_quality_summary_stats_are_gated_by_authoritative_datasets():
         assert dataset in truncation
     # Every term gates both its preserved value and its valid-zero fallback.
     assert truncation.count("max(ise_dataset_up") == 14
-    assert truncation.count(" and on() (max(ise_dataset_up") == 7
+    assert truncation.count("max(ise_dataset_fresh") == 14
+    assert truncation.count(" and on() ((max(ise_dataset_up") == 7
 
 
 def test_sessions_dashboard_collection_age_thresholds_match_domain_cadences():

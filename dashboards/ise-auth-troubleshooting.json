@@ -128,7 +128,7 @@
       },
       "targets": [
         {
-          "expr": "((100 * (ise_dataconnect_radius_authentication_events_total - ise_dataconnect_radius_failure_events_total) / clamp_min(ise_dataconnect_radius_authentication_events_total, 1)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "((100 * (ise_dataconnect_radius_authentication_events_total - ise_dataconnect_radius_failure_events_total) / clamp_min(ise_dataconnect_radius_authentication_events_total, 1)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -150,7 +150,7 @@
       },
       "targets": [
         {
-          "expr": "(ise_dataconnect_radius_failure_events_total and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(ise_dataconnect_radius_failure_events_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -172,7 +172,7 @@
       },
       "targets": [
         {
-          "expr": "(count(count by (message_code) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(count by (message_code) (ise_dataconnect_radius_errors)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -194,7 +194,7 @@
       },
       "targets": [
         {
-          "expr": "(count(count by (nad) (ise_dataconnect_radius_errors)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "(count(count by (nad) (ise_dataconnect_radius_errors)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -216,7 +216,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{status}}",
           "refId": "A",
           "datasource": {
@@ -238,7 +238,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (authentication_method) (ise_dataconnect_radius_authentication_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(sum by (authentication_method) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{authentication_method}}",
           "refId": "A",
           "datasource": {
@@ -260,7 +260,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (authentication_protocol) (ise_dataconnect_radius_authentication_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(sum by (authentication_protocol) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{authentication_protocol}}",
           "refId": "A",
           "datasource": {
@@ -282,7 +282,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (authorization_policy) (ise_dataconnect_radius_authentication_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "topk(20, sum by (authorization_policy) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{authorization_policy}}",
           "refId": "A",
           "datasource": {
@@ -304,7 +304,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn, status) (ise_dataconnect_radius_authentication_events)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(sum by (psn, status) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{psn}} / {{status}}",
           "refId": "A",
           "datasource": {
@@ -326,7 +326,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_radius_errors) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_dataconnect_radius_errors) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -355,7 +355,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_radius_response_time_seconds{stat=~\"(?i)p95|max|average|avg|mean\"}) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(ise_dataconnect_radius_response_time_seconds{stat=~\"(?i)p95|max|average|avg|mean\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{stat}} / {{nad}} / {{status}}",
           "refId": "A",
           "datasource": {
@@ -383,7 +383,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (psn, stat, status) (ise_dataconnect_radius_response_time_seconds)) and on() (max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)",
+          "expr": "sort_desc(max by (psn, stat, status) (ise_dataconnect_radius_response_time_seconds)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{psn}} / {{stat}} / {{status}}",
           "refId": "A",
           "datasource": {

@@ -71,7 +71,7 @@
       "id": 3, "type": "stat", "title": "PAN HA Enabled",
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_pan_ha_enabled and on() (max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1)", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_pan_ha_enabled and on() ((max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"deployment\",source=\"rest\"}) == 1))", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "mappings": [{ "type": "value", "options": { "0": { "text": "NO" }, "1": { "text": "YES" } } }],
@@ -85,7 +85,7 @@
       "id": 4, "type": "stat", "title": "Certificates Expired",
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_certificate_expired and on() (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1)", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_certificate_expired and on() ((max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"certificates\",source=\"rest\"}) == 1))", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
@@ -98,7 +98,7 @@
       "id": 5, "type": "stat", "title": "Certs Expiring Soon",
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(sum(ise_certificates_expiring_soon) and on() (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1)) or on() (0 * (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1))", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(sum(ise_certificates_expiring_soon) and on() ((max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"certificates\",source=\"rest\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"certificates\",source=\"rest\"}) == 1)))", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }
@@ -111,7 +111,7 @@
       "id": 6, "type": "stat", "title": "Backup Age",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_backup_age_hours and on() (max(ise_dataset_up{dataset=\"backup\",source=\"rest\"}) == 1)", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_backup_age_hours and on() ((max(ise_dataset_up{dataset=\"backup\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"backup\",source=\"rest\"}) == 1))", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "unit": "h",
@@ -125,7 +125,7 @@
       "id": 7, "type": "stat", "title": "Patch Level",
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_patch_level and on() (max(ise_dataset_up{dataset=\"patches\",source=\"rest\"}) == 1)", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_patch_level and on() ((max(ise_dataset_up{dataset=\"patches\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"patches\",source=\"rest\"}) == 1))", "refId": "A" }],
       "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto" }
     },
@@ -133,7 +133,7 @@
       "id": 8, "type": "bargauge", "title": "Nodes by Role",
       "gridPos": { "h": 8, "w": 6, "x": 0, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_node_count and on() (max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1)", "legendFormat": "{{role}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_node_count and on() ((max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"deployment\",source=\"rest\"}) == 1))", "legendFormat": "{{role}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },
@@ -141,7 +141,7 @@
       "id": 9, "type": "table", "title": "Deployment Status",
       "gridPos": { "h": 8, "w": 10, "x": 6, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(ise_deployment_status == 1) and on() (max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(ise_deployment_status == 1) and on() ((max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"deployment\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
       "options": { "showHeader": true },
       "transformations": [
@@ -152,7 +152,7 @@
       "id": 10, "type": "table", "title": "ISE Info",
       "gridPos": { "h": 8, "w": 4, "x": 16, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_info and on() (max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_info and on() ((max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"deployment\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
       "options": { "showHeader": true },
       "transformations": [
@@ -163,7 +163,7 @@
       "id": 11, "type": "table", "title": "ISE Version",
       "gridPos": { "h": 8, "w": 4, "x": 20, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_version_info and on() (max(ise_dataset_up{dataset=\"patches\",source=\"rest\"}) == 1)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_version_info and on() ((max(ise_dataset_up{dataset=\"patches\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"patches\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
       "options": { "showHeader": true },
       "transformations": [
@@ -233,7 +233,7 @@
       "id": 19, "type": "table", "title": "Certificate Expiry (days, soonest first)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sort(ise_certificate_expiry_days) and on() (max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sort(ise_certificate_expiry_days) and on() ((max(ise_dataset_up{dataset=\"certificates\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"certificates\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
           "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 30 }, { "color": "green", "value": 90 }] } },
@@ -250,7 +250,7 @@
       "id": 20, "type": "bargauge", "title": "License Consumption",
       "gridPos": { "h": 8, "w": 6, "x": 12, "y": 31 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_license_consumption and on() (max(ise_dataset_up{dataset=\"licensing\",source=\"rest\"}) == 1)", "legendFormat": "{{tier}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_license_consumption and on() ((max(ise_dataset_up{dataset=\"licensing\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"licensing\",source=\"rest\"}) == 1))", "legendFormat": "{{tier}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "values": false } }
     },
@@ -258,7 +258,7 @@
       "id": 21, "type": "table", "title": "License Compliance",
       "gridPos": { "h": 8, "w": 6, "x": 18, "y": 31 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_license_compliance and on() (max(ise_dataset_up{dataset=\"licensing\",source=\"rest\"}) == 1)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_license_compliance and on() ((max(ise_dataset_up{dataset=\"licensing\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"licensing\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
           "mappings": [{ "type": "value", "options": { "0": { "text": "out of compliance", "color": "red" }, "1": { "text": "compliant", "color": "green" } } }] },
@@ -277,7 +277,7 @@
       "id": 23, "type": "table", "title": "License Tiers Enabled",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 40 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_license_enabled and on() (max(ise_dataset_up{dataset=\"licensing\",source=\"rest\"}) == 1)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_license_enabled and on() ((max(ise_dataset_up{dataset=\"licensing\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"licensing\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": {
         "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "color-background" } },
           "mappings": [{ "type": "value", "options": { "0": { "text": "disabled", "color": "red" }, "1": { "text": "enabled", "color": "green" } } }] },
@@ -292,7 +292,7 @@
       "id": 24, "type": "table", "title": "Patch Installed",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 40 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(ise_patch_installed == 1) and on() (max(ise_dataset_up{dataset=\"patches\",source=\"rest\"}) == 1)", "format": "table", "instant": true, "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(ise_patch_installed == 1) and on() ((max(ise_dataset_up{dataset=\"patches\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"patches\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A" }],
       "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
       "options": { "showHeader": true },
       "transformations": [
@@ -303,7 +303,7 @@
       "id": 25, "type": "stat", "title": "Backup Configured",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 40 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_backup_configured and on() (max(ise_dataset_up{dataset=\"backup\",source=\"rest\"}) == 1)", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ise_backup_configured and on() ((max(ise_dataset_up{dataset=\"backup\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"backup\",source=\"rest\"}) == 1))", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "mappings": [{ "type": "value", "options": { "0": { "text": "NO", "color": "red" }, "1": { "text": "YES", "color": "green" } } }],
@@ -317,7 +317,7 @@
       "id": 26, "type": "stat", "title": "Time Since Last Backup Success",
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 40 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(time() - ise_backup_last_success_timestamp) and on() (max(ise_dataset_up{dataset=\"backup\",source=\"rest\"}) == 1)", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(time() - ise_backup_last_success_timestamp) and on() ((max(ise_dataset_up{dataset=\"backup\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"backup\",source=\"rest\"}) == 1))", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "unit": "s",

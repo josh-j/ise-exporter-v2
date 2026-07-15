@@ -101,6 +101,14 @@ class PollScheduler:
             getattr(cfg, "slow_interval", 3600), 3600, 3600)
         self.auth_failure_backoff = _minimum_interval(
             getattr(cfg, "auth_failure_backoff", 900), 900, 300)
+        try:
+            startup_spacing = int(getattr(cfg, "startup_rate_limit_seconds", 0))
+        except (TypeError, ValueError):
+            startup_spacing = 5
+        self.startup_rate_limit_seconds = max(0, min(300, startup_spacing))
+        self._startup_lock = threading.Lock()
+        self._startup_started = set()
+        self._startup_next_at = 0.0
         self.client = client
         self.dataconnect = dataconnect
         self.mnt = mnt
@@ -331,6 +339,8 @@ class PollScheduler:
 
     def _run(self, name, now, tier, callback):
         if self._due(name, now, tier):
+            if not self._wait_for_startup_slot(name):
+                return
             source = self.dataset_plan[name][0]
             collectors.begin_attempt(name)
             self.last_attempt[name] = now
@@ -366,6 +376,31 @@ class PollScheduler:
                 self.next_run[name] = completed + retry
                 self._scheduled_delay[name] = retry
                 self._update_dataset_freshness(name, completed)
+
+    def _wait_for_startup_slot(self, name):
+        """Space each dataset's first attempt without changing later cadence.
+
+        The reservation is shared by the REST, Data Connect, and MnT lanes, so
+        parallel workers cannot create a restart-time request burst. Waiting is
+        interruptible once the service loop has installed its shutdown event.
+        """
+        spacing = self.startup_rate_limit_seconds
+        if spacing <= 0 or name in self._startup_started:
+            return True
+        with self._startup_lock:
+            if name in self._startup_started:
+                return True
+            now = time.monotonic()
+            starts_at = max(now, self._startup_next_at)
+            self._startup_next_at = starts_at + spacing
+            self._startup_started.add(name)
+        delay = max(0.0, starts_at - time.monotonic())
+        if delay <= 0:
+            return True
+        if self._shutdown is None:
+            time.sleep(delay)
+            return True
+        return not self._shutdown.wait(delay)
 
     def _run_dataconnect(self, name, tier, callback):
         """Run synchronously in tests, or enqueue onto the single DB lane.
