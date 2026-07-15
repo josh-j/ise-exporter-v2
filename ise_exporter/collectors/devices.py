@@ -68,6 +68,9 @@ def collect(client, cfg):
             return devices
 
         cache = _device_cache(cfg)
+        cache.retain(
+            row.get("id") for row in devices
+            if isinstance(row, dict) and row.get("id"))
         loc_counts = defaultdict(int)
         ops_counts = defaultdict(int)
         type_counts = defaultdict(int)

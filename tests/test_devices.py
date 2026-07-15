@@ -33,3 +33,28 @@ def test_failed_device_detail_invalidates_inventory_for_nad_join(monkeypatch):
     cfg = types.SimpleNamespace(collect_device_details=True, device_cache_ttl=3600)
 
     assert devices.collect(Client(), cfg) is None
+
+
+def test_device_detail_cache_prunes_removed_inventory_entries(monkeypatch):
+    inventories = iter((
+        [{"id": "old", "name": "old-switch"}],
+        [{"id": "current", "name": "current-switch"}],
+    ))
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return next(inventories)
+            device_id = path.rsplit("/", 1)[-1]
+            return {"NetworkDevice": {"id": device_id, "name": device_id}}
+
+    monkeypatch.setattr(devices, "_cache", None)
+    cfg = types.SimpleNamespace(
+        collect_device_details=True, device_cache_ttl=3600)
+    client = Client()
+
+    devices.collect(client, cfg)
+    assert set(devices._cache.cache) == {"old"}
+    devices.collect(client, cfg)
+    assert set(devices._cache.cache) == {"current"}
+    assert set(devices._cache.timestamps) == {"current"}

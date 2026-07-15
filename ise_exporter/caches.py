@@ -14,9 +14,20 @@ class DeviceCache:
         with self.lock:
             if key in self.cache and time.time() - self.timestamps[key] < self.ttl:
                 return self.cache[key]
+            self.cache.pop(key, None)
+            self.timestamps.pop(key, None)
         return None
 
     def set(self, key, value):
         with self.lock:
             self.cache[key] = value
             self.timestamps[key] = time.time()
+
+    def retain(self, keys):
+        """Discard detail entries for devices absent from current inventory."""
+        keep = set(keys)
+        with self.lock:
+            for key in tuple(self.cache):
+                if key not in keep:
+                    self.cache.pop(key, None)
+                    self.timestamps.pop(key, None)
