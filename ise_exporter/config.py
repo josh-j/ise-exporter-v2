@@ -134,6 +134,10 @@ class Config:
     tacacs_internal_user_detail_max_requests: int = 100
     tacacs_internal_user_detail_ttl: int = 604800
     tacacs_internal_user_detail_request_interval_ms: int = 250
+    tacacs_policy_set_max: int = 100
+    tacacs_policy_rule_refresh_max: int = 10
+    tacacs_policy_rule_ttl: int = 604800
+    tacacs_policy_rule_request_interval_ms: int = 250
     tacacs_unused_account_days: int = 180
     dataconnect_host: str = ""
     dataconnect_port: int = 2484
@@ -237,6 +241,14 @@ class Config:
                 "TACACS_INTERNAL_USER_DETAIL_TTL", 604800, 86400),
             tacacs_internal_user_detail_request_interval_ms=_bounded_i(
                 "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS", 250, 100),
+            tacacs_policy_set_max=_bounded_i(
+                "TACACS_POLICY_SET_MAX", 100, 1, 1000),
+            tacacs_policy_rule_refresh_max=_bounded_i(
+                "TACACS_POLICY_RULE_REFRESH_MAX", 10, 1, 25),
+            tacacs_policy_rule_ttl=_bounded_i(
+                "TACACS_POLICY_RULE_TTL", 604800, 86400),
+            tacacs_policy_rule_request_interval_ms=_bounded_i(
+                "TACACS_POLICY_RULE_REQUEST_INTERVAL_MS", 250, 100),
             tacacs_unused_account_days=_bounded_i(
                 "TACACS_UNUSED_ACCOUNT_DAYS", 180, 1, 3650),
             # Never infer the Oracle target from the MnT XML host. Production

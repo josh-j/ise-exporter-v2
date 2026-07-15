@@ -50,7 +50,10 @@ def test_upgrade_removes_obsolete_dataconnect_rollup_history(tmp_path):
     store.close()
 
     assert "dataconnect_rollup" not in tables
-    assert {"mnt_posture_cache", "tacacs_internal_user_cache", "exporter_state"} <= tables
+    assert {
+        "mnt_posture_cache", "tacacs_internal_user_cache",
+        "tacacs_policy_rule_cache", "exporter_state",
+    } <= tables
 
     db = sqlite3.connect(path)
     assert db.execute("PRAGMA user_version").fetchone()[0] == STATE_SCHEMA_VERSION
@@ -110,6 +113,36 @@ def test_tacacs_user_cache_is_bounded_to_current_inventory(tmp_path):
         "u2": {"detail": {"name": "two"}, "updated_at": 10.0},
     }
     assert store.tacacs_user_count() == 1
+    store.close()
+
+
+def test_tacacs_policy_cache_is_bounded_to_current_inventory(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.put_tacacs_policy("p1", 2, 3, now=10)
+    store.put_tacacs_policy("p2", 4, 5, now=10)
+    store.finish_tacacs_policy_cycle(["p2"], now=20)
+
+    assert store.tacacs_policy_entries(["p1", "p2"]) == {
+        "p2": {
+            "authentication_rules": 4,
+            "authorization_rules": 5,
+            "updated_at": 10.0,
+        },
+    }
+    assert store.tacacs_policy_count() == 1
+    store.close()
+
+
+def test_invalid_tacacs_policy_cache_row_is_pruned(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.db.execute(
+        "INSERT INTO tacacs_policy_rule_cache VALUES (?, ?, ?, ?, ?)",
+        ("p1", -1, 3, 10, 10),
+    )
+    store.commit()
+
+    assert store.tacacs_policy_entries(["p1"]) == {}
+    assert store.tacacs_policy_count() == 0
     store.close()
 
 

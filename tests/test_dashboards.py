@@ -220,6 +220,11 @@ def test_tacacs_dashboard_exposes_internal_user_detail_completeness():
         panels[14]["targets"][0]["expr"]
     assert "ise_tacacs_internal_user_detail_refresh_failures" in \
         panels[15]["targets"][0]["expr"]
+    assert "ise_tacacs_policy_rule_coverage" in panels[16]["targets"][0]["expr"]
+    assert "ise_tacacs_policy_rule_refresh_deferred" in \
+        panels[17]["targets"][0]["expr"]
+    assert "ise_tacacs_policy_rule_refresh_failures" in \
+        panels[18]["targets"][0]["expr"]
 
 
 def test_domain_queries_do_not_mask_outages_as_unconditional_zero():
@@ -257,7 +262,7 @@ def test_every_domain_data_query_is_gated_by_its_authoritative_dataset():
          "dataconnect_performance", "dataconnect"),
         (r"ise_dataconnect_view_", "dataconnect_freshness", "dataconnect"),
         (r"ise_mnt_active_", "mnt_active_posture", "mnt"),
-        (r"ise_tacacs_(?:internal_user|policy_objects)", "tacacs_config", "rest"),
+        (r"ise_tacacs_(?:internal_user|policy)", "tacacs_config", "rest"),
         (r"ise_tacacs_(?:account|events|dataconnect)",
          "tacacs_activity", "dataconnect"),
         (r"ise_network_devices(?:_|_total)", "devices", "rest"),

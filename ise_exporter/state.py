@@ -15,10 +15,11 @@ import sqlite3
 import stat
 import time
 
-STATE_SCHEMA_VERSION = 1
+STATE_SCHEMA_VERSION = 2
 MAX_PERSISTED_SNAPSHOT_BYTES = 32 * 1024 * 1024
 MAX_POSTURE_CACHE_DETAIL_BYTES = 128 * 1024
 MAX_TACACS_CACHE_DETAIL_BYTES = 64 * 1024
+MAX_TACACS_POLICY_RULES = 1_000_000
 
 
 class StateStore:
@@ -74,12 +75,22 @@ class StateStore:
                 last_seen REAL NOT NULL
             )
         """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS tacacs_policy_rule_cache (
+                policy_id TEXT PRIMARY KEY,
+                authentication_rules INTEGER NOT NULL,
+                authorization_rules INTEGER NOT NULL,
+                updated_at REAL NOT NULL,
+                last_seen REAL NOT NULL
+            )
+        """)
         if schema_version < 1:
             # Versions before the reporting/active split cached RADIUS aggregate
             # windows here. Run this schema-write migration once, rather than on
             # every short-lived StateStore connection across collector threads.
             self.db.execute("DROP TABLE IF EXISTS dataconnect_rollup")
-            self.db.execute("PRAGMA user_version = 1")
+        if schema_version < STATE_SCHEMA_VERSION:
+            self.db.execute(f"PRAGMA user_version = {STATE_SCHEMA_VERSION}")
         self.commit()
 
     def _secure_files(self):
@@ -224,6 +235,7 @@ class StateStore:
         allowed = {
             ("mnt_posture_cache", "mac"),
             ("tacacs_internal_user_cache", "user_id"),
+            ("tacacs_policy_rule_cache", "policy_id"),
         }
         if (table, key_column) not in allowed:
             raise ValueError("invalid cache table")
@@ -273,6 +285,90 @@ class StateStore:
     def tacacs_user_count(self):
         return int(self.db.execute(
             "SELECT COUNT(*) FROM tacacs_internal_user_cache").fetchone()[0])
+
+    def tacacs_policy_entries(self, policy_ids):
+        """Return complete cached rule counts for a bounded policy inventory."""
+        policy_ids = tuple(dict.fromkeys(str(value) for value in policy_ids if value))
+        if not policy_ids:
+            return {}
+        rows = {}
+        invalid = []
+        for offset in range(0, len(policy_ids), 500):
+            chunk = policy_ids[offset:offset + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in self.db.execute(f"""
+                    SELECT policy_id, authentication_rules, authorization_rules,
+                           updated_at
+                    FROM tacacs_policy_rule_cache
+                    WHERE policy_id IN ({placeholders})
+                    """, chunk):
+                try:
+                    authentication = int(row["authentication_rules"])
+                    authorization = int(row["authorization_rules"])
+                    updated_at = float(row["updated_at"])
+                    if (not 0 <= authentication <= MAX_TACACS_POLICY_RULES
+                            or not 0 <= authorization <= MAX_TACACS_POLICY_RULES
+                            or not math.isfinite(updated_at) or updated_at < 0):
+                        raise ValueError("invalid TACACS policy cache row")
+                except (TypeError, ValueError):
+                    invalid.append(row["policy_id"])
+                    continue
+                rows[row["policy_id"]] = {
+                    "authentication_rules": authentication,
+                    "authorization_rules": authorization,
+                    "updated_at": updated_at,
+                }
+        self._delete_invalid("tacacs_policy_rule_cache", "policy_id", invalid)
+        return rows
+
+    def put_tacacs_policy(self, policy_id, authentication, authorization, now=None):
+        now = self._valid_timestamp(now)
+        policy_id = str(policy_id)
+        if not policy_id or len(policy_id.encode("utf-8")) > 256:
+            raise ValueError("TACACS policy ID exceeds the persisted size limit")
+        authentication = int(authentication)
+        authorization = int(authorization)
+        if (not 0 <= authentication <= MAX_TACACS_POLICY_RULES
+                or not 0 <= authorization <= MAX_TACACS_POLICY_RULES):
+            raise ValueError("TACACS policy rule count exceeds the persisted limit")
+        self.db.execute("""
+            INSERT INTO tacacs_policy_rule_cache
+                (policy_id, authentication_rules, authorization_rules,
+                 updated_at, last_seen)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(policy_id) DO UPDATE SET
+                authentication_rules=excluded.authentication_rules,
+                authorization_rules=excluded.authorization_rules,
+                updated_at=excluded.updated_at,
+                last_seen=excluded.last_seen
+        """, (policy_id, authentication, authorization, now, now))
+
+    def finish_tacacs_policy_cycle(self, active_ids, now=None):
+        """Mark selected policy rows and prune policies removed from inventory."""
+        now = self._valid_timestamp(now)
+        active_ids = tuple(dict.fromkeys(str(value) for value in active_ids if value))
+        if active_ids:
+            for offset in range(0, len(active_ids), 500):
+                chunk = active_ids[offset:offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                self.db.execute(
+                    f"UPDATE tacacs_policy_rule_cache SET last_seen=? "
+                    f"WHERE policy_id IN ({placeholders})", (now, *chunk))
+            if len(active_ids) <= 500:
+                placeholders = ",".join("?" for _ in active_ids)
+                self.db.execute(
+                    f"DELETE FROM tacacs_policy_rule_cache "
+                    f"WHERE policy_id NOT IN ({placeholders})", active_ids)
+            else:
+                self.db.execute(
+                    "DELETE FROM tacacs_policy_rule_cache WHERE last_seen < ?", (now,))
+        else:
+            self.db.execute("DELETE FROM tacacs_policy_rule_cache")
+        self.commit()
+
+    def tacacs_policy_count(self):
+        return int(self.db.execute(
+            "SELECT COUNT(*) FROM tacacs_policy_rule_cache").fetchone()[0])
 
     @staticmethod
     def _valid_timestamp(value):

@@ -67,11 +67,21 @@ ISE_DATACONNECT_QUERY_TIMEOUT=15
 ISE_DATACONNECT_MAX_GROUPS=1000
 ISE_DATACONNECT_EVENT_WINDOW_HOURS=6
 ISE_DATACONNECT_TACACS_INTERVAL=86400
+TACACS_POLICY_SET_MAX=100
+TACACS_POLICY_RULE_REFRESH_MAX=10
+TACACS_POLICY_RULE_TTL=604800
+TACACS_POLICY_RULE_REQUEST_INTERVAL_MS=250
 ```
 
 With the defaults, TACACS runs daily and scans six hours rather than
 regrouping the complete two-day view. Lowering the event-window ceiling below the
 collector cadence deliberately changes this to sampling.
+
+ISE 3.3 Patch 11 exposes authentication and authorization rule inventories as
+two per-policy-set PAN requests. The exporter caches only their complete counts,
+refreshes at most ten policy sets per configuration cycle, and publishes coverage,
+deferred, and failure metrics alongside the totals. A partial cache is visible and
+does not masquerade as a complete zero-rule configuration.
 
 The collector emits snapshot gauges for the bounded view slice:
 

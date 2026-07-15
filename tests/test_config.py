@@ -148,6 +148,10 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["ISE_DATACONNECT_FRESHNESS_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_NAD_HEALTH_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_TACACS_INTERVAL"] == "86400"
+    assert values["TACACS_POLICY_SET_MAX"] == "100"
+    assert values["TACACS_POLICY_RULE_REFRESH_MAX"] == "10"
+    assert values["TACACS_POLICY_RULE_TTL"] == "604800"
+    assert values["TACACS_POLICY_RULE_REQUEST_INTERVAL_MS"] == "250"
     assert values["ISE_DATACONNECT_SERVICE"] == "cpm10"
     assert values["ISE_DATACONNECT_SSL_VERIFY"] == "true"
     assert values["ISE_REST_SSL_VERIFY"] == "true"
@@ -198,6 +202,10 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
         "TACACS_INTERNAL_USER_DETAIL_MAX_REQUESTS": "999999",
         "TACACS_INTERNAL_USER_DETAIL_TTL": "1",
         "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS": "0",
+        "TACACS_POLICY_SET_MAX": "999999",
+        "TACACS_POLICY_RULE_REFRESH_MAX": "999999",
+        "TACACS_POLICY_RULE_TTL": "1",
+        "TACACS_POLICY_RULE_REQUEST_INTERVAL_MS": "0",
         "ERS_PORT": "99999",
         "EXPORTER_PORT": "0",
         "SCRAPE_INTERVAL": "1",
@@ -232,6 +240,10 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.tacacs_internal_user_detail_max_requests == 250
     assert cfg.tacacs_internal_user_detail_ttl == 86400
     assert cfg.tacacs_internal_user_detail_request_interval_ms == 100
+    assert cfg.tacacs_policy_set_max == 1000
+    assert cfg.tacacs_policy_rule_refresh_max == 25
+    assert cfg.tacacs_policy_rule_ttl == 86400
+    assert cfg.tacacs_policy_rule_request_interval_ms == 100
     assert cfg.ers_port == 65535
     assert cfg.exporter_port == 1
     assert cfg.scrape_interval == 60

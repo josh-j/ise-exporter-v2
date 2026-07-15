@@ -114,6 +114,27 @@ ise_tacacs_internal_user_hygiene_risk = Gauge(
 ise_tacacs_policy_objects_total = Gauge(
     "ise_tacacs_policy_objects_total", "Configured Device Admin objects by type",
     ["object_type"])
+ise_tacacs_policy_set_inventory_selected = Gauge(
+    "ise_tacacs_policy_set_inventory_selected",
+    "Device Admin policy sets selected for bounded rule-count collection")
+ise_tacacs_policy_set_inventory_truncated = Gauge(
+    "ise_tacacs_policy_set_inventory_truncated",
+    "Device Admin policy sets excluded by the configured cache ceiling")
+ise_tacacs_policy_rule_coverage = Gauge(
+    "ise_tacacs_policy_rule_coverage",
+    "Fraction of the complete policy-set inventory backed by cached rule counts")
+ise_tacacs_policy_rule_cache_entries = Gauge(
+    "ise_tacacs_policy_rule_cache_entries",
+    "Restart-persistent complete Device Admin policy rule-count rows")
+ise_tacacs_policy_rule_refresh_requests = Gauge(
+    "ise_tacacs_policy_rule_refresh_requests",
+    "Policy sets whose authentication and authorization rules were requested this cycle")
+ise_tacacs_policy_rule_refresh_failures = Gauge(
+    "ise_tacacs_policy_rule_refresh_failures",
+    "Policy-set rule-count refreshes that failed this cycle")
+ise_tacacs_policy_rule_refresh_deferred = Gauge(
+    "ise_tacacs_policy_rule_refresh_deferred",
+    "Missing or stale policy-set rule counts deferred by the cycle budget")
 ise_tacacs_dataconnect_up = Gauge(
     "ise_tacacs_dataconnect_up", "ISE Data Connect TACACS query status (1=successful)")
 ise_tacacs_account_authentication_events = Gauge(

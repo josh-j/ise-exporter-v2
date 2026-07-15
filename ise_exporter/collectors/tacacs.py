@@ -37,6 +37,13 @@ _CONFIG_METRICS = (
     metrics.ise_tacacs_unused_account_review_seconds,
     metrics.ise_tacacs_internal_user_hygiene_risk,
     metrics.ise_tacacs_policy_objects_total,
+    metrics.ise_tacacs_policy_set_inventory_selected,
+    metrics.ise_tacacs_policy_set_inventory_truncated,
+    metrics.ise_tacacs_policy_rule_coverage,
+    metrics.ise_tacacs_policy_rule_cache_entries,
+    metrics.ise_tacacs_policy_rule_refresh_requests,
+    metrics.ise_tacacs_policy_rule_refresh_failures,
+    metrics.ise_tacacs_policy_rule_refresh_deferred,
 )
 
 _INTERNAL_USERS_STATE = "tacacs.internal_users"
@@ -395,8 +402,9 @@ def collect_config(client, cfg):
                 or len(set(resource_ids)) != len(resource_ids)):
             raise CollectorFailed("TACACS internal-user inventory contained invalid identities")
         policy_ids = [str(row.get("id") or "").strip() for row in policy_sets]
-        if any(not policy_id for policy_id in policy_ids) \
-                or len(set(policy_ids)) != len(policy_ids):
+        if (any(not policy_id or len(policy_id.encode("utf-8")) > 256
+                for policy_id in policy_ids)
+                or len(set(policy_ids)) != len(policy_ids)):
             raise CollectorFailed("Device Admin policy-set inventory contained invalid IDs")
         limit = max(1, min(1000, int(getattr(cfg, "tacacs_internal_user_max", 1000))))
         ordered_resources = sorted(
@@ -479,20 +487,86 @@ def collect_config(client, cfg):
             users.append(merged)
         refresh_deferred = max(0, len(refresh_candidates) - refresh_requests)
 
-        auth_rows = []
-        authz_rows = []
-        for policy_set in policy_sets:
-            policy_id = policy_set.get("id")
-            authentication = client.get_pan_api(
-                f"/policy/device-admin/policy-set/{policy_id}/authentication",
-                api_name="tacacs_authentication_rules")
-            authorization = client.get_pan_api(
-                f"/policy/device-admin/policy-set/{policy_id}/authorization",
-                api_name="tacacs_authorization_rules")
-            _object_list(authentication, f"Device Admin authentication rules for {policy_id}")
-            _object_list(authorization, f"Device Admin authorization rules for {policy_id}")
-            auth_rows.extend((policy_set, row) for row in authentication)
-            authz_rows.extend((policy_set, row) for row in authorization)
+        policy_limit = max(1, min(1000, int(getattr(
+            cfg, "tacacs_policy_set_max", 100))))
+        selected_policies = sorted(
+            policy_sets,
+            key=lambda policy: (
+                str(policy.get("name") or "").casefold(),
+                str(policy.get("id") or ""),
+            ),
+        )[:policy_limit]
+        selected_policy_ids = [str(policy["id"]) for policy in selected_policies]
+        policy_refresh_ttl = max(
+            86400, int(getattr(cfg, "tacacs_policy_rule_ttl", 604800)))
+        policy_refresh_limit = max(1, min(25, int(getattr(
+            cfg, "tacacs_policy_rule_refresh_max", 10))))
+        policy_request_interval = max(0.1, int(getattr(
+            cfg, "tacacs_policy_rule_request_interval_ms", 250)) / 1000)
+        policy_store = StateStore(_state_path(cfg))
+        try:
+            policy_cache = policy_store.tacacs_policy_entries(selected_policy_ids)
+            policy_refresh_candidates = sorted(
+                selected_policy_ids,
+                key=lambda policy_id: (
+                    policy_id in policy_cache,
+                    policy_cache.get(policy_id, {}).get("updated_at", 0),
+                    policy_id,
+                ),
+            )
+            policy_refresh_candidates = [
+                policy_id for policy_id in policy_refresh_candidates
+                if policy_id not in policy_cache
+                or policy_cache[policy_id]["updated_at"] <= now - policy_refresh_ttl
+            ]
+            policy_refresh_ids = policy_refresh_candidates[:policy_refresh_limit]
+            policy_refresh_requests = 0
+            policy_refresh_failures = 0
+            pan_requests = 0
+            for policy_id in policy_refresh_ids:
+                try:
+                    if pan_requests:
+                        time.sleep(policy_request_interval)
+                    pan_requests += 1
+                    authentication_count = len(_object_list(
+                        client.get_pan_api(
+                            f"/policy/device-admin/policy-set/{policy_id}/authentication",
+                            api_name="tacacs_authentication_rules"),
+                        f"Device Admin authentication rules for {policy_id}"))
+                    time.sleep(policy_request_interval)
+                    pan_requests += 1
+                    authorization_count = len(_object_list(
+                        client.get_pan_api(
+                            f"/policy/device-admin/policy-set/{policy_id}/authorization",
+                            api_name="tacacs_authorization_rules"),
+                        f"Device Admin authorization rules for {policy_id}"))
+                except Exception as exc:
+                    authentication_count = authorization_count = None
+                    logger.warning("policy rule refresh raised for %s: %s", policy_id, exc)
+                policy_refresh_requests += 1
+                if authentication_count is None or authorization_count is None:
+                    policy_refresh_failures += 1
+                    logger.warning(
+                        "policy rule refresh failed for %s; retaining cached counts",
+                        policy_id)
+                    if policy_refresh_failures >= 3:
+                        logger.warning(
+                            "stopping policy rule refresh after three failures")
+                        break
+                    continue
+                policy_store.put_tacacs_policy(
+                    policy_id, authentication_count, authorization_count, now)
+                policy_cache[policy_id] = {
+                    "authentication_rules": authentication_count,
+                    "authorization_rules": authorization_count,
+                    "updated_at": now,
+                }
+            policy_store.finish_tacacs_policy_cycle(selected_policy_ids, now)
+            policy_cache_entries = policy_store.tacacs_policy_count()
+        finally:
+            policy_store.close()
+        policy_refresh_deferred = max(
+            0, len(policy_refresh_candidates) - policy_refresh_requests)
 
         command_sets = client.get_pan_api(
             "/policy/device-admin/command-sets", api_name="tacacs_command_sets")
@@ -515,8 +589,10 @@ def collect_config(client, cfg):
             internal_last_seen = {}
         object_counts = {
             "policy_sets": len(policy_sets),
-            "authentication_rules": len(auth_rows),
-            "authorization_rules": len(authz_rows),
+            "authentication_rules": sum(
+                row["authentication_rules"] for row in policy_cache.values()),
+            "authorization_rules": sum(
+                row["authorization_rules"] for row in policy_cache.values()),
             "command_sets": len(command_sets),
             "shell_profiles": len(shell_profiles),
         }
@@ -532,6 +608,19 @@ def collect_config(client, cfg):
             metrics.ise_tacacs_internal_user_detail_refresh_requests.set(refresh_requests)
             metrics.ise_tacacs_internal_user_detail_refresh_failures.set(refresh_failures)
             metrics.ise_tacacs_internal_user_detail_refresh_deferred.set(refresh_deferred)
+            metrics.ise_tacacs_policy_set_inventory_selected.set(
+                len(selected_policy_ids))
+            metrics.ise_tacacs_policy_set_inventory_truncated.set(
+                max(0, len(policy_sets) - len(selected_policy_ids)))
+            metrics.ise_tacacs_policy_rule_coverage.set(
+                len(policy_cache) / len(policy_sets) if policy_sets else 1.0)
+            metrics.ise_tacacs_policy_rule_cache_entries.set(policy_cache_entries)
+            metrics.ise_tacacs_policy_rule_refresh_requests.set(
+                policy_refresh_requests)
+            metrics.ise_tacacs_policy_rule_refresh_failures.set(
+                policy_refresh_failures)
+            metrics.ise_tacacs_policy_rule_refresh_deferred.set(
+                policy_refresh_deferred)
             metrics.ise_tacacs_unused_account_review_seconds.set(review_days * 86400)
             for user in users:
                 username = _label(user.get("name"))

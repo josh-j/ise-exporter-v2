@@ -581,6 +581,83 @@
           }
         }
       ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Policy Rule Count Coverage",
+      "description": "Fraction of the complete Device Admin policy-set inventory backed by restart-persistent authentication and authorization rule counts.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 47
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_policy_rule_coverage and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Policy Rule Refresh Deferred",
+      "description": "Missing or stale policy-set rule counts waiting behind the production-safe per-cycle PAN request budget.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 47
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_policy_rule_refresh_deferred and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Policy Rule Refresh Failures",
+      "description": "Policy sets whose authentication or authorization rule list failed in the latest cycle. Previously cached complete counts remain available.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 47
+      },
+      "targets": [
+        {
+          "expr": "ise_tacacs_policy_rule_refresh_failures and on() (max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
     }
   ],
   "refresh": "1m",

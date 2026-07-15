@@ -252,6 +252,13 @@ measured against the complete enumerated inventory, so a configured cap cannot
 masquerade as 100 percent coverage. It does not retain external identities, raw
 TACACS events, commands, sessions, or MnT rows. Its size therefore follows the
 small internal-account inventory rather than the MnT database or event volume.
+ISE 3.3 exposes Device Admin authentication and authorization rule lists through
+two separate per-policy-set endpoints. Complete rule-count pairs are therefore
+cached for seven days and refreshed for at most ten policy sets per cycle, with
+250 ms between PAN requests. Rule counts, cache coverage, deferred policy sets,
+and failures are separate metrics; incomplete cache coverage cannot look like an
+authoritative zero. The cache retains only two bounded integers per selected
+policy set, never rule conditions or policy content.
 
 MnT metrics never contain MAC addresses, usernames, session IDs, raw
 `PostureReport`, or free-form attributes. Only bounded aggregate dimensions such
