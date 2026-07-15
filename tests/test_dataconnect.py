@@ -356,11 +356,15 @@ def test_shared_pacing_gate_acquisition_failure_is_counted(monkeypatch):
     counter = metrics.ise_dataconnect_queries_total.labels(
         view="radius_authentications", result="error")
     before = counter._value.get()
+    metrics.ise_dataconnect_query_rows.labels(
+        view="radius_authentications").set(7)
 
     with pytest.raises(RuntimeError, match="shared pacing gate unavailable"):
         client.query("SELECT username FROM radius_authentications")
 
     assert counter._value.get() == before + 1
+    assert metrics.ise_dataconnect_query_rows.labels(
+        view="radius_authentications")._value.get() == 0
     assert client._connection is None
     assert client._next_query_at > 0
 
@@ -387,12 +391,16 @@ def test_shared_pacing_gate_release_failure_marks_query_error(monkeypatch):
         view="radius_authentications", result="error")
     success_before = success._value.get()
     errors_before = errors._value.get()
+    metrics.ise_dataconnect_query_rows.labels(
+        view="radius_authentications").set(7)
 
     with pytest.raises(OSError, match="pacing deadline write failed"):
         client.query("SELECT username FROM radius_authentications")
 
     assert success._value.get() == success_before
     assert errors._value.get() == errors_before + 1
+    assert metrics.ise_dataconnect_query_rows.labels(
+        view="radius_authentications")._value.get() == 0
 
 
 def test_connection_backoff_protects_dataconnect_account(monkeypatch):
@@ -511,12 +519,15 @@ def test_query_refuses_to_materialize_more_than_hard_result_ceiling(monkeypatch)
     counter = metrics.ise_dataconnect_queries_total.labels(
         view="endpoints_data", result="error")
     before = counter._value.get()
+    metrics.ise_dataconnect_query_rows.labels(view="endpoints_data").set(7)
 
     with pytest.raises(RuntimeError, match="5000-row safety ceiling"):
         client.query("SELECT fields FROM endpoints_data")
 
     assert connection.closed is True
     assert counter._value.get() == before + 1
+    assert metrics.ise_dataconnect_query_rows.labels(
+        view="endpoints_data")._value.get() == 0
 
 
 def test_query_rejects_oversized_lob_before_reading_it(monkeypatch):

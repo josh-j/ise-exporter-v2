@@ -345,7 +345,7 @@
       "id": 26,
       "type": "bargauge",
       "title": "Latest Data Connect Rows Returned",
-      "description": "Client-side result size by fixed reporting view; grouped result caps protect exporter memory and metric cardinality.",
+      "description": "Client-side result size by fixed reporting view; a failed latest attempt publishes zero instead of retaining an older successful row count. Grouped result caps protect exporter memory and metric cardinality.",
       "gridPos": {"h": 9, "w": 9, "x": 12, "y": 71},
       "targets": [{"expr": "ise_dataconnect_query_rows", "legendFormat": "{{view}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {}, "overrides": []}
