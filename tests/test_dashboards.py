@@ -449,6 +449,9 @@ def test_sessions_dashboard_collection_age_thresholds_match_domain_cadences():
 
 
 def test_dashboard_age_thresholds_match_production_collection_cadences():
+    sample = (DASHBOARDS.parent / ".env.example").read_text()
+    slow_interval = int(re.search(
+        r"^SLOW_INTERVAL=(\d+)$", sample, re.MULTILINE).group(1))
     expected = {
         ("ise-auth-troubleshooting.json", 91): (129600, 172800),
         ("ise-failure-triage.json", 91): (129600, 172800),
@@ -457,7 +460,8 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
         ("ise-psn-troubleshooting.json", 91): (5400, 7200),
         ("ise-secureclient.json", 91): (1350, 1800),
         ("ise-secureclient.json", 93): (32400, 43200),
-        ("ise-tacacs.json", 92): (5400, 7200),
+        ("ise-tacacs.json", 92): (
+            slow_interval * 3 // 2, slow_interval * 2),
         ("ise-tacacs.json", 93): (32400, 43200),
         ("ise-data-quality.json", 18): (1350, 1800),
     }

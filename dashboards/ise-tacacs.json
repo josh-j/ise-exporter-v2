@@ -123,11 +123,11 @@
               },
               {
                 "color": "yellow",
-                "value": 5400
+                "value": 32400
               },
               {
                 "color": "red",
-                "value": 7200
+                "value": 43200
               }
             ]
           }
