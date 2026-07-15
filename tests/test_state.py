@@ -1,5 +1,6 @@
 import sqlite3
 import stat
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -74,6 +75,24 @@ def test_newer_state_schema_is_rejected_without_downgrade(tmp_path):
     db.close()
 
 
+def test_incompatible_existing_table_schema_is_rejected_without_rewrite(tmp_path):
+    path = tmp_path / "state.sqlite3"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE exporter_state (key TEXT PRIMARY KEY, payload BLOB)")
+    db.execute(f"PRAGMA user_version = {STATE_SCHEMA_VERSION}")
+    db.commit()
+    db.close()
+
+    with pytest.raises(RuntimeError, match="exporter_state.*incompatible schema"):
+        StateStore(path)
+
+    db = sqlite3.connect(path)
+    assert [row[1] for row in db.execute("PRAGMA table_info(exporter_state)")] == [
+        "key", "payload"]
+    assert db.execute("PRAGMA user_version").fetchone()[0] == STATE_SCHEMA_VERSION
+    db.close()
+
+
 def test_state_database_symlink_is_rejected(tmp_path):
     target = tmp_path / "real.sqlite3"
     target.touch()
@@ -82,6 +101,73 @@ def test_state_database_symlink_is_rejected(tmp_path):
 
     with pytest.raises(OSError):
         StateStore(link)
+
+
+def test_physically_corrupt_cache_is_quarantined_and_rebuilt(tmp_path, caplog):
+    path = tmp_path / "state.sqlite3"
+    corrupt = b"not a sqlite database"
+    path.write_bytes(corrupt)
+    caplog.set_level("WARNING", logger="ise_exporter.state")
+
+    store = StateStore(path)
+
+    assert store.get_value("missing") is None
+    assert store.db.execute("PRAGMA user_version").fetchone()[0] == STATE_SCHEMA_VERSION
+    store.close()
+    quarantined = list(tmp_path.glob("state.sqlite3.corrupt.*"))
+    assert len(quarantined) == 1
+    assert quarantined[0].read_bytes() == corrupt
+    assert stat.S_IMODE(quarantined[0].stat().st_mode) == 0o600
+    assert "quarantined corrupt restart-persistent state" in caplog.text
+
+
+def test_noncorruption_sqlite_error_is_not_quarantined(tmp_path, monkeypatch):
+    path = tmp_path / "state.sqlite3"
+    path.touch()
+
+    def fail(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(state_module.sqlite3, "connect", fail)
+
+    with pytest.raises(sqlite3.OperationalError, match="locked"):
+        StateStore(path)
+
+    assert path.exists()
+    assert not list(tmp_path.glob("state.sqlite3.corrupt.*"))
+
+
+def test_concurrent_corruption_recovery_quarantines_only_once(tmp_path):
+    path = tmp_path / "state.sqlite3"
+    path.write_bytes(b"not a sqlite database")
+
+    def open_and_close(_index):
+        store = StateStore(path)
+        store.close()
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(open_and_close, range(4)))
+
+    assert len(list(tmp_path.glob("state.sqlite3.corrupt.*"))) == 1
+    store = StateStore(path)
+    assert store.db.execute("PRAGMA user_version").fetchone()[0] == STATE_SCHEMA_VERSION
+    store.close()
+
+
+def test_corruption_recovery_retains_only_two_newest_generations(tmp_path):
+    path = tmp_path / "state.sqlite3"
+
+    for index in range(3):
+        path.write_bytes(f"not a sqlite database {index}".encode())
+        store = StateStore(path)
+        store.close()
+
+    quarantined = sorted(tmp_path.glob("state.sqlite3.corrupt.*"))
+    assert len(quarantined) == 2
+    assert {candidate.read_bytes() for candidate in quarantined} == {
+        b"not a sqlite database 1",
+        b"not a sqlite database 2",
+    }
 
 
 def test_invalid_cache_rows_are_pruned_and_not_counted(tmp_path):
@@ -235,6 +321,82 @@ def test_oversized_bounded_state_value_is_not_written(tmp_path):
         store.set_value("bounded", "x" * 100, max_bytes=32)
 
     assert store.get_value("bounded") is None
+    store.close()
+
+
+def test_generic_state_has_absolute_key_and_value_ceilings(tmp_path, monkeypatch):
+    store = StateStore(tmp_path / "state.sqlite3")
+    monkeypatch.setattr(state_module, "MAX_STATE_VALUE_BYTES", 32)
+
+    with pytest.raises(ValueError, match="state key"):
+        store.set_value("k" * 257, "value")
+    with pytest.raises(ValueError, match="state value"):
+        store.set_value("bounded", "x" * 33)
+
+    assert store.db.execute("SELECT COUNT(*) FROM exporter_state").fetchone()[0] == 0
+    store.close()
+
+
+def test_oversized_generic_state_is_not_materialized_and_is_pruned(
+        tmp_path, monkeypatch):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.db.execute(
+        "INSERT INTO exporter_state(key, value) VALUES (?, ?)",
+        ("corrupt", "x" * 100),
+    )
+    store.commit()
+    monkeypatch.setattr(state_module, "MAX_STATE_VALUE_BYTES", 32)
+
+    assert store.get_value("corrupt", "fallback") == "fallback"
+    assert store.db.execute("SELECT COUNT(*) FROM exporter_state").fetchone()[0] == 0
+    store.close()
+
+
+@pytest.mark.parametrize("operation", (
+    "put_posture", "put_tacacs_user", "put_tacacs_policy", "put_network_device",
+))
+def test_cache_writes_reject_oversized_identity_keys(tmp_path, operation):
+    store = StateStore(tmp_path / "state.sqlite3")
+    key = "k" * 257
+
+    with pytest.raises(ValueError, match="state key"):
+        if operation == "put_posture":
+            store.put_posture(key, "signature", {}, now=10)
+        elif operation == "put_tacacs_user":
+            store.put_tacacs_user(key, {}, now=10)
+        elif operation == "put_tacacs_policy":
+            store.put_tacacs_policy(key, 1, 1, now=10)
+        else:
+            store.put_network_device(
+                key, {"NetworkDeviceGroupList": []}, now=10)
+
+    assert store.posture_count() == 0
+    assert store.tacacs_user_count() == 0
+    assert store.tacacs_policy_count() == 0
+    assert store.network_device_count() == 0
+    store.close()
+
+
+def test_posture_cache_rejects_oversized_session_signature(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+
+    with pytest.raises(ValueError, match="state key"):
+        store.put_posture("AA:BB:CC:DD:EE:FF", "s" * 257, {}, now=10)
+
+    assert store.posture_count() == 0
+    store.close()
+
+
+def test_cache_cycle_row_ceiling_fails_before_pruning(tmp_path, monkeypatch):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.put_tacacs_user("existing", {"name": "existing"}, now=10)
+    store.commit()
+    monkeypatch.setattr(state_module, "MAX_CACHE_CYCLE_KEYS", 2)
+
+    with pytest.raises(ValueError, match="row limit"):
+        store.finish_tacacs_user_cycle(("one", "two", "three"), now=20)
+
+    assert store.tacacs_user_count() == 1
     store.close()
 
 

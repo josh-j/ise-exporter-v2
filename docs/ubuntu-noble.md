@@ -147,6 +147,13 @@ posture rows and TACACS internal-user detail rows are separately capped at 128 K
 and 64 KiB using their actual UTF-8 byte size.
 The exporter forces the SQLite database and its live WAL/shared-memory sidecars to
 mode `0600`; this remains true if an operator chooses a non-systemd state path.
+State keys are limited to 256 UTF-8 bytes, generic values to 32 MiB, and cache
+reconciliation to 250,000 identities before SQLite work begins. If SQLite reports
+an explicitly corrupt physical database, recovery is serialized across processes;
+the original database and sidecars are preserved as private `.corrupt.*` files and
+an empty cache is rebuilt; only the two newest corrupt generations are retained.
+Permission, locking, newer-schema, and merely
+incompatible-schema failures are never treated as disposable corruption.
 Fresh restored domains retain their normal query deadlines instead of creating a
 database burst after a service restart. This bound is independent of the
 100,000-endpoint inventory.

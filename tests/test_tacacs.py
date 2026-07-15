@@ -97,6 +97,27 @@ class Client:
         return None
 
 
+def test_oversized_internal_user_id_fails_before_cache_or_detail_work(tmp_path):
+    class OversizedIdentity(Client):
+        detail_requested = False
+
+        def get_ers(self, path, params=None, get_all=False, api_name="x"):
+            if path == "/config/internaluser":
+                return [{"id": "u" * 257, "name": "netadmin"}]
+            self.detail_requested = True
+            return super().get_ers(path, params, get_all, api_name)
+
+    client = OversizedIdentity()
+    tacacs.collect_config(client, types.SimpleNamespace(
+        state_db_path=str(tmp_path / "state.sqlite3"),
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=180,
+    ))
+
+    assert collectors.outcome("tacacs_config") is False
+    assert client.detail_requested is False
+    assert not (tmp_path / "state.sqlite3").exists()
+
+
 def test_collects_tacacs_inventory_rules_and_suspected_unused_account():
     tacacs.collect_config(Client(), types.SimpleNamespace(
         tacacs_internal_user_max=1000, tacacs_unused_account_days=1))

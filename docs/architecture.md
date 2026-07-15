@@ -260,6 +260,12 @@ collection. Across the eight persisted reporting domains, even the theoretical
 size ceiling remains under 256 MiB; this cannot become a local copy of an
 80--200 GB MnT database. Stale, corrupt, oversized, or schema-incompatible
 snapshots are ignored and collected from ISE immediately.
+The state layer validates its exact table contract at startup and bounds all keys,
+values, and reconciliation sets before materialization. Explicit SQLite physical
+corruption is recovered under a cross-process lock by preserving the original
+database and sidecars as private `.corrupt.*` files, retaining the two newest
+generations, and rebuilding an empty cache.
+Newer or structurally incompatible schemas are left untouched for operator review.
 
 TACACS hygiene adds one deliberately smaller persistent record: at most three
 last-observed activity timestamps for each currently configured internal account,

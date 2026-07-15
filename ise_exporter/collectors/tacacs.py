@@ -416,7 +416,8 @@ def collect_config(client, cfg):
         _object_list(
             policy_sets, "Device Admin policy-set inventory", _MAX_POLICY_SETS)
         resource_ids = [str(row.get("id") or "").strip() for row in resources]
-        if (any(not user_id or not str(row.get("name") or "").strip()
+        if (any(not user_id or len(user_id.encode("utf-8")) > 256
+                or not str(row.get("name") or "").strip()
                 for user_id, row in zip(resource_ids, resources))
                 or any(len(str(row.get("name") or "").encode("utf-8")) > 256
                        for row in resources)
