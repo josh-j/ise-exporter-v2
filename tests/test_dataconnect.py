@@ -555,7 +555,7 @@ def test_bounded_endpoint_lookup_bypasses_aggregate_duty_cooldown(monkeypatch):
 
     assert client.query_endpoint_lookup(sql, {"identifier": "client"}) == [
         {"hostname": "client"}]
-    assert calls[0][2] == {"adaptive_duty": False}
+    assert calls[0][2] == {"wait_for_pacing": False, "adaptive_duty": False}
 
 
 @pytest.mark.parametrize("sql", (

@@ -877,6 +877,19 @@ def test_endpoint_resolution_uses_interactive_point_lookup_path():
     assert "HOSTNAME IN" in dataconnect.calls[0][0]
 
 
+def test_endpoint_resolution_reports_busy_exporter_gate():
+    class BusyDataConnect(FakeDataConnect):
+        schema = {"ENDPOINTS_DATA": {
+            "MAC_ADDRESS": "VARCHAR2", "HOSTNAME": "VARCHAR2",
+        }}
+
+        def query_endpoint_lookup(self, _sql, parameters=None):
+            return None
+
+    with pytest.raises(cli.CLIError, match="busy with an exporter collection"):
+        cli._dataconnect_endpoint_candidates(BusyDataConnect(), "client", "hostname")
+
+
 def test_endpoint_resolution_uses_required_columns_without_catalog_round_trip():
     class UncachedVariant:
         schema = {}

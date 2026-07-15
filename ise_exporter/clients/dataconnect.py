@@ -711,7 +711,8 @@ class DataConnectClient:
         than the scheduled aggregate scans that create the adaptive delay.
         """
         self._validate_endpoint_lookup_query(sql)
-        return self._query(sql, parameters, adaptive_duty=False)
+        return self._query(
+            sql, parameters, wait_for_pacing=False, adaptive_duty=False)
 
     @staticmethod
     def _validate_catalog_query(sql):

@@ -907,13 +907,19 @@ def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
             "identifier_lower": identifier.lower(),
             "identifier_upper": identifier.upper(),
         })
-    query = getattr(dataconnect, "query_endpoint_lookup", dataconnect.query)
-    return query(f"""
+    point_lookup = getattr(dataconnect, "query_endpoint_lookup", None)
+    query = point_lookup or dataconnect.query
+    rows = query(f"""
         SELECT {", ".join(selected)}
         FROM endpoints_data
         WHERE {comparison}
         FETCH FIRST 10 ROWS ONLY
     """, parameters)
+    if rows is None and point_lookup is not None:
+        raise CLIError(
+            "Data Connect is busy with an exporter collection; retry shortly "
+            "or use the endpoint MAC address")
+    return rows
 
 
 def _session_mac(session):
