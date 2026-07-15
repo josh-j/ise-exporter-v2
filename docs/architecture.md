@@ -125,6 +125,10 @@ failure category and retries under the normal protected Data Connect failure
 cadence: hourly for the first five failures, then at the configured daily schema
 interval by default. A later success unblocks compatible datasets without a
 process restart.
+The database worker rechecks compatibility after dequeue as well as before
+enqueue. This closes the daily-revalidation race where a reporting callback was
+queued from the previous schema state before the higher-priority catalog read
+discovered that its view or required column had disappeared.
 The catalog read retains the global cross-process lock, session safety setup,
 15-second timeout, and all result ceilings, but uses only the configured post-query
 gap instead of multiplying its duration by the reporting-view duty-cycle ratio.

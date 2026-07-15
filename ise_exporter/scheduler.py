@@ -545,9 +545,7 @@ class PollScheduler:
         collection, while the one-worker queue still guarantees that reporting
         statements never execute concurrently.
         """
-        if (name != "dataconnect_schema"
-                and (not self._dataconnect_schema_ready
-                     or name in self._dataconnect_schema_failures)):
+        if self._dataconnect_dataset_blocked(name):
             return
         if not self._dataconnect_async:
             self._run(name, time.time(), tier, callback)
@@ -566,6 +564,11 @@ class PollScheduler:
                 next(self._dataconnect_sequence), name, tier, callback,
             ))
             self._publish_worker_state(now)
+
+    def _dataconnect_dataset_blocked(self, name):
+        return (name != "dataconnect_schema"
+                and (not self._dataconnect_schema_ready
+                     or name in self._dataconnect_schema_failures))
 
     def _apply_dataconnect_schema(self, schema, failures):
         """Atomically publish schema capability and unblock compatible domains."""
@@ -651,6 +654,19 @@ class PollScheduler:
                         self._dataconnect_inflight.discard(name)
                         self._publish_worker_state()
                         return
+                    # Schema revalidation has higher queue priority, but reporting
+                    # callbacks can already be queued from the prior schema state.
+                    # Recheck after dequeue so a newly incompatible dataset never
+                    # executes one stale-contract statement.
+                    if self._dataconnect_dataset_blocked(name):
+                        logger.warning(
+                            "discarding queued Data Connect dataset %s after schema "
+                            "revalidation blocked it",
+                            name,
+                        )
+                        self._dataconnect_inflight.discard(name)
+                        self._publish_worker_state()
+                        continue
                     self._dataconnect_busy = True
                     self._publish_worker_state()
                 try:

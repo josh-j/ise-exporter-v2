@@ -508,6 +508,46 @@ def test_dataconnect_worker_serializes_domains_and_deduplicates_queued_runs():
     scheduler._stop_dataconnect_worker()
 
 
+def test_schema_revalidation_discards_already_queued_incompatible_dataset(caplog):
+    class DataConnect:
+        schema_ready = True
+        dataset_schema_failures = {}
+
+        def set_schema(self, _schema, failures):
+            self.dataset_schema_failures = failures
+
+    dataconnect = DataConnect()
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1),
+        object(), dataconnect,
+    )
+    scheduler._dataconnect_async = True
+    scheduler._shutdown = threading.Event()
+    ran = []
+    failure = types.SimpleNamespace(
+        reason="schema_missing_view_system_summary",
+        detail="missing view SYSTEM_SUMMARY",
+    )
+
+    scheduler._run_dataconnect(
+        "dataconnect_schema", 86400,
+        lambda: scheduler._apply_dataconnect_schema(
+            {}, {"dataconnect_performance": failure}),
+    )
+    scheduler._run_dataconnect(
+        "dataconnect_performance", 21600, lambda: ran.append(True))
+
+    scheduler._start_dataconnect_worker(scheduler._shutdown)
+    scheduler._dataconnect_queue.join()
+
+    assert ran == []
+    assert "discarding queued Data Connect dataset dataconnect_performance" \
+        in caplog.text
+    assert not scheduler._dataconnect_inflight
+    scheduler._shutdown.set()
+    scheduler._stop_dataconnect_worker()
+
+
 def test_dataconnect_worker_survives_scheduler_bookkeeping_exception(
         monkeypatch, caplog):
     scheduler = PollScheduler(
