@@ -176,6 +176,16 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
         "TACACS_INTERNAL_USER_DETAIL_MAX_REQUESTS": "999999",
         "TACACS_INTERNAL_USER_DETAIL_TTL": "1",
         "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS": "0",
+        "ERS_PORT": "99999",
+        "EXPORTER_PORT": "0",
+        "SCRAPE_INTERVAL": "1",
+        "MEDIUM_INTERVAL": "1",
+        "SLOW_INTERVAL": "-1",
+        "AUTH_FAILURE_BACKOFF": "-1",
+        "AUTH_FAILURE_THRESHOLD": "999",
+        "DEVICE_CACHE_TTL": "0",
+        "ISE_DATACONNECT_PORT": "99999",
+        "TACACS_UNUSED_ACCOUNT_DAYS": "0",
     }
     for name, value in unsafe.items():
         monkeypatch.setenv(name, value)
@@ -200,6 +210,16 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.tacacs_internal_user_detail_max_requests == 250
     assert cfg.tacacs_internal_user_detail_ttl == 86400
     assert cfg.tacacs_internal_user_detail_request_interval_ms == 100
+    assert cfg.ers_port == 65535
+    assert cfg.exporter_port == 1
+    assert cfg.scrape_interval == 60
+    assert cfg.medium_interval == 300
+    assert cfg.slow_interval == 3600
+    assert cfg.auth_failure_backoff == 300
+    assert cfg.auth_failure_threshold == 5
+    assert cfg.device_cache_ttl == 3600
+    assert cfg.dataconnect_port == 65535
+    assert cfg.tacacs_unused_account_days == 1
 
 
 def test_empty_shared_pacing_path_cannot_disable_cross_process_guard(monkeypatch):

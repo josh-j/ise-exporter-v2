@@ -169,18 +169,22 @@ class Config:
             log_level=_s("LOG_LEVEL", "INFO").upper(),
             ise_host=_s("ISE_HOST"), ise_mnt_host=_s("ISE_MNT_HOST"),
             ise_user=_s("ISE_USER", "ers.readonly"), ise_pass=_s("ISE_PASS"),
-            ers_port=_i("ERS_PORT", 9060), exporter_port=_i("EXPORTER_PORT", 9618),
+            ers_port=_bounded_i("ERS_PORT", 9060, 1, 65535),
+            exporter_port=_bounded_i("EXPORTER_PORT", 9618, 1, 65535),
             state_db_path=_s("ISE_EXPORTER_STATE_DB", "/var/lib/ise-exporter/state.sqlite3"),
             rest_ca_bundle=_s("ISE_REST_CA_BUNDLE"),
             rest_ssl_verify=_b("ISE_REST_SSL_VERIFY", True),
             mnt_ca_bundle=_s("ISE_MNT_CA_BUNDLE", _s("ISE_REST_CA_BUNDLE")),
             mnt_ssl_verify=_b(
                 "ISE_MNT_SSL_VERIFY", _b("ISE_REST_SSL_VERIFY", True)),
-            scrape_interval=_i("SCRAPE_INTERVAL", 120),
-            medium_interval=_i("MEDIUM_INTERVAL", 300), slow_interval=_i("SLOW_INTERVAL", 3600),
-            auth_failure_backoff=_i("AUTH_FAILURE_BACKOFF", 900),
-            auth_failure_threshold=_i("AUTH_FAILURE_THRESHOLD", 3),
-            device_cache_ttl=_i("DEVICE_CACHE_TTL", 10800),
+            scrape_interval=_bounded_i("SCRAPE_INTERVAL", 120, 60),
+            medium_interval=_bounded_i("MEDIUM_INTERVAL", 300, 300),
+            slow_interval=_bounded_i("SLOW_INTERVAL", 3600, 3600),
+            auth_failure_backoff=_bounded_i(
+                "AUTH_FAILURE_BACKOFF", 900, 300, 86400),
+            auth_failure_threshold=_bounded_i(
+                "AUTH_FAILURE_THRESHOLD", 3, 1, 5),
+            device_cache_ttl=_bounded_i("DEVICE_CACHE_TTL", 10800, 3600),
             collect_device_details=_b("COLLECT_DEVICE_DETAILS", True),
             collect_certificates=_b("COLLECT_CERTIFICATES", True),
             collect_licensing=_b("COLLECT_LICENSING", True),
@@ -210,11 +214,12 @@ class Config:
                 "TACACS_INTERNAL_USER_DETAIL_TTL", 604800, 86400),
             tacacs_internal_user_detail_request_interval_ms=_bounded_i(
                 "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS", 250, 100),
-            tacacs_unused_account_days=_i("TACACS_UNUSED_ACCOUNT_DAYS", 180),
+            tacacs_unused_account_days=_bounded_i(
+                "TACACS_UNUSED_ACCOUNT_DAYS", 180, 1, 3650),
             # Never infer the Oracle target from the MnT XML host. Production
             # deployments must choose the intended Data Connect node explicitly.
             dataconnect_host=_s("ISE_DATACONNECT_HOST"),
-            dataconnect_port=_i("ISE_DATACONNECT_PORT", 2484),
+            dataconnect_port=_bounded_i("ISE_DATACONNECT_PORT", 2484, 1, 65535),
             dataconnect_service=_s("ISE_DATACONNECT_SERVICE", "cpm10"),
             dataconnect_user=_s("ISE_DATACONNECT_USER", "dataconnect"),
             dataconnect_password=_s("ISE_DATACONNECT_PASSWORD"),
