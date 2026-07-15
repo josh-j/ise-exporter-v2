@@ -35,7 +35,7 @@ from .collectors import (
     patches,
     tacacs,
 )
-from .collectors.dataconnect_common import event_window_hours
+from .collectors.dataconnect_common import event_window_hours, hourly_rollup_window_hours
 from .dataconnect_schema import (
     DatasetSchemaFailure,
     inspect_dataconnect_schema,
@@ -326,8 +326,11 @@ class PollScheduler:
                 self.cfg, "dataconnect_tacacs_interval", 86400),
         }
         for dataset, interval in scan_intervals.items():
+            window_hours = (hourly_rollup_window_hours(self.cfg, interval)
+                            if dataset == "dataconnect_performance"
+                            else event_window_hours(self.cfg, interval))
             metrics.ise_dataconnect_scan_window_hours.labels(dataset=dataset).set(
-                event_window_hours(self.cfg, interval))
+                window_hours)
 
     def _update_freshness(self, now):
         for name, (source, interval, enabled) in self.dataset_plan.items():

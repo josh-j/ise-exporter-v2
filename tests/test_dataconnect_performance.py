@@ -69,3 +69,16 @@ def test_collects_latest_node_samples_and_bounded_diagnostics():
     assert all("NUMTODSINTERVAL(6, 'HOUR')" in sql for sql in client.sql)
     assert all("ROW_NUMBER()" in sql for sql in client.sql[:2])
     assert all("SUM(events) OVER () AS total_events" in sql for sql in client.sql[2:])
+
+
+def test_fast_collection_retains_bounded_hourly_rollup_lookback():
+    client = DataConnect()
+    cfg = types.SimpleNamespace(
+        dataconnect_max_groups=100,
+        dataconnect_event_window_hours=6,
+        dataconnect_performance_interval=900,
+    )
+
+    dataconnect_performance.collect(client, cfg)
+
+    assert all("NUMTODSINTERVAL(6, 'HOUR')" in sql for sql in client.sql)

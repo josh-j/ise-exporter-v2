@@ -2,7 +2,7 @@
 from .. import metrics
 from . import observe
 from .dataconnect_common import (
-    event_window_hours,
+    hourly_rollup_window_hours,
     group_limit,
     integer,
     label,
@@ -96,7 +96,7 @@ def collect(dataconnect, cfg):
         rows = query_set(
             dataconnect,
             _queries(
-                group_limit(cfg), event_window_hours(
+                group_limit(cfg), hourly_rollup_window_hours(
                     cfg, getattr(cfg, "dataconnect_performance_interval", 21600))),
         )
         kpis = [{

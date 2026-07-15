@@ -44,6 +44,18 @@ def event_window_hours(cfg, interval_seconds):
     return min(ceiling, cadence)
 
 
+def hourly_rollup_window_hours(cfg, interval_seconds):
+    """Keep hourly reporting rollups visible when polling more than hourly."""
+    try:
+        interval_seconds = int(interval_seconds)
+    except (TypeError, ValueError):
+        interval_seconds = 3600
+    # ISE reporting rows are hourly and may be timestamped in the reporting
+    # timezone. Retain the bounded production lookback even when operators poll
+    # frequently, otherwise the newest valid rollup can fall outside a 1h scan.
+    return event_window_hours(cfg, max(21600, interval_seconds))
+
+
 def recent_event_predicate(column, hours):
     """Build an index-friendly Oracle timestamp lower bound from a safe integer."""
     hours = max(1, min(6, int(hours)))
