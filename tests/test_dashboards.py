@@ -651,6 +651,22 @@ def test_endpoint_dashboard_exposes_dataconnect_field_coverage():
     assert panel["fieldConfig"]["defaults"]["unit"] == "percentunit"
 
 
+def test_endpoint_dashboard_exposes_bounded_nad_detail_completeness():
+    dashboard = json.loads((DASHBOARDS / "ise-endpoints-devices.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+
+    assert "ise_network_device_detail_coverage" in panels[13]["targets"][0]["expr"]
+    assert panels[13]["fieldConfig"]["defaults"]["unit"] == "percentunit"
+    assert "ise_network_device_detail_refresh_deferred" in \
+        panels[14]["targets"][0]["expr"]
+    assert "ise_network_device_detail_refresh_failures" in \
+        panels[15]["targets"][0]["expr"]
+    for panel_id in (13, 14, 15):
+        expression = panels[panel_id]["targets"][0]["expr"]
+        assert 'ise_dataset_up{dataset="devices",source="rest"}' in expression
+        assert "== 1" in expression
+
+
 def test_endpoint_dashboard_hides_stale_rest_device_snapshots():
     dashboard = json.loads((DASHBOARDS / "ise-endpoints-devices.json").read_text())
     panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}

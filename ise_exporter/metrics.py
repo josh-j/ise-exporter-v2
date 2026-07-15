@@ -24,6 +24,21 @@ ise_network_devices_total = Gauge("ise_network_devices_total", "Total network de
 ise_network_devices_by_location = Gauge("ise_network_devices_by_location", "Devices per location", ["location"])
 ise_network_devices_by_ops_owner = Gauge("ise_network_devices_by_ops_owner", "Devices per ops owner", ["ops_owner"])
 ise_network_devices_by_type = Gauge("ise_network_devices_by_type", "Devices by type", ["device_type"])
+ise_network_device_detail_coverage = Gauge(
+    "ise_network_device_detail_coverage",
+    "Fraction of the authoritative NAD inventory backed by cached group detail")
+ise_network_device_detail_cache_entries = Gauge(
+    "ise_network_device_detail_cache_entries",
+    "Restart-persistent NAD group-detail rows retained by the exporter")
+ise_network_device_detail_refresh_requests = Gauge(
+    "ise_network_device_detail_refresh_requests",
+    "NAD ERS detail requests attempted in the latest collection cycle")
+ise_network_device_detail_refresh_failures = Gauge(
+    "ise_network_device_detail_refresh_failures",
+    "NAD ERS detail requests that failed in the latest collection cycle")
+ise_network_device_detail_refresh_deferred = Gauge(
+    "ise_network_device_detail_refresh_deferred",
+    "Missing or stale NAD details deferred by the per-cycle request budget")
 ise_nad_authentication_events = Gauge(
     "ise_nad_authentication_events",
     "Recent RADIUS authentication events attributed to configured NADs",

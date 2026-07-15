@@ -152,6 +152,9 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["TACACS_POLICY_RULE_REFRESH_MAX"] == "10"
     assert values["TACACS_POLICY_RULE_TTL"] == "604800"
     assert values["TACACS_POLICY_RULE_REQUEST_INTERVAL_MS"] == "250"
+    assert values["DEVICE_CACHE_TTL"] == "2592000"
+    assert values["DEVICE_DETAIL_MAX_REQUESTS"] == "25"
+    assert values["DEVICE_DETAIL_REQUEST_INTERVAL_MS"] == "250"
     assert values["ISE_DATACONNECT_SERVICE"] == "cpm10"
     assert values["ISE_DATACONNECT_SSL_VERIFY"] == "true"
     assert values["ISE_REST_SSL_VERIFY"] == "true"
@@ -214,6 +217,8 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
         "AUTH_FAILURE_BACKOFF": "-1",
         "AUTH_FAILURE_THRESHOLD": "999",
         "DEVICE_CACHE_TTL": "0",
+        "DEVICE_DETAIL_MAX_REQUESTS": "999999",
+        "DEVICE_DETAIL_REQUEST_INTERVAL_MS": "0",
         "ISE_DATACONNECT_PORT": "99999",
         "TACACS_UNUSED_ACCOUNT_DAYS": "0",
     }
@@ -251,7 +256,9 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.slow_interval == 3600
     assert cfg.auth_failure_backoff == 300
     assert cfg.auth_failure_threshold == 5
-    assert cfg.device_cache_ttl == 3600
+    assert cfg.device_cache_ttl == 86400
+    assert cfg.device_detail_max_requests == 100
+    assert cfg.device_detail_request_interval_ms == 100
     assert cfg.dataconnect_port == 65535
     assert cfg.tacacs_unused_account_days == 1
 

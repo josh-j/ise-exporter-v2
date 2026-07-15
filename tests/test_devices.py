@@ -1,7 +1,22 @@
 import types
 
+import pytest
+
 from ise_exporter import metrics
 from ise_exporter.collectors import devices
+from ise_exporter.state import StateStore
+
+
+def _cfg(tmp_path, **overrides):
+    values = {
+        "collect_device_details": True,
+        "device_cache_ttl": 3600,
+        "device_detail_max_requests": 25,
+        "device_detail_request_interval_ms": 100,
+        "state_db_path": str(tmp_path / "state.sqlite3"),
+    }
+    values.update(overrides)
+    return types.SimpleNamespace(**values)
 
 
 def test_device_collector_returns_authoritative_inventory_without_duplicate_fetch():
@@ -23,20 +38,23 @@ def test_device_collector_returns_authoritative_inventory_without_duplicate_fetc
         ("/config/networkdevice", {"size": 100}, True, "ers_devices")]
 
 
-def test_failed_device_detail_invalidates_inventory_for_nad_join(monkeypatch):
+def test_failed_device_detail_keeps_authoritative_inventory_with_zero_coverage(
+        tmp_path, monkeypatch):
     class Client:
         def get_ers(self, path, params=None, get_all=False, api_name="ers"):
             if path == "/config/networkdevice":
                 return [{"id": "nad-1", "name": "switch-1"}]
             return None
 
-    monkeypatch.setattr(devices, "_cache", None)
-    cfg = types.SimpleNamespace(collect_device_details=True, device_cache_ttl=3600)
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    cfg = _cfg(tmp_path)
 
-    assert devices.collect(Client(), cfg) is None
+    assert devices.collect(Client(), cfg) == [{"id": "nad-1", "name": "switch-1"}]
+    assert metrics.ise_network_device_detail_coverage._value.get() == 0
+    assert metrics.ise_network_device_detail_refresh_failures._value.get() == 1
 
 
-def test_device_detail_cache_prunes_removed_inventory_entries(monkeypatch):
+def test_device_detail_cache_prunes_removed_inventory_entries(tmp_path, monkeypatch):
     inventories = iter((
         [{"id": "old", "name": "old-switch"}],
         [{"id": "current", "name": "current-switch"}],
@@ -49,16 +67,18 @@ def test_device_detail_cache_prunes_removed_inventory_entries(monkeypatch):
             device_id = path.rsplit("/", 1)[-1]
             return {"NetworkDevice": {"id": device_id, "name": device_id}}
 
-    monkeypatch.setattr(devices, "_cache", None)
-    cfg = types.SimpleNamespace(
-        collect_device_details=True, device_cache_ttl=3600)
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    cfg = _cfg(tmp_path)
     client = Client()
 
     devices.collect(client, cfg)
-    assert set(devices._cache.cache) == {"old"}
+    store = StateStore(cfg.state_db_path)
+    assert set(store.network_device_entries(["old", "current"])) == {"old"}
+    store.close()
     devices.collect(client, cfg)
-    assert set(devices._cache.cache) == {"current"}
-    assert set(devices._cache.timestamps) == {"current"}
+    store = StateStore(cfg.state_db_path)
+    assert set(store.network_device_entries(["old", "current"])) == {"current"}
+    store.close()
 
 
 def test_malformed_device_inventory_does_not_publish_a_count():
@@ -74,7 +94,8 @@ def test_malformed_device_inventory_does_not_publish_a_count():
     assert metrics.ise_network_devices_total._value.get() == 7
 
 
-def test_malformed_device_group_list_invalidates_inventory(monkeypatch):
+def test_malformed_device_group_list_is_failed_enrichment_not_inventory_failure(
+        tmp_path, monkeypatch):
     class Client:
         def get_ers(self, path, params=None, get_all=False, api_name="ers"):
             if path == "/config/networkdevice":
@@ -84,13 +105,14 @@ def test_malformed_device_group_list_invalidates_inventory(monkeypatch):
                 "NetworkDeviceGroupList": "Location#All Locations#Lab",
             }}
 
-    monkeypatch.setattr(devices, "_cache", None)
-    cfg = types.SimpleNamespace(collect_device_details=True, device_cache_ttl=3600)
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    cfg = _cfg(tmp_path)
 
-    assert devices.collect(Client(), cfg) is None
+    assert devices.collect(Client(), cfg) == [{"id": "nad-1", "name": "switch-1"}]
+    assert metrics.ise_network_device_detail_coverage._value.get() == 0
 
 
-def test_device_group_metric_labels_are_byte_bounded(monkeypatch):
+def test_device_group_metric_labels_are_byte_bounded(tmp_path, monkeypatch):
     long_value = "ä" * 300
 
     class Client:
@@ -106,8 +128,8 @@ def test_device_group_metric_labels_are_byte_bounded(monkeypatch):
                 ],
             }}
 
-    monkeypatch.setattr(devices, "_cache", None)
-    cfg = types.SimpleNamespace(collect_device_details=True, device_cache_ttl=3600)
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    cfg = _cfg(tmp_path)
 
     devices.collect(Client(), cfg)
 
@@ -117,3 +139,64 @@ def test_device_group_metric_labels_are_byte_bounded(monkeypatch):
             metrics.ise_network_devices_by_type):
         assert all(len(label.encode("utf-8")) <= 256
                    for labels in metric._metrics for label in labels)
+
+
+def test_device_detail_refresh_is_bounded_and_converges_across_restarts(
+        tmp_path, monkeypatch):
+    calls = []
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return [{"id": f"nad-{number}", "name": f"switch-{number}"}
+                        for number in range(5)]
+            calls.append(path)
+            device_id = path.rsplit("/", 1)[-1]
+            return {"NetworkDevice": {
+                "id": device_id,
+                "NetworkDeviceGroupList": [
+                    "Location#All Locations#Production",
+                ],
+                # This field must never be copied into the local state DB.
+                "authenticationSettings": {"networkProtocol": "RADIUS",
+                                           "radiusSharedSecret": "do-not-persist"},
+            }}
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    cfg = _cfg(tmp_path, device_detail_max_requests=2)
+    client = Client()
+
+    devices.collect(client, cfg)
+    assert len(calls) == 2
+    assert metrics.ise_network_device_detail_coverage._value.get() == pytest.approx(2 / 5)
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 3
+
+    devices.collect(client, cfg)
+    assert len(calls) == 4
+    assert metrics.ise_network_device_detail_coverage._value.get() == pytest.approx(4 / 5)
+
+    devices.collect(client, cfg)
+    assert len(calls) == 5
+    assert metrics.ise_network_device_detail_coverage._value.get() == 1
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 0
+    assert b"do-not-persist" not in (tmp_path / "state.sqlite3").read_bytes()
+
+
+def test_device_detail_refresh_stops_after_three_consecutive_failures(
+        tmp_path, monkeypatch):
+    calls = []
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return [{"id": f"nad-{number}", "name": f"switch-{number}"}
+                        for number in range(10)]
+            calls.append(path)
+            return None
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    devices.collect(Client(), _cfg(tmp_path, device_detail_max_requests=10))
+
+    assert len(calls) == 3
+    assert metrics.ise_network_device_detail_refresh_failures._value.get() == 3
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 10

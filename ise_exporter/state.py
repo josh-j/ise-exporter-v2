@@ -15,11 +15,12 @@ import sqlite3
 import stat
 import time
 
-STATE_SCHEMA_VERSION = 2
+STATE_SCHEMA_VERSION = 3
 MAX_PERSISTED_SNAPSHOT_BYTES = 32 * 1024 * 1024
 MAX_POSTURE_CACHE_DETAIL_BYTES = 128 * 1024
 MAX_TACACS_CACHE_DETAIL_BYTES = 64 * 1024
 MAX_TACACS_POLICY_RULES = 1_000_000
+MAX_DEVICE_GROUP_DETAIL_BYTES = 16 * 1024
 
 
 class StateStore:
@@ -80,6 +81,14 @@ class StateStore:
                 policy_id TEXT PRIMARY KEY,
                 authentication_rules INTEGER NOT NULL,
                 authorization_rules INTEGER NOT NULL,
+                updated_at REAL NOT NULL,
+                last_seen REAL NOT NULL
+            )
+        """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS network_device_group_cache (
+                device_id TEXT PRIMARY KEY,
+                detail_json TEXT NOT NULL,
                 updated_at REAL NOT NULL,
                 last_seen REAL NOT NULL
             )
@@ -236,6 +245,7 @@ class StateStore:
             ("mnt_posture_cache", "mac"),
             ("tacacs_internal_user_cache", "user_id"),
             ("tacacs_policy_rule_cache", "policy_id"),
+            ("network_device_group_cache", "device_id"),
         }
         if (table, key_column) not in allowed:
             raise ValueError("invalid cache table")
@@ -369,6 +379,92 @@ class StateStore:
     def tacacs_policy_count(self):
         return int(self.db.execute(
             "SELECT COUNT(*) FROM tacacs_policy_rule_cache").fetchone()[0])
+
+    def network_device_entries(self, device_ids):
+        """Return bounded cached group-only detail for the current NAD inventory."""
+        device_ids = tuple(dict.fromkeys(str(value) for value in device_ids if value))
+        if not device_ids:
+            return {}
+        rows = {}
+        invalid = []
+        for offset in range(0, len(device_ids), 500):
+            chunk = device_ids[offset:offset + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in self.db.execute(f"""
+                    SELECT device_id,
+                           CASE WHEN typeof(detail_json) = 'text'
+                                     AND length(CAST(detail_json AS BLOB)) <= ?
+                                THEN detail_json END AS detail_json,
+                           updated_at
+                    FROM network_device_group_cache
+                    WHERE device_id IN ({placeholders})
+                    """, (MAX_DEVICE_GROUP_DETAIL_BYTES, *chunk)):
+                try:
+                    detail = json.loads(row["detail_json"])
+                    updated_at = float(row["updated_at"])
+                    groups = detail.get("NetworkDeviceGroupList") \
+                        if isinstance(detail, dict) else None
+                    if (not isinstance(groups, list) or len(groups) > 3
+                            or any(not isinstance(group, str) for group in groups)
+                            or not math.isfinite(updated_at)
+                            or updated_at < 0):
+                        raise ValueError("invalid network device cache row")
+                except (RecursionError, TypeError, ValueError):
+                    invalid.append(row["device_id"])
+                    continue
+                rows[row["device_id"]] = {
+                    "detail": detail,
+                    "updated_at": updated_at,
+                }
+        self._delete_invalid("network_device_group_cache", "device_id", invalid)
+        return rows
+
+    def put_network_device(self, device_id, detail, now=None):
+        """Persist sanitized NAD group detail; callers must not pass credentials."""
+        now = self._valid_timestamp(now)
+        device_id = str(device_id)
+        if not device_id or len(device_id.encode("utf-8")) > 256:
+            raise ValueError("network device ID exceeds the persisted size limit")
+        encoded = json.dumps(
+            detail, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        if len(encoded.encode("utf-8")) > MAX_DEVICE_GROUP_DETAIL_BYTES:
+            raise ValueError("network device cache detail exceeds the persisted size limit")
+        self.db.execute("""
+            INSERT INTO network_device_group_cache
+                (device_id, detail_json, updated_at, last_seen)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(device_id) DO UPDATE SET
+                detail_json=excluded.detail_json,
+                updated_at=excluded.updated_at,
+                last_seen=excluded.last_seen
+        """, (device_id, encoded, now, now))
+
+    def finish_network_device_cycle(self, active_ids, now=None):
+        """Mark active NAD rows and prune devices removed from ISE."""
+        now = self._valid_timestamp(now)
+        active_ids = tuple(dict.fromkeys(str(value) for value in active_ids if value))
+        if active_ids:
+            for offset in range(0, len(active_ids), 500):
+                chunk = active_ids[offset:offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                self.db.execute(
+                    f"UPDATE network_device_group_cache SET last_seen=? "
+                    f"WHERE device_id IN ({placeholders})", (now, *chunk))
+            if len(active_ids) <= 500:
+                placeholders = ",".join("?" for _ in active_ids)
+                self.db.execute(
+                    f"DELETE FROM network_device_group_cache "
+                    f"WHERE device_id NOT IN ({placeholders})", active_ids)
+            else:
+                self.db.execute(
+                    "DELETE FROM network_device_group_cache WHERE last_seen < ?", (now,))
+        else:
+            self.db.execute("DELETE FROM network_device_group_cache")
+        self.commit()
+
+    def network_device_count(self):
+        return int(self.db.execute(
+            "SELECT COUNT(*) FROM network_device_group_cache").fetchone()[0])
 
     @staticmethod
     def _valid_timestamp(value):

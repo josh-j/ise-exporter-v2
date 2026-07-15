@@ -52,7 +52,7 @@ def test_upgrade_removes_obsolete_dataconnect_rollup_history(tmp_path):
     assert "dataconnect_rollup" not in tables
     assert {
         "mnt_posture_cache", "tacacs_internal_user_cache",
-        "tacacs_policy_rule_cache", "exporter_state",
+        "tacacs_policy_rule_cache", "network_device_group_cache", "exporter_state",
     } <= tables
 
     db = sqlite3.connect(path)
@@ -94,12 +94,22 @@ def test_invalid_cache_rows_are_pruned_and_not_counted(tmp_path):
         "INSERT INTO tacacs_internal_user_cache VALUES (?, ?, ?, ?)",
         ("u1", '{"name":"one"}', "not-a-time", 10),
     )
+    store.db.execute(
+        "INSERT INTO network_device_group_cache VALUES (?, ?, ?, ?)",
+        ("nad-1", "not-json", 10, 10),
+    )
+    store.db.execute(
+        "INSERT INTO network_device_group_cache VALUES (?, ?, ?, ?)",
+        ("nad-2", '{"NetworkDeviceGroupList":"not-a-list"}', 10, 10),
+    )
     store.commit()
 
     assert store.posture_entries(["AA:BB:CC:DD:EE:FF"]) == {}
     assert store.tacacs_user_entries(["u1"]) == {}
+    assert store.network_device_entries(["nad-1", "nad-2"]) == {}
     assert store.posture_count() == 0
     assert store.tacacs_user_count() == 0
+    assert store.network_device_count() == 0
     store.close()
 
 
@@ -143,6 +153,27 @@ def test_invalid_tacacs_policy_cache_row_is_pruned(tmp_path):
 
     assert store.tacacs_policy_entries(["p1"]) == {}
     assert store.tacacs_policy_count() == 0
+    store.close()
+
+
+def test_network_device_cache_is_bounded_to_current_inventory(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.put_network_device(
+        "nad-1", {"NetworkDeviceGroupList": ["Location#All Locations#Old"]}, now=10)
+    store.put_network_device(
+        "nad-2", {"NetworkDeviceGroupList": ["Location#All Locations#Current"]},
+        now=10)
+    store.finish_network_device_cycle(["nad-2"], now=20)
+
+    assert store.network_device_entries(["nad-1", "nad-2"]) == {
+        "nad-2": {
+            "detail": {
+                "NetworkDeviceGroupList": ["Location#All Locations#Current"],
+            },
+            "updated_at": 10.0,
+        },
+    }
+    assert store.network_device_count() == 1
     store.close()
 
 
@@ -248,6 +279,7 @@ def test_oversized_cache_detail_is_not_materialized_and_is_pruned(
 @pytest.mark.parametrize("now", (float("nan"), float("inf"), -1))
 @pytest.mark.parametrize("operation", (
     "put_posture", "finish_posture_cycle", "put_tacacs", "finish_tacacs_cycle",
+    "put_network_device", "finish_network_device_cycle",
 ))
 def test_cache_operations_reject_invalid_timestamps(tmp_path, operation, now):
     store = StateStore(tmp_path / "state.sqlite3")
@@ -259,9 +291,14 @@ def test_cache_operations_reject_invalid_timestamps(tmp_path, operation, now):
             store.finish_posture_cycle(["AA:BB:CC:DD:EE:FF"], now=now)
         elif operation == "put_tacacs":
             store.put_tacacs_user("u1", {}, now=now)
-        else:
+        elif operation == "finish_tacacs_cycle":
             store.finish_tacacs_user_cycle(["u1"], now=now)
+        elif operation == "put_network_device":
+            store.put_network_device("nad-1", {}, now=now)
+        else:
+            store.finish_network_device_cycle(["nad-1"], now=now)
 
     assert store.posture_count() == 0
     assert store.tacacs_user_count() == 0
+    assert store.network_device_count() == 0
     store.close()

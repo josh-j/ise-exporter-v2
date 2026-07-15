@@ -351,6 +351,83 @@
       ]
     },
     {
+      "id": 13,
+      "type": "stat",
+      "title": "NAD Group Detail Coverage",
+      "description": "Fraction of the authoritative ERS NAD inventory backed by restart-persistent group classification. Location, Ops Owner, and Device Type panels are partial until this reaches 100%.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "ise_network_device_detail_coverage and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "NAD Detail Refresh Deferred",
+      "description": "Missing or stale NAD group details awaiting a later bounded refresh cycle.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "ise_network_device_detail_refresh_deferred and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "NAD Detail Refresh Failures",
+      "description": "Failed NAD detail requests in the latest bounded collection cycle; three consecutive failures stop the cycle early.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "ise_network_device_detail_refresh_failures and on() (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1)",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
       "id": 12,
       "type": "bargauge",
       "title": "Endpoint Operational Field Coverage (Data Connect)",
@@ -359,7 +436,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 37
       },
       "targets": [
         {
