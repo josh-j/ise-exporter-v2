@@ -87,25 +87,27 @@ def _sync_internal_user_state(cfg, accounts):
     accounts = {label: raw for raw, label in accounts}
     store = StateStore(_state_path(cfg))
     try:
-        previous = _load_json(store, _INTERNAL_LAST_SEEN_STATE, {})
-        high_water = {
-            username: {
-                event_type: int(events[event_type])
-                for event_type in _EVENT_TYPES
-                if isinstance(events, dict) and event_type in events
-                and str(events[event_type]).isdigit()
+        with store.immediate_transaction():
+            previous = _load_json(store, _INTERNAL_LAST_SEEN_STATE, {})
+            high_water = {
+                username: {
+                    event_type: int(events[event_type])
+                    for event_type in _EVENT_TYPES
+                    if isinstance(events, dict) and event_type in events
+                    and str(events[event_type]).isdigit()
+                }
+                for username in accounts
+                if (isinstance(previous, dict)
+                    and isinstance(previous.get(username), dict))
+                for events in (previous[username],)
             }
-            for username in accounts
-            if isinstance(previous, dict) and isinstance(previous.get(username), dict)
-            for events in (previous[username],)
-        }
-        store.set_value(
-            _INTERNAL_USERS_STATE, json.dumps(accounts, separators=(",", ":")),
-            commit=False, max_bytes=_INTERNAL_STATE_MAX_BYTES)
-        store.set_value(_INTERNAL_LAST_SEEN_STATE,
-                        json.dumps(high_water, separators=(",", ":")), commit=False,
-                        max_bytes=_INTERNAL_STATE_MAX_BYTES)
-        store.commit()
+            store.set_value(
+                _INTERNAL_USERS_STATE, json.dumps(accounts, separators=(",", ":")),
+                commit=False, max_bytes=_INTERNAL_STATE_MAX_BYTES)
+            store.set_value(
+                _INTERNAL_LAST_SEEN_STATE,
+                json.dumps(high_water, separators=(",", ":")), commit=False,
+                max_bytes=_INTERNAL_STATE_MAX_BYTES)
         return high_water
     finally:
         store.close()
@@ -133,30 +135,33 @@ def _merge_internal_last_seen(cfg, observed):
     """Merge at most three timestamps per configured internal account."""
     store = StateStore(_state_path(cfg))
     try:
-        usernames = _load_json(store, _INTERNAL_USERS_STATE, [])
-        if isinstance(usernames, dict):
-            internal = {str(value) for value in usernames if str(value).strip()}
-        elif isinstance(usernames, list):
-            internal = {str(value) for value in usernames if str(value).strip()}
-        else:
-            internal = set()
-        previous = _load_json(store, _INTERNAL_LAST_SEEN_STATE, {})
-        high_water = {}
-        for username in internal:
-            saved = previous.get(username, {}) if isinstance(previous, dict) else {}
-            high_water[username] = {
-                event_type: int(saved[event_type])
-                for event_type in _EVENT_TYPES
-                if isinstance(saved, dict) and event_type in saved
-                and str(saved[event_type]).isdigit()
-            }
-        for (username, event_type), timestamp in observed.items():
-            if username in internal and event_type in _EVENT_TYPES and timestamp > 0:
-                high_water[username][event_type] = max(
-                    high_water[username].get(event_type, 0), int(timestamp))
-        store.set_value(_INTERNAL_LAST_SEEN_STATE,
-                        json.dumps(high_water, separators=(",", ":")),
-                        max_bytes=_INTERNAL_STATE_MAX_BYTES)
+        with store.immediate_transaction():
+            usernames = _load_json(store, _INTERNAL_USERS_STATE, [])
+            if isinstance(usernames, dict):
+                internal = {str(value) for value in usernames if str(value).strip()}
+            elif isinstance(usernames, list):
+                internal = {str(value) for value in usernames if str(value).strip()}
+            else:
+                internal = set()
+            previous = _load_json(store, _INTERNAL_LAST_SEEN_STATE, {})
+            high_water = {}
+            for username in internal:
+                saved = previous.get(username, {}) if isinstance(previous, dict) else {}
+                high_water[username] = {
+                    event_type: int(saved[event_type])
+                    for event_type in _EVENT_TYPES
+                    if isinstance(saved, dict) and event_type in saved
+                    and str(saved[event_type]).isdigit()
+                }
+            for (username, event_type), timestamp in observed.items():
+                if (username in internal and event_type in _EVENT_TYPES
+                        and timestamp > 0):
+                    high_water[username][event_type] = max(
+                        high_water[username].get(event_type, 0), int(timestamp))
+            store.set_value(
+                _INTERNAL_LAST_SEEN_STATE,
+                json.dumps(high_water, separators=(",", ":")), commit=False,
+                max_bytes=_INTERNAL_STATE_MAX_BYTES)
         return high_water
     finally:
         store.close()

@@ -270,6 +270,18 @@ class StateStore:
         self.db.commit()
         self._secure_files()
 
+    @contextmanager
+    def immediate_transaction(self):
+        """Serialize a read-modify-write sequence across store connections."""
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except Exception:
+            self.db.rollback()
+            raise
+        else:
+            self.commit()
+
     def _validate_schema(self):
         """Reject name-compatible but structurally foreign/corrupt cache tables."""
         for table, expected in _REQUIRED_SCHEMA.items():
