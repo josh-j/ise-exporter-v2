@@ -186,6 +186,56 @@ def test_deployment_success_replaces_removed_nodes(monkeypatch):
     assert metrics.ise_up._value.get() == 1
 
 
+@pytest.mark.parametrize("pan_ha", ({"isEnabled": "false"}, {"isEnabled": 1}, {}))
+def test_deployment_rejects_non_boolean_pan_ha_without_replacing_snapshot(
+        monkeypatch, pan_ha):
+    metrics.ise_deployment_status.labels(
+        node="old", roles="PSN", services="none").state("Connected")
+    old_status = set(metrics.ise_deployment_status._metrics)
+    monkeypatch.setattr(
+        deployment, "get_nodes",
+        lambda *args, **kwargs: [{
+            "hostname": "new", "nodeStatus": "Connected",
+            "roles": [], "services": [],
+        }],
+    )
+
+    class Client:
+        host = "ise.example"
+
+        def get_pan_api(self, *args, **kwargs):
+            return pan_ha
+
+    deployment.collect(Client(), _cfg())
+
+    assert set(metrics.ise_deployment_status._metrics) == old_status
+    assert metrics.ise_up._value.get() == 0
+
+
+@pytest.mark.parametrize(("field", "value"), (
+    ("roles", "PrimaryAdmin"),
+    ("services", "Session"),
+))
+def test_deployment_rejects_non_list_role_fields(monkeypatch, field, value):
+    node = {
+        "hostname": "laba-ise-001", "nodeStatus": "Connected",
+        "roles": [], "services": [],
+    }
+    node[field] = value
+    monkeypatch.setattr(deployment, "get_nodes", lambda *args, **kwargs: [node])
+
+    class Client:
+        host = "ise.example"
+
+        def get_pan_api(self, *args, **kwargs):
+            raise AssertionError("invalid nodes must fail before PAN HA is queried")
+
+    deployment.collect(Client(), _cfg())
+
+    assert metrics.ise_up._value.get() == 0
+    assert not metrics.ise_deployment_status._metrics
+
+
 @pytest.mark.parametrize("state, expected", [
     ("COMPLIANT", 1),
     ("FULL_COMPLIANCE", 1),

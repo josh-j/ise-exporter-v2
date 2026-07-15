@@ -27,14 +27,30 @@ def collect(client, cfg):
             raise CollectorFailed("no deployment node status")
         role_counts = defaultdict(int)
         rows = []
+        hostnames = set()
         for node in nodes:
             if not isinstance(node, dict):
                 metrics.ise_up.set(0)
                 raise CollectorFailed("deployment node response contained a non-object")
-            hostname = node.get("hostname", "unknown")
-            status = node.get("nodeStatus", "Unknown")
-            roles = node.get("roles", [])
-            services = node.get("services", [])
+            hostname = node.get("hostname")
+            status = node.get("nodeStatus")
+            roles = node.get("roles")
+            services = node.get("services")
+            if (not isinstance(hostname, str) or not hostname.strip()
+                    or len(hostname) > 253 or hostname in hostnames):
+                metrics.ise_up.set(0)
+                raise CollectorFailed("deployment node response contained an invalid hostname")
+            if status not in _STATES:
+                metrics.ise_up.set(0)
+                raise CollectorFailed(
+                    f"deployment node {hostname!r} contained invalid status {status!r}")
+            if (not isinstance(roles, list) or not isinstance(services, list)
+                    or any(not isinstance(value, str) or not value.strip()
+                           for value in roles + services)):
+                metrics.ise_up.set(0)
+                raise CollectorFailed(
+                    f"deployment node {hostname!r} contained invalid roles or services")
+            hostnames.add(hostname)
             roles_str = ",".join(roles) if roles else "PSN"
             services_str = ",".join(services) if services else "none"
             if roles:
@@ -42,11 +58,11 @@ def collect(client, cfg):
                     role_counts[role] += 1
             else:
                 role_counts["PSN"] += 1
-            normalized = status if status in _STATES else "Unknown"
-            rows.append((hostname, roles_str, services_str, normalized))
+            rows.append((hostname, roles_str, services_str, status))
 
         pan_ha = client.get_pan_api("/deployment/pan-ha", api_name="pan_ha")
-        if not isinstance(pan_ha, dict) or "isEnabled" not in pan_ha:
+        if (not isinstance(pan_ha, dict)
+                or not isinstance(pan_ha.get("isEnabled"), bool)):
             metrics.ise_up.set(0)
             raise CollectorFailed("PAN HA status request failed or returned invalid data")
 
