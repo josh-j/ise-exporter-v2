@@ -836,6 +836,43 @@ def test_endpoint_resolution_does_not_select_absent_optional_row_ids():
     assert parameters["identifier_upper"] == "CLIENT-25.EXAMPLE.TEST"
 
 
+def test_hostname_endpoint_without_dataconnect_id_is_enriched_by_mac(capsys):
+    class SchemaLimitedDataConnect(FakeDataConnect):
+        schema = {
+            "ENDPOINTS_DATA": {
+                "MAC_ADDRESS": "VARCHAR2", "ENDPOINT_IP": "VARCHAR2",
+                "HOSTNAME": "VARCHAR2",
+            },
+        }
+
+        def query(self, sql, parameters=None):
+            self.calls.append((sql, parameters or {}))
+            return [{
+                "mac_address": "AA:BB:CC:DD:EE:FF",
+                "endpoint_ip": "192.0.2.25",
+                "hostname": "client-25.example.test",
+            }]
+
+    client = FakeClient()
+
+    assert cli.main([
+        "endpoint", "client-25.example.test", "-o", "json"
+    ], client=client, dataconnect=SchemaLimitedDataConnect()) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert result == {
+        "id": "id-1",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "profileId": "windows",
+    }
+    assert any(
+        call[1] == "/config/endpoint"
+        and call[2]["filter"] == "mac.EQ.AA:BB:CC:DD:EE:FF"
+        for call in client.calls
+        if call[0] == "ers"
+    )
+
+
 def test_endpoint_resolution_does_not_order_by_absent_optional_timestamp():
     dataconnect = FakeDataConnect()
     dataconnect.schema = {

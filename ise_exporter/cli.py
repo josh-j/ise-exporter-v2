@@ -971,6 +971,7 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None,
     resolved_ip = ""
     resolved_hostname = ""
     candidates = []
+    candidate = None
     dataconnect_error = None
 
     if kind == "id":
@@ -1009,13 +1010,13 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None,
             mac_value = (_field(candidate, "mac", "mac_address")
                          or _field(candidate, "name"))
             mac = normalize_mac(mac_value) if is_mac(mac_value) else ""
-            try:
-                endpoint = (_endpoint_detail_by_id(client, endpoint_id)
-                            if endpoint_id else candidate)
-            except CLIError:
-                endpoint = candidate
+            if endpoint_id:
+                try:
+                    endpoint = _endpoint_detail_by_id(client, endpoint_id)
+                except CLIError:
+                    endpoint = candidate
             source = "dataconnect"
-            if dc_candidates and endpoint is not candidate:
+            if endpoint is not None and endpoint is not candidate:
                 source = "dataconnect+ers"
         if not mac:
             try:
@@ -1049,7 +1050,10 @@ def _resolve_endpoint(client, identifier, by_id=False, dataconnect=None,
                 endpoint_id = _field(matches[0], "id")
                 endpoint = (_endpoint_detail_by_id(client, endpoint_id)
                             if endpoint_id else matches[0])
-                source = "mnt+ers"
+                source = "dataconnect+ers" if candidate is not None else "mnt+ers"
+            elif candidate is not None:
+                endpoint = candidate
+                source = "dataconnect"
 
     if endpoint is not None:
         endpoint_mac = _field(endpoint, "mac") or _field(endpoint, "name")
