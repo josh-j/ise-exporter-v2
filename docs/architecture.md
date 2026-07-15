@@ -92,9 +92,10 @@ and never inherits `ISE_MNT_HOST`; this prevents an XML API routing choice from
 silently becoming the Oracle target. Production defaults for up to 100,000
 endpoints use one sequential connection, five-second statement pacing, a 0.1%
 adaptive query-duty-cycle ceiling, 15-second statement timeouts, and independent
-30-minute to 24-hour domain cadences. The client enforces five seconds and 0.1%
-as hard safety limits and refuses to materialize more than 5,000 rows from any
-statement. Results are streamed in 100-row batches, with 1 MiB per-field and
+30-minute to 24-hour domain cadences. The client enforces five seconds, 0.1%,
+and a 15-second Oracle-call timeout as hard safety limits and refuses to
+materialize more than 5,000 rows from any statement. Results are streamed in
+100-row batches, with 1 MiB per-field and
 64 MiB per-query retained-payload ceilings, even when a CLI caller or alternate
 configuration object requests a more aggressive value; grouped output is likewise
 capped at 1,000 series per breakdown. Summary
@@ -112,7 +113,7 @@ their paired breakdowns (authentication/latency, volume/failure context, and
 accounting/session duration), rather than rescanning the same six-hour window.
 The steady-state scheduled workload is about 7.3 statements per hour after startup.
 Daily RADIUS reporting samples six hours, while a disjoint active-session query
-scans only its configured stale window every 30 minutes. No historical windows
+scans at most its hard 60-minute stale window every 30 minutes. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
 three-day reporting window.
 Other scheduled event scans match their cadence: one hour for PSN performance

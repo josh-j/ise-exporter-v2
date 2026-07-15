@@ -71,6 +71,24 @@ def test_query_uses_tcps_and_returns_lowercase_mappings(monkeypatch):
     assert connection.closed is True
 
 
+def test_client_hard_caps_oracle_call_timeout(monkeypatch):
+    connection = Connection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=3600,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    client = dataconnect.DataConnectClient(cfg)
+    client.connect()
+
+    assert client.timeout == 15
+    assert connection.call_timeout == 15000
+
+
 def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
     connection = Connection()
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)

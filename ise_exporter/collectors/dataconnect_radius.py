@@ -400,7 +400,11 @@ def collect_active(dataconnect, cfg):
     """Atomically replace the current bounded active-session reconstruction."""
     with observe("dataconnect_radius_active"):
         limit = group_limit(cfg)
-        stale_minutes = max(5, min(1440, int(getattr(
+        # This query runs repeatedly and reads the large accounting event view.
+        # A caller-created config object must not expand it into the former
+        # day-long scan; 60 minutes is both the documented reconstruction window
+        # and a hard execution-boundary ceiling.
+        stale_minutes = max(5, min(60, int(getattr(
             cfg, "dataconnect_active_session_stale_minutes", 60))))
         values = dataconnect.query(_queries(limit, stale_minutes)["active_sessions"])
         summary = values[0] if values else {}

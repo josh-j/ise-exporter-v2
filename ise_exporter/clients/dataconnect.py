@@ -123,7 +123,10 @@ class DataConnectClient:
         self.password = cfg.dataconnect_password
         self.ca_bundle = cfg.dataconnect_ca_bundle
         self.verify = cfg.dataconnect_ssl_verify
-        self.timeout = max(1, cfg.dataconnect_query_timeout)
+        # ``call_timeout`` is the last server-work boundary after SQL predicates.
+        # Keep it hard here as well as in the environment parser: CLI callers,
+        # tests, and integrations can construct Config-like objects directly.
+        self.timeout = max(1, min(15, int(cfg.dataconnect_query_timeout)))
         self.failure_threshold = max(1, getattr(cfg, "auth_failure_threshold", 3))
         self.failure_backoff = max(0, getattr(cfg, "auth_failure_backoff", 900))
         # These are hard client invariants, not only environment-parser defaults.

@@ -138,6 +138,20 @@ def test_collects_bounded_aggregated_radius_metrics():
     assert "NOT LIKE '%stop%'" not in active_sql
 
 
+def test_active_session_scan_window_is_hard_capped_at_one_hour():
+    client = DataConnect()
+    cfg = types.SimpleNamespace(
+        dataconnect_max_groups=25,
+        dataconnect_active_session_stale_minutes=1440,
+    )
+
+    dataconnect_radius.collect_active(client, cfg)
+
+    assert "NUMTODSINTERVAL(60, 'MINUTE')" in client.sql[0]
+    assert "NUMTODSINTERVAL(1440, 'MINUTE')" not in client.sql[0]
+    assert metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds._value.get() == 3600
+
+
 def test_authentication_and_latency_share_one_bounded_view_scan():
     queries = dataconnect_radius._queries(25)
 
