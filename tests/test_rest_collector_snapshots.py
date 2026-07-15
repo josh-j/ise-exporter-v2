@@ -267,3 +267,26 @@ def test_patch_success_atomically_replaces_version_and_installed_set():
     assert metrics.ise_version_info._value == {"version": "3.3.0.430"}
     assert metrics.ise_patch_level._value.get() == 11
     assert set(metrics.ise_patch_installed._metrics) == {("10",), ("11",)}
+
+
+@pytest.mark.parametrize("patch_versions", (
+    [],
+    [{"patchNumber": 10}],
+    [{"patchNumber": 11}, {"patchNumber": 12}],
+))
+def test_patch_runtime_rejects_partial_or_unsupported_patch_level(patch_versions):
+    metrics.ise_version_info.info({"version": "3.3.0.430"})
+    metrics.ise_patch_level.set(11)
+    metrics.ise_patch_installed.labels(patch_number="11").set(1)
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return {
+                "iseVersion": "3.3.0.430",
+                "patchVersion": patch_versions,
+            }
+
+    patches.collect(Client(), _cfg())
+
+    assert metrics.ise_patch_level._value.get() == 11
+    assert set(metrics.ise_patch_installed._metrics) == {("11",)}

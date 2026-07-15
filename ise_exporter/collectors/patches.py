@@ -4,6 +4,7 @@ version Info."""
 import logging
 
 from .. import metrics
+from ..compatibility import SUPPORTED_ISE_VERSION, SUPPORTED_PATCH_LEVEL
 from ..snapshots import replace_metric_snapshot
 from . import observe, CollectorFailed
 
@@ -23,8 +24,10 @@ def collect(client, cfg):
         if not isinstance(patches, dict):
             raise CollectorFailed("patch info response was not an object")
         version = str(patches.get("iseVersion") or "").strip()
-        if not version or len(version) > 128:
-            raise CollectorFailed("patch info contained an invalid ISE version")
+        if version != SUPPORTED_ISE_VERSION:
+            raise CollectorFailed(
+                f"patch info reported unsupported ISE version {version!r}; "
+                f"expected {SUPPORTED_ISE_VERSION}")
         patch_versions = patches.get("patchVersion", [])
         if patch_versions is None:
             patch_versions = []
@@ -43,6 +46,10 @@ def collect(client, cfg):
                 raise CollectorFailed("patchVersion contained an invalid patch number")
             installed.add(num)
         max_patch = max(installed, default=0)
+        if max_patch != SUPPORTED_PATCH_LEVEL:
+            raise CollectorFailed(
+                f"patch info reported unsupported patch level {max_patch}; "
+                f"expected Patch {SUPPORTED_PATCH_LEVEL}")
 
         writers = [
             lambda: metrics.ise_version_info.info({"version": version}),
