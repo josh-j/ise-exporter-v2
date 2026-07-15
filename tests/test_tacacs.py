@@ -551,6 +551,10 @@ def test_internal_activity_case_is_joined_to_configured_account_label(tmp_path):
         def query(self, sql, parameters=None):
             assert parameters["internal_user_0"] == "netadmin"
             return [{
+                "breakdown": "detail", "username": "netadmin", "status": "Pass",
+                "device_name": "switch-1", "hits": 1, "last_seen": now,
+                "total_events": 1, "total_groups": 1,
+            }, {
                 "breakdown": "internal_last_seen", "username": "netadmin",
                 "hits": 1, "last_seen": now, "total_events": 1,
                 "total_groups": 1,
@@ -564,5 +568,10 @@ def test_internal_activity_case_is_joined_to_configured_account_label(tmp_path):
         ("NetAdmin", "authorization"): float(now),
         ("NetAdmin", "accounting"): float(now),
     }
+    assert {labels[0] for metric in (
+        metrics.ise_tacacs_account_authentication_events,
+        metrics.ise_tacacs_account_authorization_events,
+        metrics.ise_tacacs_accounting_events,
+    ) for labels in _rows(metric, "username")} == {"NetAdmin"}
     tacacs.collect_config(MixedCaseClient(), cfg)
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []

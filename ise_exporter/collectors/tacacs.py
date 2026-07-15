@@ -308,6 +308,11 @@ def _collect_dataconnect(dataconnect, cfg):
     cutoff = max(0, int(time.time()) - window * 3600)
     internal_accounts = _internal_accounts(cfg)
     internal_label_by_raw = {raw: label_name for label_name, raw in internal_accounts}
+
+    def activity_username(value):
+        raw = str(value or "").strip().casefold()
+        return internal_label_by_raw.get(raw, _label(value))
+
     parameters = {"minimum_epoch": cutoff}
     parameters.update({f"internal_user_{index}": raw
                        for index, (_label_name, raw) in enumerate(internal_accounts)})
@@ -320,9 +325,7 @@ def _collect_dataconnect(dataconnect, cfg):
     observed_last_seen = {}
     for event_type, event_rows in combined.items():
         for row in event_rows:
-            raw_username = str(row.get("username") or "").strip().casefold()
-            username = internal_label_by_raw.get(
-                raw_username, _label(row.get("username")))
+            username = activity_username(row.get("username"))
             observed_last_seen[(username, event_type)] = max(
                 observed_last_seen.get((username, event_type), 0),
                 int(row.get("last_seen") or 0))
@@ -334,7 +337,7 @@ def _collect_dataconnect(dataconnect, cfg):
 
     def publish():
         for row in rows["authentication"]:
-            username = _label(row.get("username"))
+            username = activity_username(row.get("username"))
             metrics.ise_tacacs_account_authentication_events.labels(
                 username=username,
                 status=_label(row.get("status")),
@@ -345,7 +348,7 @@ def _collect_dataconnect(dataconnect, cfg):
             ).set(int(row.get("hits") or 0))
 
         for row in rows["authorization"]:
-            username = _label(row.get("username"))
+            username = activity_username(row.get("username"))
             metrics.ise_tacacs_account_authorization_events.labels(
                 username=username,
                 status=_label(row.get("status")),
@@ -356,7 +359,7 @@ def _collect_dataconnect(dataconnect, cfg):
             ).set(int(row.get("hits") or 0))
 
         for row in rows["accounting"]:
-            username = _label(row.get("username"))
+            username = activity_username(row.get("username"))
             metrics.ise_tacacs_accounting_events.labels(
                 username=username,
                 status=_label(row.get("status")),
