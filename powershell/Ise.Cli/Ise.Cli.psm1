@@ -96,6 +96,10 @@ function ConvertFrom-IseBackendJson {
     param([AllowEmptyString()][string]$Json)
 
     if ([string]::IsNullOrWhiteSpace($Json)) { return }
+    if ($Json.Trim() -eq '[]') {
+        Write-Host 'No results.' -ForegroundColor DarkGray
+        return
+    }
     try {
         $value = $Json | ConvertFrom-Json -Depth 100
     }
@@ -126,14 +130,17 @@ function Invoke-IseBackend {
             'radius-errors', 'radius-accounting', 'posture', 'psn-metrics',
             'tacacs-activity', 'dataconnect-schema', 'schema', 'get')]
         [string]$Command,
-        [string[]]$ArgumentList = @(),
+        [AllowEmptyCollection()][AllowEmptyString()][string[]]$ArgumentList = @(),
         [string]$ConfigFile
     )
 
     $backendArguments = @()
     if ($ConfigFile) { $backendArguments += @('--config', $ConfigFile) }
     $backendArguments += $Command
-    $backendArguments += $ArgumentList
+    $backendArguments += @($ArgumentList | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    if ($backendArguments -contains '--help' -or $backendArguments -contains '-h') {
+        return Invoke-IseBackendProcess -ArgumentList $backendArguments
+    }
     $backendArguments += @('--output', 'json')
     ConvertFrom-IseBackendJson -Json (Invoke-IseBackendProcess -ArgumentList $backendArguments)
 }

@@ -118,6 +118,44 @@ def test_powershell_cmdlet_returns_only_backend_objects(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")
+def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path):
+    calls = tmp_path / "calls"
+    backend = tmp_path / "ise-cli-backend"
+    backend.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> {calls}\n"
+        "case \" $* \" in\n"
+        "  *\" dataconnect-schema --help \"*) printf '%s\\n' 'SCHEMA HELP' ;;\n"
+        "  *\" dataconnect-schema --output json \"*) printf '%s\\n' '[{\"table_name\":\"ENDPOINTS_DATA\"}]' ;;\n"
+        "  *\" radius-errors \"*) printf '%s\\n' '[]' ;;\n"
+        "  *) printf '%s\\n' '[]' ;;\n"
+        "esac\n")
+    backend.chmod(0o755)
+    script = f"""
+        $ErrorActionPreference = 'Stop'
+        $env:ISE_CLI_BACKEND = '{backend}'
+        Import-Module '{MODULE}' -Force
+        $schema = @(Get-IseDataConnectSchema)
+        if ($schema.Count -ne 1 -or $schema[0].table_name -ne 'ENDPOINTS_DATA') {{
+            throw 'schema without a table did not return backend objects'
+        }}
+        $help = Get-IseDataConnectSchema --help
+        if ($help.Trim() -ne 'SCHEMA HELP') {{ throw "unexpected help: $help" }}
+        Get-IseRadiusError
+    """
+    result = subprocess.run(
+        ["pwsh", "-NoLogo", "-NoProfile", "-Command", script],
+        check=True, text=True, capture_output=True)
+
+    assert "No results." in result.stdout
+    assert calls.read_text().splitlines() == [
+        "dataconnect-schema --output json",
+        "dataconnect-schema --help",
+        "radius-errors --limit 100 --output json",
+    ]
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")
 def test_powershell_backend_resolution_tolerates_duplicate_path_entries(tmp_path):
     backend = tmp_path / "ise-cli-backend"
     backend.write_text("#!/bin/sh\nprintf '%s\\n' 'ise-cli duplicate-path-test'\n")
