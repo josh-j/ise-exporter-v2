@@ -674,3 +674,29 @@ def test_overview_freshness_uses_each_datasets_published_effective_interval():
     assert "/ 60" not in expression
     assert "/ 300" not in expression
     assert "/ 3600" not in expression
+
+
+def test_overview_operational_panels_hide_stale_rest_snapshots():
+    dashboard = json.loads((DASHBOARDS / "ise-overview.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+    ownership = {
+        2: "deployment", 3: "deployment", 4: "certificates",
+        5: "certificates", 6: "backup", 7: "patches",
+        8: "deployment", 9: "deployment", 10: "deployment",
+        11: "patches", 19: "certificates", 20: "licensing",
+        21: "licensing", 23: "licensing", 24: "patches",
+        25: "backup", 26: "backup",
+    }
+
+    for panel_id, dataset in ownership.items():
+        expression = panels[panel_id]["targets"][0]["expr"]
+        assert f'dataset="{dataset}",source="rest"' in expression, (
+            panel_id, expression)
+        assert "ise_dataset_up" in expression, (panel_id, expression)
+
+    # ISE Up must show DOWN rather than a stale UP or a blank panel.
+    assert "ise_up * on() max(ise_dataset_up" in panels[2]["targets"][0]["expr"]
+    # A healthy certificate snapshot with no expiring certs is a real zero.
+    expiring = panels[5]["targets"][0]["expr"]
+    assert "or on() (0 *" in expiring
+    assert "== 1" in expiring
