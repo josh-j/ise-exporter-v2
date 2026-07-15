@@ -672,6 +672,21 @@ def test_data_quality_domain_panels_do_not_publish_stale_values_during_outages()
             assert "== 1" in expression, (panel_id, expression)
 
 
+def test_nad_health_panels_require_fresh_inventory_and_activity_sources():
+    dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
+    panels = {panel["id"]: panel for panel in _panels(dashboard["panels"])}
+
+    for panel_id in (11, 12, 15):
+        for target in panels[panel_id]["targets"]:
+            expression = target["expr"]
+            for dataset, source in (
+                    ("dataconnect_nad_health", "dataconnect"),
+                    ("devices", "rest")):
+                selector = f'dataset="{dataset}",source="{source}"'
+                assert f"ise_dataset_up{{{selector}}}" in expression
+                assert f"ise_dataset_fresh{{{selector}}}" in expression
+
+
 def test_unknown_endpoint_profile_stat_uses_exact_inventory_total():
     dashboard = json.loads((DASHBOARDS / "ise-data-quality.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 8)

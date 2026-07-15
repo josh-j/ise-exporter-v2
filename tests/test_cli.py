@@ -741,6 +741,58 @@ def test_shell_close_releases_dataconnect_and_rest_clients():
     assert closed == ["dataconnect", "rest"]
 
 
+def test_shell_close_warns_and_still_closes_every_client():
+    closed = []
+    stdout = io.StringIO()
+
+    class Resource:
+        def __init__(self, name, fail=False):
+            self.name = name
+            self.fail = fail
+
+        def close(self):
+            closed.append(self.name)
+            if self.fail:
+                raise RuntimeError("simulated close failure")
+
+    shell = cli.ISEShell(
+        client=Resource("rest"),
+        dataconnect=Resource("dataconnect", fail=True),
+        stdin=io.StringIO(), stdout=stdout)
+
+    shell.close()
+
+    assert closed == ["dataconnect", "rest"]
+    assert "warning: failed to close Data Connect client" in stdout.getvalue()
+
+
+def test_noninteractive_cleanup_does_not_mask_success(capsys):
+    closed = []
+
+    class Resource:
+        cfg = None
+
+        def __init__(self, name, fail=False):
+            self.name = name
+            self.fail = fail
+
+        def close(self):
+            closed.append(self.name)
+            if self.fail:
+                raise RuntimeError("simulated close failure")
+
+    assert cli.main(
+        ["schema", "health", "-o", "json"],
+        client=Resource("rest"),
+        dataconnect=Resource("dataconnect", fail=True),
+    ) == 0
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["api"]
+    assert "warning: failed to close Data Connect client" in captured.err
+    assert closed == ["dataconnect", "rest"]
+
+
 def test_cli_history_refuses_symlinks_and_enforces_private_mode(tmp_path):
     history = tmp_path / "history"
     target = tmp_path / "target"

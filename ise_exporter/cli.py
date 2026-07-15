@@ -1765,6 +1765,23 @@ def render(value, output="table", select=None, stream=None):
     console.print(table)
 
 
+def _close_cli_resources(resources, stream):
+    """Close every CLI client without replacing an already-rendered result.
+
+    Process teardown will reclaim these read-only connections. A close failure is
+    still surfaced to the operator, but one broken client must not prevent the
+    other plane from being closed or turn shell exit into a Python traceback.
+    """
+    for label, resource in resources:
+        close = getattr(resource, "close", None)
+        if not callable(close):
+            continue
+        try:
+            close()
+        except Exception as error:
+            print(f"ise-cli: warning: failed to close {label}: {error}", file=stream)
+
+
 def _subparser(parser, name):
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
@@ -2338,17 +2355,11 @@ class ISEShell(cmd.Cmd):
         return self._cached_completion(key, load)
 
     def close(self):
-        errors = []
-        for resource in (self.dataconnect, self.client):
-            close = getattr(resource, "close", None)
-            if not callable(close):
-                continue
-            try:
-                close()
-            except Exception as error:
-                errors.append(error)
-        if errors:
-            raise errors[0]
+        _close_cli_resources(
+            (("Data Connect client", self.dataconnect),
+             ("REST client", self.client)),
+            self.stdout,
+        )
 
 
 def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdout=None):
@@ -2381,13 +2392,10 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdo
         print(f"ise-cli: error: {error}", file=sys.stderr)
         return 2
     finally:
-        try:
-            if dataconnect is not None:
-                dataconnect.close()
-        finally:
-            close = getattr(client, "close", None)
-            if callable(close):
-                close()
+        _close_cli_resources(
+            (("Data Connect client", dataconnect), ("REST client", client)),
+            sys.stderr,
+        )
     return 2
 
 

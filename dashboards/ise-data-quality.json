@@ -150,18 +150,18 @@
       "id": 11,
       "type": "stat",
       "title": "Configured NADs Without Activity",
-      "description": "Configured network devices with no RADIUS authentications in the reporting window.",
+      "description": "Configured network devices with no RADIUS authentications in the reporting window. Hidden unless both the ERS device inventory and joined Data Connect activity snapshot are available and fresh.",
       "gridPos": {"h": 4, "w": 6, "x": 0, "y": 31},
-      "targets": [{"expr": "(count(ise_nad_seen_recently == 0) and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1)))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "(count(ise_nad_seen_recently == 0) and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1)))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}]}}, "overrides": []}
     },
     {
       "id": 12,
       "type": "stat",
       "title": "Unconfigured NAD Events",
-      "description": "RADIUS authentications attributed to device names absent from the configured ERS inventory.",
+      "description": "RADIUS authentications attributed to device names absent from the configured ERS inventory. Hidden unless both source datasets are available and fresh.",
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 31},
-      "targets": [{"expr": "ise_nad_unconfigured_authentication_events_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "targets": [{"expr": "ise_nad_unconfigured_authentication_events_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}]}}, "overrides": []}
     },
     {
@@ -186,12 +186,12 @@
       "id": 15,
       "type": "table",
       "title": "NAD Authentication Health",
-      "description": "Recent pass/fail counts, last authentication time, and activity state for every configured NAD.",
+      "description": "Recent pass/fail counts, last authentication time, and activity state for every configured NAD. Hidden if either the ERS inventory or joined Data Connect activity snapshot is unavailable or stale.",
       "gridPos": {"h": 10, "w": 12, "x": 0, "y": 35},
       "targets": [
-        {"expr": "ise_nad_authentication_events and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1))", "format": "table", "instant": true, "refId": "Events", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "ise_nad_seen_recently and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1))", "format": "table", "instant": true, "refId": "Seen", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "(time() - ise_nad_last_authentication_timestamp) and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1))", "format": "table", "instant": true, "refId": "Last auth age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "ise_nad_authentication_events and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "Events", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_nad_seen_recently and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "Seen", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "(time() - ise_nad_last_authentication_timestamp) and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "Last auth age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
       "options": {"showHeader": true}
