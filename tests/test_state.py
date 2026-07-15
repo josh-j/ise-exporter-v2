@@ -302,3 +302,50 @@ def test_cache_operations_reject_invalid_timestamps(tmp_path, operation, now):
     assert store.tacacs_user_count() == 0
     assert store.network_device_count() == 0
     store.close()
+
+
+@pytest.mark.parametrize(("kind", "table", "key_column"), (
+    ("posture", "mnt_posture_cache", "mac"),
+    ("tacacs_user", "tacacs_internal_user_cache", "user_id"),
+    ("tacacs_policy", "tacacs_policy_rule_cache", "policy_id"),
+    ("network_device", "network_device_group_cache", "device_id"),
+))
+def test_large_cache_cycle_prunes_future_dated_stale_rows(
+        tmp_path, kind, table, key_column):
+    store = StateStore(tmp_path / "state.sqlite3")
+    active = [f"active-{index}" for index in range(1001)]
+    if kind == "posture":
+        store.db.executemany(
+            "INSERT INTO mnt_posture_cache VALUES (?, ?, ?, ?, ?)",
+            ((key, "signature", "{}", 10, 10) for key in (active[0], "stale")),
+        )
+        finish = store.finish_posture_cycle
+    elif kind == "tacacs_user":
+        store.db.executemany(
+            "INSERT INTO tacacs_internal_user_cache VALUES (?, ?, ?, ?)",
+            ((key, "{}", 10, 10) for key in (active[0], "stale")),
+        )
+        finish = store.finish_tacacs_user_cycle
+    elif kind == "tacacs_policy":
+        store.db.executemany(
+            "INSERT INTO tacacs_policy_rule_cache VALUES (?, ?, ?, ?, ?)",
+            ((key, 1, 1, 10, 10) for key in (active[0], "stale")),
+        )
+        finish = store.finish_tacacs_policy_cycle
+    else:
+        store.db.executemany(
+            "INSERT INTO network_device_group_cache VALUES (?, ?, ?, ?)",
+            ((key, "{}", 10, 10) for key in (active[0], "stale")),
+        )
+        finish = store.finish_network_device_cycle
+    store.db.execute(
+        f"UPDATE {table} SET last_seen=999999 WHERE {key_column}='stale'")
+    store.commit()
+
+    finish(active, now=20)
+
+    assert [tuple(row) for row in store.db.execute(
+        f"SELECT {key_column}, last_seen FROM {table}").fetchall()] == [
+            (active[0], 20),
+        ]
+    store.close()

@@ -116,6 +116,43 @@ class StateStore:
         self.db.commit()
         self._secure_files()
 
+    def _finish_cache_cycle(self, table, key_column, active_ids, now):
+        """Mark and prune a cache from an exact inventory without bind limits.
+
+        A temporary key set avoids both oversized ``NOT IN`` statements and
+        timestamp-marker pruning.  The latter retained removed rows when the
+        host clock moved backwards, while a 100k inventory also required
+        hundreds of individual UPDATE statements.
+        """
+        allowed = {
+            ("mnt_posture_cache", "mac"),
+            ("tacacs_internal_user_cache", "user_id"),
+            ("tacacs_policy_rule_cache", "policy_id"),
+            ("network_device_group_cache", "device_id"),
+        }
+        if (table, key_column) not in allowed:
+            raise ValueError("invalid cache table")
+        self.db.execute("""
+            CREATE TEMP TABLE IF NOT EXISTS active_cache_keys (
+                cache_key TEXT PRIMARY KEY
+            ) WITHOUT ROWID
+        """)
+        self.db.execute("DELETE FROM active_cache_keys")
+        self.db.executemany(
+            "INSERT OR IGNORE INTO active_cache_keys(cache_key) VALUES (?)",
+            ((value,) for value in active_ids),
+        )
+        self.db.execute(
+            f"UPDATE {table} SET last_seen=? WHERE {key_column} IN "
+            "(SELECT cache_key FROM active_cache_keys)",
+            (now,),
+        )
+        self.db.execute(
+            f"DELETE FROM {table} WHERE NOT EXISTS "
+            f"(SELECT 1 FROM active_cache_keys WHERE cache_key={table}.{key_column})"
+        )
+        self.commit()
+
     def close(self):
         self._secure_files()
         self.db.close()
@@ -177,25 +214,7 @@ class StateStore:
     def finish_posture_cycle(self, active_macs, now=None):
         now = self._valid_timestamp(now)
         active_macs = tuple(dict.fromkeys(active_macs))
-        if active_macs:
-            for offset in range(0, len(active_macs), 500):
-                chunk = active_macs[offset:offset + 500]
-                placeholders = ",".join("?" for _ in chunk)
-                self.db.execute(
-                    f"UPDATE mnt_posture_cache SET last_seen=? WHERE mac IN ({placeholders})",
-                    (now, *chunk))
-            placeholders = ",".join("?" for _ in active_macs)
-            if len(active_macs) <= 500:
-                self.db.execute(
-                    f"DELETE FROM mnt_posture_cache WHERE mac NOT IN ({placeholders})",
-                    active_macs)
-            else:
-                # All active rows were just marked.  A strict older-than cutoff
-                # avoids a single statement with more than SQLite's bind limit.
-                self.db.execute("DELETE FROM mnt_posture_cache WHERE last_seen < ?", (now,))
-        else:
-            self.db.execute("DELETE FROM mnt_posture_cache")
-        self.commit()
+        self._finish_cache_cycle("mnt_posture_cache", "mac", active_macs, now)
 
     def posture_count(self):
         return int(self.db.execute(
@@ -273,24 +292,8 @@ class StateStore:
         """Mark active cache rows and prune accounts removed from ISE."""
         now = self._valid_timestamp(now)
         active_ids = tuple(dict.fromkeys(str(value) for value in active_ids if value))
-        if active_ids:
-            for offset in range(0, len(active_ids), 500):
-                chunk = active_ids[offset:offset + 500]
-                placeholders = ",".join("?" for _ in chunk)
-                self.db.execute(
-                    f"UPDATE tacacs_internal_user_cache SET last_seen=? "
-                    f"WHERE user_id IN ({placeholders})", (now, *chunk))
-            if len(active_ids) <= 500:
-                placeholders = ",".join("?" for _ in active_ids)
-                self.db.execute(
-                    f"DELETE FROM tacacs_internal_user_cache "
-                    f"WHERE user_id NOT IN ({placeholders})", active_ids)
-            else:
-                self.db.execute(
-                    "DELETE FROM tacacs_internal_user_cache WHERE last_seen < ?", (now,))
-        else:
-            self.db.execute("DELETE FROM tacacs_internal_user_cache")
-        self.commit()
+        self._finish_cache_cycle(
+            "tacacs_internal_user_cache", "user_id", active_ids, now)
 
     def tacacs_user_count(self):
         return int(self.db.execute(
@@ -357,24 +360,8 @@ class StateStore:
         """Mark selected policy rows and prune policies removed from inventory."""
         now = self._valid_timestamp(now)
         active_ids = tuple(dict.fromkeys(str(value) for value in active_ids if value))
-        if active_ids:
-            for offset in range(0, len(active_ids), 500):
-                chunk = active_ids[offset:offset + 500]
-                placeholders = ",".join("?" for _ in chunk)
-                self.db.execute(
-                    f"UPDATE tacacs_policy_rule_cache SET last_seen=? "
-                    f"WHERE policy_id IN ({placeholders})", (now, *chunk))
-            if len(active_ids) <= 500:
-                placeholders = ",".join("?" for _ in active_ids)
-                self.db.execute(
-                    f"DELETE FROM tacacs_policy_rule_cache "
-                    f"WHERE policy_id NOT IN ({placeholders})", active_ids)
-            else:
-                self.db.execute(
-                    "DELETE FROM tacacs_policy_rule_cache WHERE last_seen < ?", (now,))
-        else:
-            self.db.execute("DELETE FROM tacacs_policy_rule_cache")
-        self.commit()
+        self._finish_cache_cycle(
+            "tacacs_policy_rule_cache", "policy_id", active_ids, now)
 
     def tacacs_policy_count(self):
         return int(self.db.execute(
@@ -443,24 +430,8 @@ class StateStore:
         """Mark active NAD rows and prune devices removed from ISE."""
         now = self._valid_timestamp(now)
         active_ids = tuple(dict.fromkeys(str(value) for value in active_ids if value))
-        if active_ids:
-            for offset in range(0, len(active_ids), 500):
-                chunk = active_ids[offset:offset + 500]
-                placeholders = ",".join("?" for _ in chunk)
-                self.db.execute(
-                    f"UPDATE network_device_group_cache SET last_seen=? "
-                    f"WHERE device_id IN ({placeholders})", (now, *chunk))
-            if len(active_ids) <= 500:
-                placeholders = ",".join("?" for _ in active_ids)
-                self.db.execute(
-                    f"DELETE FROM network_device_group_cache "
-                    f"WHERE device_id NOT IN ({placeholders})", active_ids)
-            else:
-                self.db.execute(
-                    "DELETE FROM network_device_group_cache WHERE last_seen < ?", (now,))
-        else:
-            self.db.execute("DELETE FROM network_device_group_cache")
-        self.commit()
+        self._finish_cache_cycle(
+            "network_device_group_cache", "device_id", active_ids, now)
 
     def network_device_count(self):
         return int(self.db.execute(
