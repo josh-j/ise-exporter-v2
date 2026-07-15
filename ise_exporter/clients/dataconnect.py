@@ -334,7 +334,7 @@ class DataConnectClient:
             remaining = deadline - time.time()
             if remaining > self.max_shared_pacing_future_seconds:
                 raise OSError("pacing gate deadline is implausibly far in the future")
-            if remaining > 0:
+            if remaining > 0 and adaptive_duty:
                 if not wait:
                     fcntl.flock(descriptor, fcntl.LOCK_UN)
                     os.close(descriptor)
@@ -352,9 +352,15 @@ class DataConnectClient:
                 (worst_case_duration * (100 / self.max_duty_cycle - 1)
                  if adaptive_duty else worst_case_duration),
             )
-            self._write_shared_deadline(
-                descriptor, time.time() + crash_cooldown)
-            return descriptor
+            lease_deadline = time.time() + crash_cooldown
+            if not adaptive_duty:
+                # Catalog metadata is bounded independently of reporting data.
+                # It may validate a restarted exporter while an earlier reporting
+                # query's adaptive cooldown remains active, but must never shorten
+                # that cooldown for the reporting work queued behind it.
+                lease_deadline = max(deadline, lease_deadline)
+            self._write_shared_deadline(descriptor, lease_deadline)
+            return (descriptor, deadline) if not adaptive_duty else descriptor
         except Exception as error:
             try:
                 os.close(descriptor)
@@ -374,8 +380,11 @@ class DataConnectClient:
     def _release_shared_gate(cls, descriptor, deadline):
         if descriptor is None:
             return
+        preserved_deadline = 0.0
+        if isinstance(descriptor, tuple):
+            descriptor, preserved_deadline = descriptor
         try:
-            cls._write_shared_deadline(descriptor, deadline)
+            cls._write_shared_deadline(descriptor, max(deadline, preserved_deadline))
         finally:
             fcntl.flock(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)

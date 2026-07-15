@@ -202,7 +202,12 @@ function Invoke-IseInventory {
 }
 
 function Test-IseHealth { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command health -ConfigFile $ConfigFile }
-function Get-IseNode { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command nodes -ConfigFile $ConfigFile }
+function Get-IseNode {
+    [CmdletBinding()]
+    param([ValidateRange(1,5000)][int]$Limit=50,[switch]$AllowExpensive,[string]$ConfigFile)
+    $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive
+    Invoke-IseBackend -Command nodes -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
+}
 function Get-IseOverview { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command overview -ConfigFile $ConfigFile }
 function Get-IseCollectorStatus {
     [CmdletBinding()]
@@ -380,23 +385,33 @@ function Get-IseTacacsUser { [CmdletBinding()] param([ValidateRange(1,5000)][int
 function Get-IseIdentityGroup { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseInventory -Command identity-groups -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
 function Get-IseNetworkDeviceGroup { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseInventory -Command network-device-groups -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
 
+function Invoke-IseBoundedOpenApiInventory {
+    param([Parameter(Mandatory)][string]$Command,[int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
+    $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive
+    Invoke-IseBackend -Command $Command -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
+}
+
 function Get-IseLicense { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command licenses -ConfigFile $ConfigFile }
-function Get-IsePatch { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command patches -ConfigFile $ConfigFile }
+function Get-IsePatch { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseBoundedOpenApiInventory -Command patches -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
 function Get-IseBackupStatus { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command backup-status -ConfigFile $ConfigFile }
-function Get-IseRepository { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command repositories -ConfigFile $ConfigFile }
-function Get-IseNetworkPolicySet { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command network-policy-sets -ConfigFile $ConfigFile }
-function Get-IseDeviceAdminPolicySet { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command device-admin-policy-sets -ConfigFile $ConfigFile }
-function Get-IseAuthorizationProfile { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command authorization-profiles -ConfigFile $ConfigFile }
-function Get-IseTacacsCommandSet { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command tacacs-command-sets -ConfigFile $ConfigFile }
-function Get-IseTacacsShellProfile { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command tacacs-shell-profiles -ConfigFile $ConfigFile }
+function Get-IseRepository { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseBoundedOpenApiInventory -Command repositories -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IseNetworkPolicySet { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseBoundedOpenApiInventory -Command network-policy-sets -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IseDeviceAdminPolicySet { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseBoundedOpenApiInventory -Command device-admin-policy-sets -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IseAuthorizationProfile { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseBoundedOpenApiInventory -Command authorization-profiles -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IseTacacsCommandSet { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseBoundedOpenApiInventory -Command tacacs-command-sets -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IseTacacsShellProfile { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseBoundedOpenApiInventory -Command tacacs-shell-profiles -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
 
 function Get-IseCertificate {
     [CmdletBinding()]
-    param([string]$Node, [switch]$TrustedOnly, [switch]$SystemOnly, [string]$ConfigFile)
+    param([string]$Node, [switch]$TrustedOnly, [switch]$SystemOnly,
+          [ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,
+          [string]$ConfigFile)
     $arguments = [System.Collections.Generic.List[string]]::new()
     if ($Node) { [void]$arguments.Add('--node'); [void]$arguments.Add($Node) }
+    [void]$arguments.Add('--limit'); [void]$arguments.Add([string]$Limit)
     Add-IseSwitchArgument -Arguments $arguments -Value:$TrustedOnly -Name '--trusted-only'
     Add-IseSwitchArgument -Arguments $arguments -Value:$SystemOnly -Name '--system-only'
+    Add-IseSwitchArgument -Arguments $arguments -Value:$AllowExpensive -Name '--allow-expensive'
     Invoke-IseBackend -Command certificates -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
 }
 
@@ -505,6 +520,8 @@ $identifierCompleter = {
         'Get-IseSession' { 'session' }
         'Get-IseAuthenticationStatus' { 'auth-status' }
         'Get-IseSecureClient' { 'secure-client' }
+        'Get-IseEndpointSummary' { 'endpoint-summary' }
+        'Debug-IseAuthentication' { 'troubleshoot-auth' }
         default { 'endpoint' }
     }
     foreach ($candidate in (Get-IseLegacyCompletion "$legacy $wordToComplete")) {
@@ -514,7 +531,8 @@ $identifierCompleter = {
 }
 Register-ArgumentCompleter -CommandName @(
     'Get-IseEndpoint','Resolve-IseEndpoint','Get-IseSession',
-    'Get-IseAuthenticationStatus','Get-IseSecureClient') -ParameterName Identifier -ScriptBlock $identifierCompleter
+    'Get-IseAuthenticationStatus','Get-IseSecureClient','Get-IseEndpointSummary',
+    'Debug-IseAuthentication') -ParameterName Identifier -ScriptBlock $identifierCompleter
 
 $criteriaCompleter = {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -535,11 +553,14 @@ function New-IseCompletionResult {
 
 $nodeCompleter = {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
-    $legacy = if ($commandName -eq 'Get-IsePsnMetric') { 'psn-metrics --psn' } else { 'certificates --node' }
+    $legacy = if ($commandName -in @('Get-IsePsnMetric','Debug-IsePsn')) {
+        'psn-metrics --psn'
+    } else { 'certificates --node' }
     New-IseCompletionResult (Get-IseLegacyCompletion "$legacy $wordToComplete")
 }
 Register-ArgumentCompleter -CommandName Get-IseCertificate -ParameterName Node -ScriptBlock $nodeCompleter
 Register-ArgumentCompleter -CommandName Get-IsePsnMetric -ParameterName Psn -ScriptBlock $nodeCompleter
+Register-ArgumentCompleter -CommandName Debug-IsePsn -ParameterName Psn -ScriptBlock $nodeCompleter
 
 $nadCompleter = {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -551,7 +572,8 @@ $nadCompleter = {
     New-IseCompletionResult (Get-IseLegacyCompletion "$legacy $wordToComplete")
 }
 Register-ArgumentCompleter -CommandName @(
-    'Get-IseRadiusAuthentication','Get-IseRadiusError','Get-IseRadiusAccounting'
+    'Get-IseRadiusAuthentication','Get-IseRadiusError','Get-IseRadiusAccounting',
+    'Get-IseNadSummary'
 ) -ParameterName Nad -ScriptBlock $nadCompleter
 
 $usernameCompleter = {

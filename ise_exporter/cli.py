@@ -529,7 +529,9 @@ def build_parser(*, require_command=False):
     sub.add_argument("--live", action="store_true", help="refresh deployment-node services from OpenAPI")
 
     command("health", "check PAN/ERS, MnT, and Data Connect reachability and authentication")
-    command("nodes", "list deployment nodes")
+    sub = command("nodes", "list deployment nodes")
+    sub.add_argument("--limit", type=int, default=50,
+                     help="maximum rows (default: 50)")
 
     for name, help_text in (
         ("endpoints", "list endpoints from ERS"),
@@ -591,8 +593,12 @@ def build_parser(*, require_command=False):
 
     for name, help_text in (
         ("licenses", "show Smart Licensing tier state"),
-        ("patches", "show installed ISE patches"),
         ("backup-status", "show the last configuration-backup status"),
+    ):
+        command(name, help_text)
+
+    for name, help_text in (
+        ("patches", "show installed ISE patches"),
         ("repositories", "list configured repositories"),
         ("network-policy-sets", "list Network Access policy sets"),
         ("device-admin-policy-sets", "list Device Administration policy sets"),
@@ -600,9 +606,13 @@ def build_parser(*, require_command=False):
         ("tacacs-command-sets", "list Device Administration command sets"),
         ("tacacs-shell-profiles", "list Device Administration shell profiles"),
     ):
-        command(name, help_text)
+        sub = command(name, help_text)
+        sub.add_argument("--limit", type=int, default=100,
+                         help="maximum rows (default: 100)")
 
     sub = command("certificates", "list system and trusted certificates")
+    sub.add_argument("--limit", type=int, default=100,
+                     help="maximum rows (default: 100)")
     sub.add_argument("--node", help="limit system certificates to one ISE node hostname")
     sub.add_argument("--trusted-only", action="store_true")
     sub.add_argument("--system-only", action="store_true")
@@ -1880,11 +1890,12 @@ def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
             raise CLIError("no REST/MnT or Data Connect credentials are configured")
         return result
     if command == "nodes":
+        _guard_row_limit(args, cfg)
         result = validated_node_rows(
             client.get_pan_api("/deployment/node", api_name="cli_nodes"))
         if result is None:
             raise CLIError("ISE returned an invalid or oversized deployment-node response")
-        return result
+        return result[:args.limit]
     if command in ERS_INVENTORIES:
         _guard_row_limit(args, cfg)
         if args.all:
@@ -1896,6 +1907,10 @@ def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
         result = client.get_pan_api(path, api_name=f"cli_{command}", unwrap=unwrap)
         if result is None:
             raise CLIError(f"ISE returned no response for {command}")
+        if hasattr(args, "limit"):
+            _guard_row_limit(args, cfg)
+            if isinstance(result, list):
+                result = result[:args.limit]
         return result
     if command in DATACONNECT_REPORTS:
         _guard_row_limit(args, cfg)
@@ -1964,6 +1979,7 @@ def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
             allow_active_scan=args.allow_active_list_scan)
         return _secure_client(client, mac, args.include_all)
     if command == "certificates":
+        _guard_row_limit(args, cfg)
         if args.trusted_only and args.system_only:
             raise CLIError("--trusted-only and --system-only are mutually exclusive")
         rows = []
@@ -2003,7 +2019,7 @@ def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
                 raise CLIError("certificate inventory exceeded the production row ceiling")
             rows.extend({**certificate, "store": "trusted", "hostname": "trust_store"}
                         for certificate in trusted)
-        return rows
+        return rows[:args.limit]
     if command == "schema":
         return COMMAND_SCHEMAS if args.name is None else COMMAND_SCHEMAS[args.name]
     if command == "get":

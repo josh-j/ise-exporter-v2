@@ -95,7 +95,7 @@ function global:prompt {
     $location = $executionContext.SessionState.Path.CurrentLocation
     $mark = if ($succeeded) { '+' } else { '!' }
     $color = if ($succeeded) { $PSStyle.Foreground.BrightGreen } else { $PSStyle.Foreground.BrightRed }
-    "$color$mark$($PSStyle.Reset) $($PSStyle.Foreground.BrightCyan)ISE$($PSStyle.Reset) $location> "
+    "ISE PS $($PSStyle.Foreground.BrightCyan)$location$($PSStyle.Reset) $color[$mark]$($PSStyle.Reset)> "
 }
 
 function global:Show-IseCliBanner {

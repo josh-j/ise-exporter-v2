@@ -550,6 +550,27 @@ def test_catalog_crash_lease_is_bounded_to_metadata_attempt(monkeypatch, tmp_pat
         client._release_shared_gate(descriptor, 0)
 
 
+def test_catalog_bypasses_but_preserves_existing_reporting_cooldown(
+        monkeypatch, tmp_path):
+    path = tmp_path / "dataconnect.pacing"
+    path.write_text("1000.0\n")
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file=str(path),
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    descriptor = client._shared_gate(adaptive_duty=False)
+    assert float(path.read_text().strip()) == pytest.approx(1000.0)
+
+    client._release_shared_gate(descriptor, 105.0)
+
+    assert float(path.read_text().strip()) == pytest.approx(1000.0)
+
+
 def test_radius_summary_has_its_own_bounded_telemetry_label():
     assert dataconnect._query_view(
         "SELECT SUM(passed_count) FROM radius_authentication_summary"

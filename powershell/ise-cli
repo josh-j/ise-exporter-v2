@@ -5,12 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PSModulePath="${SCRIPT_DIR}${PSModulePath:+:${PSModulePath}}"
 PROFILE="${SCRIPT_DIR}/Ise.Cli.Profile.ps1"
 
-if ! command -v pwsh >/dev/null 2>&1; then
-    if [[ $# -eq 0 ]]; then
-        echo "interactive ise-cli requires PowerShell 7 (pwsh)" >&2
-        echo "non-interactive commands remain available: ise-cli COMMAND --help" >&2
-        exit 127
-    fi
+run_backend() {
     if [[ -n "${ISE_CLI_BACKEND:-}" && -x "${ISE_CLI_BACKEND}" ]]; then
         exec "${ISE_CLI_BACKEND}" "$@"
     fi
@@ -21,8 +16,21 @@ if ! command -v pwsh >/dev/null 2>&1; then
     if command -v ise-cli-backend >/dev/null 2>&1; then
         exec ise-cli-backend "$@"
     fi
-    echo "ise-cli requires PowerShell 7 (pwsh) or an installed ise-cli-backend" >&2
+    echo "ise-cli-backend is not installed or executable" >&2
     exit 127
+}
+
+if [[ "${ISE_CLI_FORCE_BACKEND:-0}" == 1 && $# -gt 0 ]]; then
+    run_backend "$@"
+fi
+
+if ! command -v pwsh >/dev/null 2>&1; then
+    if [[ $# -eq 0 ]]; then
+        echo "interactive ise-cli requires PowerShell 7 (pwsh)" >&2
+        echo "non-interactive commands remain available: ise-cli COMMAND --help" >&2
+        exit 127
+    fi
+    run_backend "$@"
 fi
 
 if [[ $# -eq 0 ]]; then
