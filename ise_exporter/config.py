@@ -94,10 +94,8 @@ class Config:
     exporter_port: int = 9618
     state_db_path: str = "/var/lib/ise-exporter/state.sqlite3"
     scrape_interval: int = 120
-    fast_interval: int = 60
     medium_interval: int = 300
     slow_interval: int = 3600
-    max_workers: int = 10
     auth_failure_backoff: int = 900
     auth_failure_threshold: int = 3
     device_cache_ttl: int = 10800
@@ -178,9 +176,8 @@ class Config:
             mnt_ca_bundle=_s("ISE_MNT_CA_BUNDLE", _s("ISE_REST_CA_BUNDLE")),
             mnt_ssl_verify=_b(
                 "ISE_MNT_SSL_VERIFY", _b("ISE_REST_SSL_VERIFY", True)),
-            scrape_interval=_i("SCRAPE_INTERVAL", 120), fast_interval=_i("FAST_INTERVAL", 60),
+            scrape_interval=_i("SCRAPE_INTERVAL", 120),
             medium_interval=_i("MEDIUM_INTERVAL", 300), slow_interval=_i("SLOW_INTERVAL", 3600),
-            max_workers=_i("MAX_WORKERS", 10),
             auth_failure_backoff=_i("AUTH_FAILURE_BACKOFF", 900),
             auth_failure_threshold=_i("AUTH_FAILURE_THRESHOLD", 3),
             device_cache_ttl=_i("DEVICE_CACHE_TTL", 10800),

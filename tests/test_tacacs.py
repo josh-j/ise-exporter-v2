@@ -55,7 +55,7 @@ class Client:
 
 def test_collects_tacacs_inventory_rules_and_suspected_unused_account():
     tacacs.collect_config(Client(), types.SimpleNamespace(
-        tacacs_internal_user_max=1000, tacacs_unused_account_days=1, max_workers=2))
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=1))
 
     assert metrics.ise_tacacs_internal_users_total._value.get() == 1
     assert _rows(metrics.ise_tacacs_internal_user_info, "username", "enabled") == {
@@ -95,7 +95,7 @@ def test_account_not_flagged_when_account_object_is_recent():
 
     client.get_ers = get_ers
     tacacs.collect_config(client, types.SimpleNamespace(
-        tacacs_internal_user_max=1000, max_workers=2))
+        tacacs_internal_user_max=1000))
 
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
 
@@ -115,7 +115,7 @@ def test_internal_user_detail_failure_publishes_partial_coverage():
 
     client.get_ers = get_ers
     tacacs.collect_config(client, types.SimpleNamespace(
-        tacacs_internal_user_max=1000, tacacs_unused_account_days=180, max_workers=2))
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=180))
 
     assert _rows(metrics.ise_tacacs_internal_user_info, "username") == {}
     assert metrics.ise_tacacs_internal_users_total._value.get() == 1
@@ -269,7 +269,7 @@ def test_valid_empty_tacacs_configuration_clears_stale_labels():
             return []
 
     tacacs.collect_config(EmptyClient(), types.SimpleNamespace(
-        tacacs_internal_user_max=1000, tacacs_unused_account_days=180, max_workers=2))
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=180))
 
     assert not metrics.ise_tacacs_internal_user_info._metrics
     assert metrics.ise_tacacs_internal_users_total._value.get() == 0
@@ -351,7 +351,7 @@ def test_internal_last_seen_survives_view_rollover_and_restart(tmp_path):
     state_path = str(tmp_path / "state.sqlite3")
     cfg = types.SimpleNamespace(
         dataconnect_max_groups=50, state_db_path=state_path,
-        tacacs_internal_user_max=1000, tacacs_unused_account_days=1, max_workers=2)
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=1)
     tacacs.collect_config(Client(), cfg)
     now = int(time.time())
 

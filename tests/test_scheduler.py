@@ -18,7 +18,6 @@ def _cfg(**overrides):
         collect_tacacs=True,
         collect_mnt_active_posture=True,
         mnt_active_posture_interval=300,
-        fast_interval=60,
         medium_interval=300,
         slow_interval=3600,
         scrape_interval=60,

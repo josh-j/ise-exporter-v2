@@ -113,7 +113,8 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     path = Path(__file__).parents[1] / ".env.example"
     values = dotenv_values(path, interpolate=False)
 
-    assert values["MAX_WORKERS"] == "8"
+    assert "FAST_INTERVAL" not in values
+    assert "MAX_WORKERS" not in values
     assert values["ISE_DATACONNECT_MAX_GROUPS"] == "1000"
     assert values["ISE_DATACONNECT_QUERY_TIMEOUT"] == "15"
     assert values["ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS"] == "5000"
