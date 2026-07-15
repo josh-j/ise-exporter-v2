@@ -111,6 +111,42 @@ def test_mnt_active_count_preserves_the_count_field_for_safe_preflight():
     assert result == {"total": 1, "sessions": [{"count": "12345"}]}
 
 
+def test_mnt_active_list_accepts_namespace_qualified_ise_xml():
+    client = ISERestClient.__new__(ISERestClient)
+    client.mnt_xml_url = "https://mnt.example.mil/admin/API/mnt"
+    client.mnt_session = object()
+    client._request = lambda *_args, **_kwargs: _Resp(b"""
+        <activeList xmlns="urn:cisco:ise:mnt" noOfActiveSession="2">
+          <activeSession><user_name>alice</user_name><server>psn-1</server></activeSession>
+          <activeSession><user_name>bob</user_name><server>psn-2</server></activeSession>
+        </activeList>
+    """)
+
+    assert client.get_mnt_xml("/Session/ActiveList") == {
+        "total": 2,
+        "sessions": [
+            {"user_name": "alice", "server": "psn-1"},
+            {"user_name": "bob", "server": "psn-2"},
+        ],
+    }
+
+
+def test_mnt_auth_status_accepts_namespace_qualified_ise_xml():
+    client = ISERestClient.__new__(ISERestClient)
+    client.mnt_xml_url = "https://mnt.example.mil/admin/API/mnt"
+    client.mnt_session = object()
+    client._request = lambda *_args, **_kwargs: _Resp(b"""
+        <authStatus xmlns="urn:cisco:ise:mnt">
+          <authStatusElements><user_name>alice</user_name><status>Passed</status></authStatusElements>
+        </authStatus>
+    """)
+
+    assert client.get_mnt_xml("/AuthStatus/MACAddress/AA:BB:CC:DD:EE:FF/60/10") == {
+        "total": 1,
+        "sessions": [{"user_name": "alice", "status": "Passed"}],
+    }
+
+
 def test_openapi_get_passes_query_parameters():
     client = ISERestClient.__new__(ISERestClient)
     client.pan_url = "https://ise.example/api/v1"

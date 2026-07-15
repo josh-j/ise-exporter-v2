@@ -421,9 +421,15 @@ class ISERestClient:
             logger.error("XML parse error from %s: %s", url, e)
             return None
 
-        active = root.findall(".//activeSession")
+        # ISE appliances may qualify MnT elements with a default namespace.
+        # ElementTree's literal ``.//activeSession`` does not match
+        # ``{namespace}activeSession``, so compare local names consistently with
+        # the already namespace-stripped output fields.
+        active = [item for item in root.iter()
+                  if _strip_ns(item.tag) == "activeSession"]
         if active:
-            total = root.attrib.get("noOfActiveSession", str(len(active)))
+            total = next((value for key, value in root.attrib.items()
+                          if _strip_ns(key) == "noOfActiveSession"), str(len(active)))
             try:
                 total = int(total)
             except ValueError:
@@ -431,7 +437,8 @@ class ISERestClient:
             sessions = [{_strip_ns(c.tag): (c.text or "").strip() for c in item} for item in active]
             return {"total": total, "sessions": sessions}
 
-        auth_status = root.findall(".//authStatusElements")
+        auth_status = [item for item in root.iter()
+                       if _strip_ns(item.tag) == "authStatusElements"]
         if auth_status:
             sessions = [{_strip_ns(c.tag): (c.text or "").strip() for c in item}
                         for item in auth_status]
