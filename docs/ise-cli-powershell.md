@@ -92,6 +92,12 @@ ActiveList, and the hard 5,000-row Data Connect ceiling.
 | `Debug-IsePsn` | Cached PSN telemetry with an explicit `-Live` Data Connect refresh |
 | `Get-IseNadSummary` | Cached NAD activity/health with an explicit `-Live` ERS refresh |
 | `Get-IsePxGridStatus` | pxGrid collector ownership and optional live deployment-service visibility |
+| `Test-IsePxGrid` | pxGrid 2.0 account state and protocol version |
+| `Get-IsePxGridService`, `Get-IsePxGridTopic` | Service and pubsub-topic discovery |
+| `Get-IsePxGridSession`, `Get-IsePxGridEndpoint` | Bounded context snapshots as PowerShell objects |
+| `Get-IsePxGridRadiusFailure`, `Get-IsePxGridTrustSec` | RADIUS and TrustSec information gathering |
+| `Get-IsePxGridMdmEndpoint`, `Get-IsePxGridProfilerProfile` | MDM and profiler context |
+| `Get-IsePxGridAncPolicy`, `Get-IsePxGridAncEndpoint` | Read-only ANC inventory and assignments |
 | `Test-IseHealth` | PAN/ERS, MnT, and Data Connect health |
 | `Get-IseNode` | Deployment nodes |
 | `Find-IseEndpoint` | Endpoint inventory and context wildcard search |
@@ -150,7 +156,9 @@ and mark only the affected section as `unavailable`.
 Valid empty responses remain visible as `no_results` sections.
 
 pxGrid collectors are not part of the supported ISE 3.3 Patch 11 exporter
-architecture. `Get-IsePxGridStatus` states that ownership directly; `-Live` checks
+architecture. The `Get-IsePxGrid*` commands are isolated, on-demand pxGrid 2.0
+queries and never populate exporter metrics. `Get-IsePxGridStatus` states collector
+ownership directly; `-Live` checks
 deployment-node service assignment through OpenAPI but does not claim pxGrid
 connectivity or fabricate a collector health signal.
 

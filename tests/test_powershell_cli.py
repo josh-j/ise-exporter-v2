@@ -21,7 +21,8 @@ def test_powershell_cli_is_a_pwsh_module_over_private_bounded_backend():
     for command in (
         "Get-IseOverview", "Get-IseCollectorStatus", "Get-IseEndpointSummary",
         "Debug-IseAuthentication", "Debug-IsePsn", "Get-IseNadSummary",
-        "Get-IsePxGridStatus",
+        "Get-IsePxGridStatus", "Test-IsePxGrid", "Get-IsePxGridSession",
+        "Get-IsePxGridEndpoint", "Get-IsePxGridRadiusFailure",
         "Find-IseEndpoint", "Get-IseEndpoint", "Get-IseSecureClient",
         "Get-IseRadiusAuthentication", "Get-IseTacacsActivity",
         "Get-IseDataConnectTable", "Get-IseDataConnectColumn",
@@ -72,7 +73,7 @@ def test_powershell_module_imports_and_exports_native_commands():
         Import-Module '{MODULE}' -Force
         $commands = @(Get-Command -Module Ise.Cli | Select-Object -ExpandProperty Name)
         if ($commands.Count -lt 46) {{ throw "only $($commands.Count) commands exported" }}
-        foreach ($required in @('Find-IseEndpoint','Find-Endpoint','Get-IseEndpoint','Get-IseCliVersion','Get-IseOverview','Debug-IseAuthentication','Debug-IsePsn','Get-IseNadSummary','Get-IsePxGridStatus','Get-IseDataConnectColumn','Get-IseDataConnectRow')) {{
+        foreach ($required in @('Find-IseEndpoint','Find-Endpoint','Get-IseEndpoint','Get-IseCliVersion','Get-IseOverview','Debug-IseAuthentication','Debug-IsePsn','Get-IseNadSummary','Get-IsePxGridStatus','Test-IsePxGrid','Get-IsePxGridSession','Get-IsePxGridEndpoint','Get-IseDataConnectColumn','Get-IseDataConnectRow')) {{
             if ($required -notin $commands) {{ throw "missing $required" }}
         }}
     """

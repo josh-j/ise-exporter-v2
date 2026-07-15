@@ -1,6 +1,6 @@
-"""Read-only Cisco ISE operator CLI built on the exporter's API client.
+"""Read-only Cisco ISE operator CLI built on the exporter's API clients.
 
-The command surface intentionally exposes GET operations only. Inventory commands
+The command surface intentionally exposes read operations only. Inventory commands
 are bounded by default so an exploratory query cannot accidentally enumerate an
 100k-endpoint deployment; callers must opt into ``--all`` explicitly.
 """
@@ -34,6 +34,7 @@ from rich.text import Text
 
 from . import version_string
 from .clients.dataconnect import DataConnectClient
+from .clients.pxgrid import KNOWN_SERVICES, OPERATIONS, PxGridControl
 from .clients.rest import ERS_MAX_PAGES, ISEOperatorClient
 from .collectors.dataconnect_common import recent_event_predicate
 from .collectors.nodes import valid_hostname, validated_node_rows
@@ -404,7 +405,8 @@ DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {
 CACHED_EXPORTER_COMMANDS = {
     "overview", "collector-status", "psn-summary", "nad-summary", "pxgrid-status"}
 REST_OPTIONAL_COMMANDS = DATACONNECT_COMMANDS | CACHED_EXPORTER_COMMANDS | {
-    "health", "schema"}
+    "health", "schema", "pxgrid-account", "pxgrid-services", "pxgrid-topics",
+    "pxgrid-query"}
 
 ENDPOINT_CONTEXT_SOURCES = {
     "endpoint": {
@@ -585,6 +587,17 @@ def build_parser(*, require_command=False):
 
     sub = command("pxgrid-status", "show pxGrid deployment visibility and collector ownership")
     sub.add_argument("--live", action="store_true", help="refresh deployment-node services from OpenAPI")
+
+    command("pxgrid-account", "test pxGrid 2.0 account activation and return its state")
+    sub = command("pxgrid-services", "discover pxGrid 2.0 REST and pubsub service providers")
+    sub.add_argument("--name", choices=KNOWN_SERVICES, help="limit discovery to one service")
+    sub = command("pxgrid-topics", "discover pxGrid 2.0 published topics")
+    sub.add_argument("--service", choices=KNOWN_SERVICES, help="limit discovery to one service")
+    sub = command("pxgrid-query", "run one allowlisted read-only pxGrid 2.0 operation")
+    sub.add_argument("operation", choices=tuple(OPERATIONS))
+    sub.add_argument("--body-json", default="{}", help="JSON object request body")
+    sub.add_argument("--limit", type=int, default=100, help="maximum returned objects (default: 100)")
+    expensive(sub)
 
     command("health", "check PAN/ERS, MnT, and Data Connect reachability and authentication")
     sub = command("nodes", "list deployment nodes")
@@ -2171,6 +2184,37 @@ def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
         return rows
     if command == "pxgrid-status":
         return _pxgrid_status(exporter_snapshot, client, live=args.live)
+    if command.startswith("pxgrid-"):
+        if cfg is None:
+            raise CLIError("pxGrid commands require configuration")
+        try:
+            pxgrid = PxGridControl(cfg)
+            try:
+                if command == "pxgrid-account":
+                    return [pxgrid.activate()]
+                if command == "pxgrid-services":
+                    return pxgrid.services(args.name)
+                if command == "pxgrid-topics":
+                    return pxgrid.topics(args.service)
+                if command == "pxgrid-query":
+                    if args.limit < 1 or args.limit > cfg.cli_max_rows:
+                        raise CLIError(
+                            f"--limit must be between 1 and {cfg.cli_max_rows}")
+                    if args.limit > 100:
+                        _require_expensive(args, cfg, "pxGrid result limits above 100 are disabled")
+                    try:
+                        body = json.loads(args.body_json)
+                    except (TypeError, json.JSONDecodeError) as error:
+                        raise CLIError(f"--body-json must be valid JSON: {error}") from error
+                    if not isinstance(body, dict):
+                        raise CLIError("--body-json must contain a JSON object")
+                    return pxgrid.query(args.operation, body)[:args.limit]
+            finally:
+                pxgrid.close()
+        except CLIError:
+            raise
+        except Exception as error:
+            raise CLIError(f"pxGrid 2.0 request failed: {error}") from error
     if command == "endpoint-fields":
         return _endpoint_fields(dataconnect, args.pattern)
     if command == "endpoints":

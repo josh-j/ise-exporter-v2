@@ -16,6 +16,7 @@ def test_example_is_complete_and_parseable(monkeypatch):
     path = Path(__file__).parents[1] / "ise-exporter.toml.example"
     monkeypatch.setenv("ISE_PASS", "rest-secret")
     monkeypatch.setenv("ISE_DATACONNECT_PASSWORD", "database-secret")
+    monkeypatch.setenv("ISE_PXGRID_PASSWORD", "pxgrid-secret")
 
     config = Config.load(path)
 
@@ -24,6 +25,8 @@ def test_example_is_complete_and_parseable(monkeypatch):
     assert config.ise_mnt_host == "mnt1.example.com"
     assert config.ise_pass == "rest-secret"
     assert config.dataconnect_password == "database-secret"
+    assert config.pxgrid_password == "pxgrid-secret"
+    assert config.pxgrid_ready
     assert config.dataconnect_performance_interval == 900
     assert config.dataconnect_max_duty_cycle_percent == 0.1
     assert config.mnt_active_posture_interval == 900
@@ -65,12 +68,14 @@ password = "toml-database-secret"
     monkeypatch.setenv("ISE_HOST", "ignored-environment-pan")
     monkeypatch.setenv("ISE_PASS", "environment-rest-secret")
     monkeypatch.setenv("ISE_DATACONNECT_PASSWORD", "environment-database-secret")
+    monkeypatch.setenv("ISE_PXGRID_PASSWORD", "environment-pxgrid-secret")
 
     config = Config.load(path)
 
     assert config.ise_host == "toml-pan"
     assert config.ise_pass == "environment-rest-secret"
     assert config.dataconnect_password == "environment-database-secret"
+    assert config.pxgrid_password == "environment-pxgrid-secret"
 
 
 def test_config_path_environment_selects_file(monkeypatch, tmp_path):

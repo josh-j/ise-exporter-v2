@@ -15,6 +15,16 @@ function global:Show-IseCliHelp {
             'Debug-IsePsn PSN [-Live]              Cached PSN telemetry with optional live query',
             'Get-IseNadSummary NAD [-Live]         Cached NAD health with optional ERS refresh',
             'Get-IsePxGridStatus [-Live]           pxGrid ownership and deployment visibility')
+        'pxgrid' = @(
+            'Test-IsePxGrid                        Account state and protocol version',
+            'Get-IsePxGridService [NAME]           Discover REST/pubsub providers',
+            'Get-IsePxGridTopic [SERVICE]          Discover advertised pubsub topics',
+            'Get-IsePxGridSession [-IpAddress IP]  Sessions as PowerShell objects',
+            'Get-IsePxGridEndpoint [-Limit 100]    Bounded endpoint context snapshot',
+            'Get-IsePxGridRadiusFailure [ID]       RADIUS failures',
+            'Get-IsePxGridTrustSec -Type TYPE      SGT, ACL, VN, and egress policy data',
+            'Get-IsePxGridMdmEndpoint              MDM context',
+            'Get-IsePxGridAncPolicy                Read-only ANC policy inventory')
         'endpoints' = @(
             'Find-Endpoint PATTERN                 Endpoint/context wildcard search',
             'Get-IseEndpoint ID                    Detailed endpoint object',
@@ -65,6 +75,7 @@ function global:Show-IseCliHelp {
     Write-Host "  Get-IseCollectorStatus '*radius*' | Format-Table"
     Write-Host "  Debug-IseAuthentication 'LAB-PC01' | Group-Object section"
     Write-Host "  Find-Endpoint 'LAB-*' | Select-Object hostname,mac_address,posture_status"
+    Write-Host '  Get-IsePxGridSession -IpAddress 10.0.0.10 | Format-List *'
     Write-Host "  Get-IseDataConnectRow RADIUS_AUTHENTICATIONS -Like @{ USERNAME='admin*' } -Limit 50"
     Write-Host "`nUse: ise-help CATEGORY, Get-Help COMMAND -Full, or Get-Command -Module Ise.Cli"
 }

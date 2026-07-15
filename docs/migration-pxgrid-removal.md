@@ -7,7 +7,8 @@ collectors to the exact ISE 3.3.0.430 Patch 11 architecture documented in
 The final boundaries were checked against the
 [current rooted appliance](rooted-ise-ground-truth.md). The appliance still runs
 pxGrid Direct, but that is deliberately separate from whether this exporter uses
-pxGrid; it does not.
+pxGrid for collection; it does not. The operator PowerShell surface can use
+pxGrid 2.0 on demand for bounded, read-only diagnostics and discovery.
 
 ## Compatibility contract
 
@@ -39,7 +40,7 @@ pxGrid; it does not.
 
 ## pxGrid removal
 
-- [x] Remove the pxGrid client and control-plane implementation.
+- [x] Remove the continuously running pxGrid collector and control-plane implementation.
 - [x] Remove session and endpoint topic streaming.
 - [x] Remove pxGrid session, endpoint, model, and authorization collectors.
 - [x] Remove stream-mode runtime startup and fallback behavior.

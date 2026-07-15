@@ -349,18 +349,19 @@ MnT metrics never contain MAC addresses, usernames, session IDs, raw
 as status, OS family, PSN, normalized agent version, policy/result, and numeric
 step code are labels.
 
-### No pxGrid runtime
+### No pxGrid exporter runtime
 
-pxGrid is not part of the architecture. There is no pxGrid client,
-certificate credential, account activation, snapshot, WebSocket subscription,
-topic consumer, or live-event overlay in the exporter runtime. Likely-active
+pxGrid is not part of the exporter collection architecture. There is no pxGrid
+snapshot, WebSocket subscription, topic consumer, or live-event overlay in the
+exporter runtime. An isolated operator CLI client performs bounded, on-demand,
+read-only pxGrid 2.0 queries. Likely-active
 session counts are reconstructed from Data Connect accounting and therefore
 have the freshness and completeness of the records supplied by the NADs.
 Current active posture is the separate bounded MnT sample described above.
 The rooted appliance currently has pxGrid Direct running, but its port `8910`
 certificate still identifies the pre-rename host `ise01.ise.lab`. That confirms
 why appliance service health and usable client connectivity are different
-questions, and it does not justify adding pxGrid back to the exporter.
+questions, and it does not justify adding pxGrid collectors back to the exporter.
 
 ### MnT CLI diagnostics are separate
 

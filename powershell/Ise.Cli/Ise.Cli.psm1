@@ -2,7 +2,8 @@ Set-StrictMode -Version Latest
 
 $script:IseCommands = @(
     'overview', 'collector-status', 'endpoint-summary', 'troubleshoot-auth',
-    'psn-summary', 'nad-summary', 'pxgrid-status',
+    'psn-summary', 'nad-summary', 'pxgrid-status', 'pxgrid-account',
+    'pxgrid-services', 'pxgrid-topics', 'pxgrid-query',
     'health', 'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
     'sessions', 'session', 'auth-status', 'secure-client', 'nads', 'profiles',
     'tacacs-users', 'identity-groups', 'network-device-groups', 'licenses',
@@ -121,7 +122,8 @@ function Invoke-IseBackend {
     param(
         [Parameter(Mandatory)][ValidateSet(
             'overview', 'collector-status', 'endpoint-summary', 'troubleshoot-auth',
-            'psn-summary', 'nad-summary', 'pxgrid-status',
+            'psn-summary', 'nad-summary', 'pxgrid-status', 'pxgrid-account',
+            'pxgrid-services', 'pxgrid-topics', 'pxgrid-query',
             'health', 'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
             'sessions', 'session', 'auth-status', 'secure-client', 'nads', 'profiles',
             'tacacs-users', 'identity-groups', 'network-device-groups', 'licenses',
@@ -148,13 +150,17 @@ function Invoke-IseBackend {
 }
 
 function Invoke-IseCommand {
-    <# .SYNOPSIS Runs any bounded legacy command and returns PowerShell objects. #>
+    <#
+.SYNOPSIS
+Runs any bounded legacy command and returns PowerShell objects.
+#>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory, Position = 0)]
         [ValidateSet(
             'overview', 'collector-status', 'endpoint-summary', 'troubleshoot-auth',
-            'psn-summary', 'nad-summary', 'pxgrid-status',
+            'psn-summary', 'nad-summary', 'pxgrid-status', 'pxgrid-account',
+            'pxgrid-services', 'pxgrid-topics', 'pxgrid-query',
             'health', 'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
             'sessions', 'session', 'auth-status', 'secure-client', 'nads', 'profiles',
             'tacacs-users', 'identity-groups', 'network-device-groups', 'licenses',
@@ -181,7 +187,10 @@ function Invoke-IseCommand {
 }
 
 function Get-IseCliVersion {
-    <# .SYNOPSIS Returns the backend and exact supported ISE release version. #>
+    <#
+.SYNOPSIS
+Returns the backend and exact supported ISE release version.
+#>
     [CmdletBinding()]
     param()
     (Invoke-IseBackendProcess -ArgumentList @('--version')).Trim()
@@ -264,6 +273,187 @@ function Get-IsePxGridStatus {
     $a=[System.Collections.Generic.List[string]]::new(); Add-IseSwitchArgument -Arguments $a -Value:$Live -Name '--live'
     Invoke-IseBackend -Command pxgrid-status -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
+
+function Test-IsePxGrid {
+    <#
+.SYNOPSIS
+Tests pxGrid 2.0 account activation and returns the account state.
+#>
+    [CmdletBinding()]
+    param([string]$ConfigFile)
+    Invoke-IseBackend -Command pxgrid-account -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridService {
+    <#
+.SYNOPSIS
+Discovers pxGrid 2.0 service providers and their properties.
+#>
+    [CmdletBinding()]
+    param([Parameter(Position=0)][string]$Name,[string]$ConfigFile)
+    $a=[System.Collections.Generic.List[string]]::new()
+    if ($Name) { [void]$a.Add('--name'); [void]$a.Add($Name) }
+    Invoke-IseBackend -Command pxgrid-services -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridTopic {
+    <#
+.SYNOPSIS
+Lists pubsub topic names advertised by pxGrid 2.0 services.
+#>
+    [CmdletBinding()]
+    param([Parameter(Position=0)][string]$Service,[string]$ConfigFile)
+    $a=[System.Collections.Generic.List[string]]::new()
+    if ($Service) { [void]$a.Add('--service'); [void]$a.Add($Service) }
+    Invoke-IseBackend -Command pxgrid-topics -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
+}
+
+function Invoke-IsePxGridQuery {
+    <#
+    .SYNOPSIS Runs an allowlisted read-only pxGrid 2.0 operation and returns objects.
+    .DESCRIPTION Write operations such as ANC apply/clear and account creation are intentionally unavailable.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory,Position=0)][ValidateSet(
+            'sessions','session-by-ip','session-by-mac','user-groups','user-group-by-username',
+            'system-health','system-performance','trustsec-security-groups','trustsec-acls',
+            'trustsec-virtual-networks','trustsec-egress-policies','trustsec-egress-matrices',
+            'endpoints','sxp-bindings','radius-failures','radius-failure-by-id','mdm-endpoints',
+            'mdm-endpoint-by-mac','mdm-endpoints-by-type','mdm-endpoints-by-os',
+            'profiler-profiles','anc-policies','anc-policy-by-name','anc-endpoints',
+            'anc-endpoint-by-mac','anc-endpoint-policies')][string]$Operation,
+        [hashtable]$Body=@{},
+        [ValidateRange(1,5000)][int]$Limit=100,
+        [switch]$AllowExpensive,
+        [string]$ConfigFile
+    )
+    $a=[System.Collections.Generic.List[string]]::new()
+    [void]$a.Add($Operation)
+    [void]$a.Add('--body-json'); [void]$a.Add(($Body | ConvertTo-Json -Compress -Depth 20))
+    [void]$a.Add('--limit'); [void]$a.Add([string]$Limit)
+    Add-IseSwitchArgument -Arguments $a -Value:$AllowExpensive -Name '--allow-expensive'
+    Invoke-IseBackend -Command pxgrid-query -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridSession {
+    <#
+.SYNOPSIS
+Gets bounded pxGrid sessions, optionally by IP address or MAC address.
+#>
+    [CmdletBinding(DefaultParameterSetName='All')]
+    param(
+        [Parameter(Mandatory,ParameterSetName='Ip')][ipaddress]$IpAddress,
+        [Parameter(Mandatory,ParameterSetName='Mac')][string]$MacAddress,
+        [ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
+    $op='sessions'; $body=@{}
+    if ($PSCmdlet.ParameterSetName -eq 'Ip') { $op='session-by-ip'; $body.ipAddress=[string]$IpAddress }
+    if ($PSCmdlet.ParameterSetName -eq 'Mac') { $op='session-by-mac'; $body.macAddress=$MacAddress }
+    Invoke-IsePxGridQuery $op -Body $body -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridUserGroup {
+    <#
+.SYNOPSIS
+Gets pxGrid user groups or the group for one username.
+#>
+    [CmdletBinding()]
+    param([Parameter(Position=0)][string]$Username,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
+    $op=if($Username){'user-group-by-username'}else{'user-groups'}; $body=@{}
+    if($Username){$body.userName=$Username}
+    Invoke-IsePxGridQuery $op -Body $body -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridSystemHealth { <#
+.SYNOPSIS
+Gets pxGrid system health objects.
+#> [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IsePxGridQuery system-health -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IsePxGridSystemPerformance { <#
+.SYNOPSIS
+Gets pxGrid system performance objects.
+#> [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IsePxGridQuery system-performance -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+
+function Get-IsePxGridTrustSec {
+    <#
+.SYNOPSIS
+Gets one class of TrustSec configuration through pxGrid 2.0.
+#>
+    [CmdletBinding()]
+    param([ValidateSet('SecurityGroup','Acl','VirtualNetwork','EgressPolicy','EgressMatrix')][string]$Type='SecurityGroup',[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
+    $ops=@{SecurityGroup='trustsec-security-groups';Acl='trustsec-acls';VirtualNetwork='trustsec-virtual-networks';EgressPolicy='trustsec-egress-policies';EgressMatrix='trustsec-egress-matrices'}
+    Invoke-IsePxGridQuery $ops[$Type] -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridEndpoint {
+    <#
+.SYNOPSIS
+Gets a bounded pxGrid endpoint-context snapshot.
+#>
+    [CmdletBinding()]
+    param([datetime]$Since=[datetime]'1970-01-01T00:00:00Z',[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
+    $body=@{startCreateTimestamp=$Since.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ');startIndex=0;count=$Limit;order='ASC'}
+    Invoke-IsePxGridQuery endpoints -Body $body -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridSxpBinding { <#
+.SYNOPSIS
+Gets bounded SXP bindings through pxGrid 2.0.
+#> [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IsePxGridQuery sxp-bindings -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+
+function Get-IsePxGridRadiusFailure {
+    <#
+.SYNOPSIS
+Gets recent pxGrid RADIUS failures or one failure by ID.
+#>
+    [CmdletBinding()]
+    param([Parameter(Position=0)][string]$Id,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
+    $op=if($Id){'radius-failure-by-id'}else{'radius-failures'}; $body=@{}; if($Id){$body.id=$Id}
+    Invoke-IsePxGridQuery $op -Body $body -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridMdmEndpoint {
+    <#
+.SYNOPSIS
+Gets MDM endpoint context, optionally filtered by MAC, device type, or OS type.
+#>
+    [CmdletBinding(DefaultParameterSetName='All')]
+    param([Parameter(Mandatory,ParameterSetName='Mac')][string]$MacAddress,[Parameter(Mandatory,ParameterSetName='Type')][string]$Type,[Parameter(Mandatory,ParameterSetName='Os')][string]$OsType,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
+    $op='mdm-endpoints';$body=@{}
+    if($PSCmdlet.ParameterSetName -eq 'Mac'){$op='mdm-endpoint-by-mac';$body.macAddress=$MacAddress}
+    if($PSCmdlet.ParameterSetName -eq 'Type'){$op='mdm-endpoints-by-type';$body.type=$Type}
+    if($PSCmdlet.ParameterSetName -eq 'Os'){$op='mdm-endpoints-by-os';$body.osType=$OsType}
+    Invoke-IsePxGridQuery $op -Body $body -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridProfilerProfile { <#
+.SYNOPSIS
+Gets pxGrid profiler policy-tree objects.
+#> [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IsePxGridQuery profiler-profiles -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+
+function Get-IsePxGridAncPolicy {
+    <#
+.SYNOPSIS
+Gets ANC policies through the read-only pxGrid surface.
+#>
+    [CmdletBinding()] param([Parameter(Position=0)][string]$Name,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
+    $op=if($Name){'anc-policy-by-name'}else{'anc-policies'};$body=@{};if($Name){$body.name=$Name}
+    Invoke-IsePxGridQuery $op -Body $body -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridAncEndpoint {
+    <#
+.SYNOPSIS
+Gets ANC endpoints, optionally by MAC address.
+#>
+    [CmdletBinding()] param([Parameter(Position=0)][string]$MacAddress,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
+    $op=if($MacAddress){'anc-endpoint-by-mac'}else{'anc-endpoints'};$body=@{};if($MacAddress){$body.macAddress=$MacAddress}
+    Invoke-IsePxGridQuery $op -Body $body -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile
+}
+
+function Get-IsePxGridAncEndpointPolicy { <#
+.SYNOPSIS
+Gets ANC endpoint-to-policy assignments.
+#> [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IsePxGridQuery anc-endpoint-policies -Limit $Limit -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
 
 function Find-IseEndpoint {
     [CmdletBinding()]
@@ -625,7 +815,10 @@ function Get-IseDataConnectRow {
 }
 
 function Search-IseDataConnect {
-    <# .SYNOPSIS Compatibility name for Get-IseDataConnectRow. #>
+    <#
+.SYNOPSIS
+Compatibility name for Get-IseDataConnectRow.
+#>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory,Position=0,ValueFromPipeline,ValueFromPipelineByPropertyName)]
@@ -682,7 +875,10 @@ function Invoke-IseDiagnosticView {
 }
 
 function Get-IseAlert {
-    <# .SYNOPSIS Returns recent ISE system alerts from Data Connect. #>
+    <#
+.SYNOPSIS
+Returns recent ISE system alerts from Data Connect.
+#>
     [CmdletBinding()]
     param(
         [string]$Severity, [string]$Category, [string]$Node, [string]$Message='*',
@@ -699,7 +895,10 @@ function Get-IseAlert {
 }
 
 function Get-IseSystemDiagnostic {
-    <# .SYNOPSIS Returns recent system diagnostic records from Data Connect. #>
+    <#
+.SYNOPSIS
+Returns recent system diagnostic records from Data Connect.
+#>
     [CmdletBinding()]
     param(
         [string]$Severity, [string]$Category, [string]$Node, [string]$Message='*',
@@ -716,7 +915,10 @@ function Get-IseSystemDiagnostic {
 }
 
 function Get-IseAaaDiagnostic {
-    <# .SYNOPSIS Returns recent authentication, authorization, and accounting diagnostics. #>
+    <#
+.SYNOPSIS
+Returns recent authentication, authorization, and accounting diagnostics.
+#>
     [CmdletBinding()]
     param(
         [string]$Username, [string]$Severity, [string]$Category,
@@ -734,7 +936,10 @@ function Get-IseAaaDiagnostic {
 }
 
 function Test-IseDataConnect {
-    <# .SYNOPSIS Diagnoses the authenticated Oracle Data Connect session and readable catalog. #>
+    <#
+.SYNOPSIS
+Diagnoses the authenticated Oracle Data Connect session and readable catalog.
+#>
     [CmdletBinding()]
     param([string]$ConfigFile)
     Invoke-IseBackend -Command dataconnect-health -ConfigFile $ConfigFile
@@ -745,7 +950,10 @@ Update-TypeData -TypeName Ise.Cli.SystemDiagnostic -DefaultDisplayPropertySet TI
 Update-TypeData -TypeName Ise.Cli.AaaDiagnostic -DefaultDisplayPropertySet TIMESTAMP,ISE_NODE,USERNAME,MESSAGE_SEVERITY,MESSAGE_CODE,CATEGORY,MESSAGE_TEXT -Force
 
 function Get-IseSchema {
-    <# .SYNOPSIS Returns the backend contract for one command or the complete command set. #>
+    <#
+.SYNOPSIS
+Returns the backend contract for one command or the complete command set.
+#>
     [CmdletBinding()]
     param([Parameter(Position=0)][string]$Name, [string]$ConfigFile)
     $arguments = if ($Name) { @($Name) } else { @() }
@@ -907,7 +1115,13 @@ Set-Alias -Name Find-Endpoint -Value Find-IseEndpoint
 Export-ModuleMember -Function @(
     'Invoke-IseCommand','Get-IseCliVersion','Get-IseOverview','Get-IseCollectorStatus',
     'Get-IseEndpointSummary','Debug-IseAuthentication','Debug-IsePsn','Get-IseNadSummary',
-    'Get-IsePxGridStatus','Test-IseHealth','Get-IseNode','Find-IseEndpoint',
+    'Get-IsePxGridStatus','Test-IsePxGrid','Get-IsePxGridService','Get-IsePxGridTopic',
+    'Invoke-IsePxGridQuery','Get-IsePxGridSession','Get-IsePxGridUserGroup',
+    'Get-IsePxGridSystemHealth','Get-IsePxGridSystemPerformance','Get-IsePxGridTrustSec',
+    'Get-IsePxGridEndpoint','Get-IsePxGridSxpBinding','Get-IsePxGridRadiusFailure',
+    'Get-IsePxGridMdmEndpoint','Get-IsePxGridProfilerProfile','Get-IsePxGridAncPolicy',
+    'Get-IsePxGridAncEndpoint','Get-IsePxGridAncEndpointPolicy',
+    'Test-IseHealth','Get-IseNode','Find-IseEndpoint',
     'Get-IseEndpointField','Get-IseEndpoint','Resolve-IseEndpoint','Get-IseSession',
     'Get-IseActiveSession','Get-IseAuthenticationStatus','Get-IseSecureClient',
     'Get-IseNetworkDevice','Get-IseProfilerProfile','Get-IseTacacsUser',

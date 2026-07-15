@@ -163,3 +163,18 @@ production_safe = true
 allow_expensive = false
 # Absolute default ceiling for CLI rows; individual commands may use lower defaults.
 max_rows = 1000
+
+[pxgrid]
+# pxGrid 2.0 operator access is CLI-only; it does not enable exporter collectors.
+host = "ise1.example.com"
+port = 8910
+node_name = "ise-cli"
+# Prefer ISE_PXGRID_PASSWORD from a production secret manager. Certificate
+# authentication is also supported by setting client_cert and client_key together.
+password = "changeme"
+client_cert = ""
+client_key = ""
+verify_tls = true
+ca_bundle = "/etc/ise-exporter/certs/ise-ca.cer"
+# Every control or service request is hard-capped at 30 seconds.
+request_timeout_seconds = 30

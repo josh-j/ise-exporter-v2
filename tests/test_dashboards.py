@@ -179,13 +179,13 @@ def test_exporter_health_owns_exporter_data_quality_and_freshness():
         assert metric not in overview
 
 
-def test_removed_runtime_cannot_return_through_config_or_imports():
+def test_pxgrid_cannot_return_to_exporter_runtime():
     root = DASHBOARDS.parent
-    config_text = (root / "ise_exporter/config.py").read_text().upper()
     main_text = (root / "ise_exporter/__main__.py").read_text().lower()
-    assert "PXGRID" not in config_text
     assert "pxgrid" not in main_text
-    assert not (root / "ise_exporter/clients/pxgrid.py").exists()
+    cli_text = (root / "ise_exporter/cli.py").read_text().lower()
+    assert "clients.pxgrid" in cli_text
+    assert (root / "ise_exporter/clients/pxgrid.py").exists()
 
 
 def test_every_prometheus_target_uses_imported_datasource():

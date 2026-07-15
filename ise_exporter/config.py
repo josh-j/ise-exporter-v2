@@ -93,6 +93,15 @@ class Config:
     dataconnect_tacacs_interval: int = 86400
     dataconnect_shared_pacing_file: str = "/var/lib/ise-exporter/shared/dataconnect.pacing"
     dataconnect_auth_guard_file: str = "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
+    pxgrid_host: str = ""
+    pxgrid_port: int = 8910
+    pxgrid_node_name: str = ""
+    pxgrid_password: str = ""
+    pxgrid_client_cert: str = ""
+    pxgrid_client_key: str = ""
+    pxgrid_ca_bundle: str = ""
+    pxgrid_ssl_verify: bool = True
+    pxgrid_request_timeout: int = 30
     cli_production_safe: bool = True
     cli_allow_expensive: bool = False
     cli_max_rows: int = 1000
@@ -102,6 +111,12 @@ class Config:
         return bool(self.dataconnect_host and self.dataconnect_user
                     and self.dataconnect_password)
 
+    @property
+    def pxgrid_ready(self) -> bool:
+        credentials = self.pxgrid_password or (
+            self.pxgrid_client_cert and self.pxgrid_client_key)
+        return bool(self.pxgrid_host and self.pxgrid_node_name and credentials)
+
     def summary(self) -> str:
         """Return a secret-redacted startup summary."""
         return (f"config_file={self.config_file!r} "
@@ -110,6 +125,7 @@ class Config:
                 f"mnt_active_list_ceiling="
                 f"{self.mnt_active_posture_max_active_list_sessions} "
                 f"dataconnect_ready={self.dataconnect_ready} "
+                f"pxgrid_ready={self.pxgrid_ready} "
                 f"dataconnect_target={self.dataconnect_host!r}:"
                 f"{self.dataconnect_port}/{self.dataconnect_service} "
                 f"dataconnect_query_timeout_seconds={self.dataconnect_query_timeout} "
@@ -168,6 +184,8 @@ class Config:
         if "ISE_DATACONNECT_PASSWORD" in os.environ:
             values["dataconnect_password"] = os.environ[
                 "ISE_DATACONNECT_PASSWORD"]
+        if "ISE_PXGRID_PASSWORD" in os.environ:
+            values["pxgrid_password"] = os.environ["ISE_PXGRID_PASSWORD"]
 
         return _validate(replace(defaults, **values))
 
@@ -250,6 +268,15 @@ _TOML_FIELDS = {
     "dataconnect.intervals.freshness_seconds": "dataconnect_freshness_interval",
     "dataconnect.intervals.nad_health_seconds": "dataconnect_nad_health_interval",
     "dataconnect.intervals.tacacs_seconds": "dataconnect_tacacs_interval",
+    "pxgrid.host": "pxgrid_host",
+    "pxgrid.port": "pxgrid_port",
+    "pxgrid.node_name": "pxgrid_node_name",
+    "pxgrid.password": "pxgrid_password",
+    "pxgrid.client_cert": "pxgrid_client_cert",
+    "pxgrid.client_key": "pxgrid_client_key",
+    "pxgrid.ca_bundle": "pxgrid_ca_bundle",
+    "pxgrid.verify_tls": "pxgrid_ssl_verify",
+    "pxgrid.request_timeout_seconds": "pxgrid_request_timeout",
     "cli.production_safe": "cli_production_safe",
     "cli.allow_expensive": "cli_allow_expensive",
     "cli.max_rows": "cli_max_rows",
@@ -276,6 +303,8 @@ _HARD_RANGES = {
     "dataconnect_query_timeout": (5, 15),
     "dataconnect_max_groups": (1, 1000),
     "dataconnect_event_window_hours": (1, 6),
+    "pxgrid_port": (1, 65535),
+    "pxgrid_request_timeout": (5, 30),
     "cli_max_rows": (100, 5000),
 }
 
@@ -356,4 +385,6 @@ def _validate(config):
         if not values[name].strip():
             key = next(key for key, field in _TOML_FIELDS.items() if field == name)
             raise ConfigError(f"{key} cannot be empty")
+    if bool(config.pxgrid_client_cert) != bool(config.pxgrid_client_key):
+        raise ConfigError("pxgrid.client_cert and pxgrid.client_key must be configured together")
     return replace(config, **values)
