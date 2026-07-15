@@ -1,5 +1,6 @@
 import types
 
+from ise_exporter import metrics
 from ise_exporter.collectors import devices
 
 
@@ -58,3 +59,32 @@ def test_device_detail_cache_prunes_removed_inventory_entries(monkeypatch):
     devices.collect(client, cfg)
     assert set(devices._cache.cache) == {"current"}
     assert set(devices._cache.timestamps) == {"current"}
+
+
+def test_malformed_device_inventory_does_not_publish_a_count():
+    metrics.ise_network_devices_total.set(7)
+
+    class Client:
+        def get_ers(self, *args, **kwargs):
+            return [{"id": "nad-1", "name": "switch-1"}, None]
+
+    cfg = types.SimpleNamespace(collect_device_details=False)
+
+    assert devices.collect(Client(), cfg) is None
+    assert metrics.ise_network_devices_total._value.get() == 7
+
+
+def test_malformed_device_group_list_invalidates_inventory(monkeypatch):
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return [{"id": "nad-1", "name": "switch-1"}]
+            return {"NetworkDevice": {
+                "id": "nad-1", "name": "switch-1",
+                "NetworkDeviceGroupList": "Location#All Locations#Lab",
+            }}
+
+    monkeypatch.setattr(devices, "_cache", None)
+    cfg = types.SimpleNamespace(collect_device_details=True, device_cache_ttl=3600)
+
+    assert devices.collect(Client(), cfg) is None

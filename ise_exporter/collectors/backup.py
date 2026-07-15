@@ -15,6 +15,7 @@ _METRICS = (
     metrics.ise_backup_last_success_timestamp,
     metrics.ise_backup_age_hours,
 )
+_STATUSES = frozenset({"COMPLETED", "ERROR", "IN_PROGRESS"})
 
 
 def collect(client, cfg):
@@ -30,9 +31,13 @@ def collect(client, cfg):
         if not status and not start_date:
             replace_metric_snapshot(_METRICS, ())
             return
+        if not isinstance(status, str) or status not in _STATUSES:
+            raise CollectorFailed("backup status response contained an invalid status")
 
+        if status == "COMPLETED" and not start_date:
+            raise CollectorFailed("completed backup returned no startDate")
         ts = parse_ise_date(start_date) if (start_date and status == "COMPLETED") else None
-        if status == "COMPLETED" and start_date and ts is None:
+        if status == "COMPLETED" and ts is None:
             raise CollectorFailed("completed backup returned an invalid startDate")
         previous_success = metrics.ise_backup_last_success_timestamp._value.get()
         last_success = ts.timestamp() if ts else previous_success

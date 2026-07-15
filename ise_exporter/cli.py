@@ -1207,12 +1207,9 @@ def _dataconnect_endpoint_search(
                 if not source_mac:
                     continue
                 alias = f"s{field_index}_{value_index}_{option_index}"
-                expression = _text_expression(
-                    alias,
-                    binding["column"], binding["data_type"])
                 match_value = _safe_match_expression(
                     alias, binding["column"], binding["data_type"])
-                match = f"UPPER({expression}) LIKE :{parameter} ESCAPE '\\'"
+                match = f"UPPER({match_value}) LIKE :{parameter} ESCAPE '\\'"
                 timestamp = _first_column(
                     source_columns, *ENDPOINT_CONTEXT_SOURCES[source]["timestamp"])
                 recent = ""

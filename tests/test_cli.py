@@ -139,6 +139,7 @@ class CompletionDataConnect(FakeDataConnect):
             ("TIMESTAMP", "TIMESTAMP WITH TIME ZONE"),
             ("ENDPOINT_MAC_ADDRESS", "VARCHAR2"),
             ("POSTURE_STATUS", "VARCHAR2"), ("POSTURE_AGENT_VERSION", "VARCHAR2"),
+            ("POSTURE_REPORT", "CLOB"),
         ),
     }
 
@@ -826,6 +827,20 @@ def test_endpoint_context_search_joins_schema_discovered_sources(capsys):
                for spec in cli.ENDPOINT_CONTEXT_SOURCES.values())
 
 
+def test_endpoint_context_search_uses_safe_clob_match_expression(capsys):
+    dataconnect = CompletionDataConnect()
+
+    assert cli.main([
+        "endpoints", "posture-report=C2CP*", "--limit", "5", "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+
+    sql, _parameters = next(
+        (sql, parameters) for sql, parameters in dataconnect.calls
+        if "FROM ENDPOINTS_DATA e" in sql)
+    assert "UPPER(ASCIISTR(DBMS_LOB.SUBSTR(" in sql
+    assert ".POSTURE_REPORT, 4000, 1))) LIKE" in sql
+
+
 def test_cli_dataconnect_reports_honor_lower_production_scan_ceiling(capsys):
     client = FakeClient()
     client.cfg.dataconnect_event_window_hours = 4
@@ -913,6 +928,11 @@ def test_endpoint_projection_safely_converts_legacy_text_and_time_types():
     assert cli._safe_select_expression(
         "e", "UPDATE_TIME", "TIMESTAMP(6) WITH TIME ZONE") == (
             "TO_CHAR(e.UPDATE_TIME, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF TZH:TZM') AS UPDATE_TIME")
+
+
+def test_endpoint_match_safely_converts_legacy_clob_values():
+    assert cli._safe_match_expression("p", "POSTURE_REPORT", "CLOB") == \
+        "ASCIISTR(DBMS_LOB.SUBSTR(p.POSTURE_REPORT, 4000, 1))"
 
 
 def test_endpoint_attribute_payloads_are_operator_readable_without_data_loss():

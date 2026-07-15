@@ -18,6 +18,10 @@ _COMPLIANT_STATES = frozenset({
     "FULL_COMPLIANCE",
     "RESERVED_IN_COMPLIANCE",
 })
+_COMPLIANCE_STATES = _COMPLIANT_STATES | frozenset({
+    "EVALUATION", "EVALUATION_EXPIRED", "NONCOMPLIANT", "RELEASED_ENTITLEMENT",
+})
+_STATUS_STATES = frozenset({"DISABLED", "ENABLED"})
 
 
 def collect(client, cfg):
@@ -38,6 +42,8 @@ def collect(client, cfg):
             if not name or len(name) > 256 or name in names:
                 raise CollectorFailed("license tier-state contained an invalid tier name")
             names.add(name)
+            if "consumptionCounter" not in tier:
+                raise CollectorFailed(f"license tier {name} omitted consumption")
             try:
                 consumption = float(tier.get("consumptionCounter", 0) or 0)
             except (TypeError, ValueError) as error:
@@ -46,6 +52,11 @@ def collect(client, cfg):
             if not math.isfinite(consumption) or consumption < 0:
                 raise CollectorFailed(f"license tier {name} contained invalid consumption")
             compliance = str(tier.get("compliance") or "").strip().upper()
+            status = str(tier.get("status") or "").strip().upper()
+            if compliance not in _COMPLIANCE_STATES:
+                raise CollectorFailed(f"license tier {name} contained invalid compliance")
+            if status not in _STATUS_STATES:
+                raise CollectorFailed(f"license tier {name} contained invalid status")
             # These values come from ISE 3.3's TierStateSettings enum. Exact
             # membership avoids both false positives and the former false
             # negatives for COMPLIANT and FULL_COMPLIANCE.
@@ -53,7 +64,7 @@ def collect(client, cfg):
             rows.append({
                 "name": name,
                 "consumption": consumption,
-                "enabled": int(str(tier.get("status") or "").strip().upper() == "ENABLED"),
+                "enabled": int(status == "ENABLED"),
                 "compliant": int(is_compliant),
             })
 

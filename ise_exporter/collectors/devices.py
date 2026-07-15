@@ -29,7 +29,15 @@ def _classify(det):
     """(name, ip, device_type, location, ops_owner) from an ERS NetworkDevice body.
     Groups look like 'Location#All Locations#Germany#Ramstein AB' — drop the
     category and the 'All X' root (parts[2:]) for location; leaf for the rest."""
+    if not isinstance(det, dict):
+        raise CollectorFailed("network device detail was not an object")
     ip_list = det.get("NetworkDeviceIPList", [])
+    groups = det.get("NetworkDeviceGroupList", [])
+    if (not isinstance(ip_list, list)
+            or any(not isinstance(row, dict) for row in ip_list)
+            or not isinstance(groups, list)
+            or any(not isinstance(group, str) for group in groups)):
+        raise CollectorFailed("network device detail contained invalid list fields")
     if ip_list:
         ip = ip_list[0].get("ipaddress", ip_list[0].get("ipAddress", "unknown"))
     else:
@@ -41,7 +49,7 @@ def _classify(det):
     # than splitting into a separate lowercase "unknown". (ops_owner/device_type stay
     # lowercase — consistent with their own label sources.)
     location, ops_owner, device_type = "Unknown", "unknown", "unknown"
-    for g in det.get("NetworkDeviceGroupList", []):
+    for g in groups:
         parts = g.split("#")
         if parts[0] == "Location" and len(parts) > 2:
             location = "#".join(parts[2:])
@@ -61,6 +69,12 @@ def collect(client, cfg):
             raise CollectorFailed("network device inventory request failed")
         if not isinstance(devices, list):
             raise CollectorFailed("network device inventory response was not a list")
+        device_ids = [str(row.get("id") or "").strip()
+                      for row in devices if isinstance(row, dict)]
+        if (len(device_ids) != len(devices) or any(not device_id for device_id in device_ids)
+                or len(set(device_ids)) != len(device_ids)
+                or any(not str(row.get("name") or "").strip() for row in devices)):
+            raise CollectorFailed("network device inventory contained invalid identities")
 
         if not cfg.collect_device_details:
             replace_metric_snapshot(

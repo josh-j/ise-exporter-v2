@@ -65,6 +65,10 @@ def collect(client, cfg):
                 raise CollectorFailed(f"{cert_type} certificate has invalid expirationDate")
             if expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
+            self_signed = cert.get("selfSigned", False)
+            if not isinstance(self_signed, bool):
+                raise CollectorFailed(
+                    f"{cert_type} certificate has invalid selfSigned value")
             days = (expiry - now).days
             rows.append({
                 "hostname": hostname,
@@ -74,7 +78,7 @@ def collect(client, cfg):
                 "days": days,
                 "key_size": int(cert.get("keySize") or 0),
                 "signature": str(cert.get("signatureAlgorithm") or "").casefold(),
-                "self_signed": bool(cert.get("selfSigned", False)),
+                "self_signed": self_signed,
                 "issuer": cert.get("issuedBy", ""),
                 "subject": cert.get("subject", cert.get("issuedTo", "")),
             })

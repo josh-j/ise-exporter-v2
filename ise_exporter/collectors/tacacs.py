@@ -44,6 +44,12 @@ _EVENT_TYPES = ("authentication", "authorization", "accounting")
 logger = logging.getLogger(__name__)
 
 
+def _object_list(value, description):
+    if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
+        raise CollectorFailed(f"{description} returned an invalid object list")
+    return value
+
+
 def _state_path(cfg):
     return getattr(cfg, "state_db_path", ":memory:")
 
@@ -301,10 +307,17 @@ def collect_config(client, cfg):
             api_name="ers_tacacs_internal_users")
         policy_sets = client.get_pan_api(
             "/policy/device-admin/policy-set", api_name="tacacs_policy_sets")
-        if not isinstance(resources, list):
-            raise CollectorFailed("TACACS internal-user inventory request failed")
-        if not isinstance(policy_sets, list):
-            raise CollectorFailed("Device Admin policy-set request failed")
+        _object_list(resources, "TACACS internal-user inventory")
+        _object_list(policy_sets, "Device Admin policy-set inventory")
+        resource_ids = [str(row.get("id") or "").strip() for row in resources]
+        if (any(not user_id or not str(row.get("name") or "").strip()
+                for user_id, row in zip(resource_ids, resources))
+                or len(set(resource_ids)) != len(resource_ids)):
+            raise CollectorFailed("TACACS internal-user inventory contained invalid identities")
+        policy_ids = [str(row.get("id") or "").strip() for row in policy_sets]
+        if any(not policy_id for policy_id in policy_ids) \
+                or len(set(policy_ids)) != len(policy_ids):
+            raise CollectorFailed("Device Admin policy-set inventory contained invalid IDs")
         limit = max(1, min(1000, int(getattr(cfg, "tacacs_internal_user_max", 1000))))
         ordered_resources = sorted(
             resources,
@@ -390,28 +403,23 @@ def collect_config(client, cfg):
         authz_rows = []
         for policy_set in policy_sets:
             policy_id = policy_set.get("id")
-            if not policy_id:
-                continue
             authentication = client.get_pan_api(
                 f"/policy/device-admin/policy-set/{policy_id}/authentication",
                 api_name="tacacs_authentication_rules")
             authorization = client.get_pan_api(
                 f"/policy/device-admin/policy-set/{policy_id}/authorization",
                 api_name="tacacs_authorization_rules")
-            if not isinstance(authentication, list) or not isinstance(authorization, list):
-                raise CollectorFailed(
-                    f"Device Admin rules request failed for policy set {policy_id}")
-            auth_rows.extend((policy_set, row) for row in authentication
-                             if isinstance(row, dict))
-            authz_rows.extend((policy_set, row) for row in authorization
-                              if isinstance(row, dict))
+            _object_list(authentication, f"Device Admin authentication rules for {policy_id}")
+            _object_list(authorization, f"Device Admin authorization rules for {policy_id}")
+            auth_rows.extend((policy_set, row) for row in authentication)
+            authz_rows.extend((policy_set, row) for row in authorization)
 
         command_sets = client.get_pan_api(
             "/policy/device-admin/command-sets", api_name="tacacs_command_sets")
         shell_profiles = client.get_pan_api(
             "/policy/device-admin/shell-profiles", api_name="tacacs_shell_profiles")
-        if not isinstance(command_sets, list) or not isinstance(shell_profiles, list):
-            raise CollectorFailed("Device Admin object inventory request failed")
+        _object_list(command_sets, "Device Admin command-set inventory")
+        _object_list(shell_profiles, "Device Admin shell-profile inventory")
 
         detail_count = len(users)
         review_days = max(1, getattr(cfg, "tacacs_unused_account_days", 180))

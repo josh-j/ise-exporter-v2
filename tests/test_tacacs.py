@@ -276,6 +276,22 @@ def test_valid_empty_tacacs_configuration_clears_stale_labels():
     assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 1
 
 
+def test_malformed_device_admin_rule_preserves_previous_snapshot():
+    metrics.ise_tacacs_policy_objects_total.labels(object_type="policy_sets").set(9)
+    old_rows = _rows(metrics.ise_tacacs_policy_objects_total, "object_type")
+
+    class MalformedRule(Client):
+        def get_pan_api(self, path, api_name="x"):
+            if path.endswith("/authentication"):
+                return [None]
+            return super().get_pan_api(path, api_name)
+
+    tacacs.collect_config(MalformedRule(), types.SimpleNamespace(
+        tacacs_internal_user_max=1000, tacacs_unused_account_days=180))
+
+    assert _rows(metrics.ise_tacacs_policy_objects_total, "object_type") == old_rows
+
+
 def test_collects_dataconnect_account_attribution(monkeypatch):
     class DataConnect:
         closed = False

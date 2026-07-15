@@ -61,6 +61,37 @@ def test_backup_valid_empty_response_clears_stale_snapshot():
     assert metrics.ise_backup_age_hours._value.get() == 0
 
 
+def test_backup_completed_without_date_preserves_previous_snapshot():
+    metrics.ise_backup_configured.set(1)
+    metrics.ise_backup_last_success_timestamp.set(100)
+    metrics.ise_backup_age_hours.set(5)
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return {"status": "COMPLETED"}
+
+    backup.collect(Client(), _cfg())
+
+    assert metrics.ise_backup_configured._value.get() == 1
+    assert metrics.ise_backup_last_success_timestamp._value.get() == 100
+    assert metrics.ise_backup_age_hours._value.get() == 5
+
+
+@pytest.mark.parametrize("status", (123, "UNKNOWN", "completed"))
+def test_backup_invalid_status_preserves_previous_snapshot(status):
+    metrics.ise_backup_configured.set(1)
+    metrics.ise_backup_last_success_timestamp.set(100)
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return {"status": status, "startDate": "2026-07-01"}
+
+    backup.collect(Client(), _cfg())
+
+    assert metrics.ise_backup_configured._value.get() == 1
+    assert metrics.ise_backup_last_success_timestamp._value.get() == 100
+
+
 def test_certificate_page_failure_preserves_previous_snapshot(monkeypatch):
     metrics.ise_certificate_expiry_days.labels(
         hostname="old", cert_name="old", cert_type="system", usage="Admin").set(10)
@@ -98,6 +129,27 @@ def test_certificate_valid_empty_stores_clear_stale_labels(monkeypatch):
     assert set(metrics.ise_certificates_expiring_soon._metrics) == {("30",), ("60",), ("90",)}
     assert all(child._value.get() == 0
                for child in metrics.ise_certificates_expiring_soon._metrics.values())
+
+
+def test_certificate_rejects_string_self_signed_without_replacing_snapshot(monkeypatch):
+    metrics.ise_certificate_self_signed.labels(hostname="old", cert_name="old").set(1)
+    old_keys = set(metrics.ise_certificate_self_signed._metrics)
+    monkeypatch.setattr(
+        certificates, "get_nodes", lambda *args, **kwargs: [{"hostname": "psn-1"}],
+    )
+
+    class Client:
+        def get_pan_api(self, path, **kwargs):
+            if "system-certificate" in path:
+                return [{
+                    "friendlyName": "EAP cert", "expirationDate": "2030-01-01",
+                    "selfSigned": "false",
+                }]
+            raise AssertionError("invalid system certificate must fail before trust store")
+
+    certificates.collect(Client(), _cfg())
+
+    assert set(metrics.ise_certificate_self_signed._metrics) == old_keys
 
 
 def test_certificate_security_binding_and_issuer_coverage(monkeypatch):
@@ -244,7 +296,6 @@ def test_deployment_rejects_non_list_role_fields(monkeypatch, field, value):
     ("EVALUATION", 0),
     ("EVALUATION_EXPIRED", 0),
     ("RELEASED_ENTITLEMENT", 0),
-    ("", 0),
 ])
 def test_license_compliance_matches_ise_33_enum(state, expected):
     class Client:
@@ -279,6 +330,30 @@ def test_malformed_license_tier_preserves_previous_snapshot():
 
     assert set(metrics.ise_license_consumption._metrics) == {("old",)}
     assert metrics.ise_license_consumption.labels(tier="old")._value.get() == 7
+
+
+@pytest.mark.parametrize(("field", "value"), (
+    ("status", ""),
+    ("status", "UNKNOWN"),
+    ("compliance", ""),
+    ("compliance", "UNKNOWN"),
+))
+def test_invalid_license_enums_preserve_previous_snapshot(field, value):
+    metrics.ise_license_consumption.labels(tier="old").set(7)
+
+    row = {
+        "name": "Advantage", "consumptionCounter": 42,
+        "status": "ENABLED", "compliance": "COMPLIANT",
+    }
+    row[field] = value
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return [row]
+
+    licensing.collect(Client(), _cfg())
+
+    assert set(metrics.ise_license_consumption._metrics) == {("old",)}
 
 
 def test_malformed_patch_entry_preserves_version_and_patch_snapshot():
