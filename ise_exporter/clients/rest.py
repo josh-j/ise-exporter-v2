@@ -3,13 +3,8 @@ class from the monolith with the FEATURE methods removed — those (get_active_s
 get_network_devices, ...) collapse into the collectors, which now call the generic
 get_ers / get_ers_total / get_pan_api / get_mnt_xml directly. Pure plumbing, no
 metric writes except the api_requests/api_errors counters."""
-import fcntl
-import hashlib
 import logging
-import math
-import os
 import re
-import stat
 import threading
 import time
 import warnings
@@ -21,6 +16,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib3.exceptions import InsecureRequestWarning
 
+from ..auth_guard import PersistentAuthGuard
 from ..metrics import ise_api_requests_total, ise_api_errors_total
 
 logger = logging.getLogger(__name__)
@@ -34,7 +30,6 @@ PAN_MAX_PAGES = 100
 HTTP_READ_CHUNK_BYTES = 64 * 1024
 MAX_HTTP_RESPONSE_BYTES = 64 * 1024 * 1024
 HTTP_ERROR_SNIPPET_BYTES = 200
-MAX_AUTH_BACKOFF_SECONDS = 86400
 MAX_XML_ELEMENTS = 2_000_000
 MAX_XML_DEPTH = 64
 MAX_XML_SESSIONS = 250_000
@@ -50,102 +45,16 @@ class XMLResponseTooComplex(RuntimeError):
     """The bounded MnT XML shape exceeded safe structural limits."""
 
 
-class RestAuthGuard:
+class RestAuthGuard(PersistentAuthGuard):
     """Account-wide failed-authentication backoff shared across planes/processes."""
 
     def __init__(self, cfg):
-        self.path = str(getattr(cfg, "rest_auth_guard_file", "") or "")
-        identity = "\0".join((
-            str(getattr(cfg, "ise_user", "")),
-            str(getattr(cfg, "ise_host", "")),
-            str(getattr(cfg, "ise_mnt_host", "")),
-        )).encode("utf-8")
-        self.identity = hashlib.sha256(identity).hexdigest()[:16]
-        self._lock = threading.RLock()
-        self._memory = (0, 0.0)
-
-    def _open(self):
-        path = os.path.abspath(os.path.expanduser(self.path))
-        descriptor = os.open(
-            path,
-            os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0),
-            0o660,
+        super().__init__(
+            getattr(cfg, "rest_auth_guard_file", ""),
+            (getattr(cfg, "ise_user", ""), getattr(cfg, "ise_host", ""),
+             getattr(cfg, "ise_mnt_host", "")),
+            "REST authentication",
         )
-        try:
-            metadata = os.fstat(descriptor)
-            if not stat.S_ISREG(metadata.st_mode):
-                raise OSError("REST authentication guard is not a regular file")
-            if metadata.st_size > 128:
-                raise OSError("REST authentication guard exceeds 128 bytes")
-            if metadata.st_uid == os.geteuid():
-                parent_group = os.stat(os.path.dirname(path)).st_gid
-                os.fchown(descriptor, -1, parent_group)
-                os.fchmod(descriptor, 0o660)
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
-            return descriptor
-        except Exception:
-            os.close(descriptor)
-            raise
-
-    def _read(self, descriptor):
-        os.lseek(descriptor, 0, os.SEEK_SET)
-        raw = os.read(descriptor, 128).decode("ascii").strip()
-        if not raw:
-            return 0, 0.0
-        fields = raw.split()
-        if len(fields) != 4 or fields[0] != "v1" or fields[1] != self.identity:
-            return 0, 0.0
-        failures = int(fields[2])
-        deadline = float(fields[3])
-        if failures < 0 or failures > 1_000_000 or not math.isfinite(deadline) or deadline < 0:
-            raise ValueError("invalid REST authentication guard state")
-        return failures, deadline
-
-    def _write(self, descriptor, failures, deadline):
-        value = f"v1 {self.identity} {failures} {deadline:.6f}\n".encode("ascii")
-        os.lseek(descriptor, 0, os.SEEK_SET)
-        os.ftruncate(descriptor, 0)
-        os.write(descriptor, value)
-        os.fsync(descriptor)
-
-    def _update(self, callback):
-        with self._lock:
-            if not self.path:
-                self._memory, result = callback(*self._memory)
-                return result
-            descriptor = self._open()
-            try:
-                current = self._read(descriptor)
-                state, result = callback(*current)
-                if state != current:
-                    self._write(descriptor, *state)
-                return result
-            finally:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-                os.close(descriptor)
-
-    def blocked(self, now):
-        def update(failures, deadline):
-            # A forward clock jump followed by correction must not turn a
-            # configured one-day maximum into a months-long persistent outage.
-            deadline = min(deadline, now + MAX_AUTH_BACKOFF_SECONDS)
-            return (failures, deadline), deadline > now
-        return self._update(update)
-
-    def failure(self, threshold, backoff, now):
-        def update(failures, deadline):
-            failures += 1
-            deadline = min(deadline, now + MAX_AUTH_BACKOFF_SECONDS)
-            if failures >= threshold and backoff:
-                deadline = max(deadline, now + min(
-                    backoff, MAX_AUTH_BACKOFF_SECONDS))
-            return (failures, deadline), (failures, deadline)
-        return self._update(update)
-
-    def success(self):
-        return self._update(lambda failures, deadline: (
-            (0, 0.0), bool(failures or deadline)))
 
 
 def _strip_ns(tag):

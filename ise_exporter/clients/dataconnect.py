@@ -18,6 +18,7 @@ import time
 import oracledb
 
 from .. import metrics
+from ..auth_guard import PersistentAuthGuard
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,14 @@ def _retryable_disconnect(error):
     ))
 
 
+def _authentication_failure(error):
+    message = str(error).upper()
+    return any(marker in message for marker in (
+        "ORA-01005", "ORA-01017", "ORA-28000", "ORA-28001", "DPY-4001",
+        "INVALID CREDENTIAL", "INVALID USERNAME/PASSWORD",
+    ))
+
+
 class DataConnectClient:
     def __init__(self, cfg):
         self.host = cfg.dataconnect_host
@@ -194,6 +203,11 @@ class DataConnectClient:
         ))
         self.shared_pacing_file = str(getattr(
             cfg, "dataconnect_shared_pacing_file", "") or "")
+        self._auth_guard = PersistentAuthGuard(
+            getattr(cfg, "dataconnect_auth_guard_file", ""),
+            (self.user, self.host, self.port, self.service),
+            "Data Connect authentication",
+        )
         self._connection = None
         self._connect_failures = 0
         self._blocked_until = 0.0
@@ -329,6 +343,14 @@ class DataConnectClient:
 
     def connect(self):
         if self._connection is None:
+            try:
+                auth_blocked = self._auth_guard.blocked(time.time())
+            except Exception as error:
+                raise RuntimeError(
+                    f"Data Connect authentication guard unavailable: {error}") from error
+            if auth_blocked:
+                raise RuntimeError(
+                    "Data Connect reconnect suppressed by the shared authentication guard")
             remaining = self._blocked_until - time.monotonic()
             if remaining > 0:
                 raise RuntimeError(
@@ -347,7 +369,7 @@ class DataConnectClient:
                 # view scan. Data Connect is monitoring, never a batch workload.
                 with connection.cursor() as cursor:
                     cursor.execute("ALTER SESSION DISABLE PARALLEL QUERY", {})
-            except Exception:
+            except Exception as error:
                 try:
                     connection.close()
                 except Exception:
@@ -355,6 +377,14 @@ class DataConnectClient:
                 self._connect_failures += 1
                 if self._connect_failures >= self.failure_threshold:
                     self._blocked_until = time.monotonic() + self.failure_backoff
+                if _authentication_failure(error):
+                    self._auth_guard.failure(
+                        self.failure_threshold, self.failure_backoff, time.time())
+                raise
+            try:
+                self._auth_guard.success()
+            except Exception:
+                connection.close()
                 raise
             self._connection = connection
             self._connect_failures = 0

@@ -121,6 +121,7 @@ ISE_DATACONNECT_SSL_VERIFY=true
 ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS=5000
 ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT=0.1
 ISE_DATACONNECT_SHARED_PACING_FILE=/var/lib/ise-exporter/shared/dataconnect.pacing
+ISE_DATACONNECT_AUTH_GUARD_FILE=/var/lib/ise-exporter/shared/dataconnect-auth.guard
 ISE_REST_AUTH_GUARD_FILE=/var/lib/ise-exporter/shared/rest-auth.guard
 ```
 
@@ -171,6 +172,8 @@ database burst after a service restart. This bound is independent of the
 100,000-endpoint inventory.
 Authorized `ise-cli` users must belong to the `ise-exporter` group so their Data
 Connect queries participate in the same serialized pacing gate as the service.
+They also share the Data Connect authentication guard, so repeated CLI processes
+cannot bypass the configured failed-login threshold and backoff.
 The private state directory is mode `0750`, so CLI group members cannot replace the
 `0600` SQLite cache. Only its `shared/` coordination subdirectory is mode `2770`;
 setgid group inheritance prevents a CLI-created Data Connect pacing or REST auth

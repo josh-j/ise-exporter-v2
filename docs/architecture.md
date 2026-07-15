@@ -167,6 +167,12 @@ starts, then replaces it with the measured cooldown; process or host loss during
 a reporting query therefore cannot turn restart into an immediate second database
 hit. The fixed metadata lookup publishes a two-attempt timeout lease rather than
 an hours-long reporting lease.
+Authentication failures use a second identity-scoped shared guard. It persists
+only a hash of the Oracle target identity, failure count, and bounded deadline;
+the password is never written. Exporter restarts and separate `ise-cli`
+invocations therefore cannot reset the Data Connect account backoff. A successful
+connection clears the state, and changing the configured user, host, port, or
+service starts an independent guard identity.
 The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
 invocations before adaptive cooldown is considered.

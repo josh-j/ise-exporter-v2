@@ -798,6 +798,59 @@ def test_connection_backoff_protects_dataconnect_account(monkeypatch):
     assert attempts == 3
 
 
+def test_authentication_backoff_survives_processes_and_cli_invocations(
+        monkeypatch, tmp_path):
+    attempts = 0
+    path = tmp_path / "dataconnect-auth.guard"
+
+    def fail(**_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("ORA-01017: invalid username/password")
+
+    monkeypatch.setattr(dataconnect.oracledb, "connect", fail)
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 1_000.0)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt2.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="must-not-persist", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_auth_guard_file=str(path),
+        auth_failure_threshold=2, auth_failure_backoff=900,
+    )
+
+    with pytest.raises(RuntimeError, match="ORA-01017"):
+        dataconnect.DataConnectClient(cfg).connect()
+    with pytest.raises(RuntimeError, match="ORA-01017"):
+        dataconnect.DataConnectClient(cfg).connect()
+    with pytest.raises(RuntimeError, match="shared authentication guard"):
+        dataconnect.DataConnectClient(cfg).connect()
+
+    assert attempts == 2
+    assert path.stat().st_mode & 0o777 == 0o660
+    assert "must-not-persist" not in path.read_text()
+
+
+def test_dataconnect_auth_guard_is_scoped_to_oracle_target(tmp_path):
+    path = tmp_path / "dataconnect-auth.guard"
+    base = dict(
+        dataconnect_host="mnt2.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_auth_guard_file=str(path),
+        auth_failure_threshold=1, auth_failure_backoff=900,
+    )
+    first = dataconnect.DataConnectClient(types.SimpleNamespace(**base))
+    first._auth_guard.failure(1, 900, 1_000)
+    changed = dataconnect.DataConnectClient(types.SimpleNamespace(**{
+        **base, "dataconnect_host": "replacement-mnt.example.mil",
+    }))
+
+    assert first._auth_guard.blocked(1_001) is True
+    assert changed._auth_guard.blocked(1_001) is False
+
+
 def test_query_reconnects_once_after_ise_expires_session(monkeypatch):
     class ExpiredCursor(Cursor):
         def execute(self, sql, parameters):

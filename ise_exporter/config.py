@@ -165,6 +165,7 @@ class Config:
     dataconnect_nad_health_interval: int = 86400
     dataconnect_tacacs_interval: int = 86400
     dataconnect_shared_pacing_file: str = "/var/lib/ise-exporter/shared/dataconnect.pacing"
+    dataconnect_auth_guard_file: str = "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
     cli_production_safe: bool = True
     cli_allow_expensive: bool = False
     cli_max_rows: int = 1000
@@ -305,6 +306,10 @@ class Config:
                 "ISE_DATACONNECT_SHARED_PACING_FILE",
                 "/var/lib/ise-exporter/shared/dataconnect.pacing")
                 or "/var/lib/ise-exporter/shared/dataconnect.pacing",
+            dataconnect_auth_guard_file=_s(
+                "ISE_DATACONNECT_AUTH_GUARD_FILE",
+                "/var/lib/ise-exporter/shared/dataconnect-auth.guard")
+                or "/var/lib/ise-exporter/shared/dataconnect-auth.guard",
             cli_production_safe=_b("ISE_CLI_PRODUCTION_SAFE", True),
             cli_allow_expensive=_b("ISE_CLI_ALLOW_EXPENSIVE", False),
             cli_max_rows=_bounded_i("ISE_CLI_MAX_ROWS", 1000, 100, 5000),

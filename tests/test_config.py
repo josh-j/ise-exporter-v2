@@ -306,3 +306,12 @@ def test_empty_rest_auth_guard_path_cannot_disable_lockout_protection(monkeypatc
 
     assert cfg.rest_auth_guard_file == \
         "/var/lib/ise-exporter/shared/rest-auth.guard"
+
+
+def test_empty_dataconnect_auth_guard_path_cannot_disable_lockout_protection(monkeypatch):
+    monkeypatch.setenv("ISE_DATACONNECT_AUTH_GUARD_FILE", "")
+
+    cfg = Config.from_env()
+
+    assert cfg.dataconnect_auth_guard_file == \
+        "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
