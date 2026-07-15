@@ -812,7 +812,19 @@
                 "value": 90
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Investigate certificate errors on this node",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=${__field.labels.hostname}",
+              "targetBlank": false
+            },
+            {
+              "title": "Inspect certificate dataset health",
+              "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=certificates&var-source=rest",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": [
           {

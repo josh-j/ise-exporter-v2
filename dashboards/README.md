@@ -69,6 +69,9 @@ compatible variables through those links.
 - Exporter Health filters generic health tables by dataset and source. Each
   unavailable or stale row carries a direct link to the dashboard that owns the
   affected operational domain.
+- TACACS exposes a username filter; clicking an internal-user or activity row
+  focuses the dashboard on that identity. Certificate-expiry rows link to both
+  node-scoped Access troubleshooting and certificate dataset health.
 
 Panel links use Grafana's `${__url_time_range}` and field-label variables. When
 editing a metric label or dashboard UID, update the link and the assertions in

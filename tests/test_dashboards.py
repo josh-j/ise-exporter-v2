@@ -948,6 +948,29 @@ def test_dataset_failures_route_to_responsible_dashboard():
     assert "${__url_time_range}" in link["url"]
 
 
+def test_username_and_certificate_rows_have_contextual_drilldowns():
+    tacacs = _dashboard("ise-tacacs.json")
+    username = _variables(tacacs)["username"]
+    assert username["query"]["query"] == \
+        "label_values(ise_tacacs_internal_user_info, username)"
+
+    username_panels = [
+        item for item in _panels(tacacs["panels"])
+        if any('username=~"$username"' in target.get("expr", "")
+               for target in item.get("targets", []))]
+    assert username_panels
+    for item in username_panels:
+        links = item["fieldConfig"]["defaults"]["links"]
+        assert any("${__field.labels.username}" in link["url"]
+                   for link in links)
+
+    overview = _dashboard("ise-overview.json")
+    certificates = _panel(overview, "Certificate Expiry (days, soonest first)")
+    urls = [link["url"] for link in certificates["fieldConfig"]["defaults"]["links"]]
+    assert any("${__field.labels.hostname}" in url for url in urls)
+    assert any("var-dataset=certificates" in url for url in urls)
+
+
 def test_alert_rules_cover_requested_failures_and_link_real_panels():
     alerting = (DASHBOARDS.parent /
                 "deploy/test-monitoring/grafana/provisioning/alerting/alerting.yml")

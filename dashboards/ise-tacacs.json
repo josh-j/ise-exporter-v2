@@ -227,7 +227,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_tacacs_suspected_unused_internal_user unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)))",
+          "expr": "(sum(ise_tacacs_suspected_unused_internal_user{username=~\"$username\"} unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp{username=~\"$username\"} > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -235,7 +235,18 @@
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Focus this username",
+              "url": "/d/ise-tacacs/ise-tacacs?${__url_time_range}&var-username=${__field.labels.username}",
+              "targetBlank": false
+            }
+          ]
+        }
+      }
     },
     {
       "id": 4,
@@ -313,7 +324,7 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_internal_user_info and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "expr": "ise_tacacs_internal_user_info{username=~\"$username\"} and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -337,7 +348,18 @@
             }
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Focus this username",
+              "url": "/d/ise-tacacs/ise-tacacs?${__url_time_range}&var-username=${__field.labels.username}",
+              "targetBlank": false
+            }
+          ]
+        }
+      }
     },
     {
       "id": 7,
@@ -352,7 +374,7 @@
       },
       "targets": [
         {
-          "expr": "(ise_tacacs_suspected_unused_internal_user unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
+          "expr": "(ise_tacacs_suspected_unused_internal_user{username=~\"$username\"} unless on(username) max by (username) (ise_tacacs_account_last_seen_timestamp{username=~\"$username\"} > time() - scalar(ise_tacacs_unused_account_review_seconds))) and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -362,7 +384,7 @@
           }
         },
         {
-          "expr": "ise_tacacs_internal_user_hygiene_risk and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "expr": "ise_tacacs_internal_user_hygiene_risk{username=~\"$username\"} and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "B",
@@ -374,6 +396,17 @@
       ],
       "options": {
         "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Focus this username",
+              "url": "/d/ise-tacacs/ise-tacacs?${__url_time_range}&var-username=${__field.labels.username}",
+              "targetBlank": false
+            }
+          ]
+        }
       }
     },
     {
@@ -388,7 +421,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (username, status, device) (ise_tacacs_account_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(sum by (username, status, device) (ise_tacacs_account_authentication_events{username=~\"$username\"})) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{username}} / {{status}} / {{device}}",
           "refId": "A",
           "datasource": {
@@ -410,7 +443,14 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this username",
+              "url": "/d/ise-tacacs/ise-tacacs?${__url_time_range}&var-username=${__field.labels.username}",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": [
           {
@@ -469,7 +509,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_tacacs_account_authorization_events) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(ise_tacacs_account_authorization_events{username=~\"$username\"}) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -481,6 +521,17 @@
       ],
       "options": {
         "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Focus this username",
+              "url": "/d/ise-tacacs/ise-tacacs?${__url_time_range}&var-username=${__field.labels.username}",
+              "targetBlank": false
+            }
+          ]
+        }
       }
     },
     {
@@ -522,7 +573,7 @@
       },
       "targets": [
         {
-          "expr": "time() - ise_tacacs_account_last_seen_timestamp and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
+          "expr": "time() - ise_tacacs_account_last_seen_timestamp{username=~\"$username\"} and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -534,7 +585,14 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "links": [
+            {
+              "title": "Focus this username",
+              "url": "/d/ise-tacacs/ise-tacacs?${__url_time_range}&var-username=${__field.labels.username}",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -770,6 +828,38 @@
         "refresh": 1,
         "regex": "",
         "type": "datasource"
+      },
+      {
+        "name": "username",
+        "label": "Username",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(ise_tacacs_internal_user_info, username)",
+        "query": {
+          "query": "label_values(ise_tacacs_internal_user_info, username)",
+          "refId": "var-username"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
       }
     ]
   },
