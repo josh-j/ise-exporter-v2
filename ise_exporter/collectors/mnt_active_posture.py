@@ -350,8 +350,8 @@ def collect(client, cfg):
         preflight_count = _active_count(count_payload)
         if preflight_count is None:
             raise CollectorFailed("MnT ActiveCount returned no usable session count")
-        list_ceiling = max(1, int(getattr(
-            cfg, "mnt_active_posture_max_active_list_sessions", 10000)))
+        list_ceiling = max(1, min(250000, int(getattr(
+            cfg, "mnt_active_posture_max_active_list_sessions", 10000))))
         metrics.ise_mnt_session_list_preflight_count.set(preflight_count)
         metrics.ise_mnt_session_list_ceiling.set(list_ceiling)
         metrics.ise_mnt_session_list_skipped.set(int(preflight_count > list_ceiling))
@@ -378,15 +378,18 @@ def collect(client, cfg):
             if isinstance(row, dict) and (mac := _active_mac(row)):
                 active_rows.setdefault(mac, row)
         candidates = list(active_rows)
-        limit = max(0, int(getattr(cfg, "mnt_active_posture_max_sessions", 1000)))
+        limit = max(0, min(1000, int(getattr(
+            cfg, "mnt_active_posture_max_sessions", 1000))))
         selected = candidates[:limit]
-        workers = max(1, int(getattr(cfg, "mnt_active_posture_workers", 2)))
-        request_budget = max(1, int(getattr(
-            cfg, "mnt_active_posture_max_requests_per_cycle", len(selected) or 1)))
-        refresh_ttl = max(1, int(getattr(cfg, "mnt_active_posture_refresh_ttl", 3600)))
-        interval = max(1, int(getattr(cfg, "mnt_active_posture_interval", 900)))
-        request_interval = max(0, int(getattr(
-            cfg, "mnt_active_posture_request_interval_ms", 0))) / 1000.0
+        workers = max(1, min(4, int(getattr(
+            cfg, "mnt_active_posture_workers", 2))))
+        request_budget = max(1, min(250, int(getattr(
+            cfg, "mnt_active_posture_max_requests_per_cycle", len(selected) or 1))))
+        refresh_ttl = max(900, int(getattr(
+            cfg, "mnt_active_posture_refresh_ttl", 3600)))
+        interval = max(900, int(getattr(cfg, "mnt_active_posture_interval", 900)))
+        request_interval = max(250, int(getattr(
+            cfg, "mnt_active_posture_request_interval_ms", 500))) / 1000.0
         now = time.time()
 
         store = StateStore(getattr(cfg, "state_db_path", ":memory:"))

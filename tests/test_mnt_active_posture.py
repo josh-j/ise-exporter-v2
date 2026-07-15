@@ -227,6 +227,39 @@ def test_large_unpaged_active_list_is_refused_after_small_count_preflight():
     assert metrics.ise_mnt_session_list_skipped._value.get() == 1
 
 
+def test_programmatic_config_cannot_relax_posture_load_ceilings(monkeypatch):
+    sessions = [{"calling_station_id": f"00:00:00:{index >> 16:02X}:"
+                 f"{(index >> 8) & 255:02X}:{index & 255:02X}"}
+                for index in range(1001)]
+
+    class LargeConfigClient:
+        def get_mnt_xml(self, path, api_name="mnt"):
+            if path == "/Session/ActiveCount":
+                return {"total": 1, "sessions": [{"count": "1001"}]}
+            if path == "/Session/ActiveList":
+                return {"total": 1001, "sessions": sessions}
+            raise AssertionError("detail requests are captured before transport")
+
+    captured = {}
+
+    def bounded(_client, macs, workers, request_interval=0):
+        captured.update(count=len(macs), workers=workers, interval=request_interval)
+        return {mac: {"posture_status": "Compliant"} for mac in macs}
+
+    monkeypatch.setattr(mnt_active_posture, "_bounded_details", bounded)
+    mnt_active_posture.collect(LargeConfigClient(), _cfg(
+        mnt_active_posture_max_active_list_sessions=999999,
+        mnt_active_posture_max_sessions=999999,
+        mnt_active_posture_workers=999,
+        mnt_active_posture_max_requests_per_cycle=999999,
+        mnt_active_posture_request_interval_ms=0,
+    ))
+
+    assert metrics.ise_mnt_session_list_ceiling._value.get() == 250000
+    assert metrics.ise_mnt_active_posture_candidate_endpoints_total._value.get() == 1001
+    assert captured == {"count": 250, "workers": 4, "interval": 0.25}
+
+
 def test_persistent_cache_bounds_cold_start_and_survives_restart(tmp_path):
     cfg = _cfg(
         state_db_path=str(tmp_path / "state.sqlite3"),
