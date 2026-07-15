@@ -569,6 +569,7 @@ class ISERestClient:
     def health_check(self):
         def probe(session, url, *, params=None):
             result = {"reachable": False, "authenticated": False, "http_status": 0}
+            response = None
             try:
                 if self._auth_guard_state().blocked(time.time()):
                     result["http_status"] = 401
@@ -577,7 +578,8 @@ class ISERestClient:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", InsecureRequestWarning)
                         response = session.get(
-                            url, params=params, timeout=5, allow_redirects=False)
+                            url, params=params, timeout=5, stream=True,
+                            allow_redirects=False)
                 result["reachable"] = True
                 result["http_status"] = response.status_code
                 # Redirects are deliberately not followed. A 3xx commonly points
@@ -589,6 +591,9 @@ class ISERestClient:
                     self._auth_guard_state().success()
             except Exception as error:
                 logger.debug("health probe failed for %s: %s", url, error)
+            finally:
+                if response is not None:
+                    self._close_response(response)
             return result
 
         health = {

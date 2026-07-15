@@ -601,14 +601,23 @@ def test_unverified_https_warning_is_suppressed_for_health_checks():
     class Response:
         status_code = 200
 
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
     class Session:
         def __init__(self):
             self.calls = []
+            self.responses = []
 
         def get(self, *args, **kwargs):
             self.calls.append((args, kwargs))
             warnings.warn("unverified health request", InsecureRequestWarning)
-            return Response()
+            response = Response()
+            self.responses.append(response)
+            return response
 
     client.session = Session()
     client.mnt_session = Session()
@@ -622,7 +631,11 @@ def test_unverified_https_warning_is_suppressed_for_health_checks():
     assert not [item for item in caught if issubclass(item.category, InsecureRequestWarning)]
     assert client.session.calls[0][0][0].endswith("/ers/config/networkdevice")
     assert client.session.calls[0][1]["params"] == {"size": 1, "page": 1}
+    assert client.session.calls[0][1]["stream"] is True
     assert client.mnt_session.calls[0][0][0].endswith("/Session/ActiveCount")
+    assert client.mnt_session.calls[0][1]["stream"] is True
+    assert client.session.responses[0].closed is True
+    assert client.mnt_session.responses[0].closed is True
 
 
 def test_health_check_does_not_report_auth_failure_as_healthy():
