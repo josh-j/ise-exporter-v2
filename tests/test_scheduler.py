@@ -1112,6 +1112,34 @@ def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
     assert queried == []
 
 
+def test_empty_psn_snapshot_is_requeried_immediately_after_restart(
+        monkeypatch, tmp_path, caplog):
+    registry = CollectorRegistry()
+    persisted = Gauge(
+        "empty_psn_persisted", "test", ["node"], registry=registry)
+    monkeypatch.setattr(
+        scheduler_module, "_PERSISTED_DATACONNECT_METRICS",
+        {"dataconnect_performance": (persisted,)},
+    )
+    monkeypatch.setattr(
+        metrics.ise_dataconnect_psn_radius_requests_per_hour,
+        "_name", persisted._name,
+    )
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: 401.0)
+    cfg = _cfg(state_db_path=str(tmp_path / "state.sqlite3"))
+    store = scheduler_module.StateStore(cfg.state_db_path)
+    store.replace_dataset_snapshot(
+        "dataconnect_performance", 400.0,
+        scheduler_module.serialize_metric_snapshot((persisted,)))
+    store.close()
+    caplog.set_level("INFO", logger="ise_exporter.scheduler")
+
+    restarted = PollScheduler(cfg, object(), object())
+
+    assert "dataconnect_performance" not in restarted.last_success
+    assert "ignoring empty PSN performance snapshot" in caplog.text
+
+
 def test_restart_contract_keeps_radius_reporting_and_active_snapshots_disjoint():
     reporting = scheduler_module._PERSISTED_DATACONNECT_METRICS["dataconnect_radius"]
     active = scheduler_module._PERSISTED_DATACONNECT_METRICS[

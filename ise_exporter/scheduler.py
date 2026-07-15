@@ -109,6 +109,18 @@ def _freshness_snapshot_matches_config(payload, include_tacacs):
     return ("tacacs" in domains) == bool(include_tacacs)
 
 
+def _performance_snapshot_has_node_samples(payload):
+    """Return false only for a valid PSN snapshot with no node rollups."""
+    try:
+        item = payload["metrics"][
+            metrics.ise_dataconnect_psn_radius_requests_per_hour._name]
+        samples = item["samples"]
+    except (AttributeError, KeyError, TypeError):
+        # Let the normal snapshot validator report malformed or old payloads.
+        return True
+    return not isinstance(samples, list) or bool(samples)
+
+
 def _next_deadline(deadline, now, interval):
     """Advance to the first future cadence boundary, skipping missed ticks."""
     interval = max(1, interval)
@@ -376,6 +388,11 @@ class PollScheduler:
                     logger.info(
                         "ignoring Data Connect freshness snapshot after TACACS "
                         "collection setting changed; collecting immediately")
+                    continue
+                if (name == "dataconnect_performance"
+                        and not _performance_snapshot_has_node_samples(payload)):
+                    logger.info(
+                        "ignoring empty PSN performance snapshot; collecting immediately")
                     continue
                 try:
                     with snapshot_lock:
