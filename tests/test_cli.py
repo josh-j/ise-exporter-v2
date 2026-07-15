@@ -224,6 +224,53 @@ def test_sessions_rejects_nonpositive_limit_before_network_access(capsys):
     assert "usage:" not in error
 
 
+def test_auth_status_default_stays_in_production_safe_envelope(capsys):
+    client = FakeClient()
+
+    assert cli.main([
+        "auth-status", "AA:BB:CC:DD:EE:FF", "-o", "json"
+    ], client=client) == 0
+
+    assert client.calls == [(
+        "mnt", "/AuthStatus/MACAddress/AA:BB:CC:DD:EE:FF/600/20/All",
+        "cli_auth_status")]
+
+
+@pytest.mark.parametrize("option,value", (("--seconds", "3601"), ("--limit", "101")))
+def test_auth_status_large_query_requires_explicit_acknowledgement(option, value):
+    client = FakeClient()
+
+    assert cli.main([
+        "auth-status", "AA:BB:CC:DD:EE:FF", option, value
+    ], client=client) == 2
+
+    assert client.calls == []
+
+
+def test_auth_status_acknowledgement_cannot_bypass_hard_ceiling():
+    client = FakeClient()
+
+    assert cli.main([
+        "auth-status", "AA:BB:CC:DD:EE:FF", "--seconds", "86401",
+        "--allow-expensive",
+    ], client=client) == 2
+
+    assert client.calls == []
+
+
+def test_auth_status_allows_bounded_expensive_troubleshooting(capsys):
+    client = FakeClient()
+
+    assert cli.main([
+        "auth-status", "AA:BB:CC:DD:EE:FF", "--seconds", "7200",
+        "--limit", "200", "--allow-expensive", "-o", "json",
+    ], client=client) == 0
+
+    assert client.calls == [(
+        "mnt", "/AuthStatus/MACAddress/AA:BB:CC:DD:EE:FF/7200/200/All",
+        "cli_auth_status")]
+
+
 def test_endpoints_are_bounded_and_paginated(capsys):
     client = FakeClient()
 
@@ -328,6 +375,19 @@ def test_generic_get_is_read_only_and_routes_by_family(capsys):
 def test_generic_get_rejects_full_urls_and_parent_traversal():
     for path in ("https://other.example/api", "/Session/../config"):
         assert cli.main(["get", "mnt", path], client=FakeClient()) == 2
+
+
+def test_generic_mnt_auth_status_requires_explicit_acknowledgement(capsys):
+    path = "/AuthStatus/MACAddress/AA:BB:CC:DD:EE:FF/600/20/All"
+    client = FakeClient()
+
+    assert cli.main(["get", "mnt", path], client=client) == 2
+    assert client.calls == []
+
+    assert cli.main([
+        "get", "mnt", path, "--allow-expensive", "-o", "json"
+    ], client=client) == 0
+    assert client.calls == [("mnt", path, "cli_get_mnt")]
 
 
 def test_csv_and_select_produce_pipeline_friendly_output(capsys):

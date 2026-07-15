@@ -38,6 +38,16 @@ from .util import (first_nonempty, is_mac, normalize_agent_version, normalize_ma
                    parse_other_attr_string, parse_posture_report)
 
 
+# MnT AuthStatus is a live troubleshooting API whose cost grows with both the
+# requested lookback and result count.  Keep the everyday command deliberately
+# small, require an explicit acknowledgement above it, and retain a hard ceiling
+# even when expensive operations are enabled.
+AUTH_STATUS_SAFE_SECONDS = 3600
+AUTH_STATUS_SAFE_LIMIT = 100
+AUTH_STATUS_MAX_SECONDS = 86400
+AUTH_STATUS_MAX_LIMIT = 1000
+
+
 COMMAND_SCHEMAS = {
     "health": {
         "api": "ERS + MnT + optional Data Connect",
@@ -88,6 +98,9 @@ COMMAND_SCHEMAS = {
         "api": "MnT XML", "host_env": "ISE_MNT_HOST", "method": "GET",
         "path": "/admin/API/mnt/AuthStatus/MACAddress/{mac}/{seconds}/{limit}/All",
         "identifiers": ["MAC (any common format)", "IP", "hostname", "ERS id"],
+        "bounded_default": {"seconds": 600, "limit": 20},
+        "production_safe_max": {"seconds": 3600, "limit": 100},
+        "hard_max": {"seconds": 86400, "limit": 1000},
     },
     "secure-client": {
         "api": "MnT XML", "host_env": "ISE_MNT_HOST", "method": "GET",
@@ -492,6 +505,7 @@ def build_parser(*, require_command=False):
     sub.add_argument("identifier")
     sub.add_argument("--seconds", type=int, default=600)
     sub.add_argument("--limit", type=int, default=20)
+    expensive(sub)
     active_scan(sub)
 
     sub = command("secure-client", "inspect Secure Client posture attributes for an endpoint")
@@ -1518,6 +1532,19 @@ def _execute(args, client, cfg, dataconnect=None):
     if command == "auth-status":
         if args.seconds < 1 or args.limit < 1:
             raise CLIError("--seconds and --limit must be at least 1")
+        if args.seconds > AUTH_STATUS_MAX_SECONDS:
+            raise CLIError(
+                f"--seconds must not exceed the hard production ceiling "
+                f"{AUTH_STATUS_MAX_SECONDS}")
+        if args.limit > AUTH_STATUS_MAX_LIMIT:
+            raise CLIError(
+                f"--limit must not exceed the hard production ceiling "
+                f"{AUTH_STATUS_MAX_LIMIT}")
+        if (args.seconds > AUTH_STATUS_SAFE_SECONDS
+                or args.limit > AUTH_STATUS_SAFE_LIMIT):
+            _require_expensive(
+                args, cfg,
+                "auth-status exceeds the production-safe 1-hour/100-result envelope")
         mac = _resolved_mac(
             client, args.identifier, dataconnect,
             allow_active_scan=args.allow_active_list_scan)
@@ -1562,6 +1589,11 @@ def _execute(args, client, cfg, dataconnect=None):
         if (args.family == "mnt"
                 and args.path.rstrip("/").casefold().endswith("/session/activelist")):
             _require_expensive(args, cfg, "generic MnT ActiveList retrieval is disabled")
+        if (args.family == "mnt"
+                and args.path.casefold().startswith("/authstatus/")):
+            _require_expensive(
+                args, cfg,
+                "generic MnT AuthStatus retrieval bypasses the bounded auth-status command")
         if args.family == "ers":
             result = client.get_ers(args.path, params or None, get_all=args.all,
                                     api_name="cli_get_ers")

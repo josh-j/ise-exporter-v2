@@ -8,10 +8,14 @@ standard library, which keeps Ubuntu Noble free of extra database dependencies.
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import time
+
+STATE_SCHEMA_VERSION = 1
 
 
 class StateStore:
@@ -22,11 +26,28 @@ class StateStore:
             target = Path(self.path)
             self._file_path = target
             target.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
+            flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(target, flags, 0o600)
+            try:
+                metadata = os.fstat(descriptor)
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise OSError(f"state database is not a regular file: {target}")
+                os.fchmod(descriptor, 0o600)
+            finally:
+                os.close(descriptor)
         self.db = sqlite3.connect(self.path, timeout=5)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA busy_timeout = 5000")
         self.db.execute("PRAGMA journal_mode = WAL")
+        self._secure_files()
         self.db.execute("PRAGMA synchronous = NORMAL")
+        schema_version = int(self.db.execute("PRAGMA user_version").fetchone()[0])
+        if schema_version > STATE_SCHEMA_VERSION:
+            self.db.close()
+            raise RuntimeError(
+                f"state database schema {schema_version} is newer than supported "
+                f"version {STATE_SCHEMA_VERSION}")
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS mnt_posture_cache (
                 mac TEXT PRIMARY KEY,
@@ -50,11 +71,12 @@ class StateStore:
                 last_seen REAL NOT NULL
             )
         """)
-        # Versions before the reporting/active split cached RADIUS aggregate
-        # windows here. They are neither needed nor read anymore; remove the
-        # obsolete history during upgrade instead of retaining an abandoned
-        # local copy of MnT-derived data indefinitely.
-        self.db.execute("DROP TABLE IF EXISTS dataconnect_rollup")
+        if schema_version < 1:
+            # Versions before the reporting/active split cached RADIUS aggregate
+            # windows here. Run this schema-write migration once, rather than on
+            # every short-lived StateStore connection across collector threads.
+            self.db.execute("DROP TABLE IF EXISTS dataconnect_rollup")
+            self.db.execute("PRAGMA user_version = 1")
         self.commit()
 
     def _secure_files(self):
@@ -80,6 +102,7 @@ class StateStore:
         if not macs:
             return {}
         rows = {}
+        invalid = []
         # Stay below SQLite's normal bind-variable limit for the production cap.
         for offset in range(0, len(macs), 500):
             chunk = macs[offset:offset + 500]
@@ -88,14 +111,19 @@ class StateStore:
                     f"SELECT * FROM mnt_posture_cache WHERE mac IN ({placeholders})", chunk):
                 try:
                     detail = json.loads(row["detail_json"])
+                    updated_at = float(row["updated_at"])
+                    if (not isinstance(detail, dict) or not math.isfinite(updated_at)
+                            or updated_at < 0):
+                        raise ValueError("invalid posture cache row")
                 except (TypeError, ValueError):
+                    invalid.append(row["mac"])
                     continue
-                if isinstance(detail, dict):
-                    rows[row["mac"]] = {
-                        "signature": row["session_signature"],
-                        "detail": detail,
-                        "updated_at": float(row["updated_at"]),
-                    }
+                rows[row["mac"]] = {
+                    "signature": row["session_signature"],
+                    "detail": detail,
+                    "updated_at": updated_at,
+                }
+        self._delete_invalid("mnt_posture_cache", "mac", invalid)
         return rows
 
     def put_posture(self, mac, signature, detail, now=None):
@@ -144,6 +172,7 @@ class StateStore:
         if not user_ids:
             return {}
         rows = {}
+        invalid = []
         for offset in range(0, len(user_ids), 500):
             chunk = user_ids[offset:offset + 500]
             placeholders = ",".join("?" for _ in chunk)
@@ -152,14 +181,33 @@ class StateStore:
                     f"WHERE user_id IN ({placeholders})", chunk):
                 try:
                     detail = json.loads(row["detail_json"])
+                    updated_at = float(row["updated_at"])
+                    if (not isinstance(detail, dict) or not math.isfinite(updated_at)
+                            or updated_at < 0):
+                        raise ValueError("invalid TACACS cache row")
                 except (TypeError, ValueError):
+                    invalid.append(row["user_id"])
                     continue
-                if isinstance(detail, dict):
-                    rows[row["user_id"]] = {
-                        "detail": detail,
-                        "updated_at": float(row["updated_at"]),
-                    }
+                rows[row["user_id"]] = {
+                    "detail": detail,
+                    "updated_at": updated_at,
+                }
+        self._delete_invalid("tacacs_internal_user_cache", "user_id", invalid)
         return rows
+
+    def _delete_invalid(self, table, key_column, keys):
+        """Prune unusable cache rows from a fixed internal table contract."""
+        if not keys:
+            return
+        allowed = {
+            ("mnt_posture_cache", "mac"),
+            ("tacacs_internal_user_cache", "user_id"),
+        }
+        if (table, key_column) not in allowed:
+            raise ValueError("invalid cache table")
+        self.db.executemany(
+            f"DELETE FROM {table} WHERE {key_column}=?", ((key,) for key in keys))
+        self.commit()
 
     def put_tacacs_user(self, user_id, detail, now=None):
         now = time.time() if now is None else float(now)

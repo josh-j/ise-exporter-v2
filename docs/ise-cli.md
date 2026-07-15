@@ -235,6 +235,10 @@ the same spirit as selecting properties from PowerCLI objects.
   is available, and cap output at 5,000 rows.
 - The normal production ceiling is 1,000 rows. Higher limits, full inventories,
   leading-wildcard scans, and MnT ActiveList require `--allow-expensive`.
+- `auth-status` defaults to 10 minutes and 20 results. Requests beyond one hour
+  or 100 results require `--allow-expensive`, while the hard ceiling remains one
+  day and 1,000 results. Generic MnT `AuthStatus` paths always require the same
+  acknowledgement so they cannot bypass the curated command's bounds.
 - MnT hostname/IP resolution does not silently download ActiveList; the operator
   must pass `--allow-active-list-scan` when that fallback is genuinely required.
 - Exporter and CLI Data Connect queries share a file-locked pacing deadline, so
