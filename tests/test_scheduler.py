@@ -573,6 +573,37 @@ def test_mnt_shutdown_wait_is_hard_bounded(configured):
     scheduler._stop_mnt_worker()
 
     assert worker.timeout == 32
+    assert scheduler._mnt_async
+    assert scheduler._mnt_stopping
+
+
+def test_timed_out_mnt_stop_rejects_sync_work_and_second_worker(monkeypatch):
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, request_timeout=1),
+        object(), object(), mnt=object())
+
+    class Worker:
+        def join(self, timeout):
+            pass
+
+        def is_alive(self):
+            return True
+
+    scheduler._mnt_async = True
+    scheduler._mnt_worker = Worker()
+    scheduler._stop_mnt_worker()
+    runs = []
+    scheduler._run_mnt(
+        "mnt_active_posture", 900, lambda: runs.append(True))
+    monkeypatch.setattr(
+        scheduler_module.threading, "Thread",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("must not start a second MnT worker")),
+    )
+    scheduler._start_mnt_worker(threading.Event())
+
+    assert runs == []
+    assert scheduler._mnt_stopping
 
 
 def test_loop_exception_signals_workers_before_teardown(monkeypatch):

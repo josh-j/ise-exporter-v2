@@ -120,6 +120,7 @@ class PollScheduler:
         self._dataconnect_worker = None
         self._mnt_async = False
         self._mnt_inflight = False
+        self._mnt_stopping = False
         self._mnt_lock = threading.RLock()
         self._mnt_worker = None
         self._shutdown = None
@@ -508,15 +509,19 @@ class PollScheduler:
 
     def _run_mnt(self, name, tier, callback):
         """Keep the paced detail-refresh cycle off the REST scheduler lane."""
-        if not self._mnt_async:
+        with self._mnt_lock:
+            if self._mnt_stopping:
+                return
+            asynchronous = self._mnt_async
+            if asynchronous:
+                if (self._shutdown is not None and self._shutdown.is_set()
+                        or self._mnt_inflight
+                        or not self._due(name, time.time(), tier)):
+                    return
+                self._mnt_inflight = True
+        if not asynchronous:
             self._run(name, time.time(), tier, callback)
             return
-        with self._mnt_lock:
-            if (self._shutdown is not None and self._shutdown.is_set()
-                    or self._mnt_inflight
-                    or not self._due(name, time.time(), tier)):
-                return
-            self._mnt_inflight = True
         self._publish_worker_state()
 
         def run():
@@ -535,17 +540,31 @@ class PollScheduler:
         self._mnt_worker.start()
 
     def _start_mnt_worker(self, shutdown):
-        self._shutdown = shutdown
-        self._mnt_async = True
+        with self._mnt_lock:
+            if self._mnt_stopping and self.mnt_worker_alive:
+                return
+            if self._mnt_stopping:
+                self._mnt_stopping = False
+                self._mnt_async = False
+            if self._mnt_async:
+                return
+            self._shutdown = shutdown
+            self._mnt_async = True
         set_shutdown = getattr(self.mnt, "set_shutdown_event", None)
         if set_shutdown is not None:
             set_shutdown(shutdown)
 
     def _stop_mnt_worker(self):
-        if not self._mnt_async:
+        with self._mnt_lock:
+            if not self._mnt_async:
+                return
+            self._mnt_stopping = True
+            worker = self._mnt_worker
+        if worker is None:
+            with self._mnt_lock:
+                self._mnt_async = False
+                self._mnt_stopping = False
             return
-        self._mnt_async = False
-        worker = self._mnt_worker
         if worker is not None:
             # MnT uses the REST transport's 30-second ceiling. Never let an
             # unchecked config turn service shutdown into an unbounded wait.
@@ -557,6 +576,10 @@ class PollScheduler:
             worker.join(timeout=timeout)
             if worker.is_alive():
                 logger.warning("MnT worker did not stop within %ss", timeout)
+            else:
+                with self._mnt_lock:
+                    self._mnt_async = False
+                    self._mnt_stopping = False
 
     def run_cycle(self):
         cfg, now = self.cfg, time.time()
