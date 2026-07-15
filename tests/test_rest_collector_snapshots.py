@@ -102,7 +102,7 @@ def test_certificate_page_failure_preserves_previous_snapshot(monkeypatch):
     )
 
     class Client:
-        def get_pan_api(self, path, **kwargs):
+        def get_pan_api_all(self, path, **kwargs):
             if path.endswith("psn-1"):
                 return []
             return None
@@ -120,7 +120,7 @@ def test_certificate_valid_empty_stores_clear_stale_labels(monkeypatch):
     )
 
     class Client:
-        def get_pan_api(self, path, **kwargs):
+        def get_pan_api_all(self, path, **kwargs):
             return []
 
     certificates.collect(Client(), _cfg())
@@ -139,7 +139,7 @@ def test_certificate_rejects_string_self_signed_without_replacing_snapshot(monke
     )
 
     class Client:
-        def get_pan_api(self, path, **kwargs):
+        def get_pan_api_all(self, path, **kwargs):
             if "system-certificate" in path:
                 return [{
                     "friendlyName": "EAP cert", "expirationDate": "2030-01-01",
@@ -158,7 +158,7 @@ def test_certificate_security_binding_and_issuer_coverage(monkeypatch):
     )
 
     class Client:
-        def get_pan_api(self, path, **kwargs):
+        def get_pan_api_all(self, path, **kwargs):
             if "system-certificate" in path:
                 return [{
                     "friendlyName": "EAP cert", "expirationDate": "2030-01-01",
@@ -192,7 +192,7 @@ def test_certificate_metric_labels_are_byte_bounded(monkeypatch):
     )
 
     class Client:
-        def get_pan_api(self, path, **kwargs):
+        def get_pan_api_all(self, path, **kwargs):
             if "system-certificate" in path:
                 return [{
                     "friendlyName": long_value, "expirationDate": "2030-01-01",

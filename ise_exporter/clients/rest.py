@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # This ceiling still permits inventories twice the supported 100k endpoint scale,
 # while bounding a broken server that emits an endless chain of unique next links.
 ERS_MAX_PAGES = 2000
+PAN_MAX_PAGES = 100
 HTTP_READ_CHUNK_BYTES = 64 * 1024
 MAX_HTTP_RESPONSE_BYTES = 64 * 1024 * 1024
 HTTP_ERROR_SNIPPET_BYTES = 200
@@ -508,6 +509,64 @@ class ISERestClient:
         if data is None:
             return None
         return data.get("response", data) if (unwrap and isinstance(data, dict)) else data
+
+    def get_pan_api_all(self, path, api_name="pan_api", params=None, *,
+                        max_pages=PAN_MAX_PAGES, max_rows=10000):
+        """Enumerate a schema-confirmed paginated PAN OpenAPI list fail-closed.
+
+        ISE's OpenAPI pagination has no total-count field. Completeness therefore
+        means following every valid ``nextPage.href`` until the server omits it.
+        The href's host is deliberately ignored and each page is reconstructed
+        under the configured PAN origin to prevent cross-host credential sends.
+        """
+        if not 1 <= max_pages <= PAN_MAX_PAGES or not 1 <= max_rows <= 100000:
+            raise ValueError("invalid PAN pagination bound")
+        url = f"{self.pan_url}{path}"
+        data = self._get_json(self.session, url, params, api_name=api_name)
+        rows = []
+        visited = set()
+        pages = 0
+        resource_path = path.lstrip("/").split("?", 1)[0]
+        while True:
+            pages += 1
+            if (not isinstance(data, dict) or "response" not in data
+                    or not isinstance(data["response"], list)):
+                self._ers_protocol_error(
+                    api_name, "Malformed PAN pagination envelope for %s", url)
+                return None
+            page_rows = data["response"]
+            if len(rows) + len(page_rows) > max_rows:
+                self._ers_protocol_error(
+                    api_name, "PAN pagination exceeded %d rows for %s", max_rows, url)
+                return None
+            rows.extend(page_rows)
+            next_page = data.get("nextPage")
+            if next_page is None:
+                return rows
+            if pages >= max_pages:
+                self._ers_protocol_error(
+                    api_name, "PAN pagination exceeded %d pages for %s", max_pages, url)
+                return None
+            if not isinstance(next_page, dict):
+                self._ers_protocol_error(
+                    api_name, "Malformed PAN nextPage for %s", url)
+                return None
+            href = next_page.get("href", "")
+            if (not isinstance(href, str) or "/api/v1/" not in href
+                    or href in visited):
+                self._ers_protocol_error(
+                    api_name, "Invalid PAN nextPage href for %s: %r", url, href)
+                return None
+            visited.add(href)
+            next_path = href.split("/api/v1/", 1)[1]
+            if next_path.split("?", 1)[0] != resource_path:
+                self._ers_protocol_error(
+                    api_name, "PAN nextPage changed resource path for %s: %r", url, href)
+                return None
+            url = f"{self.pan_url}/{next_path}"
+            data = self._get_json(self.session, url, api_name=api_name)
+            if data is None:
+                return None
 
     def get_mnt_xml(self, path, api_name="mnt_xml"):
         """MnT XML GET. For ActiveList-style responses returns

@@ -222,6 +222,98 @@ def test_get_ers_single_page_when_not_get_all():
     assert [r["id"] for r in res] == ["1"]
 
 
+def test_get_pan_api_all_follows_pages_under_configured_origin():
+    client = ISERestClient.__new__(ISERestClient)
+    client.pan_url = "https://ise.example/api/v1"
+    client.session = None
+    first = f"{client.pan_url}/certs/trusted-certificate"
+    second = f"{client.pan_url}/certs/trusted-certificate?page=2"
+    pages = {
+        first: {
+            "response": [{"id": "1"}],
+            # A server-supplied origin must never receive the authenticated request.
+            "nextPage": {"href": "https://attacker.invalid/api/v1/"
+                         "certs/trusted-certificate?page=2"},
+        },
+        second: {"response": [{"id": "2"}]},
+    }
+    seen = []
+
+    def fake_json(_session, url, params=None, api_name="x"):
+        seen.append((url, params))
+        return pages[url]
+
+    client._get_json = fake_json
+
+    assert client.get_pan_api_all(
+        "/certs/trusted-certificate", params={"size": 100}) == [
+            {"id": "1"}, {"id": "2"}]
+    assert seen == [(first, {"size": 100}), (second, None)]
+
+
+def test_get_pan_api_all_fails_closed_on_later_page_failure():
+    client = ISERestClient.__new__(ISERestClient)
+    client.pan_url = "https://ise.example/api/v1"
+    client.session = None
+    calls = 0
+
+    def fake_json(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {"response": [{"id": "partial"}], "nextPage": {
+                "href": "https://ise.example/api/v1/certs/trusted-certificate?page=2",
+            }}
+        return None
+
+    client._get_json = fake_json
+
+    assert client.get_pan_api_all("/certs/trusted-certificate") is None
+    assert calls == 2
+
+
+def test_get_pan_api_all_enforces_row_and_page_bounds():
+    client = ISERestClient.__new__(ISERestClient)
+    client.pan_url = "https://ise.example/api/v1"
+    client.session = None
+    calls = 0
+
+    def fake_json(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return {
+            "response": [{"id": str(calls)}],
+            "nextPage": {"href": f"https://ise.example/api/v1/certs/"
+                         f"trusted-certificate?page={calls + 1}"},
+        }
+
+    client._get_json = fake_json
+
+    assert client.get_pan_api_all(
+        "/certs/trusted-certificate", max_pages=2, max_rows=10) is None
+    assert calls == 2
+
+    calls = 0
+    assert client.get_pan_api_all(
+        "/certs/trusted-certificate", max_pages=10, max_rows=1) is None
+    assert calls == 2
+
+
+def test_get_pan_api_all_rejects_missing_response_and_resource_path_change():
+    client = ISERestClient.__new__(ISERestClient)
+    client.pan_url = "https://ise.example/api/v1"
+    client.session = None
+    client._get_json = lambda *_args, **_kwargs: {}
+
+    assert client.get_pan_api_all("/certs/trusted-certificate") is None
+
+    client._get_json = lambda *_args, **_kwargs: {
+        "response": [{"id": "partial"}],
+        "nextPage": {"href": "https://ise.example/api/v1/deployment/node?page=2"},
+    }
+
+    assert client.get_pan_api_all("/certs/trusted-certificate") is None
+
 def test_get_ers_discards_all_rows_when_a_later_page_fails():
     c = ISERestClient.__new__(ISERestClient)
     c.ers_url = "https://h:9060/ers"

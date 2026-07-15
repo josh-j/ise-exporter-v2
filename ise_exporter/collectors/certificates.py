@@ -12,6 +12,8 @@ from . import observe, CollectorFailed
 from .nodes import get_nodes
 
 logger = logging.getLogger(__name__)
+MAX_CERTIFICATES_PER_STORE = 1000
+MAX_CERTIFICATE_ROWS = 5000
 
 _METRICS = (
     metrics.ise_certificate_expiry_days,
@@ -100,16 +102,25 @@ def collect(client, cfg):
             hostname = node.get("hostname")
             if not hostname:
                 continue
-            certs = client.get_pan_api(f"/certs/system-certificate/{hostname}", api_name="pan_sys_certs")
+            certs = client.get_pan_api_all(
+                f"/certs/system-certificate/{hostname}",
+                params={"size": 100}, max_pages=10,
+                max_rows=MAX_CERTIFICATES_PER_STORE, api_name="pan_sys_certs")
             if certs is None:
                 raise CollectorFailed(f"system certificate request failed for {hostname}")
-            for cert in (certs if isinstance(certs, list) else [certs]):
+            if len(rows) + len(certs) > MAX_CERTIFICATE_ROWS:
+                raise CollectorFailed("certificate inventory exceeded the row ceiling")
+            for cert in certs:
                 process(cert, hostname, "system")
 
-        trusted = client.get_pan_api("/certs/trusted-certificate", api_name="pan_trusted_certs")
+        trusted = client.get_pan_api_all(
+            "/certs/trusted-certificate", params={"size": 100}, max_pages=10,
+            max_rows=MAX_CERTIFICATES_PER_STORE, api_name="pan_trusted_certs")
         if trusted is None:
             raise CollectorFailed("trusted certificate request failed")
-        for cert in (trusted if isinstance(trusted, list) else [trusted]):
+        if len(rows) + len(trusted) > MAX_CERTIFICATE_ROWS:
+            raise CollectorFailed("certificate inventory exceeded the row ceiling")
+        for cert in trusted:
             process(cert, "trust_store", "trusted")
 
         trusted_subjects = {
