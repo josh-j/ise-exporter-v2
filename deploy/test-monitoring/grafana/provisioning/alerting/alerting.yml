@@ -273,10 +273,26 @@ groups:
           __panelId__: "10"
         labels: {service: ise-exporter, severity: warning}
 
-# Notification routing remains environment-specific. Grafana will show and link
-# these alerts immediately; deployments can provision contact points and policies
-# without changing the rule definitions.
-contactPoints: []
-policies: []
+# Forward Grafana-managed notifications to the local Alertmanager, which owns
+# environment-specific receivers, secrets, inhibition, and delivery retries.
+# This avoids a second notification stack and prevents Grafana's implicit email
+# receiver from firing when SMTP is intentionally not configured.
+contactPoints:
+  - orgId: 1
+    name: Local Alertmanager
+    receivers:
+      - uid: ise-local-alertmanager
+        type: prometheus-alertmanager
+        disableResolveMessage: false
+        settings:
+          url: http://127.0.0.1:9093
+
+policies:
+  - orgId: 1
+    receiver: Local Alertmanager
+    group_by: [grafana_folder, alertname]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
 templates: []
 muteTimings: []

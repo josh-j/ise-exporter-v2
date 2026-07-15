@@ -84,7 +84,6 @@ panel-linked rules for API availability, unavailable and stale datasets, a Data
 Connect queue older than 15 minutes, MnT detail truncation, authentication
 safety backoff, and PSN CPU or memory above 85 percent for 10 minutes.
 
-The repository intentionally does not provision a contact point or notification
-policy: those contain environment-specific destinations and credentials. The
-rules are visible and evaluable in Grafana immediately; configure routing in the
-deployment that owns email, webhook, or paging credentials.
+Grafana forwards notifications to the Prometheus Alertmanager listening on
+`127.0.0.1:9093`. Alertmanager remains the single owner of environment-specific
+email, webhook, or paging destinations, credentials, inhibition, and retries.

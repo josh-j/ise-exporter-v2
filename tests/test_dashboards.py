@@ -984,6 +984,9 @@ def test_alert_rules_cover_requested_failures_and_link_real_panels():
         "ise_dataconnect_node_memory_utilization_percent",
     )
     assert all(metric in text for metric in required_metrics)
+    assert "type: prometheus-alertmanager" in text
+    assert "url: http://127.0.0.1:9093" in text
+    assert "receiver: Local Alertmanager" in text
 
     dashboard_uids = {
         json.loads(path.read_text())["uid"]: json.loads(path.read_text())
