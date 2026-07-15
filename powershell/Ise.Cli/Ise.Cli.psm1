@@ -481,11 +481,46 @@ function Get-IseTacacsActivity {
 }
 
 function Get-IseDataConnectSchema {
+    <#
+    .SYNOPSIS
+    Lists Data Connect reporting views or the columns in one view.
+    .DESCRIPTION
+    With no table name, returns one compact summary object per reporting view.
+    Supply a table name for column-level objects, or use AllColumns to return
+    every column object across every view.
+    #>
     [CmdletBinding()]
-    param([Parameter(Position=0)][string]$Table,[string]$ConfigFile)
+    param(
+        [Parameter(Position=0)][string]$Table,
+        [switch]$AllColumns,
+        [string]$ConfigFile
+    )
     $arguments = if ($Table) { @($Table) } else { @() }
-    Invoke-IseBackend -Command dataconnect-schema -ArgumentList $arguments -ConfigFile $ConfigFile
+    $rows = @(Invoke-IseBackend -Command dataconnect-schema -ArgumentList $arguments -ConfigFile $ConfigFile)
+    if ($Table -in @('--help', '-h', 'help')) {
+        $rows | Write-Output
+        return
+    }
+    if (-not $Table -and -not $AllColumns) {
+        $rows | Group-Object table_name | Sort-Object Name | ForEach-Object {
+            $types = @($_.Group.data_type | Where-Object { $_ } | Sort-Object -Unique)
+            [pscustomobject]@{
+                PSTypeName = 'Ise.Cli.DataConnectTable'
+                table_name = $_.Name
+                columns = $_.Count
+                data_types = $types -join ', '
+            }
+        }
+        return
+    }
+    foreach ($row in $rows) {
+        $row.PSObject.TypeNames.Insert(0, 'Ise.Cli.DataConnectColumn')
+        Write-Output $row
+    }
 }
+
+Update-TypeData -TypeName Ise.Cli.DataConnectColumn `
+    -DefaultDisplayPropertySet column_id,column_name,data_type,nullable -Force
 
 function Get-IseSchema {
     <# .SYNOPSIS Returns the backend contract for one command or the complete command set. #>

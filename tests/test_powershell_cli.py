@@ -126,7 +126,13 @@ def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path
         f"printf '%s\\n' \"$*\" >> {calls}\n"
         "case \" $* \" in\n"
         "  *\" dataconnect-schema --help \"*) printf '%s\\n' 'SCHEMA HELP' ;;\n"
-        "  *\" dataconnect-schema --output json \"*) printf '%s\\n' '[{\"table_name\":\"ENDPOINTS_DATA\"}]' ;;\n"
+        "  *\" dataconnect-schema ENDPOINTS_DATA --output json \"*) printf '%s\\n' "
+        "'[{\"table_name\":\"ENDPOINTS_DATA\",\"column_id\":1,\"column_name\":\"MAC_ADDRESS\",\"data_type\":\"VARCHAR2\",\"nullable\":\"N\",\"data_length\":64},"
+        "{\"table_name\":\"ENDPOINTS_DATA\",\"column_id\":2,\"column_name\":\"HOSTNAME\",\"data_type\":\"VARCHAR2\",\"nullable\":\"Y\",\"data_length\":255}]' ;;\n"
+        "  *\" dataconnect-schema --output json \"*) printf '%s\\n' "
+        "'[{\"table_name\":\"ENDPOINTS_DATA\",\"column_id\":1,\"column_name\":\"MAC_ADDRESS\",\"data_type\":\"VARCHAR2\",\"nullable\":\"N\"},"
+        "{\"table_name\":\"ENDPOINTS_DATA\",\"column_id\":2,\"column_name\":\"HOSTNAME\",\"data_type\":\"VARCHAR2\",\"nullable\":\"Y\"},"
+        "{\"table_name\":\"RADIUS_AUTHENTICATIONS\",\"column_id\":1,\"column_name\":\"TIMESTAMP\",\"data_type\":\"TIMESTAMP\",\"nullable\":\"N\"}]' ;;\n"
         "  *\" radius-errors \"*) printf '%s\\n' '[]' ;;\n"
         "  *) printf '%s\\n' '[]' ;;\n"
         "esac\n")
@@ -135,9 +141,21 @@ def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path
         $ErrorActionPreference = 'Stop'
         $env:ISE_CLI_BACKEND = '{backend}'
         Import-Module '{MODULE}' -Force
-        $schema = @(Get-IseDataConnectSchema)
-        if ($schema.Count -ne 1 -or $schema[0].table_name -ne 'ENDPOINTS_DATA') {{
-            throw 'schema without a table did not return backend objects'
+        $summary = @(Get-IseDataConnectSchema)
+        if ($summary.Count -ne 2) {{ throw "expected two table summaries, got $($summary.Count)" }}
+        $endpointSummary = $summary | Where-Object table_name -eq 'ENDPOINTS_DATA'
+        if ($endpointSummary.columns -ne 2 -or $endpointSummary.data_types -ne 'VARCHAR2') {{
+            throw 'schema summary did not aggregate columns'
+        }}
+        $schema = @(Get-IseDataConnectSchema ENDPOINTS_DATA)
+        if ($schema.Count -ne 2 -or $schema[0].PSObject.TypeNames[0] -ne 'Ise.Cli.DataConnectColumn') {{
+            throw 'table detail did not return typed column objects'
+        }}
+        if ($schema[0].data_length -ne 64) {{ throw 'non-display properties were lost' }}
+        $allColumns = @(Get-IseDataConnectSchema -AllColumns)
+        if ($allColumns.Count -ne 3) {{ throw 'AllColumns did not preserve the full schema' }}
+        if ($allColumns[0].PSObject.TypeNames[0] -ne 'Ise.Cli.DataConnectColumn') {{
+            throw 'AllColumns did not return typed column objects'
         }}
         $help = Get-IseDataConnectSchema --help
         if ($help.Trim() -ne 'SCHEMA HELP') {{ throw "unexpected help: $help" }}
@@ -149,6 +167,8 @@ def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path
 
     assert "No results." in result.stdout
     assert calls.read_text().splitlines() == [
+        "dataconnect-schema --output json",
+        "dataconnect-schema ENDPOINTS_DATA --output json",
         "dataconnect-schema --output json",
         "dataconnect-schema --help",
         "radius-errors --limit 100 --output json",
