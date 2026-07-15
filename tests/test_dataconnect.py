@@ -72,6 +72,33 @@ def test_connection_disables_parallel_query_before_reporting_sql(monkeypatch):
     ]
 
 
+def test_rejected_session_safety_setup_closes_connection_and_fails_closed(monkeypatch):
+    class FailingCursor(Cursor):
+        def execute(self, sql, parameters=None):
+            raise RuntimeError("ALTER SESSION rejected")
+
+    class FailingConnection(Connection):
+        def cursor(self):
+            return FailingCursor()
+
+    connection = FailingConnection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+
+    client = dataconnect.DataConnectClient(cfg)
+    with pytest.raises(RuntimeError, match="ALTER SESSION rejected"):
+        client.connect()
+
+    assert connection.closed is True
+    assert client._connection is None
+
+
 def test_query_uses_tcps_and_returns_lowercase_mappings(monkeypatch):
     connection = Connection()
     calls = []

@@ -94,7 +94,10 @@ endpoints use one sequential connection, five-second statement pacing, a 0.1%
 adaptive query-duty-cycle ceiling, 15-second total Oracle-attempt timeouts, and independent
 two-hour to 24-hour domain cadences. The client enforces five seconds, 0.1%,
 and a 15-second Oracle-call timeout as hard safety limits and refuses to
-materialize more than 5,000 rows from a standalone statement or complete domain
+run reporting SQL until the session accepts `ALTER SESSION DISABLE PARALLEL
+QUERY`; this prevents a small aggregate result from fanning out across parallel
+database workers. The client also refuses to materialize more than 5,000 rows
+from a standalone statement or complete domain
 batch. Results are streamed in 100-row fetches, with 1 MiB per-field and 64 MiB
 retained-payload ceilings per standalone statement or complete batch, even when
 a CLI caller or alternate
