@@ -131,6 +131,24 @@ def test_mnt_active_list_accepts_namespace_qualified_ise_xml():
     }
 
 
+def test_mnt_active_list_rejects_declared_count_mismatch():
+    client = ISERestClient.__new__(ISERestClient)
+    client.mnt_xml_url = "https://mnt.example.mil/admin/API/mnt"
+    client.mnt_session = object()
+    client._request = lambda *_args, **_kwargs: _Resp(b"""
+        <activeList noOfActiveSession="2">
+          <activeSession><user_name>only-row</user_name></activeSession>
+        </activeList>
+    """)
+    counter = ise_api_errors_total.labels(
+        api="mnt_count_contract", error_type="protocol", http_code="200")
+    before = counter._value.get()
+
+    assert client.get_mnt_xml(
+        "/Session/ActiveList", api_name="mnt_count_contract") is None
+    assert counter._value.get() == before + 1
+
+
 def test_mnt_auth_status_accepts_namespace_qualified_ise_xml():
     client = ISERestClient.__new__(ISERestClient)
     client.mnt_xml_url = "https://mnt.example.mil/admin/API/mnt"

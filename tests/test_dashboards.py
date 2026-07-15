@@ -352,6 +352,45 @@ def _exported_metric_names():
     return names
 
 
+def _exported_metric_labels():
+    metrics_path = DASHBOARDS.parent / "ise_exporter/metrics.py"
+    tree = ast.parse(metrics_path.read_text())
+    result = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        call = node.value
+        if not isinstance(call.func, ast.Name) or len(call.args) < 2:
+            continue
+        kind = call.func.id
+        if kind not in {"Gauge", "Counter", "Histogram", "Info", "Enum"}:
+            continue
+        if not isinstance(call.args[0], ast.Constant):
+            continue
+        labels_node = call.args[2] if len(call.args) > 2 else None
+        if labels_node is None:
+            labels_node = next((keyword.value for keyword in call.keywords
+                                if keyword.arg in {"labelnames", "labels"}), None)
+        labels = set()
+        if isinstance(labels_node, (ast.List, ast.Tuple)):
+            labels = {item.value for item in labels_node.elts
+                      if isinstance(item, ast.Constant) and isinstance(item.value, str)}
+        base = call.args[0].value
+        if kind == "Enum":
+            labels.add(base)
+        metric_names = {f"{base}_info"} if kind == "Info" else {base}
+        if kind == "Histogram":
+            metric_names.update(f"{base}_{suffix}"
+                                for suffix in ("bucket", "count", "sum", "created"))
+            result[f"{base}_bucket"] = labels | {"le"}
+        if kind == "Counter":
+            counter_base = base.removesuffix("_total")
+            metric_names.update((f"{counter_base}_total", f"{counter_base}_created"))
+        for name in metric_names:
+            result.setdefault(name, set()).update(labels)
+    return result
+
+
 def test_every_dashboard_metric_exists_in_the_registry_contract():
     exported = _exported_metric_names()
     missing = []
@@ -364,6 +403,48 @@ def test_every_dashboard_metric_exists_in_the_registry_contract():
                     missing.append(f"{path.name}: panel {panel.get('id')}: {metric}")
 
     assert not missing, "dashboard references unknown metrics: " + ", ".join(missing)
+
+
+def test_dashboard_legends_reference_real_metric_labels():
+    labels_by_metric = _exported_metric_labels()
+    invalid = []
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        for panel in _panels(dashboard.get("panels", [])):
+            for target in panel.get("targets", []):
+                legend_labels = set(re.findall(
+                    r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}",
+                    target.get("legendFormat", "")))
+                if not legend_labels:
+                    continue
+                referenced = set(re.findall(
+                    r"\bise_[a-zA-Z0-9_]+\b", target.get("expr", "")))
+                available = set().union(
+                    *(labels_by_metric.get(metric, set()) for metric in referenced))
+                for label in sorted(legend_labels - available):
+                    invalid.append(
+                        f"{path.name}: panel {panel.get('id')}: {label}")
+
+    assert not invalid, "dashboard legends reference unknown labels: " + ", ".join(invalid)
+
+
+def test_dashboard_selectors_reference_real_metric_labels():
+    labels_by_metric = _exported_metric_labels()
+    invalid = []
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        for panel in _panels(dashboard.get("panels", [])):
+            for target in panel.get("targets", []):
+                expression = target.get("expr", "")
+                for metric, selector in re.findall(
+                        r"\b(ise_[a-zA-Z0-9_]+)\s*\{([^{}]*)\}", expression):
+                    used = set(re.findall(
+                        r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:=~|!~|!=|=)", selector))
+                    for label in sorted(used - labels_by_metric.get(metric, set())):
+                        invalid.append(
+                            f"{path.name}: panel {panel.get('id')}: {metric}.{label}")
+
+    assert not invalid, "dashboard selectors reference unknown labels: " + ", ".join(invalid)
 
 
 def test_data_quality_dashboard_exposes_collection_and_source_freshness():

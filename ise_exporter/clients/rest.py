@@ -428,12 +428,19 @@ class ISERestClient:
         active = [item for item in root.iter()
                   if _strip_ns(item.tag) == "activeSession"]
         if active:
-            total = next((value for key, value in root.attrib.items()
-                          if _strip_ns(key) == "noOfActiveSession"), str(len(active)))
+            raw_total = next((value for key, value in root.attrib.items()
+                              if _strip_ns(key) == "noOfActiveSession"), None)
             try:
-                total = int(total)
-            except ValueError:
-                total = len(active)
+                total = len(active) if raw_total is None else int(raw_total)
+            except (TypeError, ValueError):
+                total = -1
+            if total != len(active):
+                ise_api_errors_total.labels(
+                    api=api_name, error_type="protocol", http_code="200").inc()
+                logger.error(
+                    "MnT ActiveList count mismatch from %s: declared %r, parsed %d",
+                    url, raw_total, len(active))
+                return None
             sessions = [{_strip_ns(c.tag): (c.text or "").strip() for c in item} for item in active]
             return {"total": total, "sessions": sessions}
 
