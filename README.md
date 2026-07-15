@@ -39,31 +39,20 @@ rooted ISE appliance, direct database-table access, or native Oracle libraries.
 
 ## Configuration
 
-Copy [.env.example](.env.example) and set at least:
+Copy [ise-exporter.toml.example](ise-exporter.toml.example) to
+`/etc/ise-exporter/config.toml`. The file groups settings by purpose, names units
+explicitly, and rejects unknown keys. Keep passwords in the service's secret
+environment:
 
-```dotenv
-ISE_HOST=pan1.example.mil
-ISE_MNT_HOST=mnt1.example.mil
-ISE_USER=ers.readonly
+```sh
 ISE_PASS=use-a-secret-store
-
-ISE_DATACONNECT_HOST=mnt1.example.mil
-ISE_DATACONNECT_USER=dataconnect
 ISE_DATACONNECT_PASSWORD=use-a-secret-store
-ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer
-
-COLLECT_MNT_ACTIVE_POSTURE=true
-MNT_ACTIVE_POSTURE_INTERVAL=900
-MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS=10000
-MNT_ACTIVE_POSTURE_MAX_SESSIONS=1000
-MNT_ACTIVE_POSTURE_WORKERS=2
-MNT_ACTIVE_POSTURE_MAX_REQUESTS_PER_CYCLE=250
-ISE_EXPORTER_STATE_DB=/var/lib/ise-exporter/state.sqlite3
 ```
 
-Values are parsed literally after the first `=`; `${NAME}` and additional `=`
-characters in passwords are preserved. Inline comments on integer values are
-not supported. The sample is production-oriented for up to 100,000 endpoints:
+Set `ISE_EXPORTER_CONFIG` to use another path. Only `ISE_PASS` and
+`ISE_DATACONNECT_PASSWORD` override TOML, allowing secret-manager injection
+without recreating the old environment-variable configuration surface. The TOML
+sample is production-oriented for up to 100,000 endpoints:
 database-side aggregation, collapsed summary/top-group scans, serialized five-second
 query pacing, cadence-aligned event scans capped at six hours, daily RADIUS reporting,
 two-hour bounded active-session reconstruction, six-hour performance reporting,
@@ -95,28 +84,28 @@ ise-exporter --version             # package revision and exact ISE compatibilit
 ise-cli --version                   # PowerShell 7 operator module + private backend
 ```
 
-## Ubuntu Server 24.04 LTS
+## Debian 12/13 and Ubuntu Server 24.04 LTS
 
-Noble Numbat is the native production target. The installer uses standard
-Ubuntu packages and puts PyPI dependencies in an isolated venv:
+Debian and Ubuntu are the native production targets. The installer uses standard
+distribution packages and puts PyPI dependencies in an isolated venv:
 
 ```bash
 sudo ./deploy/install.sh
-sudoedit /etc/ise-exporter/ise-exporter.env
+sudoedit /etc/ise-exporter/config.toml
 sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --dataconnect-check
 sudo systemctl start ise-exporter
 curl --fail --silent http://127.0.0.1:9618/metrics | head
 ```
 
 It installs the PowerShell 7 `Ise.Cli` module and `ise-cli` launcher for all local
-users while keeping the environment file and CA material restricted. The exporter
+users while keeping the TOML file and CA material restricted. The exporter
 service itself does not require PowerShell. Re-running the installer upgrades
 the application without overwriting configuration. A fresh installation is
 enabled but intentionally left stopped because the seeded file contains example
 hosts and passwords. The installer also refuses to start or restart the unit
 while those placeholders remain. Once configured, re-running the installer
 restarts an active service and preserves an intentionally stopped service. Full
-details are in the [Ubuntu Noble guide](docs/ubuntu-noble.md).
+details are in the [Debian and Ubuntu guide](docs/ubuntu-noble.md).
 
 ## Development and containers
 
@@ -127,8 +116,8 @@ python3 -m venv .venv
 PYTHONPATH=. .venv/bin/pytest -q
 ```
 
-For Docker, copy `.env.example` to `.env`, provide the CA under
-`deploy/certs`, then run `docker compose -f deploy/docker-compose.yml up -d`.
+For Docker, copy `ise-exporter.toml.example` to `ise-exporter.toml`, provide the
+CA under `deploy/certs`, then run `docker compose -f deploy/docker-compose.yml up -d`.
 Prometheus scrapes port `9618`.
 
 ## Dashboards and diagnostics

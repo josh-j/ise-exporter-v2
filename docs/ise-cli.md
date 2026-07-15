@@ -48,11 +48,11 @@ or Secure Client records; they do not access or modify that scheduled snapshot.
 
 ## Configuration and routing
 
-The backend honors existing process variables first, then `ISE_EXPORTER_ENV_FILE`
-(default `/etc/ise-exporter/ise-exporter.env`), then `./.env` as a development
-fallback. REST/OpenAPI commands require `ISE_HOST`, `ISE_USER`, and
-`ISE_PASS`; only MnT XML commands additionally require `ISE_MNT_HOST`. Data Connect
-reporting commands can run with only the `ISE_DATACONNECT_*` settings; when both
+The backend reads `ISE_EXPORTER_CONFIG` (default
+`/etc/ise-exporter/config.toml`) or an explicit `--config` path. REST/OpenAPI
+commands require `ise.host`, `ise.user`, and `ise.password`; only MnT XML
+commands additionally require `ise.mnt_host`. Data Connect reporting commands
+can run with only the `[dataconnect]` settings; when both
 credential sets are present, endpoint resolution can enrich Data Connect inventory
 rows with ERS detail. Authenticated targets must be bare DNS hostnames or IPv4
 addresses, never URLs, user-info, paths, or `host:port` strings; ports and service
@@ -288,7 +288,7 @@ PowerShell callers use `Format-Table`, `ConvertTo-Json`, `Export-Csv`, and
 - The generic command requires a family-relative path, rejects full URLs and `..`,
   and exposes no HTTP method flag.
 - Inventory enumeration is bounded unless `--all` is explicit.
-- Passwords are loaded from the environment/dotenv source and are never rendered.
+- Passwords are loaded from TOML or the two supported secret overrides and are never rendered.
 - Explicitly disabled lab TLS does not emit urllib3 warnings into structured CLI
   output; production deployments should still install the CA chain and enable
   verification.
@@ -310,9 +310,9 @@ REST/MnT.
 
 `sudo ./deploy/install.sh` installs `/usr/local/bin/ise-cli` for every local user.
 The package and interpreter are globally readable/executable, but the shared
-`/etc/ise-exporter/ise-exporter.env`, Data Connect password, and certificate
+`/etc/ise-exporter/config.toml`, Data Connect password, and certificate
 material remain restricted to `root:ise-exporter`. An operator can either supply
-their own environment/`--env-file` or be explicitly added to the `ise-exporter`
+their own TOML file with `--config` or be explicitly added to the `ise-exporter`
 group when reuse of the service account configuration and shared pacing gate is
 intended. A user who cannot access the configured pacing gate is refused rather
 than allowed to issue an uncoordinated Data Connect query.

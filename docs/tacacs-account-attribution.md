@@ -55,22 +55,27 @@ history are not retained, so storage does not grow with an 80--200 GB MnT databa
 Enable Device Administration and Data Connect in ISE, set the Data Connect
 password, then configure:
 
-```dotenv
-ISE_DATACONNECT_HOST=mnt1.example.mil
-ISE_DATACONNECT_PORT=2484
-ISE_DATACONNECT_SERVICE=cpm10
-ISE_DATACONNECT_USER=dataconnect
-ISE_DATACONNECT_PASSWORD=use-a-secret-store
-ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-ca.cer
-ISE_DATACONNECT_SSL_VERIFY=true
-ISE_DATACONNECT_QUERY_TIMEOUT=15
-ISE_DATACONNECT_MAX_GROUPS=1000
-ISE_DATACONNECT_EVENT_WINDOW_HOURS=6
-ISE_DATACONNECT_TACACS_INTERVAL=86400
-TACACS_POLICY_SET_MAX=100
-TACACS_POLICY_RULE_REFRESH_MAX=10
-TACACS_POLICY_RULE_TTL=604800
-TACACS_POLICY_RULE_REQUEST_INTERVAL_MS=250
+```toml
+[dataconnect]
+host = "mnt1.example.com"
+port = 2484
+service = "cpm10"
+user = "dataconnect"
+password = "use-a-secret-store"
+ca_bundle = "/etc/ise-exporter/certs/ise-ca.cer"
+verify_tls = true
+query_timeout_seconds = 15
+max_groups = 1000
+event_window_hours = 6
+
+[dataconnect.intervals]
+tacacs_seconds = 86400
+
+[tacacs.policies]
+max_sets = 100
+rule_refresh_max = 10
+rule_ttl_seconds = 604800
+rule_request_interval_ms = 250
 ```
 
 With the defaults, TACACS runs daily and scans six hours rather than

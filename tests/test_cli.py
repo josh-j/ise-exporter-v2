@@ -30,21 +30,16 @@ def test_machine_completion_protocol_returns_json_without_entering_repl(monkeypa
     assert json.loads(capsys.readouterr().out) == ["--status "]
 
 
-def test_explicit_cli_env_file_wins_over_local_dotenv(monkeypatch, tmp_path):
-    explicit = tmp_path / "production.env"
+def test_explicit_cli_config_uses_toml(monkeypatch, tmp_path):
+    explicit = tmp_path / "production.toml"
     explicit.write_text(
-        "ISE_HOST=production-pan.example\n"
-        "ISE_USER=production-reader\n"
-        "ISE_PASS=left=middle=right\n")
-    (tmp_path / ".env").write_text(
-        "ISE_HOST=development-pan.example\n"
-        "ISE_USER=development-reader\n"
-        "ISE_PASS=wrong\n")
-    monkeypatch.chdir(tmp_path)
-    for name in ("ISE_HOST", "ISE_USER", "ISE_PASS"):
-        monkeypatch.delenv(name, raising=False)
+        '[ise]\n'
+        'host = "production-pan.example"\n'
+        'user = "production-reader"\n'
+        'password = "left=middle=right"\n')
+    monkeypatch.delenv("ISE_PASS", raising=False)
 
-    cfg = cli._load_config(str(explicit))
+    cfg = cli._load_config(explicit)
 
     assert cfg.ise_host == "production-pan.example"
     assert cfg.ise_user == "production-reader"
@@ -54,7 +49,7 @@ def test_explicit_cli_env_file_wins_over_local_dotenv(monkeypatch, tmp_path):
 class FakeClient:
     def __init__(self):
         self.cfg = types.SimpleNamespace(
-            ise_host="pan.example.mil", ise_mnt_host="mnt.example.mil")
+            ise_host="pan.example.com", ise_mnt_host="mnt.example.com")
         self.calls = []
 
     def health_check(self):
@@ -395,10 +390,10 @@ def test_health_reports_reachability_and_authentication(capsys):
     assert cli.main(["health", "-o", "json"], client=FakeClient()) == 0
     rows = json.loads(capsys.readouterr().out)
     assert rows == [
-        {"authenticated": True, "host": "pan.example.mil", "http_status": 0,
+        {"authenticated": True, "host": "pan.example.com", "http_status": 0,
          "probe_status": "completed",
          "reachable": True, "service": "PAN/ERS"},
-        {"authenticated": False, "host": "mnt.example.mil", "http_status": 0,
+        {"authenticated": False, "host": "mnt.example.com", "http_status": 0,
          "probe_status": "completed",
          "reachable": False, "service": "MnT"},
     ]
@@ -407,7 +402,7 @@ def test_health_reports_reachability_and_authentication(capsys):
 def test_health_works_with_only_dataconnect_configuration(capsys):
     cfg = types.SimpleNamespace(
         ise_host="", ise_mnt_host="", ise_user="", ise_pass="",
-        dataconnect_host="mnt.example.mil", dataconnect_ready=True)
+        dataconnect_host="mnt.example.com", dataconnect_ready=True)
     class HealthyDataConnect(FakeDataConnect):
         def query(self, sql, parameters=None):
             if "user_views" in sql:
@@ -417,7 +412,7 @@ def test_health_works_with_only_dataconnect_configuration(capsys):
     dataconnect = HealthyDataConnect()
     assert cli.main(["health", "-o", "json"], cfg=cfg, dataconnect=dataconnect) == 0
     assert json.loads(capsys.readouterr().out) == [{
-        "authenticated": True, "host": "mnt.example.mil", "http_status": 0,
+        "authenticated": True, "host": "mnt.example.com", "http_status": 0,
         "probe_status": "completed",
         "reachable": True, "service": "Data Connect"}]
 
@@ -425,7 +420,7 @@ def test_health_works_with_only_dataconnect_configuration(capsys):
 def test_health_defers_dataconnect_probe_instead_of_waiting_for_pacing(capsys):
     cfg = types.SimpleNamespace(
         ise_host="", ise_mnt_host="", ise_user="", ise_pass="",
-        dataconnect_host="mnt.example.mil", dataconnect_ready=True)
+        dataconnect_host="mnt.example.com", dataconnect_ready=True)
 
     class PacedDataConnect(FakeDataConnect):
         def query(self, sql, parameters=None):
@@ -438,7 +433,7 @@ def test_health_defers_dataconnect_probe_instead_of_waiting_for_pacing(capsys):
     dataconnect = PacedDataConnect()
     assert cli.main(["health", "-o", "json"], cfg=cfg, dataconnect=dataconnect) == 0
     assert json.loads(capsys.readouterr().out) == [{
-        "authenticated": None, "host": "mnt.example.mil", "http_status": 0,
+        "authenticated": None, "host": "mnt.example.com", "http_status": 0,
         "probe_status": "deferred", "reachable": None,
         "service": "Data Connect"}]
     assert len(dataconnect.calls) == 1

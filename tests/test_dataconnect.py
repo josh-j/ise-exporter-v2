@@ -44,7 +44,7 @@ class Connection:
 
 def test_client_retains_normalized_startup_schema_without_querying(caplog):
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -67,7 +67,7 @@ def test_client_retains_normalized_startup_schema_without_querying(caplog):
 
 def test_client_warns_when_authentication_policy_dimensions_are_absent(caplog):
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -97,7 +97,7 @@ def test_connection_disables_parallel_query_before_reporting_sql(monkeypatch):
     connection = RecordingConnection()
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -125,7 +125,7 @@ def test_rejected_session_safety_setup_closes_connection_and_fails_closed(monkey
     connection = FailingConnection()
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -150,7 +150,7 @@ def test_query_uses_tcps_and_returns_lowercase_mappings(monkeypatch):
 
     monkeypatch.setattr(dataconnect.oracledb, "connect", connect)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -173,7 +173,7 @@ def test_client_hard_caps_oracle_call_timeout(monkeypatch):
     connection = Connection()
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=3600,
@@ -201,7 +201,7 @@ def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
     sleeps = []
     monkeypatch.setattr(dataconnect.time, "sleep", sleeps.append)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -239,7 +239,7 @@ def test_atomic_query_batch_uses_fixed_gaps_then_one_aggregate_cooldown(monkeypa
     monkeypatch.setattr(dataconnect.time, "monotonic", tick)
     sleeps = []
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -394,7 +394,7 @@ def test_query_batch_applies_result_byte_ceiling_across_statements(monkeypatch):
 
 def test_client_respects_explicit_pacing_but_preserves_auth_safety():
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -428,7 +428,7 @@ def test_dataconnect_rejects_non_bare_database_hosts(host):
 
 def test_client_honors_more_conservative_duty_cycle():
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -441,7 +441,7 @@ def test_client_honors_more_conservative_duty_cycle():
 
 def test_client_honors_extremely_conservative_duty_cycle_and_deadline():
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=15,
@@ -461,7 +461,7 @@ def test_query_timeout_is_total_across_execute_and_fetch_round_trips(monkeypatch
     clock = iter((0.0, 0.0, 14.9, 15.1))
     monkeypatch.setattr(dataconnect.time, "perf_counter", lambda: next(clock))
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=15,
@@ -493,7 +493,7 @@ def test_catalog_query_uses_only_minimum_gap_not_reporting_duty(monkeypatch):
     monkeypatch.setattr(dataconnect.time, "monotonic", lambda: next(monotonic))
     releases = []
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -567,7 +567,7 @@ def test_combined_freshness_probe_has_its_own_bounded_telemetry_label():
 
 def test_adaptive_pacing_wait_is_interruptible_during_shutdown():
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -596,7 +596,7 @@ def test_shared_pacing_gate_serializes_independent_clients(monkeypatch, tmp_path
     sleeps = []
     monkeypatch.setattr(dataconnect.time, "sleep", sleeps.append)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -716,7 +716,7 @@ def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):
     owner = path.open("w+")
     fcntl.flock(owner.fileno(), fcntl.LOCK_EX)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -739,7 +739,7 @@ def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):
 
 def test_completion_query_does_not_wait_for_local_cooldown(monkeypatch):
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -759,7 +759,7 @@ def test_completion_query_does_not_wait_for_shared_gate(monkeypatch, tmp_path):
     owner = path.open("w+")
     fcntl.flock(owner.fileno(), fcntl.LOCK_EX)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -780,7 +780,7 @@ def test_completion_query_does_not_wait_for_shared_gate(monkeypatch, tmp_path):
 
 def test_shared_pacing_gate_acquisition_failure_is_counted(monkeypatch):
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -811,7 +811,7 @@ def test_shared_pacing_gate_acquisition_failure_is_counted(monkeypatch):
 def test_shared_pacing_gate_release_failure_marks_query_error(monkeypatch):
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: Connection())
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -853,7 +853,7 @@ def test_connection_backoff_protects_dataconnect_account(monkeypatch):
     monkeypatch.setattr(dataconnect.oracledb, "connect", fail)
     monkeypatch.setattr(dataconnect.time, "monotonic", lambda: 100.0)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="bad", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -883,7 +883,7 @@ def test_authentication_backoff_survives_processes_and_cli_invocations(
     monkeypatch.setattr(dataconnect.oracledb, "connect", fail)
     monkeypatch.setattr(dataconnect.time, "time", lambda: 1_000.0)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt2.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt2.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="must-not-persist", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -906,7 +906,7 @@ def test_authentication_backoff_survives_processes_and_cli_invocations(
 def test_dataconnect_auth_guard_is_scoped_to_oracle_target(tmp_path):
     path = tmp_path / "dataconnect-auth.guard"
     base = dict(
-        dataconnect_host="mnt2.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt2.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
@@ -916,7 +916,7 @@ def test_dataconnect_auth_guard_is_scoped_to_oracle_target(tmp_path):
     first = dataconnect.DataConnectClient(types.SimpleNamespace(**base))
     first._auth_guard.failure(1, 900, 1_000)
     changed = dataconnect.DataConnectClient(types.SimpleNamespace(**{
-        **base, "dataconnect_host": "replacement-mnt.example.mil",
+        **base, "dataconnect_host": "replacement-mnt.example.com",
     }))
 
     assert first._auth_guard.blocked(1_001) is True
@@ -941,7 +941,7 @@ def test_query_reconnects_once_after_ise_expires_session(monkeypatch):
 
     monkeypatch.setattr(dataconnect.oracledb, "connect", connect)
     cfg = types.SimpleNamespace(
-        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
         dataconnect_service="cpm10", dataconnect_user="dataconnect",
         dataconnect_password="secret", dataconnect_ca_bundle="",
         dataconnect_ssl_verify=False, dataconnect_query_timeout=12,

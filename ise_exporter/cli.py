@@ -25,7 +25,6 @@ import sys
 import tempfile
 import time
 
-from dotenv import load_dotenv
 from rich import box
 from rich.console import Console
 from rich.pretty import Pretty
@@ -478,8 +477,8 @@ def build_parser(*, require_command=False):
         description="Read-only Cisco ISE operator CLI (ERS, OpenAPI, Data Connect, MnT)",
     )
     parser.add_argument(
-        "--env-file",
-        help="dotenv file to load with precedence over a local development .env")
+        "--config",
+        help="TOML configuration file (default: /etc/ise-exporter/config.toml)")
     parser.add_argument(
         "--complete", metavar="LINE", help=argparse.SUPPRESS)
     parser.add_argument(
@@ -667,16 +666,8 @@ def build_parser(*, require_command=False):
     return parser
 
 
-def _load_config(env_file=None, *, require_rest=True):
-    deployed = env_file or os.environ.get(
-        "ISE_EXPORTER_ENV_FILE", "/etc/ise-exporter/ise-exporter.env")
-    if deployed and os.path.isfile(deployed):
-        load_dotenv(deployed, interpolate=False)
-    # An explicit/deployed file must win over an unrelated .env in the
-    # operator's current directory. Existing process/systemd variables still
-    # take precedence because python-dotenv does not override them by default.
-    load_dotenv(".env", interpolate=False)
-    cfg = Config.from_env()
+def _load_config(config_file=None, *, require_rest=True):
+    cfg = Config.load(config_file)
     if (require_rest
             and (not cfg.ise_host or not cfg.ise_user or not cfg.ise_pass)):
         raise CLIError("ISE_HOST, ISE_USER, and ISE_PASS are required")
@@ -2155,11 +2146,11 @@ class ISEShell(cmd.Cmd):
     intro = "Cisco ISE read-only shell. Type ? for commands, help COMMAND for details."
     prompt = "ise> "
 
-    def __init__(self, *, env_file=None, client=None, cfg=None, dataconnect=None,
+    def __init__(self, *, config_file=None, client=None, cfg=None, dataconnect=None,
                  stdin=None, stdout=None):
         super().__init__(stdin=stdin, stdout=stdout)
         self.use_rawinput = stdin is None
-        self.env_file = env_file
+        self.config_file = config_file
         self.client = client
         self.cfg = cfg or getattr(client, "cfg", None)
         self.dataconnect = dataconnect
@@ -2229,7 +2220,7 @@ class ISEShell(cmd.Cmd):
             return
         dataconnect_only = command in REST_OPTIONAL_COMMANDS
         if self.cfg is None:
-            self.cfg = _load_config(self.env_file, require_rest=not dataconnect_only)
+            self.cfg = _load_config(self.config_file, require_rest=not dataconnect_only)
         if self.client is None and _rest_ready(self.cfg):
             self.client = ISEOperatorClient(self.cfg)
         if self.client is None and not dataconnect_only:
@@ -2386,7 +2377,7 @@ class ISEShell(cmd.Cmd):
         if action.choices is not None:
             return self._matching(action.choices, prefix, add_space=True)
         destination = action.dest
-        if destination == "env_file":
+        if destination == "config":
             return self._path_values(prefix)
         if destination == "output":
             return self._matching(("table", "json", "jsonl", "csv"), prefix,
@@ -2729,7 +2720,7 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, exporter_snapsho
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.complete is not None:
-        shell = ISEShell(env_file=args.env_file, client=client, cfg=cfg,
+        shell = ISEShell(config_file=args.config, client=client, cfg=cfg,
                          dataconnect=dataconnect,
                          stdin=stdin if stdin is not None else io.StringIO(),
                          stdout=stdout)
@@ -2740,7 +2731,7 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, exporter_snapsho
         finally:
             shell.close()
     if args.command is None:
-        shell = ISEShell(env_file=args.env_file, client=client, cfg=cfg,
+        shell = ISEShell(config_file=args.config, client=client, cfg=cfg,
                          dataconnect=dataconnect, stdin=stdin, stdout=stdout)
         try:
             shell.cmdloop()
@@ -2756,7 +2747,7 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, exporter_snapsho
         if client is None and args.command != "schema":
             dataconnect_only = args.command in REST_OPTIONAL_COMMANDS
             if cfg is None:
-                cfg = _load_config(args.env_file, require_rest=not dataconnect_only)
+                cfg = _load_config(args.config, require_rest=not dataconnect_only)
             if _rest_ready(cfg):
                 client = ISEOperatorClient(cfg)
         elif cfg is None:

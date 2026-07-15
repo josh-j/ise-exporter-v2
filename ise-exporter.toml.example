@@ -1,0 +1,105 @@
+# Cisco ISE exporter configuration
+#
+# Copy to /etc/ise-exporter/config.toml, or set:
+#   ISE_EXPORTER_CONFIG=/path/to/config.toml
+#
+# For secret injection, only the ISE_PASS and ISE_DATACONNECT_PASSWORD
+# environment variables override values in this file.
+
+[exporter]
+log_level = "INFO"
+port = 9618
+state_db = "/var/lib/ise-exporter/state.sqlite3"
+scrape_interval_seconds = 60
+medium_interval_seconds = 900
+slow_interval_seconds = 21600
+startup_rate_limit_seconds = 5
+
+[ise]
+host = "pan1.example.com"
+mnt_host = "mnt1.example.com"
+user = "ers.readonly"
+password = "changeme"
+ers_port = 9060
+request_timeout_seconds = 30
+auth_failure_backoff_seconds = 900
+auth_failure_threshold = 3
+auth_guard_file = "/var/lib/ise-exporter/shared/rest-auth.guard"
+
+[ise.rest_tls]
+verify = true
+ca_bundle = "/etc/ise-exporter/certs/ise-ca.cer"
+
+[ise.mnt_tls]
+verify = true
+ca_bundle = "/etc/ise-exporter/certs/ise-ca.cer"
+
+[collectors]
+device_details = true
+certificates = true
+licensing = true
+backup_status = true
+patches = true
+tacacs = true
+mnt_active_posture = true
+
+[devices]
+cache_ttl_seconds = 2592000 # 30 days
+detail_max_requests = 25
+detail_request_interval_ms = 250
+
+[mnt_active_posture]
+interval_seconds = 900 # 15 minutes
+max_active_list_sessions = 10000
+max_sessions = 1000
+workers = 2
+max_requests_per_cycle = 250
+refresh_ttl_seconds = 3600 # 1 hour
+request_interval_ms = 500
+
+[tacacs]
+unused_account_days = 180
+
+[tacacs.users]
+max = 1000
+detail_max_requests = 100
+detail_ttl_seconds = 604800 # 7 days
+detail_request_interval_ms = 250
+
+[tacacs.policies]
+max_sets = 100
+rule_refresh_max = 10
+rule_ttl_seconds = 604800 # 7 days
+rule_request_interval_ms = 250
+
+[dataconnect]
+host = "mnt1.example.com"
+port = 2484
+service = "cpm10"
+user = "dataconnect"
+password = "changeme"
+verify_tls = true
+ca_bundle = "/etc/ise-exporter/certs/ise-ca.cer"
+query_timeout_seconds = 15
+max_groups = 1000
+min_query_interval_ms = 5000
+max_duty_cycle_percent = 0.1
+event_window_hours = 6
+shared_pacing_file = "/var/lib/ise-exporter/shared/dataconnect.pacing"
+auth_guard_file = "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
+
+[dataconnect.intervals]
+schema_seconds = 86400 # 1 day
+radius_seconds = 86400 # 1 day
+radius_active_seconds = 1800 # 30 minutes
+performance_seconds = 900 # 15 minutes
+posture_seconds = 21600 # 6 hours
+endpoints_seconds = 86400 # 1 day
+freshness_seconds = 86400 # 1 day
+nad_health_seconds = 21600 # 6 hours
+tacacs_seconds = 21600 # 6 hours
+
+[cli]
+production_safe = true
+allow_expensive = false
+max_rows = 1000

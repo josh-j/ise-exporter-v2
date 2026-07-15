@@ -127,11 +127,11 @@ function Invoke-IseBackend {
             'tacacs-activity', 'dataconnect-schema', 'schema', 'get')]
         [string]$Command,
         [string[]]$ArgumentList = @(),
-        [string]$EnvironmentFile
+        [string]$ConfigFile
     )
 
     $backendArguments = @()
-    if ($EnvironmentFile) { $backendArguments += @('--env-file', $EnvironmentFile) }
+    if ($ConfigFile) { $backendArguments += @('--config', $ConfigFile) }
     $backendArguments += $Command
     $backendArguments += $ArgumentList
     $backendArguments += @('--output', 'json')
@@ -157,17 +157,17 @@ function Invoke-IseCommand {
         [string]$Name,
         [Parameter(Position = 1, ValueFromRemainingArguments)]
         [string[]]$ArgumentList = @(),
-        [string]$EnvironmentFile,
+        [string]$ConfigFile,
         [switch]$Raw
     )
     if ($Raw) {
         $backendArguments = @()
-        if ($EnvironmentFile) { $backendArguments += @('--env-file', $EnvironmentFile) }
+        if ($ConfigFile) { $backendArguments += @('--config', $ConfigFile) }
         $backendArguments += $Name
         $backendArguments += $ArgumentList
         return Invoke-IseBackendProcess -ArgumentList $backendArguments
     }
-    Invoke-IseBackend -Command $Name -ArgumentList $ArgumentList -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command $Name -ArgumentList $ArgumentList -ConfigFile $ConfigFile
 }
 
 function Get-IseCliVersion {
@@ -189,7 +189,7 @@ function Invoke-IseInventory {
         [string[]]$Filter = @(),
         [switch]$All,
         [switch]$AllowExpensive,
-        [string]$EnvironmentFile
+        [string]$ConfigFile
     )
     $arguments = [System.Collections.Generic.List[string]]::new()
     [void]$arguments.Add('--limit'); [void]$arguments.Add([string]$Limit)
@@ -198,56 +198,56 @@ function Invoke-IseInventory {
     }
     Add-IseSwitchArgument -Arguments $arguments -Value:$All -Name '--all'
     Add-IseSwitchArgument -Arguments $arguments -Value:$AllowExpensive -Name '--allow-expensive'
-    Invoke-IseBackend -Command $Command -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command $Command -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
 }
 
-function Test-IseHealth { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command health -EnvironmentFile $EnvironmentFile }
-function Get-IseNode { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command nodes -EnvironmentFile $EnvironmentFile }
-function Get-IseOverview { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command overview -EnvironmentFile $EnvironmentFile }
+function Test-IseHealth { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command health -ConfigFile $ConfigFile }
+function Get-IseNode { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command nodes -ConfigFile $ConfigFile }
+function Get-IseOverview { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command overview -ConfigFile $ConfigFile }
 function Get-IseCollectorStatus {
     [CmdletBinding()]
-    param([Parameter(Position=0)][string]$Pattern,[string]$EnvironmentFile)
+    param([Parameter(Position=0)][string]$Pattern,[string]$ConfigFile)
     $arguments = if ($Pattern) { @($Pattern) } else { @() }
-    Invoke-IseBackend -Command collector-status -ArgumentList $arguments -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command collector-status -ArgumentList $arguments -ConfigFile $ConfigFile
 }
 function Get-IseEndpointSummary {
     [CmdletBinding()]
-    param([Parameter(Mandatory,Position=0,ValueFromPipeline)][string]$Identifier,[switch]$AllowActiveListScan,[string]$EnvironmentFile)
+    param([Parameter(Mandatory,Position=0,ValueFromPipeline)][string]$Identifier,[switch]$AllowActiveListScan,[string]$ConfigFile)
     process {
         $a=[System.Collections.Generic.List[string]]::new(); [void]$a.Add($Identifier)
         Add-IseSwitchArgument -Arguments $a -Value:$AllowActiveListScan -Name '--allow-active-list-scan'
-        Invoke-IseBackend -Command endpoint-summary -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+        Invoke-IseBackend -Command endpoint-summary -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
     }
 }
 function Debug-IseAuthentication {
     [CmdletBinding()]
-    param([Parameter(Mandatory,Position=0,ValueFromPipeline)][string]$Identifier,[ValidateRange(1,86400)][int]$Seconds=3600,[ValidateRange(1,100)][int]$Limit=20,[switch]$AllowActiveListScan,[string]$EnvironmentFile)
+    param([Parameter(Mandatory,Position=0,ValueFromPipeline)][string]$Identifier,[ValidateRange(1,86400)][int]$Seconds=3600,[ValidateRange(1,100)][int]$Limit=20,[switch]$AllowActiveListScan,[string]$ConfigFile)
     process {
         $a=[System.Collections.Generic.List[string]]::new(); [void]$a.Add($Identifier)
         [void]$a.Add('--seconds'); [void]$a.Add([string]$Seconds); [void]$a.Add('--limit'); [void]$a.Add([string]$Limit)
         Add-IseSwitchArgument -Arguments $a -Value:$AllowActiveListScan -Name '--allow-active-list-scan'
-        Invoke-IseBackend -Command troubleshoot-auth -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+        Invoke-IseBackend -Command troubleshoot-auth -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
     }
 }
 function Debug-IsePsn {
     [CmdletBinding()]
-    param([Parameter(Mandatory,Position=0)][string]$Psn,[ValidateRange(1,5000)][int]$Limit=25,[switch]$Live,[string]$EnvironmentFile)
+    param([Parameter(Mandatory,Position=0)][string]$Psn,[ValidateRange(1,5000)][int]$Limit=25,[switch]$Live,[string]$ConfigFile)
     $a=[System.Collections.Generic.List[string]]::new(); [void]$a.Add($Psn); [void]$a.Add('--limit'); [void]$a.Add([string]$Limit)
     Add-IseSwitchArgument -Arguments $a -Value:$Live -Name '--live'
-    Invoke-IseBackend -Command psn-summary -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command psn-summary -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 function Get-IseNadSummary {
     [CmdletBinding()]
-    param([Parameter(Mandatory,Position=0)][string]$Nad,[switch]$Live,[string]$EnvironmentFile)
+    param([Parameter(Mandatory,Position=0)][string]$Nad,[switch]$Live,[string]$ConfigFile)
     $a=[System.Collections.Generic.List[string]]::new(); [void]$a.Add($Nad)
     Add-IseSwitchArgument -Arguments $a -Value:$Live -Name '--live'
-    Invoke-IseBackend -Command nad-summary -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command nad-summary -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 function Get-IsePxGridStatus {
     [CmdletBinding()]
-    param([switch]$Live,[string]$EnvironmentFile)
+    param([switch]$Live,[string]$ConfigFile)
     $a=[System.Collections.Generic.List[string]]::new(); Add-IseSwitchArgument -Arguments $a -Value:$Live -Name '--live'
-    Invoke-IseBackend -Command pxgrid-status -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command pxgrid-status -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 
 function Find-IseEndpoint {
@@ -258,7 +258,7 @@ function Find-IseEndpoint {
         [string[]]$Filter = @(),
         [switch]$All,
         [switch]$AllowExpensive,
-        [string]$EnvironmentFile
+        [string]$ConfigFile
     )
     $arguments = [System.Collections.Generic.List[string]]::new()
     foreach ($criterion in $Criteria) { [void]$arguments.Add($criterion) }
@@ -268,14 +268,14 @@ function Find-IseEndpoint {
     }
     Add-IseSwitchArgument -Arguments $arguments -Value:$All -Name '--all'
     Add-IseSwitchArgument -Arguments $arguments -Value:$AllowExpensive -Name '--allow-expensive'
-    Invoke-IseBackend -Command endpoints -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command endpoints -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
 }
 
 function Get-IseEndpointField {
     [CmdletBinding()]
-    param([Parameter(Position = 0)][string]$Pattern, [string]$EnvironmentFile)
+    param([Parameter(Position = 0)][string]$Pattern, [string]$ConfigFile)
     $arguments = if ($Pattern) { @($Pattern) } else { @() }
-    Invoke-IseBackend -Command endpoint-fields -ArgumentList $arguments -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command endpoint-fields -ArgumentList $arguments -ConfigFile $ConfigFile
 }
 
 function Get-IseEndpoint {
@@ -283,7 +283,7 @@ function Get-IseEndpoint {
     param(
         [Parameter(Mandatory, Position = 0, ValueFromPipeline)][string]$Identifier,
         [switch]$Id, [switch]$IncludeSession, [switch]$AllowActiveListScan,
-        [string]$EnvironmentFile
+        [string]$ConfigFile
     )
     process {
         $arguments = [System.Collections.Generic.List[string]]::new()
@@ -291,7 +291,7 @@ function Get-IseEndpoint {
         Add-IseSwitchArgument -Arguments $arguments -Value:$Id -Name '--id'
         Add-IseSwitchArgument -Arguments $arguments -Value:$IncludeSession -Name '--include-session'
         Add-IseSwitchArgument -Arguments $arguments -Value:$AllowActiveListScan -Name '--allow-active-list-scan'
-        Invoke-IseBackend -Command endpoint -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+        Invoke-IseBackend -Command endpoint -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
     }
 }
 
@@ -299,14 +299,14 @@ function Resolve-IseEndpoint {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory, Position = 0, ValueFromPipeline)][string]$Identifier,
-        [switch]$Id, [switch]$AllowActiveListScan, [string]$EnvironmentFile
+        [switch]$Id, [switch]$AllowActiveListScan, [string]$ConfigFile
     )
     process {
         $arguments = [System.Collections.Generic.List[string]]::new()
         [void]$arguments.Add($Identifier)
         Add-IseSwitchArgument -Arguments $arguments -Value:$Id -Name '--id'
         Add-IseSwitchArgument -Arguments $arguments -Value:$AllowActiveListScan -Name '--allow-active-list-scan'
-        Invoke-IseBackend -Command resolve -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+        Invoke-IseBackend -Command resolve -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
     }
 }
 
@@ -314,13 +314,13 @@ function Get-IseSession {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory, Position = 0, ValueFromPipeline)][string]$Identifier,
-        [switch]$AllowActiveListScan, [string]$EnvironmentFile
+        [switch]$AllowActiveListScan, [string]$ConfigFile
     )
     process {
         $arguments = [System.Collections.Generic.List[string]]::new()
         [void]$arguments.Add($Identifier)
         Add-IseSwitchArgument -Arguments $arguments -Value:$AllowActiveListScan -Name '--allow-active-list-scan'
-        Invoke-IseBackend -Command session -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+        Invoke-IseBackend -Command session -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
     }
 }
 
@@ -330,13 +330,13 @@ function Get-IseActiveSession {
         [ValidateRange(1, 5000)][int]$Limit = 100,
         [switch]$All,
         [switch]$AllowExpensive,
-        [string]$EnvironmentFile
+        [string]$ConfigFile
     )
     $arguments = [System.Collections.Generic.List[string]]::new()
     [void]$arguments.Add('--limit'); [void]$arguments.Add([string]$Limit)
     Add-IseSwitchArgument -Arguments $arguments -Value:$All -Name '--all'
     Add-IseSwitchArgument -Arguments $arguments -Value:$AllowExpensive -Name '--allow-expensive'
-    Invoke-IseBackend -Command sessions -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command sessions -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
 }
 
 function Get-IseAuthenticationStatus {
@@ -346,7 +346,7 @@ function Get-IseAuthenticationStatus {
         [ValidateRange(1, 86400)][int]$Seconds = 600,
         [ValidateRange(1, 1000)][int]$Limit = 20,
         [switch]$AllowExpensive, [switch]$AllowActiveListScan,
-        [string]$EnvironmentFile
+        [string]$ConfigFile
     )
     process {
         $arguments = [System.Collections.Generic.List[string]]::new()
@@ -355,7 +355,7 @@ function Get-IseAuthenticationStatus {
         [void]$arguments.Add('--limit'); [void]$arguments.Add([string]$Limit)
         Add-IseSwitchArgument -Arguments $arguments -Value:$AllowExpensive -Name '--allow-expensive'
         Add-IseSwitchArgument -Arguments $arguments -Value:$AllowActiveListScan -Name '--allow-active-list-scan'
-        Invoke-IseBackend -Command auth-status -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+        Invoke-IseBackend -Command auth-status -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
     }
 }
 
@@ -363,41 +363,41 @@ function Get-IseSecureClient {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory, Position = 0, ValueFromPipeline)][string]$Identifier,
-        [switch]$IncludeAll, [switch]$AllowActiveListScan, [string]$EnvironmentFile
+        [switch]$IncludeAll, [switch]$AllowActiveListScan, [string]$ConfigFile
     )
     process {
         $arguments = [System.Collections.Generic.List[string]]::new()
         [void]$arguments.Add($Identifier)
         Add-IseSwitchArgument -Arguments $arguments -Value:$IncludeAll -Name '--include-all'
         Add-IseSwitchArgument -Arguments $arguments -Value:$AllowActiveListScan -Name '--allow-active-list-scan'
-        Invoke-IseBackend -Command secure-client -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+        Invoke-IseBackend -Command secure-client -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
     }
 }
 
-function Get-IseNetworkDevice { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$EnvironmentFile) Invoke-IseInventory -Command nads -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -EnvironmentFile $EnvironmentFile }
-function Get-IseProfilerProfile { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$EnvironmentFile) Invoke-IseInventory -Command profiles -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -EnvironmentFile $EnvironmentFile }
-function Get-IseTacacsUser { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$EnvironmentFile) Invoke-IseInventory -Command tacacs-users -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -EnvironmentFile $EnvironmentFile }
-function Get-IseIdentityGroup { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$EnvironmentFile) Invoke-IseInventory -Command identity-groups -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -EnvironmentFile $EnvironmentFile }
-function Get-IseNetworkDeviceGroup { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$EnvironmentFile) Invoke-IseInventory -Command network-device-groups -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -EnvironmentFile $EnvironmentFile }
+function Get-IseNetworkDevice { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseInventory -Command nads -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IseProfilerProfile { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseInventory -Command profiles -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IseTacacsUser { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseInventory -Command tacacs-users -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IseIdentityGroup { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseInventory -Command identity-groups -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
+function Get-IseNetworkDeviceGroup { [CmdletBinding()] param([ValidateRange(1,5000)][int]$Limit=100,[string[]]$Filter=@(),[switch]$All,[switch]$AllowExpensive,[string]$ConfigFile) Invoke-IseInventory -Command network-device-groups -Limit $Limit -Filter $Filter -All:$All -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile }
 
-function Get-IseLicense { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command licenses -EnvironmentFile $EnvironmentFile }
-function Get-IsePatch { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command patches -EnvironmentFile $EnvironmentFile }
-function Get-IseBackupStatus { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command backup-status -EnvironmentFile $EnvironmentFile }
-function Get-IseRepository { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command repositories -EnvironmentFile $EnvironmentFile }
-function Get-IseNetworkPolicySet { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command network-policy-sets -EnvironmentFile $EnvironmentFile }
-function Get-IseDeviceAdminPolicySet { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command device-admin-policy-sets -EnvironmentFile $EnvironmentFile }
-function Get-IseAuthorizationProfile { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command authorization-profiles -EnvironmentFile $EnvironmentFile }
-function Get-IseTacacsCommandSet { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command tacacs-command-sets -EnvironmentFile $EnvironmentFile }
-function Get-IseTacacsShellProfile { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command tacacs-shell-profiles -EnvironmentFile $EnvironmentFile }
+function Get-IseLicense { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command licenses -ConfigFile $ConfigFile }
+function Get-IsePatch { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command patches -ConfigFile $ConfigFile }
+function Get-IseBackupStatus { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command backup-status -ConfigFile $ConfigFile }
+function Get-IseRepository { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command repositories -ConfigFile $ConfigFile }
+function Get-IseNetworkPolicySet { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command network-policy-sets -ConfigFile $ConfigFile }
+function Get-IseDeviceAdminPolicySet { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command device-admin-policy-sets -ConfigFile $ConfigFile }
+function Get-IseAuthorizationProfile { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command authorization-profiles -ConfigFile $ConfigFile }
+function Get-IseTacacsCommandSet { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command tacacs-command-sets -ConfigFile $ConfigFile }
+function Get-IseTacacsShellProfile { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command tacacs-shell-profiles -ConfigFile $ConfigFile }
 
 function Get-IseCertificate {
     [CmdletBinding()]
-    param([string]$Node, [switch]$TrustedOnly, [switch]$SystemOnly, [string]$EnvironmentFile)
+    param([string]$Node, [switch]$TrustedOnly, [switch]$SystemOnly, [string]$ConfigFile)
     $arguments = [System.Collections.Generic.List[string]]::new()
     if ($Node) { [void]$arguments.Add('--node'); [void]$arguments.Add($Node) }
     Add-IseSwitchArgument -Arguments $arguments -Value:$TrustedOnly -Name '--trusted-only'
     Add-IseSwitchArgument -Arguments $arguments -Value:$SystemOnly -Name '--system-only'
-    Invoke-IseBackend -Command certificates -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command certificates -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
 }
 
 function New-IseReportArguments {
@@ -417,60 +417,60 @@ function Add-IseValueArgument {
 
 function Get-IseRadiusAuthentication {
     [CmdletBinding()]
-    param([string]$Identifier,[string]$Username,[string]$Nad,[ValidateSet('failed','passed','success')][string]$Status,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$EnvironmentFile)
+    param([string]$Identifier,[string]$Username,[string]$Nad,[ValidateSet('failed','passed','success')][string]$Status,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
     $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive; Add-IseValueArgument -Arguments $a -Name '--identifier' -Value $Identifier; Add-IseValueArgument -Arguments $a -Name '--username' -Value $Username; Add-IseValueArgument -Arguments $a -Name '--nad' -Value $Nad; Add-IseValueArgument -Arguments $a -Name '--status' -Value $Status
-    Invoke-IseBackend -Command radius-auth -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command radius-auth -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 function Get-IseEndpointReport {
     [CmdletBinding()]
-    param([string]$Identifier,[string]$Profile,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$EnvironmentFile)
+    param([string]$Identifier,[string]$Profile,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
     $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive; Add-IseValueArgument -Arguments $a -Name '--identifier' -Value $Identifier; Add-IseValueArgument -Arguments $a -Name '--profile' -Value $Profile
-    Invoke-IseBackend -Command endpoint-report -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command endpoint-report -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 function Get-IseRadiusError {
     [CmdletBinding()]
-    param([string]$Identifier,[string]$Nad,[string]$MessageCode,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$EnvironmentFile)
+    param([string]$Identifier,[string]$Nad,[string]$MessageCode,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
     $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive; Add-IseValueArgument -Arguments $a -Name '--identifier' -Value $Identifier; Add-IseValueArgument -Arguments $a -Name '--nad' -Value $Nad; Add-IseValueArgument -Arguments $a -Name '--message-code' -Value $MessageCode
-    Invoke-IseBackend -Command radius-errors -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command radius-errors -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 function Get-IseRadiusAccounting {
     [CmdletBinding()]
-    param([string]$Identifier,[string]$Username,[string]$Nad,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$EnvironmentFile)
+    param([string]$Identifier,[string]$Username,[string]$Nad,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
     $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive; Add-IseValueArgument -Arguments $a -Name '--identifier' -Value $Identifier; Add-IseValueArgument -Arguments $a -Name '--username' -Value $Username; Add-IseValueArgument -Arguments $a -Name '--nad' -Value $Nad
-    Invoke-IseBackend -Command radius-accounting -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command radius-accounting -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 function Get-IsePostureAssessment {
     [CmdletBinding()]
-    param([string]$Identifier,[string]$Status,[switch]$Conditions,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$EnvironmentFile)
+    param([string]$Identifier,[string]$Status,[switch]$Conditions,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
     $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive; Add-IseValueArgument -Arguments $a -Name '--identifier' -Value $Identifier; Add-IseValueArgument -Arguments $a -Name '--status' -Value $Status; Add-IseSwitchArgument -Arguments $a -Value:$Conditions -Name '--conditions'
-    Invoke-IseBackend -Command posture -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command posture -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 function Get-IsePsnMetric {
     [CmdletBinding()]
-    param([string]$Psn,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$EnvironmentFile)
+    param([string]$Psn,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
     $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive; Add-IseValueArgument -Arguments $a -Name '--psn' -Value $Psn
-    Invoke-IseBackend -Command psn-metrics -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command psn-metrics -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 function Get-IseTacacsActivity {
     [CmdletBinding()]
-    param([string]$Username,[string]$Device,[ValidateSet('authentication','authorization','accounting')][string]$EventType='authentication',[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$EnvironmentFile)
+    param([string]$Username,[string]$Device,[ValidateSet('authentication','authorization','accounting')][string]$EventType='authentication',[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
     $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive; Add-IseValueArgument -Arguments $a -Name '--username' -Value $Username; Add-IseValueArgument -Arguments $a -Name '--device' -Value $Device; Add-IseValueArgument -Arguments $a -Name '--event-type' -Value $EventType
-    Invoke-IseBackend -Command tacacs-activity -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command tacacs-activity -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
 }
 
 function Get-IseDataConnectSchema {
     [CmdletBinding()]
-    param([Parameter(Position=0)][string]$Table,[string]$EnvironmentFile)
+    param([Parameter(Position=0)][string]$Table,[string]$ConfigFile)
     $arguments = if ($Table) { @($Table) } else { @() }
-    Invoke-IseBackend -Command dataconnect-schema -ArgumentList $arguments -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command dataconnect-schema -ArgumentList $arguments -ConfigFile $ConfigFile
 }
 
 function Get-IseSchema {
     <# .SYNOPSIS Returns the backend contract for one command or the complete command set. #>
     [CmdletBinding()]
-    param([Parameter(Position=0)][string]$Name, [string]$EnvironmentFile)
+    param([Parameter(Position=0)][string]$Name, [string]$ConfigFile)
     $arguments = if ($Name) { @($Name) } else { @() }
-    Invoke-IseBackend -Command schema -ArgumentList $arguments -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command schema -ArgumentList $arguments -ConfigFile $ConfigFile
 }
 
 function Invoke-IseReadOnlyRequest {
@@ -480,12 +480,12 @@ function Invoke-IseReadOnlyRequest {
         [Parameter(Mandatory)][string]$Path,
         [hashtable]$Parameter = @{},
         [switch]$All, [switch]$NoUnwrap, [switch]$AllowExpensive,
-        [string]$EnvironmentFile
+        [string]$ConfigFile
     )
     $arguments=[System.Collections.Generic.List[string]]::new(); [void]$arguments.Add($Family); [void]$arguments.Add($Path)
     foreach($key in ($Parameter.Keys | Sort-Object)){ [void]$arguments.Add('--param'); [void]$arguments.Add("$key=$($Parameter[$key])") }
     Add-IseSwitchArgument -Arguments $arguments -Value:$All -Name '--all'; Add-IseSwitchArgument -Arguments $arguments -Value:$NoUnwrap -Name '--no-unwrap'; Add-IseSwitchArgument -Arguments $arguments -Value:$AllowExpensive -Name '--allow-expensive'
-    Invoke-IseBackend -Command get -ArgumentList $arguments.ToArray() -EnvironmentFile $EnvironmentFile
+    Invoke-IseBackend -Command get -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
 }
 
 function Get-IseLegacyCompletion {

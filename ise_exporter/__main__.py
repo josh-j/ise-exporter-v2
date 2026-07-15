@@ -3,7 +3,6 @@
 REST/OpenAPI owns appliance and configuration state. Data Connect owns reporting
 datasets. MnT owns only a bounded current active-session posture snapshot.
 """
-import os
 import sys
 import json
 import signal
@@ -12,7 +11,6 @@ import logging
 import threading
 
 import urllib3
-from dotenv import load_dotenv
 from prometheus_client import start_http_server
 
 from . import __version__, build_revision, SUPPORTED_ISE_RELEASE, version_string
@@ -40,13 +38,6 @@ from .state import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("ise_exporter")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# systemd installs config here (deploy/install.sh); load it too so a manual
-# manual diagnostics from any cwd pick up the same env the service uses.
-# Override with ISE_EXPORTER_ENV_FILE. load_dotenv never overrides an already-set var,
-# so the running service's systemd EnvironmentFile still wins.
-DEPLOY_ENV_FILE = os.environ.get("ISE_EXPORTER_ENV_FILE", "/etc/ise-exporter/ise-exporter.env")
-
 
 def _close_quietly(resource, name):
     if resource is None:
@@ -115,21 +106,6 @@ def dataconnect_schema(cfg):
         _close_quietly(client, "Data Connect schema client")
 
 
-def _load_env():
-    """Load the systemd deployment env, then ``./.env`` as a dev fallback.
-
-    Values are configuration data, not shell templates.  Disabling interpolation
-    preserves the entire value after the first ``=`` literally, including additional
-    equals signs and password/token text such as ``${NAME}``. Existing process
-    environment always wins; the deployed file wins over a coincidental local
-    ``.env`` so diagnostics cannot silently target a development cluster.
-    """
-    if os.path.isfile(DEPLOY_ENV_FILE):
-        load_dotenv(DEPLOY_ENV_FILE, interpolate=False)
-        logger.info("loaded config from %s", DEPLOY_ENV_FILE)
-    load_dotenv(".env", interpolate=False)
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", action="version", version=version_string("ise-exporter"))
@@ -141,7 +117,6 @@ def main(argv=None):
                         help="clear exporter caches, snapshots, auth backoff, and DB pacing")
     args = parser.parse_args(argv)
 
-    _load_env()
     metrics.ise_exporter_build_info.labels(
         version=__version__, revision=build_revision(),
         target_ise_release=SUPPORTED_ISE_RELEASE).set(1)

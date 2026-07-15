@@ -110,7 +110,7 @@ pxGrid; it does not.
 - [x] Remove dashboard variables and joins that depend on deprecated session or
   endpoint identity labels.
 
-## Ubuntu Server 24.04 LTS
+## Debian 12/13 and Ubuntu Server 24.04 LTS
 
 - [x] Keep application dependencies in an isolated `/opt/ise-exporter/.venv`.
 - [x] Use `python-oracledb` Thin mode without Oracle Instant Client or an Oracle
@@ -121,7 +121,7 @@ pxGrid; it does not.
   prerequisites.
 - [x] Preserve configuration and certificate directories across idempotent
   installer upgrades.
-- [x] Exercise the final package and systemd unit on a clean Ubuntu Noble VM,
+- [x] Exercise the final package and systemd unit on clean Debian and Ubuntu hosts,
   including a real Data Connect TLS connection to the lab.
 - [x] Document offline wheelhouse installation for production networks without
   direct PyPI access.
@@ -142,7 +142,7 @@ pxGrid; it does not.
 - [x] Run Ruff and the complete pytest suite after all parallel migration work
   is merged.
 - [x] Build and inspect both wheel and source distribution.
-- [x] Run the Ubuntu Noble installation CI job.
+- [x] Run the Debian and Ubuntu installation CI jobs.
 - [x] Run the complete live-lab collection cycle against `laba-ise-001` and
   confirm all enabled collectors report success.
 - [x] Verify Prometheus queries and every Grafana dashboard against the live

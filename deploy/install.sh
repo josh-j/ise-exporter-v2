@@ -15,7 +15,7 @@ CONFIG_DIR=/etc/ise-exporter
 CERTS_DIR="$CONFIG_DIR/certs"
 STATE_DIR=/var/lib/ise-exporter
 SHARED_STATE_DIR="$STATE_DIR/shared"
-ENV_FILE="$CONFIG_DIR/ise-exporter.env"
+CONFIG_FILE="$CONFIG_DIR/config.toml"
 SERVICE_USER=ise-exporter
 SERVICE_NAME=ise-exporter
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -41,8 +41,8 @@ fi
 echo "==> source: $SOURCE_DIR"
 
 # --- native host prerequisites -------------------------------------------
-# Ubuntu 24.04 marks its system Python as externally managed. Keep it intact:
-# install only Ubuntu packages with apt and put all PyPI dependencies in the
+# Debian and Ubuntu mark their system Python as externally managed. Keep it intact:
+# install only distribution packages with apt and put all PyPI dependencies in the
 # dedicated /opt venv below. python-oracledb runs in thin mode, so Data Connect
 # does not require Oracle Instant Client or any third-party apt repository.
 if [[ -r /etc/os-release ]]; then
@@ -95,10 +95,8 @@ else
 fi
 
 # --- directories -------------------------------------------------------
-# root:ise-exporter, group-readable rather than root-only: EnvironmentFile= is read
-# by systemd (root) before it drops privileges, so root-only would work for the
-# service itself, but group-read also lets `sudo -u ise-exporter ise-exporter
-# --dataconnect-check` read the file directly for manual diagnostics.
+# root:ise-exporter and group-readable so the service account can load TOML for
+# both normal startup and manual preflight diagnostics.
 echo "==> ensuring directories"
 # Package code is not secret and must be traversable by every local user so the
 # /usr/local/bin/ise-cli entrypoint works. Configuration and certificates remain
@@ -182,15 +180,15 @@ fi
 
 # --- config: seed once, never overwrite on upgrade ---------------------
 FRESH_CONFIG=0
-if [[ ! -f "$ENV_FILE" ]]; then
-    echo "==> no existing config — seeding $ENV_FILE from .env.example"
-    cp "$SOURCE_DIR/.env.example" "$ENV_FILE"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "==> no existing config — seeding $CONFIG_FILE"
+    cp "$SOURCE_DIR/ise-exporter.toml.example" "$CONFIG_FILE"
     FRESH_CONFIG=1
 else
-    echo "==> existing config found at $ENV_FILE — leaving it untouched"
+    echo "==> existing config found at $CONFIG_FILE — leaving it untouched"
 fi
-chown root:"$SERVICE_USER" "$ENV_FILE"
-chmod 640 "$ENV_FILE"
+chown root:"$SERVICE_USER" "$CONFIG_FILE"
+chmod 640 "$CONFIG_FILE"
 chown root:"$SERVICE_USER" "$CERTS_DIR"
 chmod 750 "$CERTS_DIR"
 # Any certificate/key files already dropped in $CERTS_DIR by a previous run:
@@ -208,13 +206,13 @@ cp "$SOURCE_DIR/deploy/ise-exporter.service" "$UNIT_PATH"
 systemctl daemon-reload
 
 # --- lifecycle -------------------------------------------------------
-# A newly seeded EnvironmentFile intentionally contains documentation
+# A newly seeded TOML file intentionally contains documentation
 # placeholders. Never start (or restart) a network client with those values: a
 # systemd restart loop would repeatedly try the example hosts and credentials.
 PLACEHOLDER_CONFIG=0
 if grep -Eq \
-    "^[[:space:]]*(ISE_HOST[[:space:]]*=[[:space:]]*['\"]?pan1\.example\.mil['\"]?|ISE_MNT_HOST[[:space:]]*=[[:space:]]*['\"]?mnt1\.example\.mil['\"]?|ISE_PASS[[:space:]]*=[[:space:]]*['\"]?changeme['\"]?|ISE_DATACONNECT_HOST[[:space:]]*=[[:space:]]*['\"]?mnt1\.example\.mil['\"]?|ISE_DATACONNECT_PASSWORD[[:space:]]*=[[:space:]]*['\"]?changeme['\"]?)[[:space:]]*$" \
-    "$ENV_FILE"; then
+    '^[[:space:]]*(host[[:space:]]*=[[:space:]]*"(pan1|mnt1)\.example\.com"|password[[:space:]]*=[[:space:]]*"changeme")[[:space:]]*$' \
+    "$CONFIG_FILE"; then
     PLACEHOLDER_CONFIG=1
 fi
 
@@ -226,8 +224,8 @@ if [[ "$FRESH_CONFIG" -eq 1 ]]; then
         systemctl stop "$SERVICE_NAME"
     fi
 elif [[ "$PLACEHOLDER_CONFIG" -eq 1 ]]; then
-    echo "==> WARNING: placeholder values remain in $ENV_FILE; service will not be started"
-    # A configuration-management system may stage the env file before the
+    echo "==> WARNING: placeholder values remain in $CONFIG_FILE; service will not be started"
+    # A configuration-management system may stage the TOML file before the
     # package/unit exists. The service should still participate in normal boot
     # once the operator replaces the placeholders and starts it deliberately.
     if [[ "$SERVICE_INSTALLED_BEFORE" -eq 0 ]]; then
@@ -259,7 +257,7 @@ echo "==> Data Connect check (run as the service user so it reads deployed confi
 echo "    sudo -u $SERVICE_USER $INSTALL_DIR/.venv/bin/$SERVICE_NAME --dataconnect-check"
 if [[ "$FRESH_CONFIG" -eq 1 ]]; then
     echo "==> NOTE: fresh installation is enabled but intentionally NOT running. Next steps:"
-    echo "    1. sudoedit $ENV_FILE"
+    echo "    1. sudoedit $CONFIG_FILE"
     echo "    2. install the Data Connect CA chain under $CERTS_DIR"
     echo "    3. sudo -u $SERVICE_USER $INSTALL_DIR/.venv/bin/$SERVICE_NAME --dataconnect-check"
     echo "    4. sudo systemctl start $SERVICE_NAME"

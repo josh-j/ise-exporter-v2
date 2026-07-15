@@ -20,10 +20,10 @@ EXPOSE 9618
 # run as nobody:nogroup; only /var/lib/ise-exporter is writable for the endpoint cache
 USER 65534:65534
 
-# honors EXPORTER_PORT; hits the metrics endpoint to confirm the server is up
+# The sample TOML exposes the exporter on port 9618.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import os,urllib.request; \
-urllib.request.urlopen('http://127.0.0.1:'+os.getenv('EXPORTER_PORT','9618')+'/metrics', timeout=4)" \
+    CMD python -c "import urllib.request; \
+urllib.request.urlopen('http://127.0.0.1:9618/metrics', timeout=4)" \
     || exit 1
 
 ENTRYPOINT ["ise-exporter"]

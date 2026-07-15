@@ -9,7 +9,7 @@ StartLimitBurst=3
 Type=simple
 User=ise-exporter
 Group=ise-exporter
-EnvironmentFile=/etc/ise-exporter/ise-exporter.env
+Environment=ISE_EXPORTER_CONFIG=/etc/ise-exporter/config.toml
 ExecStart=/opt/ise-exporter/.venv/bin/ise-exporter
 Restart=on-failure
 RestartSec=5min

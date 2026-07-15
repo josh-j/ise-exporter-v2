@@ -1,29 +1,29 @@
-# Ubuntu Server 24.04 LTS installation
+# Debian and Ubuntu systemd installation
 
-Ubuntu Server 24.04 LTS (Noble Numbat) is a supported native systemd target.
-The deployment uses Ubuntu's standard `python3`, `python3-venv`,
+Debian 12/13 and Ubuntu Server 24.04 LTS are supported native systemd targets.
+The deployment uses the distribution's standard `python3`, `python3-venv`,
 `ca-certificates`, user-management, and systemd packages. Application Python
 dependencies are isolated under `/opt/ise-exporter/.venv`; the installer never
-uses `sudo pip` or changes Ubuntu's externally managed system Python.
+uses `sudo pip` or changes the distribution's externally managed system Python.
 
 The production host requirements below were reconciled with the lab's
 [rooted ISE snapshot](rooted-ise-ground-truth.md), including live listeners on
 Admin/OpenAPI HTTPS, MnT/ERS, and Data Connect TCPS. Root access to ISE is never
-required by the Ubuntu service.
+required by the exporter service.
 
 The `oracledb` dependency uses its pure network thin mode. TACACS and other Data
 Connect collectors therefore do not require Oracle Instant Client, an Oracle apt
 repository, a compiler, or database development headers.
 
 `python-oracledb` itself is an application dependency installed from PyPI into
-the private venv; it is not an Ubuntu Noble apt package. Consequently, a normal
+the private venv; it is not a distribution apt package. Consequently, a normal
 installation needs outbound package access to PyPI (directly or through an
 internal mirror). For disconnected installations, provide a pre-populated pip
-wheelhouse or internal Python package index. Nothing is installed into Ubuntu's
+wheelhouse or internal Python package index. Nothing is installed into the
 system Python.
 
-For an offline production host, build a wheelhouse on a connected Ubuntu Noble
-machine and copy it with the checkout:
+For an offline production host, build a wheelhouse on a connected Debian or
+Ubuntu machine with the same Python version and copy it with the checkout:
 
 ```bash
 python3 -m pip download --dest wheelhouse '.[dev]'
@@ -40,7 +40,7 @@ Clone or copy the repository to the server, then run:
 
 ```bash
 sudo ./deploy/install.sh
-sudoedit /etc/ise-exporter/ise-exporter.env
+sudoedit /etc/ise-exporter/config.toml
 # Install the Data Connect CA chain under /etc/ise-exporter/certs, then preflight:
 sudo -u ise-exporter /opt/ise-exporter/.venv/bin/ise-exporter --dataconnect-check
 sudo systemctl start ise-exporter
@@ -64,7 +64,7 @@ or create a rapid credential retry loop against production ISE.
 
 The installer is idempotent. Re-run it from an updated checkout to upgrade the
 virtual environment, command-line tools, and systemd unit while preserving
-`/etc/ise-exporter/ise-exporter.env` and certificates. A configured service that
+`/etc/ise-exporter/config.toml` and certificates. A configured service that
 was active is restarted during an upgrade. An intentionally stopped service
 remains stopped.
 
@@ -73,7 +73,7 @@ It creates:
 - the locked `ise-exporter` system account;
 - `/opt/ise-exporter/.venv` for application code and dependencies;
 - `/opt/ise-exporter/powershell` and the system `Ise.Cli` module link;
-- `/etc/ise-exporter/ise-exporter.env` and `/etc/ise-exporter/certs`;
+- `/etc/ise-exporter/config.toml` and `/etc/ise-exporter/certs`;
 - `/usr/local/bin/ise-cli` for all local users;
 - `/etc/systemd/system/ise-exporter.service`.
 
@@ -89,41 +89,50 @@ On Cisco ISE:
 - an active Essentials license;
 - Data Connect enabled on the MnT node that the exporter will query;
 - the fixed `dataconnect` username and a configured, non-expired password;
-- the fixed `cpm10` service on TCP 2484 reachable from the Ubuntu server;
+- the fixed `cpm10` service on TCP 2484 reachable from the Debian or Ubuntu server;
 - the MnT Admin certificate or its complete issuing CA chain exported as PEM.
 
 Use a hostname that appears in the Admin certificate when TLS verification is
 enabled. Install the PEM chain under `/etc/ise-exporter/certs`, owned by
 `root:ise-exporter`, and configure:
 
-```dotenv
-ISE_REST_SSL_VERIFY=true
-ISE_REST_CA_BUNDLE=/etc/ise-exporter/certs/ise-rest-ca.pem
-# MnT serves bounded current active posture and explicit CLI diagnostics.
-ISE_MNT_HOST=mnt1.example.mil
-ISE_MNT_SSL_VERIFY=true
-ISE_MNT_CA_BUNDLE=/etc/ise-exporter/certs/ise-mnt-ca.pem
-COLLECT_MNT_ACTIVE_POSTURE=true
-MNT_ACTIVE_POSTURE_INTERVAL=900
-MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS=10000
-MNT_ACTIVE_POSTURE_MAX_SESSIONS=1000
-MNT_ACTIVE_POSTURE_WORKERS=2
-MNT_ACTIVE_POSTURE_MAX_REQUESTS_PER_CYCLE=250
-MNT_ACTIVE_POSTURE_REFRESH_TTL=3600
-MNT_ACTIVE_POSTURE_REQUEST_INTERVAL_MS=500
-ISE_EXPORTER_STATE_DB=/var/lib/ise-exporter/state.sqlite3
-ISE_DATACONNECT_HOST=mnt1.example.mil
-ISE_DATACONNECT_PORT=2484
-ISE_DATACONNECT_SERVICE=cpm10
-ISE_DATACONNECT_USER=dataconnect
-ISE_DATACONNECT_PASSWORD=use-a-secret-store
-ISE_DATACONNECT_CA_BUNDLE=/etc/ise-exporter/certs/ise-dataconnect-ca.pem
-ISE_DATACONNECT_SSL_VERIFY=true
-ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS=5000
-ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT=0.1
-ISE_DATACONNECT_SHARED_PACING_FILE=/var/lib/ise-exporter/shared/dataconnect.pacing
-ISE_DATACONNECT_AUTH_GUARD_FILE=/var/lib/ise-exporter/shared/dataconnect-auth.guard
-ISE_REST_AUTH_GUARD_FILE=/var/lib/ise-exporter/shared/rest-auth.guard
+```toml
+[ise]
+mnt_host = "mnt1.example.com"
+auth_guard_file = "/var/lib/ise-exporter/shared/rest-auth.guard"
+
+[ise.rest_tls]
+verify = true
+ca_bundle = "/etc/ise-exporter/certs/ise-rest-ca.pem"
+
+[ise.mnt_tls]
+verify = true
+ca_bundle = "/etc/ise-exporter/certs/ise-mnt-ca.pem"
+
+[collectors]
+mnt_active_posture = true
+
+[mnt_active_posture]
+interval_seconds = 900
+max_active_list_sessions = 10000
+max_sessions = 1000
+workers = 2
+max_requests_per_cycle = 250
+refresh_ttl_seconds = 3600
+request_interval_ms = 500
+
+[dataconnect]
+host = "mnt1.example.com"
+port = 2484
+service = "cpm10"
+user = "dataconnect"
+password = "use-a-secret-store"
+ca_bundle = "/etc/ise-exporter/certs/ise-dataconnect-ca.pem"
+verify_tls = true
+min_query_interval_ms = 5000
+max_duty_cycle_percent = 0.1
+shared_pacing_file = "/var/lib/ise-exporter/shared/dataconnect.pacing"
+auth_guard_file = "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
 ```
 
 Five seconds between statements, a 0.1% duty cycle, and 1,000 grouped results are
@@ -223,7 +232,7 @@ with zero restarts while placeholders remain. Live startup and the metrics endpo
 require the exact supported ISE and Data Connect credentials, so those are covered
 by the lab smoke test rather than public CI.
 
-If `/etc/ise-exporter/ise-exporter.env` is pre-staged before the first install,
+If `/etc/ise-exporter/config.toml` is pre-staged before the first install,
 the installer enables and starts the service only when no example or `changeme`
 values remain. A pre-staged placeholder configuration is enabled but kept stopped.
 On later upgrades, an intentionally stopped service remains stopped.

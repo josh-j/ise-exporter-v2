@@ -1,132 +1,29 @@
-"""Single source of truth for runtime config. Replaces the ~40 scattered
-module-level os.getenv() constants with one immutable object loaded once."""
+"""Typed TOML configuration for the exporter, CLI, and collectors."""
 from __future__ import annotations
+
+from dataclasses import dataclass, fields, replace
 import logging
 import math
 import os
-from dataclasses import dataclass
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
+    import tomli as tomllib
+
 
 logger = logging.getLogger(__name__)
+DEFAULT_CONFIG_FILE = "/etc/ise-exporter/config.toml"
 
 
-def _s(v, d=""):
-    # strip() guards against a trailing \r (CRLF env files) or stray whitespace —
-    # both parse "successfully" into a wrong value with no error anywhere.
-    raw = os.getenv(v)
-    return raw.strip() if raw is not None else d
-
-
-def _i(v, d):
-    raw = _s(v, None)
-    if not raw:
-        return d
-    try:
-        return int(raw)
-    except ValueError:
-        logger.warning("%s=%r is not a valid integer — defaulting to %s", v, raw, d)
-        return d
-
-
-def _f(v, d):
-    raw = _s(v, None)
-    if not raw:
-        return d
-    try:
-        value = float(raw)
-    except ValueError:
-        logger.warning("%s=%r is not a valid number — defaulting to %s", v, raw, d)
-        return d
-    if not math.isfinite(value):
-        logger.warning("%s=%r is not a finite number — defaulting to %s", v, raw, d)
-        return d
-    return value
-
-
-def _log_level(v="LOG_LEVEL", d="INFO"):
-    raw = _s(v, d).upper()
-    if raw == "WARN":
-        return "WARNING"
-    if raw in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
-        return raw
-    logger.warning("%s=%r is not a supported log level — defaulting to %s",
-                   v, raw, d)
-    return d
-
-
-def _bounded_i(v, d, minimum=None, maximum=None):
-    value = _i(v, d)
-    bounded = value
-    if minimum is not None:
-        bounded = max(minimum, bounded)
-    if maximum is not None:
-        bounded = min(maximum, bounded)
-    if bounded != value:
-        logger.warning("%s=%s is outside the production-safe range — using %s",
-                       v, value, bounded)
-    return bounded
-
-
-def _bounded_f(v, d, minimum=None, maximum=None):
-    value = _f(v, d)
-    bounded = value
-    if minimum is not None:
-        bounded = max(minimum, bounded)
-    if maximum is not None:
-        bounded = min(maximum, bounded)
-    if bounded != value:
-        logger.warning("%s=%s is outside the production-safe range — using %s",
-                       v, value, bounded)
-    return bounded
-
-
-def _recommended_i(v, d, minimum=None, maximum=None, valid_minimum=0):
-    """Honor valid operator tuning while warning outside production guidance."""
-    value = _i(v, d)
-    if value < valid_minimum:
-        logger.warning(
-            "%s=%s is not operationally valid — defaulting to %s", v, value, d)
-        return d
-    if ((minimum is not None and value < minimum)
-            or (maximum is not None and value > maximum)):
-        logger.warning(
-            "%s=%s is outside the production-recommended range — respecting "
-            "the explicit setting", v, value)
-    return value
-
-
-def _recommended_f(v, d, minimum=None, maximum=None, valid_minimum=0.0):
-    """Float counterpart to :func:`_recommended_i`."""
-    value = _f(v, d)
-    if value <= valid_minimum:
-        logger.warning(
-            "%s=%s is not operationally valid — defaulting to %s", v, value, d)
-        return d
-    if ((minimum is not None and value < minimum)
-            or (maximum is not None and value > maximum)):
-        logger.warning(
-            "%s=%s is outside the production-recommended range — respecting "
-            "the explicit setting", v, value)
-    return value
-
-
-def _b(v, d):
-    raw = _s(v, None)
-    if raw is None:
-        return d
-    # Accept common boolean spellings and strip quotes left by some
-    # EnvironmentFile parsers. A genuinely unparseable value still warns.
-    low = raw.strip().strip("\"'").lower()
-    if low in ("true", "1", "yes", "on"):
-        return True
-    if low in ("false", "0", "no", "off"):
-        return False
-    logger.warning("%s=%r is not a recognized boolean — defaulting to %s "
-                   "(use true/false, 1/0, yes/no, or on/off)", v, raw, d)
-    return d
+class ConfigError(ValueError):
+    """The TOML configuration is missing, malformed, or unsafe."""
 
 
 @dataclass(frozen=True)
 class Config:
+    config_file: str = ""
     log_level: str = "INFO"
     ise_host: str = ""
     ise_mnt_host: str = ""
@@ -180,9 +77,6 @@ class Config:
     dataconnect_password: str = ""
     dataconnect_ca_bundle: str = ""
     dataconnect_ssl_verify: bool = True
-    # Production-safe guardrails for deployments up to 100k endpoints. Data
-    # Connect can route work across ISE personas, so these limits protect the
-    # deployment rather than assuming the secondary MnT absorbs every query.
     dataconnect_query_timeout: int = 15
     dataconnect_max_groups: int = 1000
     dataconnect_min_query_interval_ms: int = 5000
@@ -202,15 +96,16 @@ class Config:
     cli_production_safe: bool = True
     cli_allow_expensive: bool = False
     cli_max_rows: int = 1000
+
     @property
     def dataconnect_ready(self) -> bool:
         return bool(self.dataconnect_host and self.dataconnect_user
                     and self.dataconnect_password)
 
     def summary(self) -> str:
-        """Secret-redacted one-liner of the toggles/paths that most commonly cause
-        silent misconfiguration. Log this once at startup — ise_pass is excluded."""
-        return (f"collect_tacacs={self.collect_tacacs} "
+        """Return a secret-redacted startup summary."""
+        return (f"config_file={self.config_file!r} "
+                f"collect_tacacs={self.collect_tacacs} "
                 f"collect_mnt_active_posture={self.collect_mnt_active_posture} "
                 f"mnt_active_list_ceiling="
                 f"{self.mnt_active_posture_max_active_list_sessions} "
@@ -231,139 +126,234 @@ class Config:
                 f"ise_user={self.ise_user!r}")
 
     @classmethod
+    def load(cls, path=None) -> "Config":
+        configured = path or os.getenv("ISE_EXPORTER_CONFIG")
+        config_path = Path(configured) if configured else Path(DEFAULT_CONFIG_FILE)
+        if not config_path.exists():
+            if configured:
+                raise ConfigError(f"configuration file does not exist: {config_path}")
+            document = {}
+            source = ""
+        else:
+            try:
+                with config_path.open("rb") as stream:
+                    document = tomllib.load(stream)
+            except (OSError, tomllib.TOMLDecodeError) as error:
+                raise ConfigError(f"cannot load TOML config {config_path}: {error}") from error
+            source = str(config_path)
+
+        flattened = _flatten(document)
+        unknown = sorted(set(flattened) - set(_TOML_FIELDS))
+        if unknown:
+            suffix = "s" if len(unknown) != 1 else ""
+            raise ConfigError(f"unknown TOML config key{suffix}: {', '.join(unknown)}")
+
+        defaults = cls()
+        values = {"config_file": source}
+        for key, raw in flattened.items():
+            name = _TOML_FIELDS[key]
+            values[name] = _typed_value(key, raw, getattr(defaults, name))
+
+        # MnT TLS follows REST unless it is configured explicitly.
+        if "ise.mnt_tls.ca_bundle" not in flattened:
+            values["mnt_ca_bundle"] = values.get(
+                "rest_ca_bundle", defaults.rest_ca_bundle)
+        if "ise.mnt_tls.verify" not in flattened:
+            values["mnt_ssl_verify"] = values.get(
+                "rest_ssl_verify", defaults.rest_ssl_verify)
+
+        # Secrets are intentionally the only environment overrides.
+        if "ISE_PASS" in os.environ:
+            values["ise_pass"] = os.environ["ISE_PASS"]
+        if "ISE_DATACONNECT_PASSWORD" in os.environ:
+            values["dataconnect_password"] = os.environ[
+                "ISE_DATACONNECT_PASSWORD"]
+
+        return _validate(replace(defaults, **values))
+
+    @classmethod
     def from_env(cls) -> "Config":
-        return cls(
-            log_level=_log_level(),
-            ise_host=_s("ISE_HOST"), ise_mnt_host=_s("ISE_MNT_HOST"),
-            ise_user=_s("ISE_USER", "ers.readonly"), ise_pass=_s("ISE_PASS"),
-            ers_port=_bounded_i("ERS_PORT", 9060, 1, 65535),
-            request_timeout=_bounded_i("ISE_REST_REQUEST_TIMEOUT", 30, 5, 30),
-            exporter_port=_bounded_i("EXPORTER_PORT", 9618, 1, 65535),
-            state_db_path=_s(
-                "ISE_EXPORTER_STATE_DB", "/var/lib/ise-exporter/state.sqlite3")
-                or "/var/lib/ise-exporter/state.sqlite3",
-            rest_ca_bundle=_s("ISE_REST_CA_BUNDLE"),
-            rest_ssl_verify=_b("ISE_REST_SSL_VERIFY", True),
-            mnt_ca_bundle=_s("ISE_MNT_CA_BUNDLE", _s("ISE_REST_CA_BUNDLE")),
-            mnt_ssl_verify=_b(
-                "ISE_MNT_SSL_VERIFY", _b("ISE_REST_SSL_VERIFY", True)),
-            scrape_interval=_recommended_i("SCRAPE_INTERVAL", 120, 60, valid_minimum=1),
-            medium_interval=_recommended_i(
-                "MEDIUM_INTERVAL", 300, 300, valid_minimum=1),
-            slow_interval=_recommended_i("SLOW_INTERVAL", 3600, 3600, valid_minimum=1),
-            startup_rate_limit_seconds=_recommended_i(
-                "ISE_STARTUP_RATE_LIMIT_SECONDS", 5, 0, 300, valid_minimum=0),
-            auth_failure_backoff=_bounded_i(
-                "AUTH_FAILURE_BACKOFF", 900, 300, 86400),
-            auth_failure_threshold=_bounded_i(
-                "AUTH_FAILURE_THRESHOLD", 3, 1, 5),
-            rest_auth_guard_file=_s(
-                "ISE_REST_AUTH_GUARD_FILE",
-                "/var/lib/ise-exporter/shared/rest-auth.guard")
-                or "/var/lib/ise-exporter/shared/rest-auth.guard",
-            device_cache_ttl=_recommended_i(
-                "DEVICE_CACHE_TTL", 2592000, 86400, 31536000, valid_minimum=1),
-            device_detail_max_requests=_bounded_i(
-                "DEVICE_DETAIL_MAX_REQUESTS", 25, 1, 100),
-            device_detail_request_interval_ms=_recommended_i(
-                "DEVICE_DETAIL_REQUEST_INTERVAL_MS", 250, 100, 10000,
-                valid_minimum=0),
-            collect_device_details=_b("COLLECT_DEVICE_DETAILS", True),
-            collect_certificates=_b("COLLECT_CERTIFICATES", True),
-            collect_licensing=_b("COLLECT_LICENSING", True),
-            collect_backup_status=_b("COLLECT_BACKUP_STATUS", True),
-            collect_patches=_b("COLLECT_PATCHES", True),
-            collect_tacacs=_b("COLLECT_TACACS", True),
-            collect_mnt_active_posture=_b("COLLECT_MNT_ACTIVE_POSTURE", True),
-            mnt_active_posture_interval=_recommended_i(
-                "MNT_ACTIVE_POSTURE_INTERVAL", 900, 900, valid_minimum=1),
-            mnt_active_posture_max_active_list_sessions=_bounded_i(
-                "MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS", 10000, 1, 250000),
-            mnt_active_posture_max_sessions=_bounded_i(
-                "MNT_ACTIVE_POSTURE_MAX_SESSIONS", 1000, 1, 1000),
-            mnt_active_posture_workers=_bounded_i(
-                "MNT_ACTIVE_POSTURE_WORKERS", 2, 1, 4),
-            mnt_active_posture_max_requests_per_cycle=_bounded_i(
-                "MNT_ACTIVE_POSTURE_MAX_REQUESTS_PER_CYCLE", 250, 1, 250),
-            mnt_active_posture_refresh_ttl=_recommended_i(
-                "MNT_ACTIVE_POSTURE_REFRESH_TTL", 3600, 900, valid_minimum=1),
-            mnt_active_posture_request_interval_ms=_recommended_i(
-                "MNT_ACTIVE_POSTURE_REQUEST_INTERVAL_MS", 500, 250,
-                valid_minimum=0),
-            tacacs_internal_user_max=_bounded_i(
-                "TACACS_INTERNAL_USER_MAX", 1000, 1, 1000),
-            tacacs_internal_user_detail_max_requests=_bounded_i(
-                "TACACS_INTERNAL_USER_DETAIL_MAX_REQUESTS", 100, 1, 250),
-            tacacs_internal_user_detail_ttl=_recommended_i(
-                "TACACS_INTERNAL_USER_DETAIL_TTL", 604800, 86400,
-                valid_minimum=1),
-            tacacs_internal_user_detail_request_interval_ms=_recommended_i(
-                "TACACS_INTERNAL_USER_DETAIL_REQUEST_INTERVAL_MS", 250, 100,
-                valid_minimum=0),
-            tacacs_policy_set_max=_bounded_i(
-                "TACACS_POLICY_SET_MAX", 100, 1, 1000),
-            tacacs_policy_rule_refresh_max=_bounded_i(
-                "TACACS_POLICY_RULE_REFRESH_MAX", 10, 1, 25),
-            tacacs_policy_rule_ttl=_recommended_i(
-                "TACACS_POLICY_RULE_TTL", 604800, 86400, valid_minimum=1),
-            tacacs_policy_rule_request_interval_ms=_recommended_i(
-                "TACACS_POLICY_RULE_REQUEST_INTERVAL_MS", 250, 100,
-                valid_minimum=0),
-            tacacs_unused_account_days=_bounded_i(
-                "TACACS_UNUSED_ACCOUNT_DAYS", 180, 1, 3650),
-            # Never infer the Oracle target from the MnT XML host. Production
-            # deployments must choose the intended Data Connect node explicitly.
-            dataconnect_host=_s("ISE_DATACONNECT_HOST"),
-            dataconnect_port=_bounded_i("ISE_DATACONNECT_PORT", 2484, 1, 65535),
-            dataconnect_service=_s("ISE_DATACONNECT_SERVICE", "cpm10"),
-            dataconnect_user=_s("ISE_DATACONNECT_USER", "dataconnect"),
-            dataconnect_password=_s("ISE_DATACONNECT_PASSWORD"),
-            dataconnect_ca_bundle=_s("ISE_DATACONNECT_CA_BUNDLE"),
-            dataconnect_ssl_verify=_b("ISE_DATACONNECT_SSL_VERIFY", True),
-            dataconnect_query_timeout=_bounded_i(
-                "ISE_DATACONNECT_QUERY_TIMEOUT", 15, 5, 15),
-            dataconnect_max_groups=_bounded_i(
-                "ISE_DATACONNECT_MAX_GROUPS", 1000, 1, 1000),
-            dataconnect_min_query_interval_ms=_recommended_i(
-                "ISE_DATACONNECT_MIN_QUERY_INTERVAL_MS", 5000, 5000,
-                valid_minimum=0),
-            dataconnect_max_duty_cycle_percent=_recommended_f(
-                "ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT", 0.1, 0.01, 0.1),
-            dataconnect_event_window_hours=_bounded_i(
-                "ISE_DATACONNECT_EVENT_WINDOW_HOURS", 6, 1, 6),
-            dataconnect_schema_interval=_recommended_i(
-                "ISE_DATACONNECT_SCHEMA_INTERVAL", 86400, 86400,
-                valid_minimum=1),
-            dataconnect_radius_interval=_recommended_i(
-                "ISE_DATACONNECT_RADIUS_INTERVAL", 86400, 86400, valid_minimum=1),
-            dataconnect_radius_active_interval=_recommended_i(
-                "ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL", 7200, 7200,
-                valid_minimum=1),
-            dataconnect_performance_interval=_recommended_i(
-                "ISE_DATACONNECT_PERFORMANCE_INTERVAL", 21600, 21600,
-                valid_minimum=1),
-            dataconnect_posture_interval=_recommended_i(
-                "ISE_DATACONNECT_POSTURE_INTERVAL", 86400, 86400, valid_minimum=1),
-            dataconnect_endpoints_interval=_recommended_i(
-                "ISE_DATACONNECT_ENDPOINTS_INTERVAL", 86400, 86400,
-                valid_minimum=1),
-            dataconnect_freshness_interval=_recommended_i(
-                "ISE_DATACONNECT_FRESHNESS_INTERVAL", 86400, 86400,
-                valid_minimum=1),
-            dataconnect_nad_health_interval=_recommended_i(
-                "ISE_DATACONNECT_NAD_HEALTH_INTERVAL", 86400, 86400,
-                valid_minimum=1),
-            dataconnect_tacacs_interval=_recommended_i(
-                "ISE_DATACONNECT_TACACS_INTERVAL", 86400, 86400, valid_minimum=1),
-            dataconnect_shared_pacing_file=_s(
-                "ISE_DATACONNECT_SHARED_PACING_FILE",
-                "/var/lib/ise-exporter/shared/dataconnect.pacing")
-                or "/var/lib/ise-exporter/shared/dataconnect.pacing",
-            dataconnect_auth_guard_file=_s(
-                "ISE_DATACONNECT_AUTH_GUARD_FILE",
-                "/var/lib/ise-exporter/shared/dataconnect-auth.guard")
-                or "/var/lib/ise-exporter/shared/dataconnect-auth.guard",
-            cli_production_safe=_b("ISE_CLI_PRODUCTION_SAFE", True),
-            cli_allow_expensive=_b("ISE_CLI_ALLOW_EXPENSIVE", False),
-            cli_max_rows=_bounded_i("ISE_CLI_MAX_ROWS", 1000, 100, 5000),
-        )
+        """Compatibility call site; configuration itself is TOML-based."""
+        return cls.load()
+
+
+_TOML_FIELDS = {
+    "exporter.log_level": "log_level",
+    "exporter.port": "exporter_port",
+    "exporter.state_db": "state_db_path",
+    "exporter.scrape_interval_seconds": "scrape_interval",
+    "exporter.medium_interval_seconds": "medium_interval",
+    "exporter.slow_interval_seconds": "slow_interval",
+    "exporter.startup_rate_limit_seconds": "startup_rate_limit_seconds",
+    "ise.host": "ise_host",
+    "ise.mnt_host": "ise_mnt_host",
+    "ise.user": "ise_user",
+    "ise.password": "ise_pass",
+    "ise.ers_port": "ers_port",
+    "ise.request_timeout_seconds": "request_timeout",
+    "ise.auth_failure_backoff_seconds": "auth_failure_backoff",
+    "ise.auth_failure_threshold": "auth_failure_threshold",
+    "ise.auth_guard_file": "rest_auth_guard_file",
+    "ise.rest_tls.ca_bundle": "rest_ca_bundle",
+    "ise.rest_tls.verify": "rest_ssl_verify",
+    "ise.mnt_tls.ca_bundle": "mnt_ca_bundle",
+    "ise.mnt_tls.verify": "mnt_ssl_verify",
+    "collectors.device_details": "collect_device_details",
+    "collectors.certificates": "collect_certificates",
+    "collectors.licensing": "collect_licensing",
+    "collectors.backup_status": "collect_backup_status",
+    "collectors.patches": "collect_patches",
+    "collectors.tacacs": "collect_tacacs",
+    "collectors.mnt_active_posture": "collect_mnt_active_posture",
+    "devices.cache_ttl_seconds": "device_cache_ttl",
+    "devices.detail_max_requests": "device_detail_max_requests",
+    "devices.detail_request_interval_ms": "device_detail_request_interval_ms",
+    "mnt_active_posture.interval_seconds": "mnt_active_posture_interval",
+    "mnt_active_posture.max_active_list_sessions":
+        "mnt_active_posture_max_active_list_sessions",
+    "mnt_active_posture.max_sessions": "mnt_active_posture_max_sessions",
+    "mnt_active_posture.workers": "mnt_active_posture_workers",
+    "mnt_active_posture.max_requests_per_cycle":
+        "mnt_active_posture_max_requests_per_cycle",
+    "mnt_active_posture.refresh_ttl_seconds": "mnt_active_posture_refresh_ttl",
+    "mnt_active_posture.request_interval_ms": "mnt_active_posture_request_interval_ms",
+    "tacacs.unused_account_days": "tacacs_unused_account_days",
+    "tacacs.users.max": "tacacs_internal_user_max",
+    "tacacs.users.detail_max_requests": "tacacs_internal_user_detail_max_requests",
+    "tacacs.users.detail_ttl_seconds": "tacacs_internal_user_detail_ttl",
+    "tacacs.users.detail_request_interval_ms":
+        "tacacs_internal_user_detail_request_interval_ms",
+    "tacacs.policies.max_sets": "tacacs_policy_set_max",
+    "tacacs.policies.rule_refresh_max": "tacacs_policy_rule_refresh_max",
+    "tacacs.policies.rule_ttl_seconds": "tacacs_policy_rule_ttl",
+    "tacacs.policies.rule_request_interval_ms": "tacacs_policy_rule_request_interval_ms",
+    "dataconnect.host": "dataconnect_host",
+    "dataconnect.port": "dataconnect_port",
+    "dataconnect.service": "dataconnect_service",
+    "dataconnect.user": "dataconnect_user",
+    "dataconnect.password": "dataconnect_password",
+    "dataconnect.ca_bundle": "dataconnect_ca_bundle",
+    "dataconnect.verify_tls": "dataconnect_ssl_verify",
+    "dataconnect.query_timeout_seconds": "dataconnect_query_timeout",
+    "dataconnect.max_groups": "dataconnect_max_groups",
+    "dataconnect.min_query_interval_ms": "dataconnect_min_query_interval_ms",
+    "dataconnect.max_duty_cycle_percent": "dataconnect_max_duty_cycle_percent",
+    "dataconnect.event_window_hours": "dataconnect_event_window_hours",
+    "dataconnect.shared_pacing_file": "dataconnect_shared_pacing_file",
+    "dataconnect.auth_guard_file": "dataconnect_auth_guard_file",
+    "dataconnect.intervals.schema_seconds": "dataconnect_schema_interval",
+    "dataconnect.intervals.radius_seconds": "dataconnect_radius_interval",
+    "dataconnect.intervals.radius_active_seconds": "dataconnect_radius_active_interval",
+    "dataconnect.intervals.performance_seconds": "dataconnect_performance_interval",
+    "dataconnect.intervals.posture_seconds": "dataconnect_posture_interval",
+    "dataconnect.intervals.endpoints_seconds": "dataconnect_endpoints_interval",
+    "dataconnect.intervals.freshness_seconds": "dataconnect_freshness_interval",
+    "dataconnect.intervals.nad_health_seconds": "dataconnect_nad_health_interval",
+    "dataconnect.intervals.tacacs_seconds": "dataconnect_tacacs_interval",
+    "cli.production_safe": "cli_production_safe",
+    "cli.allow_expensive": "cli_allow_expensive",
+    "cli.max_rows": "cli_max_rows",
+}
+
+
+_HARD_RANGES = {
+    "ers_port": (1, 65535),
+    "request_timeout": (5, 30),
+    "exporter_port": (1, 65535),
+    "auth_failure_backoff": (300, 86400),
+    "auth_failure_threshold": (1, 5),
+    "device_detail_max_requests": (1, 100),
+    "mnt_active_posture_max_active_list_sessions": (1, 250000),
+    "mnt_active_posture_max_sessions": (1, 1000),
+    "mnt_active_posture_workers": (1, 4),
+    "mnt_active_posture_max_requests_per_cycle": (1, 250),
+    "tacacs_internal_user_max": (1, 1000),
+    "tacacs_internal_user_detail_max_requests": (1, 250),
+    "tacacs_policy_set_max": (1, 1000),
+    "tacacs_policy_rule_refresh_max": (1, 25),
+    "tacacs_unused_account_days": (1, 3650),
+    "dataconnect_port": (1, 65535),
+    "dataconnect_query_timeout": (5, 15),
+    "dataconnect_max_groups": (1, 1000),
+    "dataconnect_event_window_hours": (1, 6),
+    "cli_max_rows": (100, 5000),
+}
+
+_POSITIVE_FIELDS = {
+    "scrape_interval", "medium_interval", "slow_interval", "device_cache_ttl",
+    "mnt_active_posture_interval", "mnt_active_posture_refresh_ttl",
+    "tacacs_internal_user_detail_ttl", "tacacs_policy_rule_ttl",
+    "dataconnect_schema_interval", "dataconnect_radius_interval",
+    "dataconnect_radius_active_interval", "dataconnect_performance_interval",
+    "dataconnect_posture_interval", "dataconnect_endpoints_interval",
+    "dataconnect_freshness_interval", "dataconnect_nad_health_interval",
+    "dataconnect_tacacs_interval",
+}
+
+_NONEMPTY_PATHS = {
+    "state_db_path", "rest_auth_guard_file", "dataconnect_shared_pacing_file",
+    "dataconnect_auth_guard_file",
+}
+
+
+def _flatten(value, prefix=""):
+    flattened = {}
+    for key, item in value.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(item, dict):
+            flattened.update(_flatten(item, path))
+        else:
+            flattened[path] = item
+    return flattened
+
+
+def _typed_value(key, value, default):
+    expected = type(default)
+    if expected is bool:
+        valid = type(value) is bool
+    elif expected is int:
+        valid = type(value) is int
+    elif expected is float:
+        valid = type(value) in (int, float) and math.isfinite(value)
+    else:
+        valid = isinstance(value, expected)
+    if not valid:
+        raise ConfigError(
+            f"{key} must be {expected.__name__}, got {type(value).__name__}")
+    return float(value) if expected is float else value
+
+
+def _validate(config):
+    values = {field.name: getattr(config, field.name) for field in fields(config)}
+    level = config.log_level.upper()
+    if level == "WARN":
+        level = "WARNING"
+    if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        raise ConfigError(f"exporter.log_level is unsupported: {config.log_level!r}")
+    values["log_level"] = level
+
+    for name, (minimum, maximum) in _HARD_RANGES.items():
+        value = values[name]
+        if value < minimum or value > maximum:
+            key = next(key for key, field in _TOML_FIELDS.items() if field == name)
+            raise ConfigError(f"{key} must be between {minimum} and {maximum}")
+    for name in _POSITIVE_FIELDS:
+        if values[name] < 1:
+            key = next(key for key, field in _TOML_FIELDS.items() if field == name)
+            raise ConfigError(f"{key} must be at least 1")
+    for name in (
+            "startup_rate_limit_seconds", "device_detail_request_interval_ms",
+            "mnt_active_posture_request_interval_ms",
+            "tacacs_internal_user_detail_request_interval_ms",
+            "tacacs_policy_rule_request_interval_ms",
+            "dataconnect_min_query_interval_ms"):
+        if values[name] < 0:
+            key = next(key for key, field in _TOML_FIELDS.items() if field == name)
+            raise ConfigError(f"{key} cannot be negative")
+    if config.dataconnect_max_duty_cycle_percent <= 0:
+        raise ConfigError("dataconnect.max_duty_cycle_percent must be greater than 0")
+    for name in _NONEMPTY_PATHS:
+        if not values[name].strip():
+            key = next(key for key, field in _TOML_FIELDS.items() if field == name)
+            raise ConfigError(f"{key} cannot be empty")
+    return replace(config, **values)

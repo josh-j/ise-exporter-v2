@@ -1,4 +1,4 @@
-name: Ubuntu Noble native install
+name: Debian and Ubuntu native install
 
 on:
   push:
@@ -39,10 +39,30 @@ jobs:
             exit 1
           fi
           test "$(sudo systemctl show ise-exporter --property=NRestarts --value)" = 0
-          sudo grep -q '^ISE_HOST=pan1\.example\.mil$' /etc/ise-exporter/ise-exporter.env
-          sudo grep -q '^ISE_PASS=changeme$' /etc/ise-exporter/ise-exporter.env
-          sudo grep -q '^ISE_DATACONNECT_PASSWORD=changeme$' /etc/ise-exporter/ise-exporter.env
+          sudo grep -q '^host = "pan1\.example\.com"$' /etc/ise-exporter/config.toml
+          test "$(sudo grep -c '^password = "changeme"$' /etc/ise-exporter/config.toml)" = 2
 
       - name: Show service logs on failure
         if: failure()
         run: sudo journalctl -u ise-exporter --no-pager -n 200
+
+  debian-package-and-unit:
+    runs-on: ubuntu-24.04
+    container: debian:12
+    timeout-minutes: 15
+    steps:
+      - name: Install Debian build prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3 python3-venv ca-certificates git systemd
+
+      - uses: actions/checkout@v4
+
+      - name: Validate Debian package, TOML, and systemd unit
+        run: |
+          bash -n deploy/install.sh
+          python3 -m venv /tmp/ise-exporter-venv
+          /tmp/ise-exporter-venv/bin/pip install .
+          /tmp/ise-exporter-venv/bin/python -c \
+            'from ise_exporter.config import Config; c = Config.load("ise-exporter.toml.example"); assert c.ise_host == "pan1.example.com"'
+          systemd-analyze verify deploy/ise-exporter.service

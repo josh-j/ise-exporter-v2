@@ -183,12 +183,12 @@ pipeline boundary instead of asking the backend to pre-render output.
 
 ## Configuration and authorization
 
-The backend reads existing process variables first, then an explicitly supplied
-`-EnvironmentFile` or `/etc/ise-exporter/ise-exporter.env`, then a local `.env`
-as a development fallback. Values after the first `=` remain literal.
+The backend reads an explicitly supplied `-ConfigFile`, `ISE_EXPORTER_CONFIG`,
+or `/etc/ise-exporter/config.toml`, in that order. Only the two password secret
+environment overrides take precedence over TOML.
 
 The installed module is readable by all users, but service credentials and CA
 material remain restricted to `root:ise-exporter`. Operators may use their own
-environment file or be added deliberately to the `ise-exporter` group. Data
+TOML file or be added deliberately to the `ise-exporter` group. Data
 Connect access is refused when the user cannot participate in the shared pacing
 and authentication guards; it never falls back to an uncoordinated query.

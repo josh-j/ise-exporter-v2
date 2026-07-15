@@ -137,7 +137,7 @@ def test_powershell_backend_resolution_tolerates_duplicate_path_entries(tmp_path
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")
-def test_compatibility_launcher_preserves_env_file_and_subcommand_help(tmp_path):
+def test_compatibility_launcher_preserves_config_file_and_subcommand_help(tmp_path):
     calls = tmp_path / "calls"
     backend = tmp_path / "ise-cli-backend"
     backend.write_text(
@@ -151,15 +151,15 @@ def test_compatibility_launcher_preserves_env_file_and_subcommand_help(tmp_path)
     env = os.environ | {"ISE_CLI_BACKEND": str(backend)}
 
     help_result = subprocess.run(
-        [str(LAUNCHER), "--env-file", "/tmp/ise.env", "endpoints", "--help"],
+        [str(LAUNCHER), "--config", "/tmp/ise.toml", "endpoints", "--help"],
         env=env, check=True, text=True, capture_output=True)
     json_result = subprocess.run(
-        [str(LAUNCHER), "--env-file=/tmp/ise.env", "endpoints", "--output", "json"],
+        [str(LAUNCHER), "--config=/tmp/ise.toml", "endpoints", "--output", "json"],
         env=env, check=True, text=True, capture_output=True)
 
     assert help_result.stdout == "ENDPOINT HELP\n"
     assert json.loads(json_result.stdout) == {"name": "LAB-01"}
     assert calls.read_text().splitlines() == [
-        "--env-file /tmp/ise.env endpoints --help",
-        "--env-file /tmp/ise.env endpoints --output json",
+        "--config /tmp/ise.toml endpoints --help",
+        "--config /tmp/ise.toml endpoints --output json",
     ]

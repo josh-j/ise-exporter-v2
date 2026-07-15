@@ -16,17 +16,17 @@ if ($CommandArgument.Count -eq 0) {
     return
 }
 
-$environmentFile = $null
+$configFile = $null
 $legacyArguments = [System.Collections.Generic.List[string]]::new()
 for ($index = 0; $index -lt $CommandArgument.Count; $index++) {
-    if ($CommandArgument[$index] -eq '--env-file') {
+    if ($CommandArgument[$index] -eq '--config') {
         if ($index + 1 -ge $CommandArgument.Count) {
-            throw '--env-file requires a path'
+            throw '--config requires a path'
         }
-        $environmentFile = $CommandArgument[++$index]
+        $configFile = $CommandArgument[++$index]
     }
-    elseif ($CommandArgument[$index] -match '^--env-file=(.+)$') {
-        $environmentFile = $Matches[1]
+    elseif ($CommandArgument[$index] -match '^--config=(.+)$') {
+        $configFile = $Matches[1]
     }
     else {
         [void]$legacyArguments.Add($CommandArgument[$index])
@@ -57,13 +57,13 @@ if ($name -in @('--help', '-h', 'help')) {
         return
     }
     $helpText = Invoke-IseCommand -Name $name -ArgumentList $remaining `
-        -EnvironmentFile $environmentFile -Raw
+        -ConfigFile $configFile -Raw
     [Console]::Out.Write($helpText)
     return
 }
 if ($remaining -contains '--help' -or $remaining -contains '-h') {
     $helpText = Invoke-IseCommand -Name $name -ArgumentList $remaining `
-        -EnvironmentFile $environmentFile -Raw
+        -ConfigFile $configFile -Raw
     [Console]::Out.Write($helpText)
     return
 }
@@ -83,7 +83,7 @@ for ($index = 0; $index -lt $remaining.Count; $index++) {
 }
 
 $result = Invoke-IseCommand -Name $name -ArgumentList $backendArguments.ToArray() `
-    -EnvironmentFile $environmentFile
+    -ConfigFile $configFile
 switch ($output) {
     'json' { $result | ConvertTo-Json -Depth 100 }
     'jsonl' { $result | ForEach-Object { $_ | ConvertTo-Json -Depth 100 -Compress } }

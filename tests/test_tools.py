@@ -43,7 +43,8 @@ def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     assert "PowerShell 7 (pwsh) is not installed" in script
     assert 'chmod -R go-w "$VENV"' in script
     assert 'chmod -R a+rX "$VENV"' in script
-    assert 'chmod 640 "$ENV_FILE"' in script
+    assert 'CONFIG_FILE="$CONFIG_DIR/config.toml"' in script
+    assert 'chmod 640 "$CONFIG_FILE"' in script
     assert 'chmod 750 "$CERTS_DIR"' in script
     assert 'chmod 640 "$CERTS_DIR"/*' in script
     assert 'chmod 644 "$CERTS_DIR"/*.cer "$CERTS_DIR"/*.crt' in script
@@ -63,9 +64,10 @@ def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     assert "TasksMax=64" in unit
     assert "LimitNOFILE=1024" in unit
     assert "PrivateDevices=true" in unit
+    assert "Environment=ISE_EXPORTER_CONFIG=/etc/ise-exporter/config.toml" in unit
 
 
-def test_install_script_supports_ubuntu_noble_with_standard_packages():
+def test_install_script_supports_debian_and_ubuntu_with_standard_packages():
     root = Path(__file__).parents[1]
     script = (root / "deploy/install.sh").read_text()
     workflow = (root / ".github/workflows/ubuntu-noble-install.yml").read_text()
@@ -76,6 +78,7 @@ def test_install_script_supports_ubuntu_noble_with_standard_packages():
     assert "INSTALL_DIR=/opt/ise-exporter" in script
     assert 'VENV="$INSTALL_DIR/.venv"' in script
     assert "ubuntu-24.04" in workflow
+    assert "debian:12" in workflow
     assert "sudo ./deploy/install.sh" in workflow
     assert "import ise_exporter, oracledb, requests" in workflow
 
@@ -88,9 +91,8 @@ def test_fresh_install_never_starts_placeholder_configuration():
     assert 'systemctl enable "$SERVICE_NAME"' in script
     assert 'PLACEHOLDER_CONFIG=0' in script
     assert 'SERVICE_INSTALLED_BEFORE=0' in script
-    assert 'ISE_DATACONNECT_PASSWORD' in script
-    assert "['\\\"]?changeme['\\\"]?" in script
-    assert "[[:space:]]*=[[:space:]]*" in script
+    assert 'password[[:space:]]*=[[:space:]]*"changeme"' in script
+    assert '(pan1|mnt1)\\.example\\.com' in script
     assert 'systemctl stop "$SERVICE_NAME"' in script
     assert 'restarting active $SERVICE_NAME (upgrade)' in script
     assert 'preserving operator-selected stopped state' in script
@@ -102,6 +104,7 @@ def test_fresh_install_never_starts_placeholder_configuration():
     assert 'systemctl is-enabled --quiet ise-exporter' in workflow
     assert 'systemctl is-active --quiet ise-exporter' in workflow
     assert 'property=NRestarts' in workflow
+    assert '/etc/ise-exporter/config.toml' in workflow
 
 
 def test_pre_staged_first_install_starts_only_valid_configuration():

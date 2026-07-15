@@ -6,7 +6,22 @@ export PSModulePath="${SCRIPT_DIR}${PSModulePath:+:${PSModulePath}}"
 PROFILE="${SCRIPT_DIR}/Ise.Cli.Profile.ps1"
 
 if ! command -v pwsh >/dev/null 2>&1; then
-    echo "ise-cli requires PowerShell 7 (pwsh); the exporter service does not" >&2
+    if [[ $# -eq 0 ]]; then
+        echo "interactive ise-cli requires PowerShell 7 (pwsh)" >&2
+        echo "non-interactive commands remain available: ise-cli COMMAND --help" >&2
+        exit 127
+    fi
+    if [[ -n "${ISE_CLI_BACKEND:-}" && -x "${ISE_CLI_BACKEND}" ]]; then
+        exec "${ISE_CLI_BACKEND}" "$@"
+    fi
+    INSTALLED_BACKEND="${SCRIPT_DIR}/../.venv/bin/ise-cli-backend"
+    if [[ -x "$INSTALLED_BACKEND" ]]; then
+        exec "$INSTALLED_BACKEND" "$@"
+    fi
+    if command -v ise-cli-backend >/dev/null 2>&1; then
+        exec ise-cli-backend "$@"
+    fi
+    echo "ise-cli requires PowerShell 7 (pwsh) or an installed ise-cli-backend" >&2
     exit 127
 fi
 

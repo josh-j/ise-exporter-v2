@@ -66,15 +66,52 @@ Set-Alias -Scope Global -Name ise-help -Value Show-IseCliHelp
 
 if (Get-Module -ListAvailable -Name PSReadLine) {
     Import-Module PSReadLine
-    Set-PSReadLineOption -EditMode Emacs -HistoryNoDuplicates
+    $stateRoot = if ($env:XDG_STATE_HOME) {
+        $env:XDG_STATE_HOME
+    } else {
+        Join-Path $HOME '.local/state'
+    }
+    $historyDirectory = Join-Path $stateRoot 'ise-cli'
+    New-Item -ItemType Directory -Path $historyDirectory -Force | Out-Null
+    Set-PSReadLineOption -EditMode Emacs -HistoryNoDuplicates `
+        -HistorySearchCursorMovesToEnd -MaximumHistoryCount 4096 `
+        -HistorySaveStyle SaveIncrementally `
+        -HistorySavePath (Join-Path $historyDirectory 'history.txt') `
+        -BellStyle None
+    try {
+        Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView
+    } catch {
+        # Prediction is unavailable when the host does not support virtual-terminal UI.
+    }
     Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+Spacebar' -Function MenuComplete
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+r' -Function ReverseSearchHistory
     Set-PSReadLineKeyHandler -Key UpArrow -Function HistorySearchBackward
     Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
 }
 
 function global:prompt {
-    "ISE PS $($executionContext.SessionState.Path.CurrentLocation)> "
+    $succeeded = $?
+    $location = $executionContext.SessionState.Path.CurrentLocation
+    $mark = if ($succeeded) { '+' } else { '!' }
+    $color = if ($succeeded) { $PSStyle.Foreground.BrightGreen } else { $PSStyle.Foreground.BrightRed }
+    "$color$mark$($PSStyle.Reset) $($PSStyle.Foreground.BrightCyan)ISE$($PSStyle.Reset) $location> "
 }
 
+function global:Show-IseCliBanner {
+    $version = try { Get-IseCliVersion } catch { 'ise-cli version unavailable' }
+    Write-Host ''
+    Write-Host '  ISE Operator Console' -ForegroundColor Cyan
+    Write-Host "  $version" -ForegroundColor DarkGray
+    Write-Host '  Read-only | cached-first | bounded defaults' -ForegroundColor Green
+    Write-Host ''
+    Write-Host '  Tab       complete commands and live values'
+    Write-Host '  Up/Down   search ISE command history'
+    Write-Host '  ise-help  command map and examples'
+    Write-Host '  Get-Help <command> -Full'
+    Write-Host ''
+}
+
+$global:FormatEnumerationLimit = 20
 $global:ISE_CLI_PROFILE_ACTIVE = $true
-Write-Host 'ISE CLI ready. Try Get-IseOverview, Debug-IseAuthentication, or ise-help.'
+Show-IseCliBanner

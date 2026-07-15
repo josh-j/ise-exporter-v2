@@ -274,7 +274,7 @@ class _Resp:
 
 def test_api_families_route_to_their_configured_hosts():
     cfg = types.SimpleNamespace(
-        ise_host="pan.example.mil", ise_mnt_host="mnt.example.mil", ers_port=9060,
+        ise_host="pan.example.com", ise_mnt_host="mnt.example.com", ers_port=9060,
         ise_user="u", ise_pass="p",
     )
     client = ISERestClient(cfg)
@@ -298,19 +298,19 @@ def test_api_families_route_to_their_configured_hosts():
     result = client.get_mnt_xml("/Session/MACAddress/AA:BB:CC:DD:EE:FF")
 
     assert json_calls == [
-        (client.session, "https://pan.example.mil:9060/ers/config/endpoint/id-1"),
-        (client.session, "https://pan.example.mil/api/v1/deployment/node"),
+        (client.session, "https://pan.example.com:9060/ers/config/endpoint/id-1"),
+        (client.session, "https://pan.example.com/api/v1/deployment/node"),
     ]
     assert mnt_calls == [(
         client.mnt_session,
-        "https://mnt.example.mil/admin/API/mnt/Session/MACAddress/AA:BB:CC:DD:EE:FF",
+        "https://mnt.example.com/admin/API/mnt/Session/MACAddress/AA:BB:CC:DD:EE:FF",
     )]
     assert result["sessions"][0]["other_attr_string"] == "PostureStatus=Compliant"
 
 
 def test_mnt_active_count_preserves_the_count_field_for_safe_preflight():
     client = ISERestClient.__new__(ISERestClient)
-    client.mnt_xml_url = "https://mnt.example.mil/admin/API/mnt"
+    client.mnt_xml_url = "https://mnt.example.com/admin/API/mnt"
     client.mnt_session = object()
     client._request = lambda *_args, **_kwargs: _Resp(
         b"<sessionCount><count>12345</count></sessionCount>")
@@ -322,7 +322,7 @@ def test_mnt_active_count_preserves_the_count_field_for_safe_preflight():
 
 def test_mnt_active_list_accepts_namespace_qualified_ise_xml():
     client = ISERestClient.__new__(ISERestClient)
-    client.mnt_xml_url = "https://mnt.example.mil/admin/API/mnt"
+    client.mnt_xml_url = "https://mnt.example.com/admin/API/mnt"
     client.mnt_session = object()
     client._request = lambda *_args, **_kwargs: _Resp(b"""
         <activeList xmlns="urn:cisco:ise:mnt" noOfActiveSession="2">
@@ -342,7 +342,7 @@ def test_mnt_active_list_accepts_namespace_qualified_ise_xml():
 
 def test_mnt_active_list_rejects_declared_count_mismatch():
     client = ISERestClient.__new__(ISERestClient)
-    client.mnt_xml_url = "https://mnt.example.mil/admin/API/mnt"
+    client.mnt_xml_url = "https://mnt.example.com/admin/API/mnt"
     client.mnt_session = object()
     client._request = lambda *_args, **_kwargs: _Resp(b"""
         <activeList noOfActiveSession="2">
@@ -360,7 +360,7 @@ def test_mnt_active_list_rejects_declared_count_mismatch():
 
 def test_mnt_auth_status_accepts_namespace_qualified_ise_xml():
     client = ISERestClient.__new__(ISERestClient)
-    client.mnt_xml_url = "https://mnt.example.mil/admin/API/mnt"
+    client.mnt_xml_url = "https://mnt.example.com/admin/API/mnt"
     client.mnt_session = object()
     client._request = lambda *_args, **_kwargs: _Resp(b"""
         <authStatus xmlns="urn:cisco:ise:mnt">

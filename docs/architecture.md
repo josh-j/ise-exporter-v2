@@ -441,12 +441,12 @@ they emit distinct metric families and never substitute for one another.
 - Failure of the exact-version startup check prevents the metrics server from
   starting against an unsupported appliance.
 
-## Ubuntu Noble, Data Connect, and MnT requirements
+## Debian/Ubuntu, Data Connect, and MnT requirements
 
-Ubuntu Server 24.04 LTS (Noble Numbat) is the native production target. The
-installer uses standard Ubuntu packages for Python, virtual environments,
+Debian 12/13 and Ubuntu Server 24.04 LTS are native production targets. The
+installer uses standard distribution packages for Python, virtual environments,
 certificates, users, and systemd. Application dependencies live in
-`/opt/ise-exporter/.venv`; Ubuntu's externally managed system Python is not
+`/opt/ise-exporter/.venv`; the distribution.s externally managed system Python is not
 modified.
 
 `python-oracledb` runs in Thin mode. Oracle Instant Client, Oracle apt
@@ -458,7 +458,7 @@ Data Connect requires:
 
 - Data Connect enabled on the ISE 3.3 Patch 11 MnT node;
 - the fixed `dataconnect` username and a configured, non-expired password;
-- outbound TCPS from Ubuntu to the MnT hostname on port `2484`;
+- outbound TCPS from the exporter host to the MnT hostname on port `2484`;
 - the fixed Oracle service name `cpm10`; and
 - the MnT Admin certificate's complete issuing CA chain when TLS verification
   is enabled.
@@ -467,13 +467,13 @@ The hostname must match the Admin certificate. Data Connect credentials and CA
 material are read by the unprivileged `ise-exporter` service account. No ISE
 root credential or appliance filesystem access is used.
 
-The optional bounded MnT dataset requires HTTPS from Ubuntu to
+The optional bounded MnT dataset requires HTTPS from the exporter host to
 `ISE_MNT_HOST`, the same read-only ISE API credential, and the MnT Admin issuing
 CA through `ISE_MNT_CA_BUNDLE`. Disable `COLLECT_MNT_ACTIVE_POSTURE` when current
 active posture is not required; historical Data Connect posture remains
 independent.
 
-On a fresh Ubuntu installation, the systemd unit is enabled but not started.
+On a fresh Debian or Ubuntu installation, the systemd unit is enabled but not started.
 The operator must replace the seeded example hosts and passwords, install the CA
 chain, and pass `ise-exporter --dataconnect-check` before explicitly starting the
 service. The installer refuses to start or restart the unit while sample
