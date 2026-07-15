@@ -408,6 +408,11 @@ they emit distinct metric families and never substitute for one another.
   remain distinct in dataset health instead of collapsing into a generic no-data
   message. Operator CLI clients retain their user-friendly `None`/diagnostic
   behavior and never receive unhandled transport exceptions.
+- Data Connect safety-state failures are also distinct: an inaccessible shared
+  authentication/pacing guard reports `state_unavailable`, an active account
+  guard reports `authentication_backoff`, and the bounded reconnect circuit
+  breaker reports `connection_backoff`. These states do not masquerade as bad
+  credentials or an unknown collector exception.
 - Data Connect schema discovery is itself a retryable dataset. Its transport or
   authentication failure leaves REST and MnT collection running and never allows
   reporting SQL before a live contract has been discovered.

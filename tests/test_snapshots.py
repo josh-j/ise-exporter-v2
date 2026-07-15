@@ -240,6 +240,14 @@ def test_authoritative_api_failure_reason_and_detail_reach_dataset_metrics():
 
 
 @pytest.mark.parametrize(("error", "reason"), (
+    (RuntimeError("Data Connect authentication guard unavailable: permission denied"),
+     "state_unavailable"),
+    (RuntimeError("Data Connect shared pacing gate unavailable at /state/pacing"),
+     "state_unavailable"),
+    (RuntimeError("Data Connect reconnect suppressed by the shared authentication guard"),
+     "authentication_backoff"),
+    (RuntimeError("Data Connect reconnect suppressed for 900s after 3 connection failures"),
+     "connection_backoff"),
     (RuntimeError("HTTP 401 from control API"), "authentication_failed"),
     (RuntimeError("ORA-01017: invalid username/password"), "authentication_failed"),
     (RuntimeError("HTTP 403 from MnT API"), "authorization_failed"),
@@ -253,6 +261,17 @@ def test_authoritative_api_failure_reason_and_detail_reach_dataset_metrics():
 ))
 def test_unexpected_failure_reason_uses_fixed_categories(error, reason):
     assert collectors._exception_reason(error) == reason
+
+
+@pytest.mark.parametrize(("reason", "detail"), (
+    ("state_unavailable", "Required shared safety state is unavailable or inaccessible"),
+    ("authentication_backoff",
+     "Requests are paused by the shared authentication safety backoff"),
+    ("connection_backoff",
+     "Database reconnects are paused after repeated connection failures"),
+))
+def test_safety_state_failures_have_operator_details(reason, detail):
+    assert collectors.failure_detail(reason) == detail
 
 
 def test_success_clears_latest_dataset_failure_reason():

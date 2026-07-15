@@ -27,11 +27,14 @@ _failure_reasons = {}
 _failure_details = {}
 
 _GENERIC_FAILURE_DETAILS = {
+    "authentication_backoff": "Requests are paused by the shared authentication safety backoff",
     "authentication_failed": "The configured credentials were rejected",
     "authorization_failed": "The configured account lacks required access",
+    "connection_backoff": "Database reconnects are paused after repeated connection failures",
     "connection_failed": "The configured collection host could not be reached",
     "database_failed": "The Data Connect database operation failed",
     "invalid_response": "ISE returned a response the exporter could not parse",
+    "state_unavailable": "Required shared safety state is unavailable or inaccessible",
     "tls_failed": "TLS certificate or protocol validation failed",
     "timeout": "The collection request exceeded its bounded timeout",
     "unexpected_error": "The collector failed unexpectedly; inspect the exporter journal",
@@ -76,6 +79,14 @@ def _exception_reason(error):
         return explicit
     name = type(error).__name__.lower()
     message = str(error).lower()
+    if ("authentication guard unavailable" in message
+            or "pacing gate unavailable" in message
+            or "state unavailable" in message):
+        return "state_unavailable"
+    if "suppressed by the shared authentication guard" in message:
+        return "authentication_backoff"
+    if "reconnect suppressed for" in message:
+        return "connection_backoff"
     if ("401" in message or "authentication" in message or "credential" in message
             or "invalid username/password" in message
             or any(code in message for code in (
