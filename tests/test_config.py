@@ -29,6 +29,22 @@ def test_example_is_complete_and_parseable(monkeypatch):
     assert config.mnt_active_posture_interval == 900
 
 
+def test_example_explains_units_safety_and_operational_tradeoffs():
+    path = Path(__file__).parents[1] / "ise-exporter.toml.example"
+    example = path.read_text()
+
+    for explanation in (
+        "Durations are in seconds",
+        "dashboards useful soon after a restart",
+        "preventing account lockout",
+        "Increasing this raises load on the MnT node",
+        "one tenth of one percent, not ten percent",
+        "PSN CPU, memory, latency, diagnostics, and throughput",
+        "Require explicit --allow-expensive",
+    ):
+        assert explanation in example
+
+
 def test_toml_groups_map_to_every_runtime_field():
     excluded = {"config_file", "ise_pass", "dataconnect_password"}
     configured = set(Config.__dataclass_fields__) - excluded

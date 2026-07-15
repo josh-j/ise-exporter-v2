@@ -286,7 +286,7 @@ class ISERestClient:
             raise_on_status=False,
         )
         s.mount("https://", HTTPAdapter(max_retries=retry))
-        # Accept-only — Content-Type on a GET is non-standard and has tripped DoD WAFs.
+        # Accept-only: Content-Type on a GET is non-standard and can trip strict WAFs.
         s.headers.update({"Accept": content_type})
         return s
 

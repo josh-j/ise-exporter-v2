@@ -62,7 +62,7 @@ REST/OpenAPI owns appliance and configuration state:
 - installed version and patch inventory; and
 - Device Administration configuration objects and internal-account inventory.
 
-ERS and OpenAPI requests go to `ISE_HOST`. They are not used for bulk endpoint,
+ERS and OpenAPI requests go to `ise.host`. They are not used for bulk endpoint,
 authentication, posture, session, or performance reporting.
 Authenticated REST, MnT, and Data Connect targets are validated as bare DNS
 hostnames or IPv4 addresses before a client is constructed. Schemes, user-info,
@@ -82,7 +82,7 @@ Data Connect owns historical monitoring and reporting state:
   activity.
 
 Queries are read-only, aggregated in Oracle, time-bounded where the view is an
-event history, and capped by `ISE_DATACONNECT_MAX_GROUPS`. Endpoint identities,
+event history, and capped by `dataconnect.max_groups`. Endpoint identities,
 session IDs, raw posture reports, and free-form failure text must not become
 unbounded Prometheus labels. Every reporting-derived label is capped at 256 UTF-8
 bytes (128 bytes for current MnT policy, agent, and PSN labels); values that exceed
@@ -91,8 +91,8 @@ series.
 
 Data Connect safety applies to the whole ISE deployment. Connecting to a
 secondary MnT does not imply that every exposed view is executed only on that
-node. `ISE_DATACONNECT_HOST` is therefore mandatory when Data Connect is enabled
-and never inherits `ISE_MNT_HOST`; this prevents an XML API routing choice from
+node. `dataconnect.host` is therefore mandatory when Data Connect is enabled
+and never inherits `ise.mnt_host`; this prevents an XML API routing choice from
 silently becoming the Oracle target. Production defaults for up to 100,000
 endpoints use one sequential connection, five-second statement pacing, a 0.1%
 adaptive query-duty-cycle ceiling, 15-second total Oracle-attempt timeouts, and independent
@@ -165,7 +165,7 @@ their paired breakdowns (authentication/latency, volume/failure context, and
 accounting/session duration), rather than rescanning the same six-hour window.
 The nominal due workload is below two statements per hour after startup.
 Cold-start attempts across REST, MnT, and Data Connect share an interruptible
-startup limiter. `ISE_STARTUP_RATE_LIMIT_SECONDS` sets the minimum spacing
+startup limiter. `exporter.startup_rate_limit_seconds` sets the minimum spacing
 between each dataset's first attempt (five seconds by default, zero disables it)
 without changing any recurring collection cadence. Bootstrap dispatch prioritizes
 deployment health, Data Connect schema validation, active RADIUS sessions, PSN
@@ -179,7 +179,7 @@ are merged locally, so a reconciliation baseline cannot silently grow into a
 three-day reporting window.
 Other scheduled event scans match their cadence: six hours for PSN performance
 and diagnostics, and daily for posture, NAD health, and endpoint profiling.
-`ISE_DATACONNECT_EVENT_WINDOW_HOURS` is an absolute six-hour-or-lower ceiling;
+`dataconnect.event_window_hours` is an absolute six-hour-or-lower ceiling;
 daily domains intentionally sample rather than aggregating a full day.
 The posture snapshot materializes its bounded latest-assessment set once and uses
 one `GROUPING SETS` pass for status/version and failure breakdowns plus eligible
@@ -191,8 +191,8 @@ one bounded `UNION ALL` statement, applying the same at-most-six-hour timestamp 
 numeric-epoch ceiling to every view. This avoids 14 adaptive pacing waits holding
 the serialized worker while retaining one atomic freshness snapshot.
 Production cadence settings are minimum intervals: operators may collect less
-often, but environment overrides cannot restore the former aggressive schedule.
-The scheduler enforces those minima independently of environment parsing, so a
+often, but TOML cannot restore the former aggressive schedule. The scheduler
+enforces those minima independently of configuration parsing, so a
 direct `Config(...)` or Config-like integration cannot issue the same statements
 at a faster cadence.
 The exporter and CLI also serialize through one persistent pacing gate so separate
@@ -240,7 +240,7 @@ REST and MnT transports make exactly one wire attempt per recorded API request;
 urllib3 retries are disabled because they occur beneath exporter telemetry and
 would otherwise hide appliance pressure. Dataset scheduling owns subsequent
 attempts, so retry timing and failure counters remain observable.
-`ISE_REST_REQUEST_TIMEOUT` is hard-bounded to 5--30 seconds and split into
+`ise.request_timeout_seconds` is hard-bounded to 5--30 seconds and split into
 connect and read phase timeouts whose sum equals that configured budget; a scalar
 Requests timeout is not used because it would permit the full value once per phase.
 Cross-process lock acquisition is non-blocking and cancellation-aware, so a CLI
@@ -250,7 +250,7 @@ The Data Quality dashboard exposes per-view statement rate, latest duration, row
 returned, configured/effective cadence, pacing, shared statement cooldown, and
 the effective configured duty-cycle and the hard timeout, result-row, and
 materialized-byte ceilings. Production monitoring therefore proves the running
-process rather than relying on a sample environment file.
+process rather than relying on an unevaluated sample configuration.
 The scheduler does not apply that cooldown a second time when calculating its
 next domain run. ISE-expired Oracle sessions are reconnected and retried once;
 authentication errors and SQL failures are never retried. Before a
@@ -277,10 +277,10 @@ MnT XML owns only a current, bounded active-session dataset:
 
 The collector avoids ActiveList entirely when ActiveCount is zero and marks the
 dataset unavailable without downloading the list when ActiveCount exceeds
-`MNT_ACTIVE_POSTURE_MAX_ACTIVE_LIST_SESSIONS`. It otherwise deduplicates active
+`mnt_active_posture.max_active_list_sessions`. It otherwise deduplicates active
 MACs and tracks no more than
-`MNT_ACTIVE_POSTURE_MAX_SESSIONS` endpoints. Details are stored in the private
-`ISE_EXPORTER_STATE_DB`; departed sessions are removed immediately, new or changed
+`mnt_active_posture.max_sessions` endpoints. Details are stored in the private
+`exporter.state_db`; departed sessions are removed immediately, new or changed
 sessions are prioritized, and unchanged sessions are refreshed in oldest-first
 rotation. Production defaults allow 250 requests per 15-minute cycle, two workers,
 500ms request pacing, and a one-hour refresh target. A restart reuses valid cached
@@ -468,8 +468,8 @@ material are read by the unprivileged `ise-exporter` service account. No ISE
 root credential or appliance filesystem access is used.
 
 The optional bounded MnT dataset requires HTTPS from the exporter host to
-`ISE_MNT_HOST`, the same read-only ISE API credential, and the MnT Admin issuing
-CA through `ISE_MNT_CA_BUNDLE`. Disable `COLLECT_MNT_ACTIVE_POSTURE` when current
+`ise.mnt_host`, the same read-only ISE API credential, and the MnT Admin issuing
+CA through `ise.mnt_tls.ca_bundle`. Disable `collectors.mnt_active_posture` when current
 active posture is not required; historical Data Connect posture remains
 independent.
 

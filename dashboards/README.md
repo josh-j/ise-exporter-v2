@@ -52,3 +52,36 @@ row in an ISE reporting view is old or the bounded view is empty.
 Import each JSON file in Grafana and select the Prometheus data source when prompted or use Grafana's default Prometheus source. The dashboards use stable `ise_dataconnect_*`, REST control-plane, TACACS, and exporter self-observability metric families.
 
 Set Grafana's dashboard refresh no faster than the corresponding collector interval. Faster browser refreshes do not make bounded Data Connect views real-time and only add Prometheus query load.
+
+## Troubleshooting workflow
+
+The four primary dashboards expose compact navigation links for Overview,
+Access, PSN, and Exporter Health. Grafana carries the selected time range and
+compatible variables through those links.
+
+- Access filters by PSN, NAD, authentication status, and authorization policy.
+  Dimensional panels apply only the filters supported by their metric labels;
+  exact headline totals remain deployment-wide because their metric contract is
+  intentionally non-dimensional.
+- PSN filters every node-dimensional performance, diagnostic, deployment, and
+  resource query. Clicking a PSN series opens Access troubleshooting with that
+  node selected.
+- Exporter Health filters generic health tables by dataset and source. Each
+  unavailable or stale row carries a direct link to the dashboard that owns the
+  affected operational domain.
+
+Panel links use Grafana's `${__url_time_range}` and field-label variables. When
+editing a metric label or dashboard UID, update the link and the assertions in
+`tests/test_dashboards.py` together.
+
+## Alerting
+
+`deploy/test-monitoring/grafana/provisioning/alerting/alerting.yml` provisions
+panel-linked rules for API availability, unavailable and stale datasets, a Data
+Connect queue older than 15 minutes, MnT detail truncation, authentication
+safety backoff, and PSN CPU or memory above 85 percent for 10 minutes.
+
+The repository intentionally does not provision a contact point or notification
+policy: those contain environment-specific destinations and credentials. The
+rules are visible and evaluable in Grafana immediately; configure routing in the
+deployment that owns email, webhook, or paging credentials.

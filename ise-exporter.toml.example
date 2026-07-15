@@ -5,36 +5,60 @@
 #
 # For secret injection, only the ISE_PASS and ISE_DATACONNECT_PASSWORD
 # environment variables override values in this file.
+#
+# Durations are in seconds and request pacing is in milliseconds unless the
+# setting name says otherwise. State/guard paths must be writable by the service;
+# CA bundles only need to be readable.
 
 [exporter]
+# Python log level: DEBUG, INFO, WARNING, ERROR, or CRITICAL.
 log_level = "INFO"
+# Prometheus listens on all interfaces at this port.
 port = 9618
+# Persistent snapshots and collection timestamps. Keeping this file makes
+# dashboards useful soon after a restart instead of waiting for every poll.
 state_db = "/var/lib/ise-exporter/state.sqlite3"
+# Default polling tiers used by collectors without a dedicated interval below.
 scrape_interval_seconds = 60
 medium_interval_seconds = 900
 slow_interval_seconds = 21600
+# Minimum spacing between cold-start collector attempts. This avoids a burst of
+# requests when the service starts; set lower only if ISE can absorb the burst.
 startup_rate_limit_seconds = 5
 
 [ise]
+# PAN address for ERS and OpenAPI. Use a bare hostname or IPv4 address, not a URL.
 host = "pan1.example.com"
+# MnT address for active-session posture lookups. It may be the same as host.
 mnt_host = "mnt1.example.com"
+# Read-only ERS/OpenAPI account.
 user = "ers.readonly"
+# Prefer the ISE_PASS environment override in production secret managers.
 password = "changeme"
+# ERS uses 9060 on the supported ISE deployment; OpenAPI uses normal HTTPS.
 ers_port = 9060
+# Hard timeout for each REST or MnT request.
 request_timeout_seconds = 30
+# Stop retrying after repeated authentication failures, preventing account lockout.
 auth_failure_backoff_seconds = 900
 auth_failure_threshold = 3
+# Persistent authentication backoff shared by the exporter and authorized CLI.
 auth_guard_file = "/var/lib/ise-exporter/shared/rest-auth.guard"
 
 [ise.rest_tls]
+# Production should verify ISE certificates using the issuing CA bundle below.
 verify = true
 ca_bundle = "/etc/ise-exporter/certs/ise-ca.cer"
 
 [ise.mnt_tls]
+# MnT can use a different certificate chain. If this section is omitted, the
+# REST TLS settings are inherited.
 verify = true
 ca_bundle = "/etc/ise-exporter/certs/ise-ca.cer"
 
 [collectors]
+# Expensive or optional collection families can be disabled independently.
+# Core deployment health and Data Connect schema discovery remain available.
 device_details = true
 certificates = true
 licensing = true
@@ -44,62 +68,98 @@ tacacs = true
 mnt_active_posture = true
 
 [devices]
+# Retain ERS device detail in the local cache for 30 days. Inventory is still
+# refreshed, but unchanged devices do not need repeated detail requests.
 cache_ttl_seconds = 2592000 # 30 days
+# Bound detail requests per cycle and space them to protect the PAN.
 detail_max_requests = 25
 detail_request_interval_ms = 250
 
 [mnt_active_posture]
+# Current active-session posture is a bounded MnT snapshot, not historical data.
 interval_seconds = 900 # 15 minutes
+# Refuse ActiveList responses above this size rather than parsing an unsafe payload.
 max_active_list_sessions = 10000
+# Retain at most this many sessions from a valid ActiveList response.
 max_sessions = 1000
+# Parallel detail lookups. Increasing this raises load on the MnT node.
 workers = 2
+# Hard ceiling and pacing for per-session detail requests in one collection.
 max_requests_per_cycle = 250
+# Reuse unchanged session details for up to one hour.
 refresh_ttl_seconds = 3600 # 1 hour
 request_interval_ms = 500
 
 [tacacs]
+# Report internal Device Administration accounts unused for at least this many days.
 unused_account_days = 180
 
 [tacacs.users]
+# Bound the number of internal users considered and their ERS detail lookups.
 max = 1000
 detail_max_requests = 100
+# User detail changes slowly, so cache it for seven days.
 detail_ttl_seconds = 604800 # 7 days
 detail_request_interval_ms = 250
 
 [tacacs.policies]
+# Bound policy-set discovery and rule detail refreshes.
 max_sets = 100
 rule_refresh_max = 10
+# Policy rules are cached for seven days unless selected for a bounded refresh.
 rule_ttl_seconds = 604800 # 7 days
 rule_request_interval_ms = 250
 
 [dataconnect]
+# MnT Data Connect is an Oracle-compatible, read-only reporting interface.
+# Use a bare hostname or IPv4 address that matches the certificate when TLS is on.
 host = "mnt1.example.com"
 port = 2484
 service = "cpm10"
+# Cisco ISE uses the fixed dataconnect username.
 user = "dataconnect"
+# Prefer ISE_DATACONNECT_PASSWORD from a production secret manager.
 password = "changeme"
 verify_tls = true
 ca_bundle = "/etc/ise-exporter/certs/ise-ca.cer"
+# Hard timeout for a reporting statement. The runtime caps this at 15 seconds.
 query_timeout_seconds = 15
+# Maximum distinct groups retained by bounded aggregate queries.
 max_groups = 1000
+# Never begin Data Connect statements faster than this minimum interval.
 min_query_interval_ms = 5000
+# Adaptive shared pacing keeps measured database work below this percentage.
+# 0.1 means one tenth of one percent, not ten percent.
 max_duty_cycle_percent = 0.1
+# Historical event queries inspect at most this many recent hours.
 event_window_hours = 6
+# These files coordinate pacing and authentication backoff across the service
+# and authorized CLI users. Keep them on local storage in a shared writable dir.
 shared_pacing_file = "/var/lib/ise-exporter/shared/dataconnect.pacing"
 auth_guard_file = "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
 
 [dataconnect.intervals]
+# Schema validation runs first and gates all reporting datasets. Cached snapshots
+# are restored after validation so restarts become useful without re-querying all data.
 schema_seconds = 86400 # 1 day
+# Historical RADIUS aggregates are intentionally slow; the active summary is fresher.
 radius_seconds = 86400 # 1 day
 radius_active_seconds = 1800 # 30 minutes
+# PSN CPU, memory, latency, diagnostics, and throughput troubleshooting.
 performance_seconds = 900 # 15 minutes
+# Historical posture assessments.
 posture_seconds = 21600 # 6 hours
+# Endpoint inventory and source-view freshness checks are large, slow datasets.
 endpoints_seconds = 86400 # 1 day
 freshness_seconds = 86400 # 1 day
+# NAD health and TACACS activity/configuration correlations.
 nad_health_seconds = 21600 # 6 hours
 tacacs_seconds = 21600 # 6 hours
 
 [cli]
+# Require explicit --allow-expensive for broad production queries.
 production_safe = true
+# Global escape hatch. Leave false and opt in per command when necessary.
 allow_expensive = false
+# Absolute default ceiling for CLI rows; individual commands may use lower defaults.
 max_rows = 1000

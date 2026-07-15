@@ -1,6 +1,281 @@
 apiVersion: 1
 
-groups: []
+# These rules are intentionally linked to provisioned dashboard panels. Grafana
+# notifications and alert-list entries therefore open at the same time range and
+# investigation surface used by the operator dashboards.
+groups:
+  - orgId: 1
+    name: ISE data quality and availability
+    folder: ISE
+    interval: 1m
+    rules:
+      - uid: ise-api-down
+        title: ISE API unavailable
+        condition: Threshold
+        data:
+          - refId: Query
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model: &prometheus_query
+              datasource: {type: prometheus, uid: prometheus}
+              editorMode: code
+              expr: max(ise_up)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              range: false
+              refId: Query
+          - refId: Threshold
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model: &threshold_model
+              conditions:
+                - evaluator: {params: [1], type: lt}
+                  operator: {type: and}
+                  query: {params: [Query]}
+                  reducer: {params: [], type: last}
+                  type: query
+              datasource: {type: __expr__, uid: __expr__}
+              expression: Query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: Threshold
+              type: threshold
+        for: 2m
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: ISE API collection is unavailable
+          description: The exporter cannot currently reach or authenticate to the ISE control plane.
+          __dashboardUid__: ise-psn-troubleshooting
+          __panelId__: "1"
+        labels: {service: ise-exporter, severity: critical}
+
+      - uid: ise-dataset-unavailable
+        title: ISE dataset unavailable
+        condition: Threshold
+        data:
+          - refId: Query
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              <<: *prometheus_query
+              expr: count((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))
+          - refId: Threshold
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model:
+              <<: *threshold_model
+              conditions:
+                - evaluator: {params: [0], type: gt}
+                  operator: {type: and}
+                  query: {params: [Query]}
+                  reducer: {params: [], type: last}
+                  type: query
+        for: 5m
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: One or more enabled ISE datasets are unavailable
+          description: Open the linked detail table to see the dataset, source, failure category, and bounded explanation.
+          __dashboardUid__: ise-exporter-health
+          __panelId__: "2"
+        labels: {service: ise-exporter, severity: warning}
+
+      - uid: ise-dataset-stale
+        title: ISE dataset stale
+        condition: Threshold
+        data:
+          - refId: Query
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              <<: *prometheus_query
+              expr: count((ise_dataset_fresh == 0) and on(dataset,source) (ise_dataset_enabled == 1))
+          - refId: Threshold
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model:
+              <<: *threshold_model
+              conditions:
+                - evaluator: {params: [0], type: gt}
+                  operator: {type: and}
+                  query: {params: [Query]}
+                  reducer: {params: [], type: last}
+                  type: query
+        for: 5m
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: One or more enabled ISE datasets are stale
+          description: A successful dataset replacement is older than two configured collection intervals.
+          __dashboardUid__: ise-exporter-health
+          __panelId__: "3"
+        labels: {service: ise-exporter, severity: warning}
+
+      - uid: ise-dataconnect-queue-stuck
+        title: ISE Data Connect queue stuck
+        condition: Threshold
+        data:
+          - refId: Query
+            relativeTimeRange: {from: 1800, to: 0}
+            datasourceUid: prometheus
+            model:
+              <<: *prometheus_query
+              expr: max(ise_dataconnect_oldest_queued_seconds)
+          - refId: Threshold
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model:
+              <<: *threshold_model
+              conditions:
+                - evaluator: {params: [900], type: gt}
+                  operator: {type: and}
+                  query: {params: [Query]}
+                  reducer: {params: [], type: last}
+                  type: query
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: Data Connect work has waited more than 15 minutes
+          description: The serialized worker queue is not draining at its expected cadence.
+          __dashboardUid__: ise-exporter-health
+          __panelId__: "20"
+        labels: {service: ise-exporter, severity: warning}
+
+      - uid: ise-mnt-detail-truncated
+        title: ISE MnT posture detail truncated
+        condition: Threshold
+        data:
+          - refId: Query
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              <<: *prometheus_query
+              expr: max(ise_mnt_active_posture_detail_truncated)
+          - refId: Threshold
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model:
+              <<: *threshold_model
+              conditions:
+                - evaluator: {params: [0], type: gt}
+                  operator: {type: and}
+                  query: {params: [Query]}
+                  reducer: {params: [], type: last}
+                  type: query
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: MnT active-posture details were truncated
+          description: The configured detail budget did not cover every active posture endpoint.
+          __dashboardUid__: ise-exporter-health
+          __panelId__: "14"
+        labels: {service: ise-exporter, severity: warning}
+
+      - uid: ise-authentication-backoff
+        title: ISE authentication safety backoff active
+        condition: Threshold
+        data:
+          - refId: Query
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              <<: *prometheus_query
+              expr: count(ise_dataset_last_failure_info{reason=~"authentication_backoff|authentication_failed|state_unavailable"})
+          - refId: Threshold
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model:
+              <<: *threshold_model
+              conditions:
+                - evaluator: {params: [0], type: gt}
+                  operator: {type: and}
+                  query: {params: [Query]}
+                  reducer: {params: [], type: last}
+                  type: query
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: ISE requests are blocked or failing authentication
+          description: Inspect the linked dataset failure reason before retrying credentials; the safety guard is shared across processes.
+          __dashboardUid__: ise-exporter-health
+          __panelId__: "6"
+        labels: {service: ise-exporter, severity: critical}
+
+  - orgId: 1
+    name: ISE PSN capacity
+    folder: ISE
+    interval: 1m
+    rules:
+      - uid: ise-psn-cpu-high
+        title: ISE PSN CPU utilization high
+        condition: Threshold
+        data:
+          - refId: Query
+            relativeTimeRange: {from: 1800, to: 0}
+            datasourceUid: prometheus
+            model:
+              <<: *prometheus_query
+              expr: max(ise_dataconnect_node_cpu_utilization_percent)
+          - refId: Threshold
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model:
+              <<: *threshold_model
+              conditions:
+                - evaluator: {params: [85], type: gt}
+                  operator: {type: and}
+                  query: {params: [Query]}
+                  reducer: {params: [], type: last}
+                  type: query
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: A PSN is above 85 percent CPU utilization
+          description: Use the PSN selector and linked access workflow to correlate load, latency, and authentication failures.
+          __dashboardUid__: ise-psn-troubleshooting
+          __panelId__: "9"
+        labels: {service: ise-exporter, severity: warning}
+
+      - uid: ise-psn-memory-high
+        title: ISE PSN memory utilization high
+        condition: Threshold
+        data:
+          - refId: Query
+            relativeTimeRange: {from: 1800, to: 0}
+            datasourceUid: prometheus
+            model:
+              <<: *prometheus_query
+              expr: max(ise_dataconnect_node_memory_utilization_percent)
+          - refId: Threshold
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model:
+              <<: *threshold_model
+              conditions:
+                - evaluator: {params: [85], type: gt}
+                  operator: {type: and}
+                  query: {params: [Query]}
+                  reducer: {params: [], type: last}
+                  type: query
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: A PSN is above 85 percent memory utilization
+          description: Use the PSN selector and linked access workflow to correlate resource pressure with authentication behavior.
+          __dashboardUid__: ise-psn-troubleshooting
+          __panelId__: "10"
+        labels: {service: ise-exporter, severity: warning}
+
+# Notification routing remains environment-specific. Grafana will show and link
+# these alerts immediately; deployments can provision contact points and policies
+# without changing the rule definitions.
 contactPoints: []
 policies: []
 templates: []

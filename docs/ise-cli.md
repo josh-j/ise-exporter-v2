@@ -28,7 +28,7 @@ nodes, NADs, and internal TACACS usernames from REST configuration inventories.
 Field-name completion remains fully schema-aware. Production-safe completion never
 scans a RADIUS, TACACS, posture, accounting, diagnostic, or performance event view
 merely because an operator pressed Tab: live values from those views require
-`ISE_CLI_ALLOW_EXPENSIVE=true`. Remote suggestions are capped at 25 rows and cached
+`cli.allow_expensive = true`. Remote suggestions are capped at 25 rows and cached
 for five minutes. A Tab press never waits behind the exporter's shared Data Connect
 cooldown; it simply omits live suggestions when the pacing gate is busy. Completion
 failures are silent and never prevent command entry.
@@ -62,10 +62,10 @@ API routing is fixed by family:
 
 | Family | Host | Base path |
 |---|---|---|
-| ERS | `ISE_HOST` | `https://HOST:ERS_PORT/ers` |
-| OpenAPI | `ISE_HOST` | `https://HOST/api/v1` |
-| MnT XML CLI diagnostics | `ISE_MNT_HOST` | `https://HOST/admin/API/mnt` |
-| Data Connect reporting | `ISE_DATACONNECT_HOST` | Oracle TCPS, service `cpm10` by default |
+| ERS | `ise.host` | `https://HOST:ERS_PORT/ers` |
+| OpenAPI | `ise.host` | `https://HOST/api/v1` |
+| MnT XML CLI diagnostics | `ise.mnt_host` | `https://HOST/admin/API/mnt` |
+| Data Connect reporting | `dataconnect.host` | Oracle TCPS, service `cpm10` by default |
 
 Collection ownership is explicit:
 

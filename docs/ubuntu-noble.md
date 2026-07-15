@@ -78,7 +78,7 @@ It creates:
 - `/etc/systemd/system/ise-exporter.service`.
 
 The exporter needs outbound HTTPS to the PAN for REST/OpenAPI, HTTPS to
-`ISE_MNT_HOST` when bounded active posture is enabled, and TCPS port 2484 to the
+`ise.mnt_host` when bounded active posture is enabled, and TCPS port 2484 to the
 MnT node for Data Connect. Port 9618 must be reachable by Prometheus if it runs
 on another host.
 

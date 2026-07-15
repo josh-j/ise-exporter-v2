@@ -79,7 +79,7 @@
       },
       "targets": [
         {
-          "expr": "count((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1)) or on() (0 * (count(ise_dataset_up) > 0))",
+          "expr": "count((ise_dataset_up{dataset=~\"$dataset\",source=~\"$source\"} == 0) and on(dataset,source) (ise_dataset_enabled{dataset=~\"$dataset\",source=~\"$source\"} == 1)) or on() (0 * (count(ise_dataset_up{dataset=~\"$dataset\",source=~\"$source\"}) > 0))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -102,7 +102,14 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Filter to this dataset",
+              "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=${__field.labels.dataset}&var-source=${__field.labels.source}",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       }
@@ -120,7 +127,7 @@
       },
       "targets": [
         {
-          "expr": "count((ise_dataset_fresh == 0) and on(dataset,source) (ise_dataset_enabled == 1)) or on() (0 * (count(ise_dataset_up) > 0))",
+          "expr": "count((ise_dataset_fresh{dataset=~\"$dataset\",source=~\"$source\"} == 0) and on(dataset,source) (ise_dataset_enabled{dataset=~\"$dataset\",source=~\"$source\"} == 1)) or on() (0 * (count(ise_dataset_up{dataset=~\"$dataset\",source=~\"$source\"}) > 0))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -143,7 +150,14 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Filter to this dataset",
+              "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=${__field.labels.dataset}&var-source=${__field.labels.source}",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       }
@@ -243,7 +257,7 @@
       },
       "targets": [
         {
-          "expr": "((ise_dataset_last_failure_detail_info or label_replace((ise_dataset_last_failure_info unless on(dataset,source) ise_dataset_last_failure_detail_info), \"detail\", \"Failure category: $1; inspect exporter journal\", \"reason\", \"(.+)\") or (label_replace(label_replace(ise_dataset_up, \"reason\", \"not_attempted\", \"dataset\", \".+\"), \"detail\", \"No collection attempt has completed or failed yet\", \"dataset\", \".+\") unless on(dataset,source) (ise_dataset_last_failure_info or ise_dataset_last_failure_detail_info))) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))) or label_replace(label_replace(((ise_dataset_fresh == 0) and on(dataset,source) (ise_dataset_up == 1)) and on(dataset,source) (ise_dataset_enabled == 1), \"reason\", \"stale\", \"dataset\", \".+\"), \"detail\", \"Last successful collection is older than two configured intervals\", \"dataset\", \".+\") or label_replace(label_replace(label_replace(label_replace(absent(count(((ise_dataset_up == 0) or on(dataset,source) (ise_dataset_fresh == 0)) and on(dataset,source) (ise_dataset_enabled == 1))), \"dataset\", \"NONE\", \"\", \".*\"), \"source\", \"-\", \"\", \".*\"), \"reason\", \"healthy\", \"\", \".*\"), \"detail\", \"All enabled datasets are available and fresh\", \"\", \".*\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(((ise_dataset_last_failure_detail_info{dataset=~\"$dataset\",source=~\"$source\"} or label_replace((ise_dataset_last_failure_info{dataset=~\"$dataset\",source=~\"$source\"} unless on(dataset,source) ise_dataset_last_failure_detail_info{dataset=~\"$dataset\",source=~\"$source\"}), \"detail\", \"Failure category: $1; inspect exporter journal\", \"reason\", \"(.+)\") or (label_replace(label_replace(ise_dataset_up{dataset=~\"$dataset\",source=~\"$source\"}, \"reason\", \"not_attempted\", \"dataset\", \".+\"), \"detail\", \"No collection attempt has completed or failed yet\", \"dataset\", \".+\") unless on(dataset,source) (ise_dataset_last_failure_info{dataset=~\"$dataset\",source=~\"$source\"} or ise_dataset_last_failure_detail_info{dataset=~\"$dataset\",source=~\"$source\"}))) and on(dataset,source) ((ise_dataset_up{dataset=~\"$dataset\",source=~\"$source\"} == 0) and on(dataset,source) (ise_dataset_enabled{dataset=~\"$dataset\",source=~\"$source\"} == 1))) or label_replace(label_replace(((ise_dataset_fresh{dataset=~\"$dataset\",source=~\"$source\"} == 0) and on(dataset,source) (ise_dataset_up{dataset=~\"$dataset\",source=~\"$source\"} == 1)) and on(dataset,source) (ise_dataset_enabled{dataset=~\"$dataset\",source=~\"$source\"} == 1), \"reason\", \"stale\", \"dataset\", \".+\"), \"detail\", \"Last successful collection is older than two configured intervals\", \"dataset\", \".+\") or label_replace(label_replace(label_replace(label_replace(absent(count(((ise_dataset_up{dataset=~\"$dataset\",source=~\"$source\"} == 0) or on(dataset,source) (ise_dataset_fresh{dataset=~\"$dataset\",source=~\"$source\"} == 0)) and on(dataset,source) (ise_dataset_enabled{dataset=~\"$dataset\",source=~\"$source\"} == 1))), \"dataset\", \"NONE\", \"\", \".*\"), \"source\", \"-\", \"\", \".*\"), \"reason\", \"healthy\", \"\", \".*\"), \"detail\", \"All enabled datasets are available and fresh\", \"\", \".*\"), \"dashboard_uid\", \"ise-overview\", \"dataset\", \".*\"), \"dashboard_uid\", \"ise-access-troubleshooting\", \"dataset\", \"dataconnect_radius.*|dataconnect_nad_health\"), \"dashboard_uid\", \"ise-psn-troubleshooting\", \"dataset\", \"dataconnect_performance\"), \"dashboard_uid\", \"ise-secureclient\", \"dataset\", \"dataconnect_posture|mnt_active_posture\"), \"dashboard_uid\", \"ise-tacacs\", \"dataset\", \"tacacs_.*\"), \"dashboard_uid\", \"ise-endpoints-devices\", \"dataset\", \"dataconnect_endpoints|devices\")",
           "format": "table",
           "instant": true,
           "refId": "Unavailable",
@@ -254,7 +268,15 @@
         }
       ],
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "links": [
+            {
+              "title": "Open responsible troubleshooting dashboard",
+              "url": "/d/${__field.labels.dashboard_uid}/${__field.labels.dashboard_uid}?${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
         "overrides": []
       },
       "options": {
@@ -298,7 +320,7 @@
       },
       "targets": [
         {
-          "expr": "(time() - ise_dataset_last_attempt_timestamp) and on(dataset,source) (ise_dataset_enabled == 1)",
+          "expr": "(time() - ise_dataset_last_attempt_timestamp{dataset=~\"$dataset\",source=~\"$source\"}) and on(dataset,source) (ise_dataset_enabled{dataset=~\"$dataset\",source=~\"$source\"} == 1)",
           "legendFormat": "{{dataset}} / {{source}} / attempt",
           "refId": "Attempt age",
           "datasource": {
@@ -307,7 +329,7 @@
           }
         },
         {
-          "expr": "(time() - ise_dataset_last_success_timestamp) and on(dataset,source) (ise_dataset_enabled == 1)",
+          "expr": "(time() - ise_dataset_last_success_timestamp{dataset=~\"$dataset\",source=~\"$source\"}) and on(dataset,source) (ise_dataset_enabled{dataset=~\"$dataset\",source=~\"$source\"} == 1)",
           "legendFormat": "{{dataset}} / {{source}} / success",
           "refId": "Success age",
           "datasource": {
@@ -318,7 +340,14 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "links": [
+            {
+              "title": "Filter to this dataset",
+              "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=${__field.labels.dataset}&var-source=${__field.labels.source}",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       }
@@ -721,7 +750,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataset_interval_seconds{source=\"dataconnect\"}",
+          "expr": "ise_dataset_interval_seconds{source=\"dataconnect\",dataset=~\"$dataset\",source=~\"$source\"}",
           "format": "table",
           "instant": true,
           "refId": "Configured",
@@ -731,7 +760,7 @@
           }
         },
         {
-          "expr": "ise_dataset_effective_interval_seconds{source=\"dataconnect\"}",
+          "expr": "ise_dataset_effective_interval_seconds{source=\"dataconnect\",dataset=~\"$dataset\",source=~\"$source\"}",
           "format": "table",
           "instant": true,
           "refId": "Scheduled",
@@ -753,7 +782,14 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "links": [
+            {
+              "title": "Filter to this dataset",
+              "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=${__field.labels.dataset}&var-source=${__field.labels.source}",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -1341,6 +1377,70 @@
         "label": "Prometheus",
         "current": {},
         "hide": 0
+      },
+      {
+        "name": "dataset",
+        "label": "Dataset",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(ise_dataset_enabled, dataset)",
+        "query": {
+          "query": "label_values(ise_dataset_enabled, dataset)",
+          "refId": "var-dataset"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "source",
+        "label": "Source",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(ise_dataset_enabled{dataset=~\"$dataset\"}, source)",
+        "query": {
+          "query": "label_values(ise_dataset_enabled{dataset=~\"$dataset\"}, source)",
+          "refId": "var-source"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
       }
     ]
   },
@@ -1352,5 +1452,46 @@
   "annotations": {
     "list": []
   },
-  "links": []
+  "links": [
+    {
+      "type": "link",
+      "title": "Overview",
+      "url": "/d/ise-overview/ise-overview",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open Overview with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "Access",
+      "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open Access with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "PSN",
+      "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open PSN with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "Exporter Health",
+      "url": "/d/ise-exporter-health/ise-exporter-health",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open Exporter Health with the current time range and filters"
+    }
+  ]
 }

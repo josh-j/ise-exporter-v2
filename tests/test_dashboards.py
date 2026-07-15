@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import re
 
+from ise_exporter.config import Config
+
 
 DASHBOARDS = Path(__file__).parents[1] / "dashboards"
 
@@ -624,8 +626,9 @@ def test_exporter_health_summary_stats_are_gated_by_authoritative_datasets():
     unavailable = _panel(dashboard, "Unavailable")["targets"][0]["expr"]
     stale = _panel(dashboard, "Stale Datasets")["targets"][0]["expr"]
     views = _panel(dashboard, "Empty Recent Views")["targets"][0]["expr"]
-    assert "0 * (count(ise_dataset_up) > 0)" in unavailable
-    assert "0 * (count(ise_dataset_up) > 0)" in stale
+    for expression in (unavailable, stale):
+        assert "0 * (count(ise_dataset_up" in expression
+        assert 'dataset=~"$dataset",source=~"$source"' in expression
     assert 'dataset="dataconnect_freshness"' in views
     assert "or on() (0 *" in views
     assert "== 1" in views
@@ -652,9 +655,9 @@ def test_exporter_health_lists_each_unavailable_dataset_and_latest_reason():
     assert panel["type"] == "table"
     assert "ise_dataset_last_failure_info" in expression
     assert "ise_dataset_last_failure_detail_info" in expression
-    assert "ise_dataset_enabled == 1" in expression
-    assert "ise_dataset_up == 0" in expression
-    assert "ise_dataset_fresh == 0" in expression
+    assert 'ise_dataset_enabled{dataset=~"$dataset",source=~"$source"} == 1' in expression
+    assert 'ise_dataset_up{dataset=~"$dataset",source=~"$source"} == 0' in expression
+    assert 'ise_dataset_fresh{dataset=~"$dataset",source=~"$source"} == 0' in expression
     assert '"not_attempted"' in expression
     assert '"stale"' in expression
     assert '"Last successful collection is older than two configured intervals"' in expression
@@ -691,9 +694,8 @@ def test_access_dashboard_collection_age_thresholds_match_domain_cadences():
 
 
 def test_dashboard_age_thresholds_match_production_collection_cadences():
-    sample = (DASHBOARDS.parent / ".env.example").read_text()
-    slow_interval = int(re.search(
-        r"^SLOW_INTERVAL=(\d+)$", sample, re.MULTILINE).group(1))
+    config = Config.load(DASHBOARDS.parent / "ise-exporter.toml.example")
+    slow_interval = config.slow_interval
     expected = {
         ("ise-access-troubleshooting.json", "Collection Age"):
             (129600, 172800),
@@ -803,13 +805,13 @@ def test_endpoint_dashboard_hides_stale_rest_device_snapshots():
         assert "== 1" in expression
 
 
-def test_psn_diagnostic_headline_uses_exact_total_not_topk_breakdown():
+def test_psn_diagnostic_headline_respects_node_filter():
     dashboard = json.loads((DASHBOARDS / "ise-psn-troubleshooting.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 4)
     expression = panel["targets"][0]["expr"]
 
-    assert "ise_dataconnect_diagnostic_events_total" in expression
-    assert "sum(ise_dataconnect_diagnostic_events)" not in expression
+    assert 'sum(ise_dataconnect_diagnostic_events{node=~"$psn"})' in expression
+    assert "ise_dataconnect_diagnostic_events_total" not in expression
 
 
 def test_psn_dashboard_hides_stale_deployment_snapshot():
@@ -840,7 +842,8 @@ def test_exporter_health_exposes_attempt_and_success_age_per_dataset():
 
     assert "ise_dataset_last_attempt_timestamp" in expressions["Attempt age"]
     assert "ise_dataset_last_success_timestamp" in expressions["Success age"]
-    assert all("ise_dataset_enabled == 1" in expr for expr in expressions.values())
+    assert all('ise_dataset_enabled{dataset=~"$dataset",source=~"$source"} == 1'
+               in expr for expr in expressions.values())
 
 
 def test_overview_operational_panels_hide_stale_rest_snapshots():
@@ -878,3 +881,94 @@ def test_overview_operational_panels_hide_stale_rest_snapshots():
     expiring = _panel(dashboard, "Certs Expiring Soon")["targets"][0]["expr"]
     assert "or on() (0 *" in expiring
     assert "== 1" in expiring
+
+
+def _variables(dashboard):
+    return {item["name"]: item for item in dashboard["templating"]["list"]}
+
+
+def test_troubleshooting_variables_match_exported_metric_dimensions():
+    psn = _dashboard("ise-psn-troubleshooting.json")
+    access = _dashboard("ise-access-troubleshooting.json")
+    health = _dashboard("ise-exporter-health.json")
+
+    assert set(_variables(psn)) == {"DS_PROMETHEUS", "psn"}
+    assert set(_variables(access)) == {
+        "DS_PROMETHEUS", "psn", "nad", "status", "authorization_policy"}
+    assert set(_variables(health)) == {"DS_PROMETHEUS", "dataset", "source"}
+
+    for dashboard in (psn, access, health):
+        for item in list(_variables(dashboard).values())[1:]:
+            assert item["multi"] is True
+            assert item["includeAll"] is True
+            assert item["allValue"] == ".*"
+
+
+def test_dashboard_navigation_preserves_time_and_variables():
+    for path in sorted(DASHBOARDS.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        destinations = {link["title"] for link in dashboard["links"]}
+        assert destinations == {"Overview", "Access", "PSN", "Exporter Health"}
+        assert all(link["keepTime"] and link["includeVars"]
+                   for link in dashboard["links"])
+
+
+def test_psn_and_access_queries_apply_supported_filters():
+    psn = _dashboard("ise-psn-troubleshooting.json")
+    for item in _panels(psn["panels"]):
+        for target in item.get("targets", []):
+            expr = target.get("expr", "")
+            if any(metric in expr for metric in (
+                    "ise_dataconnect_psn_", "ise_dataconnect_node_",
+                    "ise_dataconnect_diagnostic_events", "ise_deployment_status")):
+                assert 'node=~"$psn"' in expr, (item["title"], expr)
+
+    access = _dashboard("ise-access-troubleshooting.json")
+    expressions = "\n".join(
+        target.get("expr", "")
+        for item in _panels(access["panels"])
+        for target in item.get("targets", []))
+    assert 'psn=~"$psn"' in expressions
+    assert 'nad=~"$nad"' in expressions
+    assert 'status=~"$status"' in expressions
+    assert 'authorization_policy=~"$authorization_policy"' in expressions
+
+
+def test_dataset_failures_route_to_responsible_dashboard():
+    health = _dashboard("ise-exporter-health.json")
+    panel = _panel(health, "Unavailable Dataset Details")
+    expression = panel["targets"][0]["expr"]
+    link = panel["fieldConfig"]["defaults"]["links"][0]
+
+    for uid in (
+            "ise-access-troubleshooting", "ise-psn-troubleshooting",
+            "ise-secureclient", "ise-tacacs", "ise-endpoints-devices"):
+        assert uid in expression
+    assert "${__field.labels.dashboard_uid}" in link["url"]
+    assert "${__url_time_range}" in link["url"]
+
+
+def test_alert_rules_cover_requested_failures_and_link_real_panels():
+    alerting = (DASHBOARDS.parent /
+                "deploy/test-monitoring/grafana/provisioning/alerting/alerting.yml")
+    text = alerting.read_text()
+    required_metrics = (
+        "ise_up", "ise_dataset_up", "ise_dataset_fresh",
+        "ise_dataconnect_oldest_queued_seconds",
+        "ise_mnt_active_posture_detail_truncated",
+        "authentication_backoff",
+        "ise_dataconnect_node_cpu_utilization_percent",
+        "ise_dataconnect_node_memory_utilization_percent",
+    )
+    assert all(metric in text for metric in required_metrics)
+
+    dashboard_uids = {
+        json.loads(path.read_text())["uid"]: json.loads(path.read_text())
+        for path in DASHBOARDS.glob("*.json")}
+    linked = re.findall(
+        r"__dashboardUid__: ([^\n]+)\n\s+__panelId__: \"(\d+)\"", text)
+    assert len(linked) == 8
+    for uid, panel_id in linked:
+        assert uid in dashboard_uids
+        assert any(str(item.get("id")) == panel_id
+                   for item in _panels(dashboard_uids[uid]["panels"]))

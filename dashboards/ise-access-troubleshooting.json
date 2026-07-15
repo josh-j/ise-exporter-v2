@@ -182,7 +182,19 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100
+          "max": 100,
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -241,7 +253,23 @@
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
+        }
+      }
     },
     {
       "id": 7,
@@ -290,7 +318,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sum by (status) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{status}}",
           "refId": "A",
           "datasource": {
@@ -298,7 +326,23 @@
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
+        }
+      }
     },
     {
       "id": 10,
@@ -312,7 +356,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (authentication_method) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(sum by (authentication_method) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{authentication_method}}",
           "refId": "A",
           "datasource": {
@@ -334,7 +378,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -362,7 +418,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (authentication_protocol) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(sum by (authentication_protocol) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{authentication_protocol}}",
           "refId": "A",
           "datasource": {
@@ -384,7 +440,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -412,7 +480,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (authorization_policy) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "topk(20, sum by (authorization_policy) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{authorization_policy}}",
           "refId": "A",
           "datasource": {
@@ -434,7 +502,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -462,7 +542,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn, status) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(sum by (psn, status) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{psn}} / {{status}}",
           "refId": "A",
           "datasource": {
@@ -484,7 +564,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": [
           {
@@ -555,13 +647,25 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (psn, stat, status) (ise_dataconnect_radius_response_time_seconds)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(max by (psn, stat, status) (ise_dataconnect_radius_response_time_seconds{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{psn}} / {{stat}} / {{status}}",
           "refId": "A",
           "datasource": {
@@ -594,7 +698,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -616,7 +720,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -644,7 +760,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_accounting_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_accounting_events{psn=~\"$psn\",nad=~\"$nad\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -666,7 +782,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -706,13 +834,25 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_radius_accounting_session_seconds) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(ise_dataconnect_radius_accounting_session_seconds{psn=~\"$psn\",nad=~\"$nad\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{stat}} / {{nad}} / {{psn}}",
           "refId": "A",
           "datasource": {
@@ -758,7 +898,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (message_code) (ise_dataconnect_radius_errors)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "topk(20, sum by (message_code) (ise_dataconnect_radius_errors{psn=~\"$psn\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{message_code}}",
           "refId": "A",
           "datasource": {
@@ -780,7 +920,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -808,7 +960,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\",psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -830,7 +982,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -858,7 +1022,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (nad, authentication_method) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(sum by (nad, authentication_method) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\",psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{nad}} / {{authentication_method}}",
           "refId": "A",
           "datasource": {
@@ -880,7 +1044,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -908,7 +1084,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn, message_code) (ise_dataconnect_radius_errors)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(sum by (psn, message_code) (ise_dataconnect_radius_errors{psn=~\"$psn\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "legendFormat": "{{psn}} / {{message_code}}",
           "refId": "A",
           "datasource": {
@@ -930,7 +1106,19 @@
                 "value": null
               }
             ]
-          }
+          },
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
         },
         "overrides": []
       },
@@ -959,7 +1147,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(ise_dataconnect_radius_errors{message_code=~\"12300|12321|12500|12501|12511|12625|22056\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
+          "expr": "(sum(ise_dataconnect_radius_errors{message_code=~\"12300|12321|12500|12501|12511|12625|22056\",psn=~\"$psn\",nad=~\"$nad\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -967,7 +1155,23 @@
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
+        }
+      }
     },
     {
       "id": 24,
@@ -1138,7 +1342,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\",psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -1147,7 +1351,23 @@
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Focus this PSN",
+              "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting?${__url_time_range}&var-psn=${__field.labels.psn}",
+              "targetBlank": false
+            },
+            {
+              "title": "Focus this NAD",
+              "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
+              "targetBlank": false
+            }
+          ]
+        }
+      }
     }
   ],
   "refresh": "5m",
@@ -1175,6 +1395,134 @@
         "refresh": 1,
         "regex": "",
         "type": "datasource"
+      },
+      {
+        "name": "psn",
+        "label": "PSN",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(ise_dataconnect_radius_authentication_events, psn)",
+        "query": {
+          "query": "label_values(ise_dataconnect_radius_authentication_events, psn)",
+          "refId": "var-psn"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "nad",
+        "label": "NAD",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(ise_dataconnect_radius_authentication_events{psn=~\"$psn\"}, nad)",
+        "query": {
+          "query": "label_values(ise_dataconnect_radius_authentication_events{psn=~\"$psn\"}, nad)",
+          "refId": "var-nad"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "status",
+        "label": "Status",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\"}, status)",
+        "query": {
+          "query": "label_values(ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\"}, status)",
+          "refId": "var-status"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "authorization_policy",
+        "label": "Authorization policy",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\"}, authorization_policy)",
+        "query": {
+          "query": "label_values(ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\"}, authorization_policy)",
+          "refId": "var-authorization_policy"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
       }
     ]
   },
@@ -1194,6 +1542,48 @@
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
+    }
+  ],
+  "links": [
+    {
+      "type": "link",
+      "title": "Overview",
+      "url": "/d/ise-overview/ise-overview",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open Overview with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "Access",
+      "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open Access with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "PSN",
+      "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open PSN with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "Exporter Health",
+      "url": "/d/ise-exporter-health/ise-exporter-health",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open Exporter Health with the current time range and filters"
     }
   ]
 }

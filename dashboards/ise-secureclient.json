@@ -766,7 +766,7 @@
     {
       "id": 19,
       "type": "row",
-      "title": "Historical Posture Reporting — Data Connect (Two-Day Views)",
+      "title": "Historical Posture Reporting \u2014 Data Connect (Two-Day Views)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1155,5 +1155,47 @@
   "timezone": "browser",
   "title": "ISE Secure Client & Posture",
   "uid": "ise-secureclient",
-  "version": 2
+  "version": 2,
+  "links": [
+    {
+      "type": "link",
+      "title": "Overview",
+      "url": "/d/ise-overview/ise-overview",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open Overview with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "Access",
+      "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open Access with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "PSN",
+      "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open PSN with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "Exporter Health",
+      "url": "/d/ise-exporter-health/ise-exporter-health",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open Exporter Health with the current time range and filters"
+    }
+  ]
 }
