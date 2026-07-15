@@ -56,6 +56,22 @@ def test_runtime_and_diagnostics_clients_do_not_construct_the_other_plane():
     assert operator.control._auth_guard is operator.mnt._auth_guard
 
 
+def test_operator_client_delegates_bounded_pan_pagination():
+    operator = ISEOperatorClient.__new__(ISEOperatorClient)
+
+    class Control:
+        def get_pan_api_all(self, *args, **kwargs):
+            return args, kwargs
+
+    operator.control = Control()
+
+    assert operator.get_pan_api_all(
+        "/certs/trusted-certificate", max_pages=10, max_rows=1000) == (
+            ("/certs/trusted-certificate",),
+            {"max_pages": 10, "max_rows": 1000},
+        )
+
+
 class _Resp:
     def __init__(self, data):
         self._data = data

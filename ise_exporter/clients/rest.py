@@ -715,6 +715,9 @@ class ISEOperatorClient:
     def get_pan_api(self, *args, **kwargs):
         return self.control.get_pan_api(*args, **kwargs)
 
+    def get_pan_api_all(self, *args, **kwargs):
+        return self.control.get_pan_api_all(*args, **kwargs)
+
     def get_mnt_xml(self, *args, **kwargs):
         return self.mnt.get_mnt_xml(*args, **kwargs)
 
