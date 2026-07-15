@@ -1,4 +1,5 @@
 import argparse
+import types
 
 import pytest
 
@@ -22,6 +23,7 @@ def test_every_cli_command_has_working_help(capsys):
         assert exited.value.code == 0
         output = capsys.readouterr().out
         assert output.startswith(f"usage: ise-cli {name}")
+        assert commands[name].description in output
         assert "options:" in output
 
 
@@ -62,3 +64,21 @@ def test_every_bulk_command_has_a_reasonable_default_limit():
             if action.dest == "limit"
         )
         assert limit.default == default, name
+
+
+def test_bulk_limit_must_be_positive_before_live_collection(capsys):
+    class Client:
+        cfg = types.SimpleNamespace(cli_max_rows=1000, cli_production_safe=True)
+
+        def __init__(self):
+            self.calls = []
+
+        def get_pan_api(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            return [{"hostname": "ise01"}]
+
+    client = Client()
+
+    assert cli.main(["nodes", "--limit", "0"], client=client) == 2
+    assert client.calls == []
+    assert "--limit must be at least 1" in capsys.readouterr().err

@@ -11,6 +11,7 @@ LAUNCHER = ROOT / "powershell" / "ise-cli"
 PROFILE = ROOT / "powershell" / "Ise.Cli.Profile.ps1"
 MODULE = ROOT / "powershell" / "Ise.Cli" / "Ise.Cli.psm1"
 MANIFEST = ROOT / "powershell" / "Ise.Cli" / "Ise.Cli.psd1"
+INSTALLER = ROOT / "deploy" / "install.sh"
 
 
 def test_profile_has_isolated_history_completion_prompt_and_banner():
@@ -65,6 +66,16 @@ def test_launcher_remains_shell_safe():
         check=True,
         env=os.environ,
     )
+
+
+def test_installer_deploys_and_verifies_the_global_cli():
+    installer = INSTALLER.read_text()
+
+    assert "CLI_LINK=/usr/local/bin/ise-cli" in installer
+    assert 'ln -sfn "$PWSH_CLI_DIR/ise-cli" "$CLI_LINK"' in installer
+    assert 'ISE_CLI_BACKEND="$VENV/bin/ise-cli-backend"' in installer
+    assert '"$CLI_LINK" --version' in installer
+    assert "installed ise-cli launcher/backend self-check failed" in installer
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")

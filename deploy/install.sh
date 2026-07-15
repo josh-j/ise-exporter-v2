@@ -173,6 +173,12 @@ rm -rf "$PWSH_MODULE_LINK"
 ln -s "$PWSH_CLI_DIR/Ise.Cli" "$PWSH_MODULE_LINK"
 install -d -o root -g root -m 755 "$(dirname "$CLI_LINK")"
 ln -sfn "$PWSH_CLI_DIR/ise-cli" "$CLI_LINK"
+if ! ISE_CLI_FORCE_BACKEND=1 ISE_CLI_BACKEND="$VENV/bin/ise-cli-backend" \
+        "$CLI_LINK" --version >/dev/null; then
+    echo "error: installed ise-cli launcher/backend self-check failed" >&2
+    exit 1
+fi
+echo "==> verified bounded ise-cli command mode"
 if ! command -v pwsh >/dev/null 2>&1; then
     echo "==> WARNING: PowerShell 7 (pwsh) is not installed; exporter service is ready,"
     echo "    but $CLI_LINK requires pwsh before operators can use Ise.Cli"

@@ -488,7 +488,7 @@ def build_parser(*, require_command=False):
     subs = parser.add_subparsers(dest="command", required=require_command)
 
     def command(name, help_text):
-        sub = subs.add_parser(name, help=help_text)
+        sub = subs.add_parser(name, help=help_text, description=help_text)
         _add_output_args(sub)
         return sub
 
@@ -532,6 +532,7 @@ def build_parser(*, require_command=False):
     sub = command("nodes", "list deployment nodes")
     sub.add_argument("--limit", type=int, default=50,
                      help="maximum rows (default: 50)")
+    expensive(sub)
 
     for name, help_text in (
         ("endpoints", "list endpoints from ERS"),
@@ -609,6 +610,7 @@ def build_parser(*, require_command=False):
         sub = command(name, help_text)
         sub.add_argument("--limit", type=int, default=100,
                          help="maximum rows (default: 100)")
+        expensive(sub)
 
     sub = command("certificates", "list system and trusted certificates")
     sub.add_argument("--limit", type=int, default=100,
@@ -616,6 +618,7 @@ def build_parser(*, require_command=False):
     sub.add_argument("--node", help="limit system certificates to one ISE node hostname")
     sub.add_argument("--trusted-only", action="store_true")
     sub.add_argument("--system-only", action="store_true")
+    expensive(sub)
 
     def report(name, help_text):
         sub = command(name, help_text)
@@ -698,6 +701,8 @@ def _require_expensive(args, cfg, reason):
 
 
 def _guard_row_limit(args, cfg):
+    if getattr(args, "limit", 0) < 1:
+        raise CLIError("--limit must be at least 1")
     maximum = max(100, min(5000, int(getattr(cfg, "cli_max_rows", 1000))))
     if getattr(args, "limit", 0) > maximum:
         _require_expensive(args, cfg, f"--limit above the production-safe maximum {maximum}")
