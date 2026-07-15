@@ -98,13 +98,14 @@ VIEW_CONTRACTS = {
 }
 
 
-def metadata_rows(dataconnect, table_names=None):
+def metadata_rows(dataconnect, table_names=None, *, query=None):
     names = tuple(table_names or VIEW_CONTRACTS)
     unknown = set(names) - set(VIEW_CONTRACTS)
     if unknown:
         raise ValueError(f"unknown Data Connect contract views: {', '.join(sorted(unknown))}")
     literals = ", ".join(f"'{name}'" for name in names)
-    return dataconnect.query(f"""
+    execute = query or dataconnect.query
+    return execute(f"""
         SELECT table_name, column_id, column_name, data_type, data_length, nullable
         FROM user_tab_columns
         WHERE table_name IN ({literals})

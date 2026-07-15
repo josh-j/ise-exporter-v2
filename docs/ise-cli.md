@@ -23,7 +23,9 @@ Field-name completion remains fully schema-aware. Production-safe completion nev
 scans a RADIUS, TACACS, posture, accounting, diagnostic, or performance event view
 merely because an operator pressed Tab: live values from those views require
 `ISE_CLI_ALLOW_EXPENSIVE=true`. Remote suggestions are capped at 25 rows and cached
-for five minutes; completion failures are silent and never prevent command entry.
+for five minutes. A Tab press never waits behind the exporter's shared Data Connect
+cooldown; it simply omits live suggestions when the pacing gate is busy. Completion
+failures are silent and never prevent command entry.
 Press Tab twice to display all matching choices.
 
 ```console
@@ -248,7 +250,8 @@ the same spirit as selecting properties from PowerCLI objects.
 - Tab completion uses only bounded inventory/metadata Data Connect views and REST
   configuration inventory by default. High-volume event-view value completion
   requires the global expensive-query opt-in; a result-row cap alone does not
-  bound Oracle scan work.
+  bound Oracle scan work. Completion uses a non-blocking gate acquisition, so it
+  cannot make the interactive prompt appear hung behind a production cooldown.
 - The generic command requires a family-relative path, rejects full URLs and `..`,
   and exposes no HTTP method flag.
 - Inventory enumeration is bounded unless `--all` is explicit.

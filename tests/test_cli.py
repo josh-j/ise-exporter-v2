@@ -714,6 +714,30 @@ def test_production_completion_never_scans_event_views():
         for sql, _parameters in dataconnect.calls)
 
 
+def test_live_completion_returns_immediately_when_shared_pacing_is_busy():
+    class BusyDataConnect:
+        def __init__(self):
+            self.calls = []
+
+        def query_if_ready(self, sql, parameters=None):
+            self.calls.append((sql, parameters or {}))
+            return None
+
+        def query(self, *_args, **_kwargs):
+            raise AssertionError("completion used the blocking query path")
+
+        def close(self):
+            pass
+
+    dataconnect = BusyDataConnect()
+    shell = cli.ISEShell(client=FakeClient(), dataconnect=dataconnect,
+                         stdin=io.StringIO(), stdout=io.StringIO())
+
+    assert shell.completion_candidates("endpoint cli") == []
+    assert "authorization-policy=" in shell.completion_candidates("endpoints auth")
+    assert dataconnect.calls
+
+
 def test_expensive_completion_opt_in_restores_live_event_values():
     dataconnect = CompletionDataConnect()
     cfg = types.SimpleNamespace(cli_production_safe=True, cli_allow_expensive=True)

@@ -26,6 +26,7 @@ MAX_RESULT_ROWS = 5000
 FETCH_BATCH_ROWS = 100
 MAX_FIELD_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 64 * 1024 * 1024
+_PACING_BUSY = object()
 
 
 _QUERY_VIEWS = (
@@ -153,7 +154,7 @@ class DataConnectClient:
         else:
             time.sleep(seconds)
 
-    def _shared_gate(self):
+    def _shared_gate(self, *, wait=True):
         """Serialize and pace queries across exporter and CLI processes.
 
         The installed service and authorized CLI operators share this small lock
@@ -190,11 +191,18 @@ class DataConnectClient:
                     fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     break
                 except BlockingIOError:
+                    if not wait:
+                        os.close(descriptor)
+                        return _PACING_BUSY
                     self._wait(0.25)
             raw = os.read(descriptor, 64).decode("ascii", "ignore").strip()
             deadline = float(raw) if raw else 0.0
             remaining = deadline - time.time()
             if remaining > 0:
+                if not wait:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+                    os.close(descriptor)
+                    return _PACING_BUSY
                 self._wait(remaining)
             # Persist a conservative lease *before* Oracle work begins. A normal
             # completion replaces it with the measured duty-cycle cooldown, but
@@ -262,9 +270,11 @@ class DataConnectClient:
             self._connection.call_timeout = self.timeout * 1000
         return self._connection
 
-    def query(self, sql, parameters=None):
+    def query(self, sql, parameters=None, *, wait_for_pacing=True):
         remaining = self._next_query_at - time.monotonic()
         if remaining > 0:
+            if not wait_for_pacing:
+                return None
             self._wait(remaining)
         attempt_started = time.monotonic()
         shared_gate = None
@@ -272,7 +282,24 @@ class DataConnectClient:
         view = _query_view(sql)
         result = "error"
         try:
-            shared_gate = self._shared_gate()
+            shared_gate = self._shared_gate(wait=wait_for_pacing)
+        except Exception:
+            finished = time.monotonic()
+            duration = max(0.0, finished - attempt_started)
+            cooldown = max(
+                self.min_query_interval,
+                duration * (100 / self.max_duty_cycle - 1),
+            )
+            self._next_query_at = finished + cooldown
+            metrics.ise_dataconnect_query_cooldown_seconds.labels(view=view).set(cooldown)
+            metrics.ise_dataconnect_queries_total.labels(
+                view=view, result="error").inc()
+            metrics.ise_dataconnect_query_duration_seconds.labels(
+                view=view, result="error").observe(duration)
+            raise
+        if shared_gate is _PACING_BUSY:
+            return None
+        try:
             started = time.monotonic()
             for attempt in range(2):
                 try:
@@ -341,6 +368,15 @@ class DataConnectClient:
                     view=view, result=result).inc()
                 metrics.ise_dataconnect_query_duration_seconds.labels(
                     view=view, result=result).observe(duration)
+
+    def query_if_ready(self, sql, parameters=None):
+        """Issue a statement only when the production pacing gate is ready now.
+
+        Interactive completion uses this path so pressing Tab never queues behind
+        an exporter cooldown. ``None`` means no Oracle statement was issued; an
+        empty list remains a successful query with no matching rows.
+        """
+        return self.query(sql, parameters, wait_for_pacing=False)
 
     def close(self):
         if self._connection is not None:

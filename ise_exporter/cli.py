@@ -947,7 +947,7 @@ def _searchable_datatype(data_type):
         "CHAR", "CLOB", "NUMBER", "INTEGER", "FLOAT", "DECIMAL", "DATE", "TIMESTAMP"))
 
 
-def _endpoint_field_bindings(dataconnect):
+def _endpoint_field_bindings(dataconnect, *, query=None):
     """Discover searchable endpoint/context fields from the live ISE schema."""
     if dataconnect is None:
         raise CLIError("endpoint field search requires configured Data Connect credentials")
@@ -957,7 +957,10 @@ def _endpoint_field_bindings(dataconnect):
         # One catalog statement covers every fixed Patch 11 context view. At a
         # deliberately tiny database duty cycle, issuing one query per view
         # would multiply adaptive cooldown without providing fresher metadata.
-        schemas_by_table = schema_by_table(metadata_rows(dataconnect, tables))
+        metadata = metadata_rows(dataconnect, tables, query=query)
+        if metadata is None:
+            raise CLIError("Data Connect pacing gate is busy")
+        schemas_by_table = schema_by_table(metadata)
     except Exception as error:
         raise CLIError(f"Data Connect endpoint schema lookup failed: {error}") from error
 
@@ -1004,8 +1007,8 @@ def _endpoint_field_bindings(dataconnect):
     return bindings, rows, schemas
 
 
-def _endpoint_fields(dataconnect, pattern=None):
-    bindings, rows, _schemas = _endpoint_field_bindings(dataconnect)
+def _endpoint_fields(dataconnect, pattern=None, *, query=None):
+    bindings, rows, _schemas = _endpoint_field_bindings(dataconnect, query=query)
     aliases = set(ENDPOINT_FIELD_ALIASES) & set(bindings)
     for row in rows:
         short = row["short_field"]
@@ -1978,7 +1981,8 @@ class ISEShell(cmd.Cmd):
             values = set(ENDPOINT_FIELD_ALIASES)
             try:
                 self._completion_runtime("endpoint-fields")
-                values.update(row["field"] for row in _endpoint_fields(self.dataconnect))
+                values.update(row["field"] for row in _endpoint_fields(
+                    self.dataconnect, query=self._completion_query))
             except Exception:
                 pass
             return sorted(values, key=str.casefold)
@@ -2069,6 +2073,13 @@ class ISEShell(cmd.Cmd):
         self._completion_cache[key] = (now, values)
         return values
 
+    def _completion_query(self, sql, parameters=None):
+        """Return immediately instead of waiting behind production DB pacing."""
+        query_if_ready = getattr(self.dataconnect, "query_if_ready", None)
+        if query_if_ready is not None:
+            return query_if_ready(sql, parameters)
+        return self.dataconnect.query(sql, parameters)
+
     def _completion_runtime(self, command):
         # Completion must never print config/network failures or break the prompt.
         with contextlib.redirect_stdout(self.stdout), contextlib.redirect_stderr(self.stdout):
@@ -2108,8 +2119,10 @@ class ISEShell(cmd.Cmd):
                 f"WHERE {column} IS NOT NULL{recent} "
                 f"AND UPPER({column}) LIKE :prefix ESCAPE '\\' "
                 f"FETCH FIRST {COMPLETION_LIMIT} ROWS ONLY")
-            rows = self.dataconnect.query(
+            rows = self._completion_query(
                 sql, {"prefix": self._like_prefix(query_prefix.upper())})
+            if rows is None:
+                return ()
             return (row.get("value") for row in rows if row.get("value") not in (None, ""))
 
         key = ("dc", table, column, base_prefix.casefold())
@@ -2164,7 +2177,9 @@ class ISEShell(cmd.Cmd):
                 "OR UPPER(ENDPOINT_IP) LIKE :prefix ESCAPE '\\' "
                 "OR UPPER(HOSTNAME) LIKE :prefix ESCAPE '\\' "
                 f"FETCH FIRST {COMPLETION_LIMIT} ROWS ONLY")
-            rows = self.dataconnect.query(sql, {"prefix": like})
+            rows = self._completion_query(sql, {"prefix": like})
+            if rows is None:
+                return ()
             values = []
             for row in rows:
                 values.extend(row.get(field) for field in (

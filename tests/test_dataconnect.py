@@ -272,6 +272,47 @@ def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):
         owner.close()
 
 
+def test_completion_query_does_not_wait_for_local_cooldown(monkeypatch):
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    client._next_query_at = dataconnect.time.monotonic() + 3600
+    monkeypatch.setattr(client, "_wait", lambda _seconds: pytest.fail("completion waited"))
+    monkeypatch.setattr(
+        client, "_shared_gate", lambda **_kwargs: pytest.fail("gate was acquired"))
+
+    assert client.query_if_ready("SELECT username FROM radius_authentications") is None
+
+
+def test_completion_query_does_not_wait_for_shared_gate(monkeypatch, tmp_path):
+    path = tmp_path / "dataconnect.pacing"
+    owner = path.open("w+")
+    fcntl.flock(owner.fileno(), fcntl.LOCK_EX)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_shared_pacing_file=str(path),
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(
+        dataconnect.oracledb, "connect", lambda **_kwargs: pytest.fail("Oracle queried"))
+
+    try:
+        assert client.query_if_ready(
+            "SELECT username FROM radius_authentications") is None
+    finally:
+        fcntl.flock(owner.fileno(), fcntl.LOCK_UN)
+        owner.close()
+
+
 def test_shared_pacing_gate_acquisition_failure_is_counted(monkeypatch):
     cfg = types.SimpleNamespace(
         dataconnect_host="mnt.example.mil", dataconnect_port=2484,
@@ -284,7 +325,7 @@ def test_shared_pacing_gate_acquisition_failure_is_counted(monkeypatch):
     )
     client = dataconnect.DataConnectClient(cfg)
     monkeypatch.setattr(
-        client, "_shared_gate", lambda: (_ for _ in ()).throw(
+        client, "_shared_gate", lambda **_kwargs: (_ for _ in ()).throw(
             RuntimeError("shared pacing gate unavailable")))
     counter = metrics.ise_dataconnect_queries_total.labels(
         view="radius_authentications", result="error")
@@ -310,7 +351,7 @@ def test_shared_pacing_gate_release_failure_marks_query_error(monkeypatch):
         auth_failure_threshold=3, auth_failure_backoff=900,
     )
     client = dataconnect.DataConnectClient(cfg)
-    monkeypatch.setattr(client, "_shared_gate", lambda: 123)
+    monkeypatch.setattr(client, "_shared_gate", lambda **_kwargs: 123)
     monkeypatch.setattr(
         client, "_release_shared_gate", lambda *_: (_ for _ in ()).throw(
             OSError("pacing deadline write failed")))
