@@ -275,7 +275,7 @@ def test_query_batch_has_a_hard_statement_ceiling():
 
 def test_query_batch_applies_result_row_ceiling_across_statements(monkeypatch):
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: Connection())
-    monkeypatch.setattr(dataconnect, "MAX_RESULT_ROWS", 2)
+    monkeypatch.setattr(dataconnect, "MAX_BATCH_RESULT_ROWS", 2)
     cfg = types.SimpleNamespace(
         dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
         dataconnect_user="reader", dataconnect_password="secret",
@@ -285,7 +285,7 @@ def test_query_batch_applies_result_row_ceiling_across_statements(monkeypatch):
     client = dataconnect.DataConnectClient(cfg)
     monkeypatch.setattr(client, "_wait", lambda _seconds: None)
 
-    with pytest.raises(RuntimeError, match="2-row safety ceiling"):
+    with pytest.raises(RuntimeError, match="batch exceeded the hard 2-row safety ceiling"):
         client.query_many({
             "one": "SELECT username FROM endpoints_data",
             "two": "SELECT username FROM endpoints_data",
@@ -293,6 +293,31 @@ def test_query_batch_applies_result_row_ceiling_across_statements(monkeypatch):
         })
 
     assert client._batch_rows == 0
+
+
+def test_query_keeps_individual_statement_row_ceiling_inside_batch(monkeypatch):
+    class ThreeRowCursor(Cursor):
+        def fetchall(self):
+            return [("one", 1), ("two", 2), ("three", 3)]
+
+    class ThreeRowConnection(Connection):
+        def cursor(self):
+            return ThreeRowCursor()
+
+    monkeypatch.setattr(
+        dataconnect.oracledb, "connect", lambda **kwargs: ThreeRowConnection())
+    monkeypatch.setattr(dataconnect, "MAX_RESULT_ROWS", 2)
+    monkeypatch.setattr(dataconnect, "MAX_BATCH_RESULT_ROWS", 10)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file="",
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    with pytest.raises(RuntimeError, match="hard 2-row safety ceiling"):
+        client.query_many({"one": "SELECT username FROM endpoints_data"})
 
 
 def test_query_batch_applies_result_byte_ceiling_across_statements(monkeypatch):

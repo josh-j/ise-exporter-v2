@@ -97,8 +97,11 @@ and a 15-second Oracle-call timeout as hard safety limits and refuses to
 run reporting SQL until the session accepts `ALTER SESSION DISABLE PARALLEL
 QUERY`; this prevents a small aggregate result from fanning out across parallel
 database workers. The client also refuses to materialize more than 5,000 rows
-from a standalone statement or complete domain
-batch. Results are streamed in 100-row fetches, with 1 MiB per-field and 64 MiB
+from any individual statement or 10,000 rows across a complete fixed-size domain
+batch. The separate batch ceiling accommodates the valid 6,001-row worst-case
+RADIUS aggregate and 6,000-row TACACS aggregate at the supported 1,000-group
+profile without relaxing operator-query limits. Results are streamed in 100-row
+fetches, with 1 MiB per-field and 64 MiB
 retained-payload ceilings per standalone statement or complete batch, even when
 a CLI caller or alternate
 configuration object requests a more aggressive value; grouped output is likewise

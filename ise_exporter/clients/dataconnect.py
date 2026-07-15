@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 # than any scheduled top-K result. Even if a SQL/view contract regresses, the
 # exporter will not materialize an unbounded slice of the MnT database.
 MAX_RESULT_ROWS = 5000
+# Atomic scheduled domains intentionally contain several individually bounded
+# top-K statements. At the supported 1,000-group ceiling, RADIUS can return
+# 6,001 aggregate rows and TACACS 6,000; a 5,000-row whole-batch cap therefore
+# rejected valid maximum collection. Keep each statement at 5,000 while allowing
+# the complete fixed-size batch enough room without approaching snapshot limits.
+MAX_BATCH_RESULT_ROWS = 10000
 FETCH_BATCH_ROWS = 100
 MAX_FIELD_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 64 * 1024 * 1024
@@ -371,12 +377,16 @@ class DataConnectClient:
                             if not batch:
                                 break
                             for raw_row in batch:
-                                retained_rows = (
-                                    self._batch_rows if self._batch_active else 0)
-                                if retained_rows + len(rows) >= MAX_RESULT_ROWS:
+                                if len(rows) >= MAX_RESULT_ROWS:
                                     raise RuntimeError(
                                         f"Data Connect result exceeded the hard "
                                         f"{MAX_RESULT_ROWS}-row safety ceiling")
+                                if (self._batch_active
+                                        and self._batch_rows + len(rows)
+                                        >= MAX_BATCH_RESULT_ROWS):
+                                    raise RuntimeError(
+                                        f"Data Connect batch exceeded the hard "
+                                        f"{MAX_BATCH_RESULT_ROWS}-row safety ceiling")
                                 row = dict(zip(
                                     columns, (_materialize(value) for value in raw_row)))
                                 result_bytes += _materialized_size(row)
