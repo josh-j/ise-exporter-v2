@@ -1094,6 +1094,24 @@ def test_dataconnect_catalog_walks_all_accessible_objects_with_bound_pattern(cap
     assert parameters == {"pattern": "%TACACS%"}
 
 
+def test_interactive_dataconnect_metadata_returns_busy_instead_of_waiting(capsys):
+    class BusyCatalog(FakeDataConnect):
+        def query_catalog_if_ready(self, sql, parameters=None):
+            self.calls.append((sql, parameters or {}))
+            return None
+
+    for arguments in (
+        ["dataconnect-schema", "UPSPOLICY", "-o", "json"],
+        ["dataconnect-catalog", "UPS*", "-o", "json"],
+        ["dataconnect-query", "UPSPOLICY", "--limit", "5", "-o", "json"],
+    ):
+        dataconnect = BusyCatalog()
+        assert cli.main(
+            arguments, client=FakeClient(), dataconnect=dataconnect) == 2
+        assert "catalog is busy with another query" in capsys.readouterr().err
+        assert len(dataconnect.calls) == 1
+
+
 def test_dataconnect_health_reports_oracle_session_without_credentials(capsys):
     class DiagnosticDataConnect(FakeDataConnect):
         def query(self, sql, parameters=None):

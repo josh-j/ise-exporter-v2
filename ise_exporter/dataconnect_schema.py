@@ -159,9 +159,9 @@ def schema_by_table(rows):
     return schema
 
 
-def table_columns(dataconnect, table):
+def table_columns(dataconnect, table, *, query=None):
     name = str(table or "").strip().upper()
-    execute = getattr(dataconnect, "query_catalog", None)
+    execute = query or getattr(dataconnect, "query_catalog", None)
     if execute is None:
         execute = dataconnect.query
     rows = execute("""
@@ -170,6 +170,8 @@ def table_columns(dataconnect, table):
         WHERE table_name = :table_name
         ORDER BY column_id
     """, {"table_name": name})
+    if rows is None:
+        return None
     return {str(row.get("column_name") or "").upper():
             str(row.get("data_type") or "").upper()
             for row in rows if row.get("column_name")}

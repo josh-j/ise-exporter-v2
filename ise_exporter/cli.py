@@ -1164,8 +1164,20 @@ def _secure_client(client, mac, include_all=False):
     return result
 
 
-def _dataconnect_table_columns(dataconnect, table):
-    return table_columns(dataconnect, table)
+def _interactive_catalog_query(dataconnect):
+    return (getattr(dataconnect, "query_catalog_if_ready", None)
+            or getattr(dataconnect, "query_catalog", None)
+            or dataconnect.query)
+
+
+def _dataconnect_table_columns(dataconnect, table, *, interactive=False):
+    query = _interactive_catalog_query(dataconnect) if interactive else None
+    columns = table_columns(dataconnect, table, query=query)
+    if columns is None:
+        raise CLIError(
+            "Data Connect catalog is busy with another query; retry after the "
+            "current exporter or CLI query finishes")
+    return columns
 
 
 def _first_column(columns, *candidates):
@@ -1643,7 +1655,7 @@ def _dataconnect_query(args, dataconnect, cfg):
     if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", table):
         raise CLIError("Data Connect table must contain only letters, numbers, and underscores")
     try:
-        column_types = _dataconnect_table_columns(dataconnect, table)
+        column_types = _dataconnect_table_columns(dataconnect, table, interactive=True)
     except Exception as error:
         raise CLIError(f"Data Connect schema lookup failed for {table}: {error}") from error
     if not column_types:
@@ -1790,8 +1802,13 @@ def _dataconnect_catalog(dataconnect, pattern=None):
         ORDER BY table_name
     """
     try:
-        query = getattr(dataconnect, "query_catalog", None) or dataconnect.query
-        return query(sql, parameters)
+        query = _interactive_catalog_query(dataconnect)
+        rows = query(sql, parameters)
+        if rows is None:
+            raise CLIError(
+                "Data Connect catalog is busy with another query; retry after the "
+                "current exporter or CLI query finishes")
+        return rows
     except Exception as error:
         raise CLIError(f"Data Connect catalog query failed: {error}") from error
 
@@ -1837,7 +1854,13 @@ def _dataconnect_schema(dataconnect, table=None):
         try:
             # Default discovery is the exporter contract, not the Data Connect
             # account's entire catalog. Operators may still name one custom view.
-            return metadata_rows(dataconnect)
+            rows = metadata_rows(
+                dataconnect, query=_interactive_catalog_query(dataconnect))
+            if rows is None:
+                raise CLIError(
+                    "Data Connect catalog is busy with another query; retry after the "
+                    "current exporter or CLI query finishes")
+            return rows
         except Exception as error:
             raise CLIError(f"Data Connect schema query failed: {error}") from error
     parameters = {}
@@ -1847,14 +1870,17 @@ def _dataconnect_schema(dataconnect, table=None):
     predicate = " WHERE table_name = :table_name"
     parameters["table_name"] = normalized
     try:
-        query = getattr(dataconnect, "query_catalog", None)
-        if query is None:
-            query = dataconnect.query
-        return query(f"""
+        query = _interactive_catalog_query(dataconnect)
+        rows = query(f"""
             SELECT table_name, column_id, column_name, data_type, data_length, nullable
             FROM user_tab_columns{predicate}
             ORDER BY table_name, column_id
         """, parameters)
+        if rows is None:
+            raise CLIError(
+                "Data Connect catalog is busy with another query; retry after the "
+                "current exporter or CLI query finishes")
+        return rows
     except Exception as error:
         raise CLIError(f"Data Connect schema query failed: {error}") from error
 
