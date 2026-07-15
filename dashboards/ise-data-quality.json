@@ -21,7 +21,7 @@
   "tags": ["cisco", "ise", "data-quality", "dataconnect"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "editable": true,
   "graphTooltip": 1,
@@ -90,12 +90,13 @@
       "description": "Every enabled unavailable dataset, its collection source, and the latest bounded failure reason. not_attempted means no collection attempt has failed or completed yet; the exporter journal contains the full exception text.",
       "gridPos": {"h": 11, "w": 24, "x": 0, "y": 4},
       "targets": [
-        {"expr": "(ise_dataset_last_failure_info or (label_replace(ise_dataset_up, \"reason\", \"not_attempted\", \"dataset\", \".+\") unless on(dataset,source) ise_dataset_last_failure_info)) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))", "format": "table", "instant": true, "refId": "Unavailable", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "(time() - ise_dataset_last_attempt_timestamp) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))", "format": "table", "instant": true, "refId": "Attempt age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
-        {"expr": "(time() - ise_dataset_last_success_timestamp) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))", "format": "table", "instant": true, "refId": "Success age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+        {"expr": "(ise_dataset_last_failure_info or (label_replace(ise_dataset_up, \"reason\", \"not_attempted\", \"dataset\", \".+\") unless on(dataset,source) ise_dataset_last_failure_info)) and on(dataset,source) ((ise_dataset_up == 0) and on(dataset,source) (ise_dataset_enabled == 1))", "format": "table", "instant": true, "refId": "Unavailable", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ],
       "fieldConfig": {"defaults": {}, "overrides": []},
-      "options": {"showHeader": true}
+      "options": {"showHeader": true},
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}, "indexByName": {"dataset": 0, "source": 1, "reason": 2}, "renameByName": {"dataset": "Dataset", "source": "Source", "reason": "Why unavailable"}}}
+      ]
     },
     {
       "id": 6,
@@ -453,6 +454,18 @@
         {"expr": "ise_nad_activity_groups_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "legendFormat": "groups total", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
         {"expr": "ise_nad_activity_groups_truncated and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "legendFormat": "truncated", "refId": "C", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
       ]
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "Dataset Collection Attempt and Success Age",
+      "description": "Seconds since each enabled dataset was last attempted and last replaced successfully. Missing success series mean that dataset has never completed successfully since exporter state was reset.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 114},
+      "targets": [
+        {"expr": "(time() - ise_dataset_last_attempt_timestamp) and on(dataset,source) (ise_dataset_enabled == 1)", "legendFormat": "{{dataset}} / {{source}} / attempt", "refId": "Attempt age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "(time() - ise_dataset_last_success_timestamp) and on(dataset,source) (ise_dataset_enabled == 1)", "legendFormat": "{{dataset}} / {{source}} / success", "refId": "Success age", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
     }
   ],
   "templating": {

@@ -171,7 +171,30 @@ def test_failed_observation_discards_staged_snapshot():
     assert metrics.ise_dataset_up.labels(
         dataset=name, source="rest")._value.get() == 0
     assert metrics.ise_dataset_last_failure_info.labels(
-        dataset=name, source="rest", reason="no_data")._value.get() == 1
+        dataset=name, source="rest",
+        reason="incomplete_snapshot")._value.get() == 1
+
+
+def test_collector_failure_reason_is_operator_readable_and_bounded():
+    error = collectors.CollectorFailed(
+        "Network device inventory request failed! " + ("detail " * 30))
+
+    assert error.reason.startswith("network_device_inventory_request_failed_detail")
+    assert len(error.reason) == 96
+    assert set(error.reason) <= set("abcdefghijklmnopqrstuvwxyz0123456789_")
+
+
+@pytest.mark.parametrize(("error", "reason"), (
+    (RuntimeError("HTTP 401 from control API"), "authentication_failed"),
+    (RuntimeError("HTTP 403 from MnT API"), "authorization_failed"),
+    (RuntimeError("TLS certificate verify failed"), "tls_failed"),
+    (TimeoutError("timed out"), "timeout"),
+    (ConnectionError("connection reset"), "connection_failed"),
+    (RuntimeError("Oracle database unavailable"), "database_failed"),
+    (ValueError("something novel"), "unexpected_error"),
+))
+def test_unexpected_failure_reason_uses_fixed_categories(error, reason):
+    assert collectors._exception_reason(error) == reason
 
 
 def test_success_clears_latest_dataset_failure_reason():

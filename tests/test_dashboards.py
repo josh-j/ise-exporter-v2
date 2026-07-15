@@ -600,9 +600,19 @@ def test_data_quality_lists_each_unavailable_dataset_and_latest_reason():
     assert '"not_attempted"' in expression
     assert panel["targets"][0]["format"] == "table"
     assert panel["targets"][0]["instant"] is True
-    expressions = {target["refId"]: target["expr"] for target in panel["targets"]}
-    assert "ise_dataset_last_attempt_timestamp" in expressions["Attempt age"]
-    assert "ise_dataset_last_success_timestamp" in expressions["Success age"]
+    assert len(panel["targets"]) == 1
+    organize = panel["transformations"][0]
+    assert organize["id"] == "organize"
+    assert organize["options"]["indexByName"] == {
+        "dataset": 0, "source": 1, "reason": 2,
+    }
+    assert organize["options"]["renameByName"]["reason"] == "Why unavailable"
+
+    age_panel = next(
+        item for item in _panels(dashboard["panels"]) if item.get("id") == 42)
+    ages = {target["refId"]: target["expr"] for target in age_panel["targets"]}
+    assert "ise_dataset_last_attempt_timestamp" in ages["Attempt age"]
+    assert "ise_dataset_last_success_timestamp" in ages["Success age"]
 
 
 def test_sessions_dashboard_collection_age_thresholds_match_domain_cadences():

@@ -9,6 +9,7 @@ Collectors raise CollectorFailed when a primary API call returns no data, so an
 unreachable endpoint counts as a failure (and does NOT bump last_successful_scrape)
 rather than masquerading as a healthy scrape."""
 import logging
+import re
 import time
 from contextlib import contextmanager
 
@@ -36,9 +37,36 @@ def source(name):
 class CollectorFailed(Exception):
     """Raised by a collector when a primary API call yields no usable data."""
 
-    def __init__(self, message, *, reason="no_data"):
+    def __init__(self, message, *, reason=None):
         super().__init__(message)
-        self.reason = reason
+        self.reason = reason or _failure_reason(message)
+
+
+def _failure_reason(message):
+    """Turn a collector-owned failure description into a bounded metric label."""
+    reason = re.sub(r"[^a-z0-9]+", "_", str(message).lower()).strip("_")
+    return reason[:96] or "no_usable_data"
+
+
+def _exception_reason(error):
+    """Classify arbitrary exceptions without exporting their unbounded text."""
+    name = type(error).__name__.lower()
+    message = str(error).lower()
+    if "401" in message or "authentication" in message or "credential" in message:
+        return "authentication_failed"
+    if "403" in message or "authorization" in message or "permission" in message:
+        return "authorization_failed"
+    if "certificate" in message or "ssl" in message or "tls" in message:
+        return "tls_failed"
+    if "timeout" in name or "timed out" in message:
+        return "timeout"
+    if "connection" in name or "connection" in message:
+        return "connection_failed"
+    if "database" in name or "oracle" in name or "database" in message:
+        return "database_failed"
+    if "json" in name or "decode" in name:
+        return "invalid_response"
+    return "unexpected_error"
 
 
 def failures(name):
@@ -123,7 +151,7 @@ def observe(name):
             record_failure(name, e.reason)
         except Exception as e:
             logger.error("%s collection error: %s", name, e)
-            record_failure(name, "exception")
+            record_failure(name, _exception_reason(e))
         finally:
             duration = max(0.0, time.monotonic() - start)
             with snapshot_lock:
