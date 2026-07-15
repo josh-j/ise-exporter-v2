@@ -879,13 +879,13 @@ def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
     schema = getattr(dataconnect, "schema", {})
     columns = schema.get("ENDPOINTS_DATA", {}) if isinstance(schema, dict) else {}
     if not columns:
-        try:
-            columns = _dataconnect_table_columns(dataconnect, "ENDPOINTS_DATA")
-        except Exception as error:
-            raise CLIError(
-                f"Data Connect schema lookup failed for ENDPOINTS_DATA: {error}") from error
-    if not columns:
-        raise CLIError("Data Connect view ENDPOINTS_DATA is unavailable")
+        # These are required by the validated ISE 3.3 ENDPOINTS_DATA contract.
+        # Avoid a separate catalog connection/query in an interactive lookup;
+        # optional IDs are selected only when the runtime already cached them.
+        columns = {
+            "MAC_ADDRESS": "VARCHAR2", "ENDPOINT_IP": "VARCHAR2",
+            "HOSTNAME": "VARCHAR2", "UPDATE_TIME": "TIMESTAMP",
+        }
     if comparison_column not in columns:
         raise CLIError(
             f"ENDPOINTS_DATA cannot resolve endpoints by {kind}; "

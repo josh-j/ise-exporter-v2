@@ -876,20 +876,12 @@ def test_endpoint_resolution_uses_interactive_point_lookup_path():
     assert "HOSTNAME IN" in dataconnect.calls[0][0]
 
 
-def test_endpoint_resolution_discovers_uncached_schema_before_reporting_query():
+def test_endpoint_resolution_uses_required_columns_without_catalog_round_trip():
     class UncachedVariant:
         schema = {}
 
         def __init__(self):
             self.calls = []
-
-        def query_catalog(self, sql, parameters=None):
-            self.calls.append(("catalog", sql, parameters))
-            return [
-                {"column_name": "MAC_ADDRESS", "data_type": "VARCHAR2"},
-                {"column_name": "HOSTNAME", "data_type": "VARCHAR2"},
-                {"column_name": "CREATE_TIME", "data_type": "TIMESTAMP"},
-            ]
 
         def query(self, sql, parameters=None):
             self.calls.append(("report", sql, parameters))
@@ -900,11 +892,11 @@ def test_endpoint_resolution_discovers_uncached_schema_before_reporting_query():
     rows = cli._dataconnect_endpoint_candidates(dataconnect, "client", "hostname")
 
     assert rows[0]["mac_address"] == "AA:BB:CC:DD:EE:FF"
-    assert [call[0] for call in dataconnect.calls] == ["catalog", "report"]
-    sql = dataconnect.calls[1][1].upper()
-    assert "SELECT MAC_ADDRESS, HOSTNAME" in sql
+    assert [call[0] for call in dataconnect.calls] == ["report"]
+    sql = dataconnect.calls[0][1].upper()
+    assert "SELECT MAC_ADDRESS, ENDPOINT_IP, HOSTNAME" in sql
     assert "ID," not in sql
-    assert "ORDER BY CREATE_TIME DESC NULLS LAST" in sql
+    assert "ORDER BY UPDATE_TIME DESC NULLS LAST" in sql
 
 
 def test_endpoint_resolution_rejects_missing_search_capability_before_row_query():
