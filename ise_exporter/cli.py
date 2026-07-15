@@ -11,6 +11,7 @@ import atexit
 import cmd
 import contextlib
 import csv
+import fnmatch
 import io
 import ipaddress
 import json
@@ -39,6 +40,7 @@ from .collectors.nodes import valid_hostname, validated_node_rows
 from .compatibility import MAX_CERTIFICATES_PER_STORE, MAX_CERTIFICATE_ROWS
 from .config import Config
 from .dataconnect_schema import metadata_rows, schema_by_table, table_columns
+from .exporter_data import ExporterDataError, load_exporter_snapshot
 from .util import (first_nonempty, is_mac, normalize_agent_version, normalize_mac,
                    normalize_posture,
                    parse_other_attr_string, parse_posture_report)
@@ -55,6 +57,34 @@ AUTH_STATUS_MAX_LIMIT = 1000
 
 
 COMMAND_SCHEMAS = {
+    "overview": {
+        "api": "local exporter metrics", "method": "GET",
+        "path": "http://127.0.0.1:9618/metrics", "live_ise_query": False,
+    },
+    "collector-status": {
+        "api": "local exporter metrics", "method": "GET",
+        "path": "http://127.0.0.1:9618/metrics", "live_ise_query": False,
+    },
+    "endpoint-summary": {
+        "api": "Data Connect + ERS + MnT", "method": "SELECT + GET",
+        "cache_policy": "exporter data first; live endpoint identity is never cached",
+    },
+    "troubleshoot-auth": {
+        "api": "Data Connect + ERS + MnT", "method": "SELECT + GET",
+        "bounded_default": {"seconds": 3600, "limit": 20},
+    },
+    "psn-summary": {
+        "api": "local exporter metrics + optional Data Connect", "method": "GET + SELECT",
+        "cache_policy": "cached snapshot first; bounded live fallback",
+    },
+    "nad-summary": {
+        "api": "local exporter metrics + optional ERS", "method": "GET",
+        "cache_policy": "cached snapshot first; bounded live fallback",
+    },
+    "pxgrid-status": {
+        "api": "local exporter metrics + OpenAPI deployment", "method": "GET",
+        "collector": "not present on the ISE 3.3 Patch 11 exporter architecture",
+    },
     "health": {
         "api": "ERS + MnT + optional Data Connect",
         "host_env": ["ISE_HOST", "ISE_MNT_HOST", "ISE_DATACONNECT_HOST"],
@@ -314,7 +344,10 @@ DATACONNECT_REPORTS = {
 
 DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {
     "dataconnect-schema", "endpoint-fields", "endpoints"}
-REST_OPTIONAL_COMMANDS = DATACONNECT_COMMANDS | {"health", "schema"}
+CACHED_EXPORTER_COMMANDS = {
+    "overview", "collector-status", "psn-summary", "nad-summary", "pxgrid-status"}
+REST_OPTIONAL_COMMANDS = DATACONNECT_COMMANDS | CACHED_EXPORTER_COMMANDS | {
+    "health", "schema"}
 
 ENDPOINT_CONTEXT_SOURCES = {
     "endpoint": {
@@ -469,6 +502,32 @@ def build_parser(*, require_command=False):
         sub.add_argument(
             "--allow-active-list-scan", action="store_true",
             help="allow MnT ActiveList fallback when direct endpoint resolution fails")
+
+    command("overview", "summarize the latest local exporter snapshot without querying ISE")
+    sub = command("collector-status", "show exporter dataset health, freshness, and age")
+    sub.add_argument("pattern", nargs="?", help="optional dataset-name wildcard")
+
+    sub = command("endpoint-summary", "build a bounded endpoint identity and current-session summary")
+    sub.add_argument("identifier")
+    active_scan(sub)
+
+    sub = command("troubleshoot-auth", "correlate endpoint, session, and recent authentication data")
+    sub.add_argument("identifier")
+    sub.add_argument("--seconds", type=int, default=3600)
+    sub.add_argument("--limit", type=int, default=20)
+    active_scan(sub)
+
+    sub = command("psn-summary", "summarize one PSN from cached exporter data")
+    sub.add_argument("psn")
+    sub.add_argument("--live", action="store_true", help="force one bounded live Data Connect refresh")
+    sub.add_argument("--limit", type=int, default=25)
+
+    sub = command("nad-summary", "summarize one NAD from cached exporter data")
+    sub.add_argument("nad")
+    sub.add_argument("--live", action="store_true", help="force a matching ERS inventory refresh")
+
+    sub = command("pxgrid-status", "show pxGrid deployment visibility and collector ownership")
+    sub.add_argument("--live", action="store_true", help="refresh deployment-node services from OpenAPI")
 
     command("health", "check PAN/ERS, MnT, and Data Connect reachability and authentication")
     command("nodes", "list deployment nodes")
@@ -1488,8 +1547,245 @@ def _dataconnect_schema(dataconnect, table=None):
         raise CLIError(f"Data Connect schema query failed: {error}") from error
 
 
-def _execute(args, client, cfg, dataconnect=None):
+def _metric_age(snapshot, timestamp):
+    try:
+        return max(0, round(snapshot.fetched_at - float(timestamp), 1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _sample_row(sample, *, section="metric", snapshot=None):
+    row = {
+        "section": section,
+        "metric": sample.metric,
+        "value": sample.value,
+        "source": "exporter_cache",
+    }
+    row.update(sample.labels)
+    if snapshot is not None:
+        row["snapshot_fetched_at"] = snapshot.fetched_at
+    return row
+
+
+def _collector_status(snapshot, pattern=None):
+    datasets = {}
+    for sample in snapshot.samples:
+        labels = sample.labels
+        dataset = labels.get("dataset") or labels.get("collector")
+        if not dataset:
+            continue
+        row = datasets.setdefault(dataset, {
+            "dataset": dataset,
+            "source": labels.get("source", ""),
+            "up": None,
+            "fresh": None,
+            "last_success_timestamp": None,
+            "age_seconds": None,
+            "consecutive_failures": 0,
+            "failure_reason": "",
+            "failure_detail": "",
+            "data_source": "exporter_cache",
+        })
+        if sample.metric == "ise_dataset_up":
+            row["up"] = bool(sample.value)
+            row["source"] = labels.get("source", row["source"])
+        elif sample.metric == "ise_dataset_fresh":
+            row["fresh"] = bool(sample.value)
+        elif sample.metric == "ise_dataset_last_success_timestamp":
+            row["last_success_timestamp"] = sample.value
+            row["age_seconds"] = _metric_age(snapshot, sample.value)
+        elif sample.metric == "ise_consecutive_failures":
+            row["consecutive_failures"] = int(sample.value)
+        elif sample.metric == "ise_dataset_last_failure_info" and sample.value:
+            row["failure_reason"] = labels.get("reason", "")
+        elif sample.metric == "ise_dataset_last_failure_detail_info" and sample.value:
+            row["failure_reason"] = labels.get("reason", row["failure_reason"])
+            row["failure_detail"] = labels.get("detail", "")
+    rows = list(datasets.values())
+    if pattern:
+        rows = [row for row in rows if fnmatch.fnmatch(
+            row["dataset"].casefold(), pattern.casefold())]
+    return sorted(rows, key=lambda row: row["dataset"].casefold())
+
+
+def _exporter_overview(snapshot):
+    wanted = {
+        "ise_up": "ise_available",
+        "ise_network_devices_total": "network_devices",
+        "ise_dataconnect_endpoints_total": "endpoints",
+        "ise_mnt_active_sessions_total": "active_sessions",
+        "ise_patch_level": "patch_level",
+        "ise_backup_age_hours": "backup_age_hours",
+    }
+    rows = []
+    for sample in snapshot.samples:
+        name = wanted.get(sample.metric)
+        if name is not None and not sample.labels:
+            rows.append({
+                "section": "overview", "name": name, "value": sample.value,
+                "source": "exporter_cache", "snapshot_fetched_at": snapshot.fetched_at,
+            })
+        elif sample.metric == "ise_exporter_build_info" and sample.value:
+            rows.append({
+                "section": "build", "name": "exporter", "value": sample.value,
+                "source": "exporter_cache", **sample.labels,
+            })
+    statuses = _collector_status(snapshot)
+    rows.extend((
+        {"section": "collectors", "name": "datasets", "value": len(statuses),
+         "source": "exporter_cache"},
+        {"section": "collectors", "name": "unhealthy",
+         "value": sum(row["up"] is False for row in statuses),
+         "source": "exporter_cache"},
+        {"section": "collectors", "name": "stale",
+         "value": sum(row["fresh"] is False for row in statuses),
+         "source": "exporter_cache"},
+    ))
+    return rows
+
+
+def _matching_cached_metrics(snapshot, value, label_names, *, limit=250):
+    wanted = value.rstrip(".").casefold()
+    rows = []
+    for sample in snapshot.samples:
+        matched = any(
+            sample.labels.get(name, "").rstrip(".").casefold() == wanted
+            for name in label_names)
+        if matched:
+            rows.append(_sample_row(sample, snapshot=snapshot))
+            if len(rows) >= limit:
+                break
+    return rows
+
+
+def _workflow_rows(section, value, source):
+    rows = _response_rows(value)
+    return [{"section": section, "source": source, **row} for row in rows]
+
+
+def _endpoint_summary(client, dataconnect, identifier, *, allow_active_scan=False):
+    resolved = _resolve_endpoint(
+        client, identifier, dataconnect=dataconnect,
+        allow_active_scan=allow_active_scan)
+    summary = {key: value for key, value in resolved.items() if key != "sessions"}
+    summary.update({
+        "section": "resolution",
+        "source": f"live_{resolved.get('source', 'ise')}",
+    })
+    rows = [summary]
+    sessions = resolved.get("sessions") or []
+    mac = resolved.get("mac")
+    if not sessions and mac:
+        sessions = _mnt_sessions(
+            client, f"/Session/MACAddress/{mac}", "cli_endpoint_summary_session")
+    rows.extend(_workflow_rows("session", sessions, "live_mnt"))
+    return rows
+
+
+def _troubleshoot_auth(client, dataconnect, identifier, seconds, limit,
+                       *, allow_active_scan=False):
+    if seconds < 1 or seconds > AUTH_STATUS_MAX_SECONDS:
+        raise CLIError(f"--seconds must be between 1 and {AUTH_STATUS_MAX_SECONDS}")
+    if limit < 1 or limit > AUTH_STATUS_SAFE_LIMIT:
+        raise CLIError(f"--limit must be between 1 and {AUTH_STATUS_SAFE_LIMIT}")
+    rows = _endpoint_summary(
+        client, dataconnect, identifier, allow_active_scan=allow_active_scan)
+    resolution = rows[0]
+    mac = resolution.get("mac")
+    if not mac:
+        raise CLIError(f"could not resolve a MAC address for {identifier!r}")
+    auth = _mnt_sessions(
+        client, f"/AuthStatus/MACAddress/{mac}/{seconds}/{limit}/All",
+        "cli_troubleshoot_auth")
+    rows.extend(_workflow_rows("authentication", auth, "live_mnt"))
+    return rows
+
+
+def _pxgrid_status(snapshot, client=None, *, live=False):
+    rows = [{
+        "section": "collector", "component": "pxgrid",
+        "status": "not_collected", "source": "architecture",
+        "detail": (
+            "pxGrid collectors were removed for the ISE 3.3 Patch 11 architecture; "
+            "Data Connect owns reporting and MnT owns bounded current-session diagnostics"),
+    }]
+    cached = [
+        sample for sample in snapshot.samples
+        if ("pxgrid" in sample.metric.casefold()
+            or any("pxgrid" in value.casefold() for value in sample.labels.values()))
+    ]
+    rows.extend(_sample_row(sample, section="deployment_cache", snapshot=snapshot)
+                for sample in cached[:100] if sample.value)
+    if live:
+        if client is None:
+            raise CLIError("--live pxGrid visibility requires configured REST credentials")
+        nodes = validated_node_rows(
+            client.get_pan_api("/deployment/node", api_name="cli_pxgrid_nodes"))
+        if nodes is None:
+            raise CLIError("ISE returned an invalid deployment-node response")
+        for node in nodes:
+            services = _field(node, "services", "service")
+            if "pxgrid" in services.casefold():
+                rows.append({
+                    "section": "deployment", "component": "pxgrid",
+                    "status": "assigned", "node": _field(node, "hostname", "name"),
+                    "services": services, "source": "live_openapi",
+                })
+    return rows
+
+
+def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
     command = args.command
+    if command in CACHED_EXPORTER_COMMANDS and exporter_snapshot is None:
+        raise CLIError("local exporter metrics are unavailable")
+    if command == "overview":
+        return _exporter_overview(exporter_snapshot)
+    if command == "collector-status":
+        return _collector_status(exporter_snapshot, args.pattern)
+    if command == "endpoint-summary":
+        if client is None:
+            raise CLIError("endpoint summary requires configured ERS/MnT credentials")
+        return _endpoint_summary(
+            client, dataconnect, args.identifier,
+            allow_active_scan=args.allow_active_list_scan)
+    if command == "troubleshoot-auth":
+        if client is None:
+            raise CLIError("authentication troubleshooting requires configured ERS/MnT credentials")
+        return _troubleshoot_auth(
+            client, dataconnect, args.identifier, args.seconds, args.limit,
+            allow_active_scan=args.allow_active_list_scan)
+    if command == "psn-summary":
+        rows = _matching_cached_metrics(
+            exporter_snapshot, args.psn, ("node", "psn", "ise_node", "hostname"))
+        if args.live or not rows:
+            report_args = argparse.Namespace(
+                command="psn-metrics", limit=args.limit, psn=args.psn,
+                conditions=False)
+            rows.extend(_workflow_rows(
+                "live_metric", _dataconnect_report(
+                    report_args, client, dataconnect, cfg), "live_dataconnect"))
+        if not rows:
+            raise CLIError(
+                f"no cached exporter metrics matched PSN {args.psn!r}; use --live to query Data Connect")
+        return rows
+    if command == "nad-summary":
+        rows = _matching_cached_metrics(
+            exporter_snapshot, args.nad,
+            ("nad", "device", "device_name", "network_device", "network_device_name"))
+        if args.live or not rows:
+            if client is None:
+                raise CLIError(
+                    "no matching NAD cache exists and live fallback requires ERS credentials")
+            inventory = _ers_rows(
+                client, ERS_INVENTORIES["nads"], limit=10, all_rows=False,
+                filters=[f"name.EQ.{args.nad}"])
+            rows.extend(_workflow_rows("inventory", inventory, "live_ers"))
+        if not rows:
+            raise CLIError(
+                f"no cached exporter metrics matched NAD {args.nad!r}; use --live to query ERS")
+        return rows
+    if command == "pxgrid-status":
+        return _pxgrid_status(exporter_snapshot, client, live=args.live)
     if command == "endpoint-fields":
         return _endpoint_fields(dataconnect, args.pattern)
     if command == "endpoints":
@@ -2389,7 +2685,8 @@ class ISEShell(cmd.Cmd):
         )
 
 
-def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdout=None):
+def main(argv=None, *, client=None, cfg=None, dataconnect=None, exporter_snapshot=None,
+         stdin=None, stdout=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.complete is not None:
@@ -2412,6 +2709,11 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdo
         finally:
             shell.close()
     try:
+        if args.command in CACHED_EXPORTER_COMMANDS and exporter_snapshot is None:
+            try:
+                exporter_snapshot = load_exporter_snapshot()
+            except ExporterDataError as error:
+                raise CLIError(str(error)) from error
         if client is None and args.command != "schema":
             dataconnect_only = args.command in REST_OPTIONAL_COMMANDS
             if cfg is None:
@@ -2423,7 +2725,8 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdo
         if (dataconnect is None and cfg is not None
                 and getattr(cfg, "dataconnect_ready", False)):
             dataconnect = DataConnectClient(cfg)
-        result = _execute(args, client, cfg, dataconnect)
+        result = _execute(
+            args, client, cfg, dataconnect, exporter_snapshot=exporter_snapshot)
         render(result, args.output, args.select, stream=stdout)
         return 0
     except CLIError as error:

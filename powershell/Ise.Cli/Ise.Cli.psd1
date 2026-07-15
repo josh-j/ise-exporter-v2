@@ -11,6 +11,13 @@
     FunctionsToExport = @(
         'Invoke-IseCommand',
         'Get-IseCliVersion',
+        'Get-IseOverview',
+        'Get-IseCollectorStatus',
+        'Get-IseEndpointSummary',
+        'Debug-IseAuthentication',
+        'Debug-IsePsn',
+        'Get-IseNadSummary',
+        'Get-IsePxGridStatus',
         'Test-IseHealth',
         'Get-IseNode',
         'Find-IseEndpoint',

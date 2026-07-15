@@ -19,6 +19,9 @@ def test_powershell_cli_is_a_pwsh_module_over_private_bounded_backend():
 
     assert "PowerShellVersion = '7.2'" in manifest
     for command in (
+        "Get-IseOverview", "Get-IseCollectorStatus", "Get-IseEndpointSummary",
+        "Debug-IseAuthentication", "Debug-IsePsn", "Get-IseNadSummary",
+        "Get-IsePxGridStatus",
         "Find-IseEndpoint", "Get-IseEndpoint", "Get-IseSecureClient",
         "Get-IseRadiusAuthentication", "Get-IseTacacsActivity",
         "Get-IseSchema", "Invoke-IseReadOnlyRequest",
@@ -50,6 +53,9 @@ def test_powershell_cli_profile_has_operator_focused_ux():
     profile = PROFILE.read_text()
     assert "Import-Module Ise.Cli" in profile
     assert "Show-IseCliHelp" in profile
+    assert "Get-IseOverview" in profile
+    assert "Debug-IseAuthentication" in profile
+    assert "Get-IseCollectorStatus" in profile
     assert "Find-Endpoint" in profile
     assert "MenuComplete" in profile
     assert "HistorySearchBackward" in profile
@@ -62,8 +68,8 @@ def test_powershell_module_imports_and_exports_native_commands():
         $ErrorActionPreference = 'Stop'
         Import-Module '{MODULE}' -Force
         $commands = @(Get-Command -Module Ise.Cli | Select-Object -ExpandProperty Name)
-        if ($commands.Count -lt 30) {{ throw "only $($commands.Count) commands exported" }}
-        foreach ($required in @('Find-IseEndpoint','Find-Endpoint','Get-IseEndpoint','Get-IseCliVersion')) {{
+        if ($commands.Count -lt 44) {{ throw "only $($commands.Count) commands exported" }}
+        foreach ($required in @('Find-IseEndpoint','Find-Endpoint','Get-IseEndpoint','Get-IseCliVersion','Get-IseOverview','Debug-IseAuthentication','Debug-IsePsn','Get-IseNadSummary','Get-IsePxGridStatus')) {{
             if ($required -notin $commands) {{ throw "missing $required" }}
         }}
     """

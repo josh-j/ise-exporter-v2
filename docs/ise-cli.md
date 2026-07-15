@@ -108,6 +108,13 @@ silently choosing a different endpoint; rerun with the intended MAC or ERS ID.
 
 | Command | Purpose |
 |---|---|
+| `overview` | Read a cached local exporter/deployment summary without querying ISE |
+| `collector-status [PATTERN]` | Show cached dataset availability, freshness, age, and failures |
+| `endpoint-summary IDENTIFIER` | Build a bounded endpoint and current-session summary |
+| `troubleshoot-auth IDENTIFIER` | Correlate endpoint resolution, current session, and recent MnT authentication |
+| `psn-summary PSN [--live]` | Prefer cached PSN metrics with an optional bounded Data Connect refresh |
+| `nad-summary NAD [--live]` | Prefer cached NAD metrics with an optional ERS refresh |
+| `pxgrid-status [--live]` | Explain pxGrid ownership and optionally inspect deployment service assignment |
 | `health` | Check reachability and authentication independently for PAN/ERS, MnT, and configured Data Connect |
 | `nodes` | List deployment nodes from OpenAPI |
 | `nads` | List Network Access Devices from ERS |

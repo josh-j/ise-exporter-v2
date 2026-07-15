@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pytest
 
 from ise_exporter import cli
+from ise_exporter.exporter_data import ExporterSample, ExporterSnapshot
 
 
 def test_cli_version_reports_revision_and_exact_ise_target(monkeypatch, capsys):
@@ -149,6 +150,92 @@ class FakeDataConnect:
 
     def close(self):
         self.closed = True
+
+
+def _exporter_snapshot():
+    return ExporterSnapshot(
+        "http://127.0.0.1:9618/metrics", 2000.0, (
+            ExporterSample("ise_up", {}, 1),
+            ExporterSample("ise_network_devices_total", {}, 17),
+            ExporterSample("ise_dataset_up", {"dataset": "dataconnect_radius", "source": "dataconnect"}, 1),
+            ExporterSample("ise_dataset_fresh", {"dataset": "dataconnect_radius", "source": "dataconnect"}, 1),
+            ExporterSample("ise_dataset_last_success_timestamp", {"dataset": "dataconnect_radius", "source": "dataconnect"}, 1970),
+            ExporterSample("ise_consecutive_failures", {"collector": "dataconnect_radius"}, 0),
+            ExporterSample("ise_dataconnect_psn_load_percent", {"node": "ise01", "stat": "avg"}, 42),
+            ExporterSample("ise_nad_authentication_events", {"nad": "switch01", "status": "passed"}, 81),
+            ExporterSample("ise_node_service_enabled", {"node": "ise01", "service": "pxGrid"}, 1),
+        ))
+
+
+def test_overview_and_collector_status_reuse_exporter_snapshot(capsys):
+    snapshot = _exporter_snapshot()
+    assert cli.main(["overview", "-o", "json"], exporter_snapshot=snapshot) == 0
+    overview = json.loads(capsys.readouterr().out)
+    assert {row["name"]: row["value"] for row in overview if row["section"] == "overview"} == {
+        "ise_available": 1.0, "network_devices": 17.0}
+
+    assert cli.main([
+        "collector-status", "*radius*", "-o", "json"
+    ], exporter_snapshot=snapshot) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status == [{
+        "age_seconds": 30.0, "consecutive_failures": 0,
+        "data_source": "exporter_cache", "dataset": "dataconnect_radius",
+        "failure_detail": "", "failure_reason": "", "fresh": True,
+        "last_success_timestamp": 1970.0, "source": "dataconnect", "up": True,
+    }]
+
+
+def test_psn_and_nad_summaries_use_cached_metrics_without_live_calls(capsys):
+    snapshot = _exporter_snapshot()
+    assert cli.main(["psn-summary", "ise01", "-o", "json"],
+                    exporter_snapshot=snapshot) == 0
+    assert json.loads(capsys.readouterr().out)[0]["metric"] == \
+        "ise_dataconnect_psn_load_percent"
+    assert cli.main(["nad-summary", "switch01", "-o", "json"],
+                    exporter_snapshot=snapshot) == 0
+    assert json.loads(capsys.readouterr().out)[0]["value"] == 81.0
+
+
+def test_endpoint_and_auth_workflows_are_bounded_and_source_labeled(capsys):
+    client = FakeClient()
+    assert cli.main([
+        "endpoint-summary", "AA:BB:CC:DD:EE:FF", "-o", "json"
+    ], client=client) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert [row["section"] for row in rows] == ["resolution", "session"]
+    assert rows[0]["source"] == "live_ers"
+
+    assert cli.main([
+        "troubleshoot-auth", "AA:BB:CC:DD:EE:FF", "--limit", "5", "-o", "json"
+    ], client=client) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[-1]["section"] == "authentication"
+    assert rows[-1]["source"] == "live_mnt"
+
+
+def test_pxgrid_status_is_explicit_about_removed_collector(capsys):
+    assert cli.main(["pxgrid-status", "-o", "json"],
+                    exporter_snapshot=_exporter_snapshot()) == 0
+    rows = json.loads(capsys.readouterr().out)
+    row = rows[0]
+    assert row["status"] == "not_collected"
+    assert row["source"] == "architecture"
+    assert rows[1]["metric"] == "ise_node_service_enabled"
+    assert rows[1]["service"] == "pxGrid"
+
+
+def test_nad_summary_falls_back_to_one_live_ers_query_when_cache_is_empty(capsys):
+    empty = ExporterSnapshot("http://127.0.0.1:9618/metrics", 2000, ())
+    client = FakeClient()
+    assert cli.main(["nad-summary", "switch-1", "-o", "json"],
+                    client=client, exporter_snapshot=empty) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows == [{
+        "id": "nad-1", "name": "switch-1", "section": "inventory",
+        "source": "live_ers"}]
+    assert sum(call[0:2] == ("ers", "/config/networkdevice")
+               for call in client.calls) == 1
 
 
 class CompletionDataConnect(FakeDataConnect):

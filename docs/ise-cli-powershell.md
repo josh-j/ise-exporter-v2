@@ -26,7 +26,8 @@ ISE PS /current/path> Find-Endpoint 'LAB-*'  # concise alias for Find-IseEndpoin
 
 The launcher uses its own operator profile without changing the normal PowerShell
 profile. It provides an `ISE PS` prompt, menu completion on Tab, prefix-based
-history search on the arrow keys, and `ise-help` for a compact command guide.
+history search on the arrow keys, and categorized `ise-help` topics (`overview`,
+`troubleshooting`, `endpoints`, `reporting`, `configuration`, and `advanced`).
 
 From an existing `pwsh` session:
 
@@ -84,6 +85,13 @@ ActiveList, and the hard 5,000-row Data Connect ceiling.
 
 | PowerShell command | ISE operation |
 |---|---|
+| `Get-IseOverview` | Cached local exporter/deployment summary without another ISE query |
+| `Get-IseCollectorStatus` | Cached dataset availability, freshness, age, and last failure |
+| `Get-IseEndpointSummary` | Bounded live endpoint identity and current-session workflow |
+| `Debug-IseAuthentication` | Resolve an endpoint and correlate its bounded MnT authentication history |
+| `Debug-IsePsn` | Cached PSN telemetry with an explicit `-Live` Data Connect refresh |
+| `Get-IseNadSummary` | Cached NAD activity/health with an explicit `-Live` ERS refresh |
+| `Get-IsePxGridStatus` | pxGrid collector ownership and optional live deployment-service visibility |
 | `Test-IseHealth` | PAN/ERS, MnT, and Data Connect health |
 | `Get-IseNode` | Deployment nodes |
 | `Find-IseEndpoint` | Endpoint inventory and context wildcard search |
@@ -118,6 +126,27 @@ Get-IseCertificate -Node laba-ise-001
 Get-IsePostureAssessment -Conditions -Identifier AA:BB:CC:DD:EE:FF
 Invoke-IseReadOnlyRequest -Family ers -Path /config/identitygroup -Parameter @{size=25}
 ```
+
+## Cached data and live fallbacks
+
+Overview, collector, NAD, and PSN workflows read the local exporter's Prometheus
+snapshot first. The snapshot endpoint is fixed to a numeric loopback address,
+bounded to 16 MiB and 100,000 samples, and read with a two-second timeout. Every
+returned row identifies `exporter_cache`, `live_ers`, `live_mnt`,
+`live_dataconnect`, or `live_openapi` as its source. A missing NAD or PSN cache
+automatically falls back to one bounded live query; `-Live` forces that refresh
+even when matching cached metrics exist.
+
+Endpoint identities are deliberately absent from exporter metrics. Consequently,
+`Get-IseEndpointSummary` and `Debug-IseAuthentication` use bounded live ERS/MnT
+queries while retaining the same authentication guard and Data Connect pacing as
+the exporter. This preserves the exporter's identity-free metrics boundary rather
+than creating an unreviewed endpoint cache.
+
+pxGrid collectors are not part of the supported ISE 3.3 Patch 11 exporter
+architecture. `Get-IsePxGridStatus` states that ownership directly; `-Live` checks
+deployment-node service assignment through OpenAPI but does not claim pxGrid
+connectivity or fabricate a collector health signal.
 
 ## Completion
 

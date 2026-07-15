@@ -1,6 +1,8 @@
 Set-StrictMode -Version Latest
 
 $script:IseCommands = @(
+    'overview', 'collector-status', 'endpoint-summary', 'troubleshoot-auth',
+    'psn-summary', 'nad-summary', 'pxgrid-status',
     'health', 'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
     'sessions', 'session', 'auth-status', 'secure-client', 'nads', 'profiles',
     'tacacs-users', 'identity-groups', 'network-device-groups', 'licenses',
@@ -113,6 +115,8 @@ function Invoke-IseBackend {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ValidateSet(
+            'overview', 'collector-status', 'endpoint-summary', 'troubleshoot-auth',
+            'psn-summary', 'nad-summary', 'pxgrid-status',
             'health', 'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
             'sessions', 'session', 'auth-status', 'secure-client', 'nads', 'profiles',
             'tacacs-users', 'identity-groups', 'network-device-groups', 'licenses',
@@ -140,6 +144,8 @@ function Invoke-IseCommand {
     param(
         [Parameter(Mandatory, Position = 0)]
         [ValidateSet(
+            'overview', 'collector-status', 'endpoint-summary', 'troubleshoot-auth',
+            'psn-summary', 'nad-summary', 'pxgrid-status',
             'health', 'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
             'sessions', 'session', 'auth-status', 'secure-client', 'nads', 'profiles',
             'tacacs-users', 'identity-groups', 'network-device-groups', 'licenses',
@@ -197,6 +203,52 @@ function Invoke-IseInventory {
 
 function Test-IseHealth { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command health -EnvironmentFile $EnvironmentFile }
 function Get-IseNode { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command nodes -EnvironmentFile $EnvironmentFile }
+function Get-IseOverview { [CmdletBinding()] param([string]$EnvironmentFile) Invoke-IseBackend -Command overview -EnvironmentFile $EnvironmentFile }
+function Get-IseCollectorStatus {
+    [CmdletBinding()]
+    param([Parameter(Position=0)][string]$Pattern,[string]$EnvironmentFile)
+    $arguments = if ($Pattern) { @($Pattern) } else { @() }
+    Invoke-IseBackend -Command collector-status -ArgumentList $arguments -EnvironmentFile $EnvironmentFile
+}
+function Get-IseEndpointSummary {
+    [CmdletBinding()]
+    param([Parameter(Mandatory,Position=0,ValueFromPipeline)][string]$Identifier,[switch]$AllowActiveListScan,[string]$EnvironmentFile)
+    process {
+        $a=[System.Collections.Generic.List[string]]::new(); [void]$a.Add($Identifier)
+        Add-IseSwitchArgument -Arguments $a -Value:$AllowActiveListScan -Name '--allow-active-list-scan'
+        Invoke-IseBackend -Command endpoint-summary -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    }
+}
+function Debug-IseAuthentication {
+    [CmdletBinding()]
+    param([Parameter(Mandatory,Position=0,ValueFromPipeline)][string]$Identifier,[ValidateRange(1,86400)][int]$Seconds=3600,[ValidateRange(1,100)][int]$Limit=20,[switch]$AllowActiveListScan,[string]$EnvironmentFile)
+    process {
+        $a=[System.Collections.Generic.List[string]]::new(); [void]$a.Add($Identifier)
+        [void]$a.Add('--seconds'); [void]$a.Add([string]$Seconds); [void]$a.Add('--limit'); [void]$a.Add([string]$Limit)
+        Add-IseSwitchArgument -Arguments $a -Value:$AllowActiveListScan -Name '--allow-active-list-scan'
+        Invoke-IseBackend -Command troubleshoot-auth -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+    }
+}
+function Debug-IsePsn {
+    [CmdletBinding()]
+    param([Parameter(Mandatory,Position=0)][string]$Psn,[ValidateRange(1,5000)][int]$Limit=25,[switch]$Live,[string]$EnvironmentFile)
+    $a=[System.Collections.Generic.List[string]]::new(); [void]$a.Add($Psn); [void]$a.Add('--limit'); [void]$a.Add([string]$Limit)
+    Add-IseSwitchArgument -Arguments $a -Value:$Live -Name '--live'
+    Invoke-IseBackend -Command psn-summary -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+}
+function Get-IseNadSummary {
+    [CmdletBinding()]
+    param([Parameter(Mandatory,Position=0)][string]$Nad,[switch]$Live,[string]$EnvironmentFile)
+    $a=[System.Collections.Generic.List[string]]::new(); [void]$a.Add($Nad)
+    Add-IseSwitchArgument -Arguments $a -Value:$Live -Name '--live'
+    Invoke-IseBackend -Command nad-summary -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+}
+function Get-IsePxGridStatus {
+    [CmdletBinding()]
+    param([switch]$Live,[string]$EnvironmentFile)
+    $a=[System.Collections.Generic.List[string]]::new(); Add-IseSwitchArgument -Arguments $a -Value:$Live -Name '--live'
+    Invoke-IseBackend -Command pxgrid-status -ArgumentList $a.ToArray() -EnvironmentFile $EnvironmentFile
+}
 
 function Find-IseEndpoint {
     [CmdletBinding()]
@@ -541,7 +593,9 @@ Register-ArgumentCompleter -Native -CommandName ise-cli -ScriptBlock $nativeComp
 Set-Alias -Name Find-Endpoint -Value Find-IseEndpoint
 
 Export-ModuleMember -Function @(
-    'Invoke-IseCommand','Get-IseCliVersion','Test-IseHealth','Get-IseNode','Find-IseEndpoint',
+    'Invoke-IseCommand','Get-IseCliVersion','Get-IseOverview','Get-IseCollectorStatus',
+    'Get-IseEndpointSummary','Debug-IseAuthentication','Debug-IsePsn','Get-IseNadSummary',
+    'Get-IsePxGridStatus','Test-IseHealth','Get-IseNode','Find-IseEndpoint',
     'Get-IseEndpointField','Get-IseEndpoint','Resolve-IseEndpoint','Get-IseSession',
     'Get-IseActiveSession','Get-IseAuthenticationStatus','Get-IseSecureClient',
     'Get-IseNetworkDevice','Get-IseProfilerProfile','Get-IseTacacsUser',
