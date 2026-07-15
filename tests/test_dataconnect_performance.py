@@ -66,6 +66,6 @@ def test_collects_latest_node_samples_and_bounded_diagnostics():
         ("aaa",): 4, ("system",): 4}
     assert _rows(metrics.ise_dataconnect_diagnostic_topk_truncated, "source") == {
         ("aaa",): 1, ("system",): 1}
-    assert all("NUMTODSINTERVAL(1, 'HOUR')" in sql for sql in client.sql)
+    assert all("NUMTODSINTERVAL(6, 'HOUR')" in sql for sql in client.sql)
     assert all("ROW_NUMBER()" in sql for sql in client.sql[:2])
     assert all("SUM(events) OVER () AS total_events" in sql for sql in client.sql[2:])

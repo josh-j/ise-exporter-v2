@@ -141,13 +141,13 @@ def test_env_example_is_parseable_ise33_100k_production_profile():
     assert values["ISE_DATACONNECT_MAX_DUTY_CYCLE_PERCENT"] == "0.1"
     assert values["ISE_DATACONNECT_EVENT_WINDOW_HOURS"] == "6"
     assert values["ISE_DATACONNECT_RADIUS_INTERVAL"] == "86400"
-    assert values["ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL"] == "1800"
-    assert values["ISE_DATACONNECT_PERFORMANCE_INTERVAL"] == "3600"
-    assert values["ISE_DATACONNECT_POSTURE_INTERVAL"] == "21600"
+    assert values["ISE_DATACONNECT_RADIUS_ACTIVE_INTERVAL"] == "7200"
+    assert values["ISE_DATACONNECT_PERFORMANCE_INTERVAL"] == "21600"
+    assert values["ISE_DATACONNECT_POSTURE_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_ENDPOINTS_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_FRESHNESS_INTERVAL"] == "86400"
-    assert values["ISE_DATACONNECT_NAD_HEALTH_INTERVAL"] == "21600"
-    assert values["ISE_DATACONNECT_TACACS_INTERVAL"] == "21600"
+    assert values["ISE_DATACONNECT_NAD_HEALTH_INTERVAL"] == "86400"
+    assert values["ISE_DATACONNECT_TACACS_INTERVAL"] == "86400"
     assert values["ISE_DATACONNECT_SERVICE"] == "cpm10"
     assert values["ISE_DATACONNECT_SSL_VERIFY"] == "true"
     assert values["ISE_REST_SSL_VERIFY"] == "true"
@@ -220,13 +220,13 @@ def test_dataconnect_production_guardrails_clamp_unsafe_overrides(monkeypatch):
     assert cfg.dataconnect_max_duty_cycle_percent == 0.1
     assert cfg.dataconnect_event_window_hours == 6
     assert cfg.dataconnect_radius_interval == 86400
-    assert cfg.dataconnect_radius_active_interval == 1800
-    assert cfg.dataconnect_performance_interval == 3600
-    assert cfg.dataconnect_posture_interval == 21600
+    assert cfg.dataconnect_radius_active_interval == 7200
+    assert cfg.dataconnect_performance_interval == 21600
+    assert cfg.dataconnect_posture_interval == 86400
     assert cfg.dataconnect_endpoints_interval == 86400
     assert cfg.dataconnect_freshness_interval == 86400
-    assert cfg.dataconnect_nad_health_interval == 21600
-    assert cfg.dataconnect_tacacs_interval == 21600
+    assert cfg.dataconnect_nad_health_interval == 86400
+    assert cfg.dataconnect_tacacs_interval == 86400
     assert cfg.mnt_active_posture_max_active_list_sessions == 250000
     assert cfg.tacacs_internal_user_max == 1000
     assert cfg.tacacs_internal_user_detail_max_requests == 250

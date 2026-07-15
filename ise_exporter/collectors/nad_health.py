@@ -51,7 +51,7 @@ def collect(devices, dataconnect, cfg):
 
         recent = recent_event_predicate(
             "timestamp", event_window_hours(
-                cfg, getattr(cfg, "dataconnect_nad_health_interval", 21600)))
+                cfg, getattr(cfg, "dataconnect_nad_health_interval", 86400)))
         activity = dataconnect.query(f"""
             SELECT NVL(device_name, 'unknown') AS nad,
                    SUM(NVL(passed_count, 0)) AS passed_events,

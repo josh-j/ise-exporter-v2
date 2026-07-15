@@ -97,7 +97,7 @@ def collect(dataconnect, cfg):
             dataconnect,
             _queries(
                 group_limit(cfg), event_window_hours(
-                    cfg, getattr(cfg, "dataconnect_performance_interval", 3600))),
+                    cfg, getattr(cfg, "dataconnect_performance_interval", 21600))),
         )
         kpis = [{
             "node": label(row.get("ise_node")),

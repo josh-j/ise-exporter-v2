@@ -14,7 +14,7 @@ from ise_exporter.collectors.dataconnect_common import event_window_hours, group
 from ise_exporter.config import Config
 
 
-def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
+def test_large_mnt_default_profile_stays_below_two_due_statements_per_hour():
     cfg = Config()
     statements_per_run = {
         "radius": len(dataconnect_radius._reporting_queries(cfg.dataconnect_max_groups)),
@@ -52,8 +52,8 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(7.291666666666667)
-    assert statements_per_hour < 7.3
+    assert statements_per_hour == pytest.approx(1.7083333333333333)
+    assert statements_per_hour < 2
 
 
 def test_freshness_uses_one_statement_for_every_timestamped_view():

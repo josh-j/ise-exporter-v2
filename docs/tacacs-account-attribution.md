@@ -66,10 +66,10 @@ ISE_DATACONNECT_SSL_VERIFY=true
 ISE_DATACONNECT_QUERY_TIMEOUT=15
 ISE_DATACONNECT_MAX_GROUPS=1000
 ISE_DATACONNECT_EVENT_WINDOW_HOURS=6
-ISE_DATACONNECT_TACACS_INTERVAL=21600
+ISE_DATACONNECT_TACACS_INTERVAL=86400
 ```
 
-With the defaults, TACACS runs every six hours and scans six hours rather than
+With the defaults, TACACS runs daily and scans six hours rather than
 regrouping the complete two-day view. Lowering the event-window ceiling below the
 collector cadence deliberately changes this to sampling.
 

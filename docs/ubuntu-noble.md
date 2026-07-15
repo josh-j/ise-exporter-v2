@@ -128,7 +128,7 @@ is enforced
 across the complete execute/fetch attempt, not independently for every Oracle
 round trip. This applies even when the configured Data Connect host is a secondary
 MnT because an exposed reporting view may still consume cluster-wide resources.
-The documented 30-minute through daily domain cadences are also minimum intervals;
+The documented two-hour through daily domain cadences are also minimum intervals;
 the 14-view source-freshness diagnostic is intentionally one daily statement and
 scans no more than the configured at-most-six-hour event window on each source view.
 

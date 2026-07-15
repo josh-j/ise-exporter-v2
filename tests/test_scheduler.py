@@ -77,7 +77,7 @@ def test_scheduler_publishes_cadence_aligned_scan_windows():
         for sample in metrics.ise_dataconnect_scan_window_hours.collect()[0].samples
     }
     assert samples["dataconnect_radius"] == 6
-    assert samples["dataconnect_performance"] == 1
+    assert samples["dataconnect_performance"] == 6
     assert samples["dataconnect_posture"] == 6
     assert samples["dataconnect_endpoints"] == 6
     assert samples["dataconnect_nad_health"] == 6
@@ -121,15 +121,15 @@ def test_unchecked_config_cannot_relax_production_scheduler_cadences():
         "backup": 3600,
         "patches": 3600,
         "dataconnect_radius": 86400,
-        "dataconnect_radius_active": 1800,
-        "dataconnect_performance": 3600,
-        "dataconnect_posture": 21600,
+        "dataconnect_radius_active": 7200,
+        "dataconnect_performance": 21600,
+        "dataconnect_posture": 86400,
         "dataconnect_endpoints": 86400,
         "dataconnect_freshness": 86400,
-        "dataconnect_nad_health": 21600,
+        "dataconnect_nad_health": 86400,
         "mnt_active_posture": 900,
         "tacacs_config": 3600,
-        "tacacs_activity": 21600,
+        "tacacs_activity": 86400,
     }
     assert metrics.ise_dataconnect_scan_window_hours.labels(
         dataset="dataconnect_radius")._value.get() == 1
@@ -576,7 +576,7 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     assert metrics.ise_dataset_interval_seconds.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 86400
     assert metrics.ise_dataset_interval_seconds.labels(
-        dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 1800
+        dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 7200
     assert metrics.ise_dataset_enabled.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     assert {source for source, _interval, _enabled in scheduler.dataset_plan.values()} == {

@@ -66,9 +66,8 @@ characters in passwords are preserved. Inline comments on integer values are
 not supported. The sample is production-oriented for up to 100,000 endpoints:
 database-side aggregation, collapsed summary/top-group scans, serialized five-second
 query pacing, cadence-aligned event scans capped at six hours, daily RADIUS reporting,
-30-minute bounded active-session
-reconstruction, hourly performance reporting,
-six-hour posture/TACACS/NAD reporting, daily source-freshness checks, and daily
+two-hour bounded active-session reconstruction, six-hour performance reporting,
+daily posture/TACACS/NAD reporting, daily source-freshness checks, and daily
 inventory state. A private
 SQLite cache survives restarts. MnT fetches at most 250 new or rotating endpoint
 details per 15-minute cycle, while cached active details retain dashboard coverage.
@@ -81,7 +80,7 @@ counts from that aggregate view rather than grouping raw events again. RADIUS
 historical gauges come from one exact
 configured-window snapshot per day. The
 separate active-session dataset scans only the configured stale window every
-30 minutes; no locally merged historical event windows can grow without bound.
+two hours; no locally merged historical event windows can grow without bound.
 TACACS applies a six-hour bound inside Cisco's two-day views, and endpoint totals,
 field coverage, and posture applicability share one inventory scan. CLI reports,
 context searches, and live completion obey the same event-window ceiling.

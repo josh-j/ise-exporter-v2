@@ -297,7 +297,7 @@ def _activity_queries(limit, cutoff_epoch=None, internal_user_count=0):
 def _collect_dataconnect(dataconnect, cfg):
     limit = group_limit(cfg)
     window = event_window_hours(
-        cfg, getattr(cfg, "dataconnect_tacacs_interval", 21600))
+        cfg, getattr(cfg, "dataconnect_tacacs_interval", 86400))
     cutoff = max(0, int(time.time()) - window * 3600)
     internal_accounts = _internal_accounts(cfg)
     parameters = {"minimum_epoch": cutoff}

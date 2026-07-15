@@ -92,7 +92,7 @@ and never inherits `ISE_MNT_HOST`; this prevents an XML API routing choice from
 silently becoming the Oracle target. Production defaults for up to 100,000
 endpoints use one sequential connection, five-second statement pacing, a 0.1%
 adaptive query-duty-cycle ceiling, 15-second total Oracle-attempt timeouts, and independent
-30-minute to 24-hour domain cadences. The client enforces five seconds, 0.1%,
+two-hour to 24-hour domain cadences. The client enforces five seconds, 0.1%,
 and a 15-second Oracle-call timeout as hard safety limits and refuses to
 materialize more than 5,000 rows from a standalone statement or complete domain
 batch. Results are streamed in 100-row fetches, with 1 MiB per-field and 64 MiB
@@ -122,19 +122,19 @@ summary view, not an additional raw authentication scan.
 The three large daily RADIUS sources each use one `GROUPING SETS` statement for
 their paired breakdowns (authentication/latency, volume/failure context, and
 accounting/session duration), rather than rescanning the same six-hour window.
-The steady-state scheduled workload is about 7.3 statements per hour after startup.
+The nominal due workload is below two statements per hour after startup.
 Daily RADIUS reporting samples six hours, while a disjoint active-session query
-scans at most its hard 60-minute stale window every 30 minutes. No historical windows
+scans at most its hard 60-minute stale window every two hours. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
 three-day reporting window.
-Other scheduled event scans match their cadence: one hour for PSN performance
-and diagnostics, and six hours for posture, NAD health, and endpoint profiling.
+Other scheduled event scans match their cadence: six hours for PSN performance
+and diagnostics, and daily for posture, NAD health, and endpoint profiling.
 `ISE_DATACONNECT_EVENT_WINDOW_HOURS` is an absolute six-hour-or-lower ceiling;
 daily domains intentionally sample rather than aggregating a full day.
 The posture snapshot materializes its bounded latest-assessment set once and uses
 one `GROUPING SETS` pass for status/version and failure breakdowns plus eligible
 endpoint coverage; it does not rebuild the same assessment window per dashboard.
-TACACS also runs every six hours and applies an `EPOCH_TIME` lower bound to
+TACACS also runs daily and applies an `EPOCH_TIME` lower bound to
 Cisco's two-day views before grouping, so the view's retention does not become
 the exporter's scan size. The 14-view source-freshness diagnostic runs daily as
 one bounded `UNION ALL` statement, applying the same at-most-six-hour timestamp or
@@ -227,7 +227,7 @@ are measured as UTF-8 bytes, not characters; a compact posture row is capped at
 RADIUS history is not accumulated in SQLite. The daily reporting collection
 recomputes an exact, bounded recent-window aggregate from Data Connect and persists only
 the resulting bounded Prometheus snapshot. Current active-session reconstruction
-is a separate, one-query dataset with its own 30-minute cadence and snapshot.
+is a separate, one-query dataset with its own two-hour cadence and snapshot.
 Neither path stores raw RADIUS identities, credentials, events, or session rows.
 
 Successful Data Connect domains store their complete bounded Prometheus

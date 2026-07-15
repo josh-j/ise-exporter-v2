@@ -136,13 +136,13 @@ class PollScheduler:
                     getattr(cfg, "dataconnect_radius_interval", 86400), 86400, 86400), True),
             "dataconnect_radius_active": (
                 "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_radius_active_interval", 1800), 1800, 1800), True),
+                    cfg, "dataconnect_radius_active_interval", 7200), 7200, 7200), True),
             "dataconnect_performance": (
                 "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_performance_interval", 3600), 3600, 3600), True),
+                    cfg, "dataconnect_performance_interval", 21600), 21600, 21600), True),
             "dataconnect_posture": (
                 "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_posture_interval", 21600), 21600, 21600), True),
+                    cfg, "dataconnect_posture_interval", 86400), 86400, 86400), True),
             "dataconnect_endpoints": (
                 "dataconnect", _minimum_interval(getattr(
                     cfg, "dataconnect_endpoints_interval", 86400), 86400, 86400), True),
@@ -151,7 +151,7 @@ class PollScheduler:
                     cfg, "dataconnect_freshness_interval", 86400), 86400, 86400), True),
             "dataconnect_nad_health": (
                 "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_nad_health_interval", 21600), 21600, 21600), True),
+                    cfg, "dataconnect_nad_health_interval", 86400), 86400, 86400), True),
             "mnt_active_posture": (
                 "mnt", _minimum_interval(getattr(
                     cfg, "mnt_active_posture_interval", self.medium_interval), 900, 900),
@@ -159,7 +159,7 @@ class PollScheduler:
             "tacacs_config": ("rest", self.slow_interval, cfg.collect_tacacs),
             "tacacs_activity": (
                 "dataconnect", _minimum_interval(getattr(
-                    cfg, "dataconnect_tacacs_interval", 21600), 21600, 21600),
+                    cfg, "dataconnect_tacacs_interval", 86400), 86400, 86400),
                 cfg.collect_tacacs),
         }
 
@@ -180,15 +180,15 @@ class PollScheduler:
             "dataconnect_radius": getattr(
                 self.cfg, "dataconnect_radius_interval", 86400),
             "dataconnect_performance": getattr(
-                self.cfg, "dataconnect_performance_interval", 3600),
+                self.cfg, "dataconnect_performance_interval", 21600),
             "dataconnect_posture": getattr(
-                self.cfg, "dataconnect_posture_interval", 21600),
+                self.cfg, "dataconnect_posture_interval", 86400),
             "dataconnect_endpoints": getattr(
                 self.cfg, "dataconnect_endpoints_interval", 86400),
             "dataconnect_nad_health": getattr(
-                self.cfg, "dataconnect_nad_health_interval", 21600),
+                self.cfg, "dataconnect_nad_health_interval", 86400),
             "tacacs_activity": getattr(
-                self.cfg, "dataconnect_tacacs_interval", 21600),
+                self.cfg, "dataconnect_tacacs_interval", 86400),
         }
         for dataset, interval in scan_intervals.items():
             metrics.ise_dataconnect_scan_window_hours.labels(dataset=dataset).set(
