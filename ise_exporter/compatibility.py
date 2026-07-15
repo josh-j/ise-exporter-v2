@@ -13,6 +13,7 @@ SUPPORTED_ISE_VERSION = "3.3.0.430"
 SUPPORTED_PATCH_LEVEL = 11
 MAX_CERTIFICATES_PER_STORE = 1000
 MAX_CERTIFICATE_ROWS = 5000
+MAX_DEPLOYMENT_NODES = 100
 DEPLOYMENT_NODE_STATES = (
     "Connected", "Disconnected", "InProgress", "NotApplicable", "NotInSync",
     "NotUpgraded", "RegistrationFailed", "ReplicationStopped",
@@ -30,6 +31,20 @@ DEPLOYMENT_NODE_SERVICES = frozenset({
 
 class ISECompatibilityError(RuntimeError):
     """The connected ISE deployment does not satisfy the supported contract."""
+
+
+def valid_hostname(value):
+    """Accept DNS-safe ISE node names suitable for metric labels and URL paths."""
+    if not isinstance(value, str) or not value or len(value) > 253:
+        return False
+    labels = value.split(".")
+    allowed = frozenset(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+    return all(
+        1 <= len(label) <= 63
+        and label[0] != "-" and label[-1] != "-"
+        and not (set(label) - allowed)
+        for label in labels)
 
 
 @dataclass(frozen=True)
@@ -74,6 +89,10 @@ def _deployment_nodes(payload):
         raise ISECompatibilityError(
             "ISE compatibility check failed: GET /api/v1/deployment/node "
             "returned no deployment nodes")
+    if len(payload) > MAX_DEPLOYMENT_NODES:
+        raise ISECompatibilityError(
+            "ISE compatibility check failed: GET /api/v1/deployment/node "
+            f"exceeded the {MAX_DEPLOYMENT_NODES}-node safety ceiling")
 
     hostnames = []
     required = ("hostname", "nodeStatus", "roles", "services")
@@ -88,7 +107,7 @@ def _deployment_nodes(payload):
                 "ISE compatibility check failed: GET /api/v1/deployment/node "
                 f"node {index} is missing fields: {', '.join(missing)}")
         hostname = node["hostname"]
-        if not isinstance(hostname, str) or not hostname.strip():
+        if not valid_hostname(hostname):
             raise ISECompatibilityError(
                 "ISE compatibility check failed: GET /api/v1/deployment/node "
                 f"node {index} has an invalid hostname")
@@ -105,6 +124,10 @@ def _deployment_nodes(payload):
                 "ISE compatibility check failed: GET /api/v1/deployment/node "
                 f"node {hostname!r} has invalid status, roles, or services")
         hostnames.append(hostname)
+    if len({hostname.casefold() for hostname in hostnames}) != len(hostnames):
+        raise ISECompatibilityError(
+            "ISE compatibility check failed: GET /api/v1/deployment/node "
+            "returned duplicate hostnames")
     return tuple(hostnames)
 
 

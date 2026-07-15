@@ -5,21 +5,9 @@ would each fetch it every cycle. Cached for one medium tier so the certificates
 slow-tier run reuses the list the deployment medium-tier run just fetched."""
 import time
 
+from ..compatibility import MAX_DEPLOYMENT_NODES, valid_hostname
+
 _cache = {"nodes": None, "ts": 0.0}
-MAX_DEPLOYMENT_NODES = 100
-
-
-def valid_hostname(value):
-    if not isinstance(value, str) or not value or len(value) > 253:
-        return False
-    labels = value.split(".")
-    allowed = frozenset(
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
-    return all(
-        1 <= len(label) <= 63
-        and label[0] != "-" and label[-1] != "-"
-        and not (set(label) - allowed)
-        for label in labels)
 
 
 def validated_node_rows(value):

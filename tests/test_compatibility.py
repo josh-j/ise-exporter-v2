@@ -101,3 +101,25 @@ def test_rejects_incompatible_deployment_responses(nodes, message):
 
     with pytest.raises(ISECompatibilityError, match=message):
         validate_ise_compatibility(client)
+
+
+def test_rejects_unsafe_duplicate_and_oversized_deployment_identity(monkeypatch):
+    import ise_exporter.compatibility as compatibility
+
+    base = {
+        "nodeStatus": "Connected", "roles": [], "services": [],
+    }
+    client = compatible_client()
+    client.nodes = [{**base, "hostname": "pan-1/../../patch"}]
+    with pytest.raises(ISECompatibilityError, match="invalid hostname"):
+        validate_ise_compatibility(client)
+
+    client.nodes = [
+        {**base, "hostname": "PAN-1"}, {**base, "hostname": "pan-1"},
+    ]
+    with pytest.raises(ISECompatibilityError, match="duplicate hostnames"):
+        validate_ise_compatibility(client)
+
+    monkeypatch.setattr(compatibility, "MAX_DEPLOYMENT_NODES", 1)
+    with pytest.raises(ISECompatibilityError, match="1-node safety ceiling"):
+        validate_ise_compatibility(client)

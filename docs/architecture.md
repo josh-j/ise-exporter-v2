@@ -296,18 +296,18 @@ live diagnostic fallback within CLI resolution only.
 | Dataset | Sole metric owner | Interface | Runtime cadence |
 |---|---|---|---|
 | ISE compatibility, version, patches | Platform | PAN OpenAPI | startup / slow |
-| Deployment, personas, services, PAN HA | Platform | PAN OpenAPI | medium |
-| Network devices and group classification | Configuration | ERS | medium |
-| Certificates | Platform | PAN OpenAPI | slow |
-| Licensing | Platform | PAN OpenAPI | slow |
-| Backup status | Platform | PAN OpenAPI | slow |
-| Device Admin policy configuration | Configuration | ERS/OpenAPI | slow |
-| RADIUS authentication, failures, and latency | Reporting | Data Connect | fast |
-| RADIUS accounting and session duration | Reporting | Data Connect | fast |
-| Endpoint inventory and profiling | Reporting | Data Connect | slow |
-| Historical posture and Secure Client | Reporting | Data Connect | medium |
-| Current active-session posture and latency sample | Current state | MnT XML | configured, default medium |
-| PSN performance and diagnostics | Reporting | Data Connect | fast |
+| Deployment, personas, services, PAN HA | Platform | PAN OpenAPI | 15 minutes |
+| Network devices and group classification | Configuration | ERS | 6 hours |
+| Certificates | Platform | PAN OpenAPI | 6 hours |
+| Licensing | Platform | PAN OpenAPI | 6 hours |
+| Backup status | Platform | PAN OpenAPI | 6 hours |
+| Device Admin policy configuration | Configuration | ERS/OpenAPI | 6 hours |
+| RADIUS authentication, failures, and latency | Reporting | Data Connect | 24 hours |
+| RADIUS accounting and session duration | Reporting | Data Connect | 24 hours |
+| Endpoint inventory and profiling | Reporting | Data Connect | 24 hours |
+| Historical posture and Secure Client | Reporting | Data Connect | 24 hours |
+| Current active-session posture and latency sample | Current state | MnT XML | 15 minutes |
+| PSN performance and diagnostics | Reporting | Data Connect | 6 hours |
 | TACACS account and command activity | Reporting | Data Connect | medium |
 
 There is one writer for each metric family. Control-plane configuration and
