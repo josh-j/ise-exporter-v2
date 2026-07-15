@@ -145,6 +145,8 @@ section remains visible even when there is no current session or recent event.
 | `radius-auth`, `radius-errors`, `radius-accounting` | Query the configured bounded RADIUS window from Data Connect |
 | `posture`, `psn-metrics`, `tacacs-activity` | Query bounded posture, PSN, and TACACS reports from Data Connect |
 | `dataconnect-query TABLE` | Safely search any discovered reporting view with validated columns and bound filters |
+| `dataconnect-health` | Diagnose the authenticated Oracle session and accessible Data Connect catalog |
+| `dataconnect-catalog [PATTERN]` | List all tables/views visible to the Data Connect account without scanning their rows |
 | `dataconnect-schema [TABLE]` | Show reporting-view column metadata without reading event rows |
 | `schema [COMMAND]` | Return API routes and contracts without credentials or network access |
 | `get FAMILY PATH` | Perform an explicit generic GET against `ers`, `openapi`, or `mnt` |
@@ -160,6 +162,8 @@ Use schema discovery to choose a reporting view, inspect its columns, then query
 real rows as ordinary PowerShell objects:
 
 ```powershell
+Get-IseDataConnectTable
+Get-IseDataConnectTable '*TACACS*' | Get-IseDataConnectSchema
 Get-IseDataConnectSchema
 Get-IseDataConnectSchema TACACS_AUTHORIZATION_LAST_TWO_DAYS
 
@@ -190,6 +194,19 @@ filter value. It never accepts arbitrary SQL. Event views default to the configu
 recent window (at most six hours); widening it up to 48 hours is explicit and needs
 `-AllowExpensive`. Results default to 100 rows, with the same production ceiling as
 the other bulk commands. Tab completion is available for table and column names.
+
+The PowerShell module also provides focused diagnostic commands:
+
+```powershell
+Get-IseAlert -Severity ERROR -Hours 24 -AllowExpensive
+Get-IseSystemDiagnostic -Category 'System Health' -Limit 50
+Get-IseAaaDiagnostic -Username alice -Message '*timeout*' | Format-Table
+Test-IseDataConnect | Format-List
+```
+
+`Test-IseDataConnect` reports the Oracle instance/service/schema, database and
+session time zones, accessible view/column counts, query latency, and the active
+connection safety settings without exposing credentials.
 
 ### Endpoint search grammar
 

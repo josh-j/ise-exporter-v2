@@ -37,4 +37,15 @@ if [[ $# -eq 0 ]]; then
     exec pwsh -NoLogo -NoProfile -NoExit -File "$PROFILE"
 fi
 
-exec pwsh -NoLogo -NoProfile -File "${SCRIPT_DIR}/ise-cli.ps1" "$@"
+# PowerShell binds abbreviated common parameters before a script's
+# ValueFromRemainingArguments parameter sees them. Normalize the native CLI's
+# short options here so `ise-cli ... -o json` and `-v` stay backend arguments.
+NORMALIZED_ARGS=()
+for argument in "$@"; do
+    case "$argument" in
+        -o) NORMALIZED_ARGS+=(--output) ;;
+        -v) NORMALIZED_ARGS+=(--version) ;;
+        *) NORMALIZED_ARGS+=("$argument") ;;
+    esac
+done
+exec pwsh -NoLogo -NoProfile -File "${SCRIPT_DIR}/ise-cli.ps1" "${NORMALIZED_ARGS[@]}"

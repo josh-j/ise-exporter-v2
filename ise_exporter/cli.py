@@ -259,6 +259,15 @@ COMMAND_SCHEMAS = {
         "bounded_default": 100,
         "safety": "live schema validation, bound filter values, recent-event window",
     },
+    "dataconnect-health": {
+        "api": "Data Connect Oracle metadata", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "DUAL + USER_VIEWS + USER_TAB_COLUMNS",
+        "reads_event_rows": False,
+    },
+    "dataconnect-catalog": {
+        "api": "Data Connect Oracle metadata", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "USER_TAB_COLUMNS", "reads_event_rows": False,
+    },
     "get": {
         "api": "ERS, OpenAPI, or MnT", "method": "GET only",
         "host_env": {"ers": "ISE_HOST", "openapi": "ISE_HOST", "mnt": "ISE_MNT_HOST"},
@@ -390,7 +399,8 @@ DATACONNECT_REPORTS = {
 }
 
 DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {
-    "dataconnect-schema", "dataconnect-query", "endpoint-fields", "endpoints"}
+    "dataconnect-schema", "dataconnect-query", "dataconnect-health",
+    "dataconnect-catalog", "endpoint-fields", "endpoints"}
 CACHED_EXPORTER_COMMANDS = {
     "overview", "collector-status", "psn-summary", "nad-summary", "pxgrid-status"}
 REST_OPTIONAL_COMMANDS = DATACONNECT_COMMANDS | CACHED_EXPORTER_COMMANDS | {
@@ -725,6 +735,11 @@ def build_parser(*, require_command=False):
     sub.add_argument("--descending", action="store_true", help="sort descending")
     sub.add_argument("--hours", type=int,
                      help="recent event window in hours (default: configured window, max: 48)")
+
+    command("dataconnect-health", "diagnose the Oracle Data Connect session and catalog")
+
+    sub = command("dataconnect-catalog", "list every accessible Data Connect table or view")
+    sub.add_argument("pattern", nargs="?", help="optional shell wildcard for object names")
 
     sub = command("schema", "show command API routes and response contract")
     sub.add_argument("name", nargs="?", choices=tuple(COMMAND_SCHEMAS))
@@ -1722,6 +1737,65 @@ def _dataconnect_query(args, dataconnect, cfg):
         raise CLIError(f"Data Connect query failed for {table}: {error}") from error
 
 
+def _dataconnect_diagnostics(dataconnect, cfg):
+    if dataconnect is None:
+        raise CLIError("this command requires configured Data Connect credentials")
+    sql = """
+        SELECT
+            SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') AS current_schema,
+            SYS_CONTEXT('USERENV', 'SERVICE_NAME') AS service_name,
+            SYS_CONTEXT('USERENV', 'INSTANCE_NAME') AS instance_name,
+            DBTIMEZONE AS database_timezone,
+            SESSIONTIMEZONE AS session_timezone,
+            (SELECT COUNT(*) FROM user_views) AS accessible_views,
+            (SELECT COUNT(*) FROM user_tab_columns) AS accessible_columns
+        FROM dual
+    """
+    started = time.monotonic()
+    try:
+        rows = dataconnect.query(sql)
+    except Exception as error:
+        raise CLIError(f"Data Connect Oracle diagnostic failed: {error}") from error
+    if not rows:
+        raise CLIError("Data Connect Oracle diagnostic returned no session row")
+    result = dict(rows[0])
+    result.update({
+        "reachable": True,
+        "authenticated": True,
+        "latency_ms": round((time.monotonic() - started) * 1000, 1),
+        "configured_host": getattr(cfg, "dataconnect_host", ""),
+        "configured_port": getattr(cfg, "dataconnect_port", 0),
+        "configured_service": getattr(cfg, "dataconnect_service", ""),
+        "configured_user": getattr(cfg, "dataconnect_user", ""),
+        "event_window_hours": getattr(cfg, "dataconnect_event_window_hours", 6),
+        "query_timeout_seconds": getattr(cfg, "dataconnect_query_timeout_seconds", 0),
+    })
+    return result
+
+
+def _dataconnect_catalog(dataconnect, pattern=None):
+    if dataconnect is None:
+        raise CLIError("this command requires configured Data Connect credentials")
+    parameters = {}
+    where = ""
+    if pattern:
+        where = " WHERE UPPER(table_name) LIKE :pattern ESCAPE '\\'"
+        parameters["pattern"] = _sql_pattern(pattern)
+    sql = f"""
+        SELECT table_name, COUNT(*) AS column_count,
+               SUM(CASE WHEN data_type LIKE '%LOB%' THEN 1 ELSE 0 END) AS lob_columns,
+               MIN(column_name) KEEP (DENSE_RANK FIRST ORDER BY column_id) AS first_column
+        FROM user_tab_columns{where}
+        GROUP BY table_name
+        ORDER BY table_name
+    """
+    try:
+        query = getattr(dataconnect, "query_catalog", None) or dataconnect.query
+        return query(sql, parameters)
+    except Exception as error:
+        raise CLIError(f"Data Connect catalog query failed: {error}") from error
+
+
 def _dataconnect_health(dataconnect):
     if dataconnect is None:
         return None
@@ -2156,6 +2230,10 @@ def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
     if command == "dataconnect-query":
         _guard_row_limit(args, cfg)
         return _dataconnect_query(args, dataconnect, cfg)
+    if command == "dataconnect-health":
+        return _dataconnect_diagnostics(dataconnect, cfg)
+    if command == "dataconnect-catalog":
+        return _dataconnect_catalog(dataconnect, args.pattern)
     if command == "dataconnect-schema":
         return _dataconnect_schema(dataconnect, args.table)
     if command == "sessions":

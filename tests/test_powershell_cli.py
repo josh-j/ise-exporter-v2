@@ -24,7 +24,9 @@ def test_powershell_cli_is_a_pwsh_module_over_private_bounded_backend():
         "Get-IsePxGridStatus",
         "Find-IseEndpoint", "Get-IseEndpoint", "Get-IseSecureClient",
         "Get-IseRadiusAuthentication", "Get-IseTacacsActivity",
-        "Search-IseDataConnect", "Get-IseSchema", "Invoke-IseReadOnlyRequest",
+        "Get-IseDataConnectTable", "Search-IseDataConnect", "Get-IseAlert",
+        "Get-IseSystemDiagnostic", "Get-IseAaaDiagnostic", "Test-IseDataConnect",
+        "Get-IseSchema", "Invoke-IseReadOnlyRequest",
     ):
         assert f"'{command}'" in manifest
         assert f"function {command}" in implementation
@@ -220,10 +222,15 @@ def test_compatibility_launcher_preserves_config_file_and_subcommand_help(tmp_pa
     json_result = subprocess.run(
         [str(LAUNCHER), "--config=/tmp/ise.toml", "endpoints", "--output", "json"],
         env=env, check=True, text=True, capture_output=True)
+    short_json_result = subprocess.run(
+        [str(LAUNCHER), "endpoints", "-o", "json"],
+        env=env, check=True, text=True, capture_output=True)
 
     assert help_result.stdout == "ENDPOINT HELP\n"
     assert json.loads(json_result.stdout) == {"name": "LAB-01"}
+    assert json.loads(short_json_result.stdout) == {"name": "LAB-01"}
     assert calls.read_text().splitlines() == [
         "--config /tmp/ise.toml endpoints --help",
         "--config /tmp/ise.toml endpoints --output json",
+        "endpoints --output json",
     ]

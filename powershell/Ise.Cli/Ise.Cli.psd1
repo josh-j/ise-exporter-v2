@@ -51,7 +51,12 @@
         'Get-IsePsnMetric',
         'Get-IseTacacsActivity',
         'Get-IseDataConnectSchema',
+        'Get-IseDataConnectTable',
         'Search-IseDataConnect',
+        'Get-IseAlert',
+        'Get-IseSystemDiagnostic',
+        'Get-IseAaaDiagnostic',
+        'Test-IseDataConnect',
         'Get-IseSchema',
         'Invoke-IseReadOnlyRequest'
     )

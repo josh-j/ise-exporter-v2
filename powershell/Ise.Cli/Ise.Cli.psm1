@@ -10,7 +10,8 @@ $script:IseCommands = @(
     'device-admin-policy-sets', 'authorization-profiles', 'tacacs-command-sets',
     'tacacs-shell-profiles', 'certificates', 'radius-auth', 'endpoint-report',
     'radius-errors', 'radius-accounting', 'posture', 'psn-metrics',
-    'tacacs-activity', 'dataconnect-schema', 'dataconnect-query', 'schema', 'get'
+    'tacacs-activity', 'dataconnect-schema', 'dataconnect-query',
+    'dataconnect-health', 'dataconnect-catalog', 'schema', 'get'
 )
 
 function Get-IseBackendCommand {
@@ -128,7 +129,8 @@ function Invoke-IseBackend {
             'device-admin-policy-sets', 'authorization-profiles', 'tacacs-command-sets',
             'tacacs-shell-profiles', 'certificates', 'radius-auth', 'endpoint-report',
             'radius-errors', 'radius-accounting', 'posture', 'psn-metrics',
-            'tacacs-activity', 'dataconnect-schema', 'dataconnect-query', 'schema', 'get')]
+            'tacacs-activity', 'dataconnect-schema', 'dataconnect-query',
+            'dataconnect-health', 'dataconnect-catalog', 'schema', 'get')]
         [string]$Command,
         [AllowEmptyCollection()][AllowEmptyString()][string[]]$ArgumentList = @(),
         [string]$ConfigFile
@@ -160,7 +162,8 @@ function Invoke-IseCommand {
             'device-admin-policy-sets', 'authorization-profiles', 'tacacs-command-sets',
             'tacacs-shell-profiles', 'certificates', 'radius-auth', 'endpoint-report',
             'radius-errors', 'radius-accounting', 'posture', 'psn-metrics',
-            'tacacs-activity', 'dataconnect-schema', 'dataconnect-query', 'schema', 'get')]
+            'tacacs-activity', 'dataconnect-schema', 'dataconnect-query',
+            'dataconnect-health', 'dataconnect-catalog', 'schema', 'get')]
         [string]$Name,
         [Parameter(Position = 1, ValueFromRemainingArguments)]
         [string[]]$ArgumentList = @(),
@@ -491,31 +494,34 @@ function Get-IseDataConnectSchema {
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Position=0)][string]$Table,
+        [Parameter(Position=0,ValueFromPipeline,ValueFromPipelineByPropertyName)]
+        [Alias('table_name')][string]$Table,
         [switch]$AllColumns,
         [string]$ConfigFile
     )
-    $arguments = if ($Table) { @($Table) } else { @() }
-    $rows = @(Invoke-IseBackend -Command dataconnect-schema -ArgumentList $arguments -ConfigFile $ConfigFile)
-    if ($Table -in @('--help', '-h', 'help')) {
-        $rows | Write-Output
-        return
-    }
-    if (-not $Table -and -not $AllColumns) {
-        $rows | Group-Object table_name | Sort-Object Name | ForEach-Object {
-            $types = @($_.Group.data_type | Where-Object { $_ } | Sort-Object -Unique)
-            [pscustomobject]@{
-                PSTypeName = 'Ise.Cli.DataConnectTable'
-                table_name = $_.Name
-                columns = $_.Count
-                data_types = $types -join ', '
-            }
+    process {
+        $arguments = if ($Table) { @($Table) } else { @() }
+        $rows = @(Invoke-IseBackend -Command dataconnect-schema -ArgumentList $arguments -ConfigFile $ConfigFile)
+        if ($Table -in @('--help', '-h', 'help')) {
+            $rows | Write-Output
+            return
         }
-        return
-    }
-    foreach ($row in $rows) {
-        $row.PSObject.TypeNames.Insert(0, 'Ise.Cli.DataConnectColumn')
-        Write-Output $row
+        if (-not $Table -and -not $AllColumns) {
+            $rows | Group-Object table_name | Sort-Object Name | ForEach-Object {
+                $types = @($_.Group.data_type | Where-Object { $_ } | Sort-Object -Unique)
+                [pscustomobject]@{
+                    PSTypeName = 'Ise.Cli.DataConnectTable'
+                    table_name = $_.Name
+                    columns = $_.Count
+                    data_types = $types -join ', '
+                }
+            }
+            return
+        }
+        foreach ($row in $rows) {
+            $row.PSObject.TypeNames.Insert(0, 'Ise.Cli.DataConnectColumn')
+            Write-Output $row
+        }
     }
 }
 
@@ -567,6 +573,111 @@ function Search-IseDataConnect {
     }
     Invoke-IseBackend -Command dataconnect-query -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
 }
+
+function Get-IseDataConnectTable {
+    <#
+    .SYNOPSIS Lists every table or view visible to the Data Connect account.
+    .DESCRIPTION Returns catalog metadata only; it does not scan reporting rows.
+    .EXAMPLE Get-IseDataConnectTable '*TACACS*' | Get-IseDataConnectSchema
+    #>
+    [CmdletBinding()]
+    param([Parameter(Position=0)][string]$Pattern, [string]$ConfigFile)
+    $arguments = if ($Pattern) { @($Pattern) } else { @() }
+    foreach ($row in @(Invoke-IseBackend -Command dataconnect-catalog -ArgumentList $arguments -ConfigFile $ConfigFile)) {
+        $row.PSObject.TypeNames.Insert(0, 'Ise.Cli.DataConnectCatalogTable')
+        Write-Output $row
+    }
+}
+
+Update-TypeData -TypeName Ise.Cli.DataConnectCatalogTable `
+    -DefaultDisplayPropertySet table_name,column_count,lob_columns,first_column -Force
+
+function Invoke-IseDiagnosticView {
+    param(
+        [Parameter(Mandatory)][string]$Table,
+        [string[]]$Column,
+        [hashtable]$Exact,
+        [hashtable]$Pattern,
+        [int]$Hours,
+        [int]$Limit,
+        [switch]$AllowExpensive,
+        [string]$ConfigFile,
+        [string]$TypeName
+    )
+    $parameters = @{
+        Table = $Table; Column = $Column; Where = $Exact; Like = $Pattern
+        Limit = $Limit; AllowExpensive = $AllowExpensive; ConfigFile = $ConfigFile
+        OrderBy = 'TIMESTAMP'; Descending = $true
+    }
+    if ($Hours -gt 0) { $parameters.Hours = $Hours }
+    foreach ($row in @(Search-IseDataConnect @parameters)) {
+        if ($row -and $TypeName) { $row.PSObject.TypeNames.Insert(0, $TypeName) }
+        Write-Output $row
+    }
+}
+
+function Get-IseAlert {
+    <# .SYNOPSIS Returns recent ISE system alerts from Data Connect. #>
+    [CmdletBinding()]
+    param(
+        [string]$Severity, [string]$Category, [string]$Node, [string]$Message='*',
+        [ValidateRange(1,48)][int]$Hours,
+        [ValidateRange(1,5000)][int]$Limit=100,
+        [switch]$AllowExpensive, [string]$ConfigFile
+    )
+    $exact=@{}; $pattern=@{ MESSAGE_TEXT=$Message }
+    if($Severity){$exact.MESSAGE_SEVERITY=$Severity}; if($Category){$exact.CATEGORY=$Category}; if($Node){$exact.ISE_NODE=$Node}
+    Invoke-IseDiagnosticView -Table SYSTEM_DIAGNOSTICS_VIEW `
+        -Column TIMESTAMP,ISE_NODE,MESSAGE_SEVERITY,MESSAGE_CODE,CATEGORY,MESSAGE_TEXT,DIAGNOSTIC_INFO `
+        -Exact $exact -Pattern $pattern -Hours $Hours -Limit $Limit `
+        -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile -TypeName Ise.Cli.Alert
+}
+
+function Get-IseSystemDiagnostic {
+    <# .SYNOPSIS Returns recent system diagnostic records from Data Connect. #>
+    [CmdletBinding()]
+    param(
+        [string]$Severity, [string]$Category, [string]$Node, [string]$Message='*',
+        [ValidateRange(1,48)][int]$Hours,
+        [ValidateRange(1,5000)][int]$Limit=100,
+        [switch]$AllowExpensive, [string]$ConfigFile
+    )
+    $exact=@{}; $pattern=@{ MESSAGE_TEXT=$Message }
+    if($Severity){$exact.MESSAGE_SEVERITY=$Severity}; if($Category){$exact.CATEGORY=$Category}; if($Node){$exact.ISE_NODE=$Node}
+    Invoke-IseDiagnosticView -Table SYSTEM_DIAGNOSTICS_VIEW `
+        -Column TIMESTAMP,ISE_NODE,MESSAGE_SEVERITY,MESSAGE_CODE,CATEGORY,MESSAGE_TEXT,DIAGNOSTIC_INFO `
+        -Exact $exact -Pattern $pattern -Hours $Hours -Limit $Limit `
+        -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile -TypeName Ise.Cli.SystemDiagnostic
+}
+
+function Get-IseAaaDiagnostic {
+    <# .SYNOPSIS Returns recent authentication, authorization, and accounting diagnostics. #>
+    [CmdletBinding()]
+    param(
+        [string]$Username, [string]$Severity, [string]$Category,
+        [string]$Node, [string]$Message='*',
+        [ValidateRange(1,48)][int]$Hours,
+        [ValidateRange(1,5000)][int]$Limit=100,
+        [switch]$AllowExpensive, [string]$ConfigFile
+    )
+    $exact=@{}; $pattern=@{ MESSAGE_TEXT=$Message }
+    if($Username){$exact.USERNAME=$Username}; if($Severity){$exact.MESSAGE_SEVERITY=$Severity}; if($Category){$exact.CATEGORY=$Category}; if($Node){$exact.ISE_NODE=$Node}
+    Invoke-IseDiagnosticView -Table AAA_DIAGNOSTICS_VIEW `
+        -Column TIMESTAMP,ISE_NODE,USERNAME,MESSAGE_SEVERITY,MESSAGE_CODE,CATEGORY,MESSAGE_TEXT,INFO `
+        -Exact $exact -Pattern $pattern -Hours $Hours -Limit $Limit `
+        -AllowExpensive:$AllowExpensive -ConfigFile $ConfigFile -TypeName Ise.Cli.AaaDiagnostic
+}
+
+function Test-IseDataConnect {
+    <# .SYNOPSIS Diagnoses the authenticated Oracle Data Connect session and readable catalog. #>
+    [CmdletBinding()]
+    param([string]$ConfigFile)
+    Invoke-IseBackend -Command dataconnect-health -ConfigFile $ConfigFile
+}
+
+Update-TypeData -TypeName Ise.Cli.Alert -DefaultDisplayPropertySet TIMESTAMP,ISE_NODE,MESSAGE_SEVERITY,MESSAGE_CODE,CATEGORY,MESSAGE_TEXT -Force
+Update-TypeData -TypeName Ise.Cli.SystemDiagnostic -DefaultDisplayPropertySet TIMESTAMP,ISE_NODE,MESSAGE_SEVERITY,MESSAGE_CODE,CATEGORY,MESSAGE_TEXT -Force
+Update-TypeData -TypeName Ise.Cli.AaaDiagnostic -DefaultDisplayPropertySet TIMESTAMP,ISE_NODE,USERNAME,MESSAGE_SEVERITY,MESSAGE_CODE,CATEGORY,MESSAGE_TEXT -Force
 
 function Get-IseSchema {
     <# .SYNOPSIS Returns the backend contract for one command or the complete command set. #>
@@ -740,5 +851,7 @@ Export-ModuleMember -Function @(
     'Get-IseTacacsShellProfile','Get-IseCertificate','Get-IseRadiusAuthentication',
     'Get-IseEndpointReport','Get-IseRadiusError','Get-IseRadiusAccounting',
     'Get-IsePostureAssessment','Get-IsePsnMetric','Get-IseTacacsActivity',
-    'Get-IseDataConnectSchema','Search-IseDataConnect','Get-IseSchema','Invoke-IseReadOnlyRequest'
+    'Get-IseDataConnectSchema','Get-IseDataConnectTable','Search-IseDataConnect','Get-IseAlert',
+    'Get-IseSystemDiagnostic','Get-IseAaaDiagnostic','Test-IseDataConnect',
+    'Get-IseSchema','Invoke-IseReadOnlyRequest'
 ) -Alias 'Find-Endpoint'

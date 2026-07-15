@@ -29,7 +29,10 @@ function global:Show-IseCliHelp {
             'Get-IseRadiusAccounting               Bounded accounting records',
             'Get-IsePostureAssessment              Posture endpoint/condition reports',
             'Get-IsePsnMetric                      Live PSN performance report',
-            'Get-IseTacacsActivity                 TACACS auth/authz/accounting')
+            'Get-IseTacacsActivity                 TACACS auth/authz/accounting',
+            'Get-IseAlert                          Recent ISE system alerts',
+            'Get-IseSystemDiagnostic               System diagnostic records',
+            'Get-IseAaaDiagnostic                  AAA diagnostic records')
         'configuration' = @(
             'Get-IseNode | Get-IseNetworkDevice | Get-IseProfilerProfile',
             'Get-IseLicense | Get-IsePatch | Get-IseBackupStatus',
@@ -38,8 +41,10 @@ function global:Show-IseCliHelp {
             'Get-IseCertificate | Get-IseRepository')
         'advanced' = @(
             'Get-IseSchema [COMMAND]               Routes and response contracts',
+            'Get-IseDataConnectTable [PATTERN]     Walk accessible Oracle views',
             'Get-IseDataConnectSchema [TABLE]      Reporting-view metadata',
             'Search-IseDataConnect TABLE           Bounded live reporting-view search',
+            'Test-IseDataConnect                   Oracle session and catalog health',
             'Invoke-IseReadOnlyRequest             Explicit bounded GET diagnostic',
             'Get-Command -Module Ise.Cli           Complete command inventory')
     }

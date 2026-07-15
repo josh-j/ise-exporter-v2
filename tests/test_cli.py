@@ -1079,6 +1079,43 @@ def test_dataconnect_query_requires_acknowledgement_for_wider_event_window(capsy
     assert "NUMTODSINTERVAL(48, 'HOUR')" in dataconnect.calls[-1][0]
 
 
+def test_dataconnect_catalog_walks_all_accessible_objects_with_bound_pattern(capsys):
+    dataconnect = FakeDataConnect()
+
+    assert cli.main([
+        "dataconnect-catalog", "*TACACS*", "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+
+    capsys.readouterr()
+    sql, parameters = dataconnect.calls[-1]
+    assert "FROM user_tab_columns" in sql
+    assert "GROUP BY table_name" in sql
+    assert "LIKE :pattern" in sql
+    assert parameters == {"pattern": "%TACACS%"}
+
+
+def test_dataconnect_health_reports_oracle_session_without_credentials(capsys):
+    class DiagnosticDataConnect(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            self.calls.append((sql, parameters or {}))
+            return [{
+                "current_schema": "DATACONNECT", "service_name": "cpm10",
+                "instance_name": "cpm10", "accessible_views": 17,
+                "accessible_columns": 240,
+            }]
+
+    dataconnect = DiagnosticDataConnect()
+    assert cli.main([
+        "dataconnect-health", "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["reachable"] is True and result["authenticated"] is True
+    assert result["current_schema"] == "DATACONNECT"
+    assert "configured_host" in result and "latency_ms" in result
+    assert "password" not in result
+
+
 def test_dataconnect_schema_is_metadata_only_and_table_is_bound(capsys):
     dataconnect = FakeDataConnect()
 
