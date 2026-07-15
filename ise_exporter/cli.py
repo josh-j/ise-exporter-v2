@@ -1744,8 +1744,16 @@ def _dataconnect_query(args, dataconnect, cfg):
         f"SELECT {', '.join(select_expressions)} FROM {table} q{where}{order} "
         f"FETCH FIRST {args.limit} ROWS ONLY")
     try:
-        return dataconnect.query(sql, parameters)
+        query = getattr(dataconnect, "query_interactive", None) or dataconnect.query
+        rows = query(sql, parameters)
+        if rows is None:
+            raise CLIError(
+                "Data Connect reporting gate is busy or cooling down after another "
+                "exporter or CLI query; retry when the current lease finishes")
+        return rows
     except Exception as error:
+        if isinstance(error, CLIError):
+            raise
         raise CLIError(f"Data Connect query failed for {table}: {error}") from error
 
 

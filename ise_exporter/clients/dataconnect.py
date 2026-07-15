@@ -700,6 +700,19 @@ class DataConnectClient:
         """
         return self.query(sql, parameters, wait_for_pacing=False)
 
+    def query_interactive(self, sql, parameters=None):
+        """Run an operator query without queueing behind an adaptive cooldown.
+
+        A generic CLI search first reads catalog metadata so identifiers can be
+        validated safely.  Honor the short local gap created by that catalog
+        read, then probe the shared reporting gate without waiting.  ``None``
+        means an exporter or earlier CLI query still owns an adaptive lease.
+        """
+        remaining = self._next_query_at - time.monotonic()
+        if remaining > 0:
+            self._wait(remaining)
+        return self.query(sql, parameters, wait_for_pacing=False)
+
     def query(self, sql, parameters=None, *, wait_for_pacing=True):
         """Execute a reporting query under adaptive production duty pacing."""
         return self._query(

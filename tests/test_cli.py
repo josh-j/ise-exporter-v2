@@ -1079,6 +1079,22 @@ def test_dataconnect_query_requires_acknowledgement_for_wider_event_window(capsy
     assert "NUMTODSINTERVAL(48, 'HOUR')" in dataconnect.calls[-1][0]
 
 
+def test_dataconnect_query_does_not_wait_for_busy_reporting_gate(capsys):
+    class BusyReporting(FakeDataConnect):
+        def query_interactive(self, sql, parameters=None):
+            self.calls.append((sql, parameters or {}))
+            return None
+
+    dataconnect = BusyReporting()
+
+    assert cli.main([
+        "dataconnect-query", "RADIUS_AUTHENTICATIONS",
+        "--column", "TIMESTAMP", "--limit", "5", "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 2
+    assert "reporting gate is busy or cooling down" in capsys.readouterr().err
+    assert len(dataconnect.calls) == 2
+
+
 def test_dataconnect_catalog_walks_all_accessible_objects_with_bound_pattern(capsys):
     dataconnect = FakeDataConnect()
 

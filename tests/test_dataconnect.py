@@ -853,6 +853,29 @@ def test_completion_query_does_not_wait_for_shared_gate(monkeypatch, tmp_path):
         owner.close()
 
 
+def test_interactive_query_waits_only_for_local_catalog_gap(monkeypatch):
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    client._next_query_at = dataconnect.time.monotonic() + 5
+    waits = []
+    calls = []
+    monkeypatch.setattr(client, "_wait", waits.append)
+    monkeypatch.setattr(
+        client, "query",
+        lambda sql, parameters=None, *, wait_for_pacing=True: calls.append(
+            (sql, parameters, wait_for_pacing)) or None)
+
+    assert client.query_interactive("SELECT 1 FROM dual", {"value": 1}) is None
+    assert 0 < waits[0] <= 5
+    assert calls == [("SELECT 1 FROM dual", {"value": 1}, False)]
+
+
 def test_shared_pacing_gate_acquisition_failure_is_counted(monkeypatch):
     cfg = types.SimpleNamespace(
         dataconnect_host="mnt.example.com", dataconnect_port=2484,
