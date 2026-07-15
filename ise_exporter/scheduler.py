@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 MAX_CONSECUTIVE_FAILURES = 5
 _DATACONNECT_SHUTDOWN_TIMEOUT = 17
 _MNT_SHUTDOWN_TIMEOUT = 32
+_WALL_CLOCK_SKEW_TOLERANCE = 300
 
 
 def _minimum_interval(value, default, minimum):
@@ -77,6 +78,12 @@ _PERSISTED_DATACONNECT_METRICS = {
 def _next_deadline(deadline, now, interval):
     """Advance to the first future cadence boundary, skipping missed ticks."""
     interval = max(1, interval)
+    # Epoch time is required for persisted/reportable timestamps, but it can move
+    # backwards after NTP or an administrator correction. A prior cadence boundary
+    # that is now more than one interval plus ordinary skew into the future would
+    # otherwise suspend the scheduler until wall time catches up.
+    if deadline > now + _WALL_CLOCK_SKEW_TOLERANCE:
+        return now + interval
     deadline += interval
     if deadline <= now:
         deadline += ((now - deadline) // interval + 1) * interval
@@ -100,6 +107,7 @@ class PollScheduler:
         self.last_run = {}
         self.last_attempt = {}
         self.next_run = {}
+        self._scheduled_delay = {}
         self.last_success = {}
         self._dataconnect_async = False
         self._dataconnect_queue = queue.PriorityQueue()
@@ -206,6 +214,7 @@ class PollScheduler:
         source, interval, enabled = self.dataset_plan[name]
         last_success = self.last_success.get(name)
         fresh = bool(enabled and last_success is not None
+                     and last_success <= now + _WALL_CLOCK_SKEW_TOLERANCE
                      and now - last_success <= 2 * interval)
         metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(int(fresh))
 
@@ -242,6 +251,7 @@ class PollScheduler:
                 self.last_run[name] = updated_at
                 self.last_success[name] = updated_at
                 self.next_run[name] = updated_at + interval
+                self._scheduled_delay[name] = interval
                 metrics.ise_dataset_up.labels(dataset=name, source=source).set(int(enabled))
                 metrics.ise_dataset_last_success_timestamp.labels(
                     dataset=name, source=source).set(updated_at)
@@ -276,7 +286,15 @@ class PollScheduler:
             logger.warning("could not persist %s snapshot: %s", name, error)
 
     def _due(self, name, now, tier):
-        return now >= self.next_run.get(name, 0)
+        next_run = self.next_run.get(name, 0)
+        scheduled_delay = self._scheduled_delay.get(name, tier)
+        # Attempts schedule from completion using their effective success/retry
+        # delay. If that deadline is now implausibly farther away than the delay
+        # that created it, wall time moved backwards; collect once now and let
+        # completion establish a corrected deadline.
+        return (now >= next_run
+                or next_run > now + max(1, scheduled_delay)
+                + _WALL_CLOCK_SKEW_TOLERANCE)
 
     def _run(self, name, now, tier, callback):
         if self._due(name, now, tier):
@@ -301,6 +319,7 @@ class PollScheduler:
                 self.last_run[name] = completed
                 self.last_success[name] = completed
                 self.next_run[name] = completed + effective_interval
+                self._scheduled_delay[name] = effective_interval
                 if source == "dataconnect":
                     self._persist_dataconnect_state(name, completed)
                 self._update_dataset_freshness(name, completed)
@@ -332,6 +351,7 @@ class PollScheduler:
                 else:
                     retry = min(tier, self.scrape_interval)
                 self.next_run[name] = completed + retry
+                self._scheduled_delay[name] = retry
                 self._update_dataset_freshness(name, completed)
 
     def _run_dataconnect(self, name, tier, callback):
@@ -348,7 +368,9 @@ class PollScheduler:
             return
         with self._dataconnect_lock:
             now = time.time()
-            if name in self._dataconnect_inflight or not self._due(name, now, tier):
+            if (self._shutdown is not None and self._shutdown.is_set()
+                    or name in self._dataconnect_inflight
+                    or not self._due(name, now, tier)):
                 return
             self._dataconnect_inflight.add(name)
             self._dataconnect_queued_at[name] = now
@@ -459,7 +481,9 @@ class PollScheduler:
             self._run(name, time.time(), tier, callback)
             return
         with self._mnt_lock:
-            if self._mnt_inflight or not self._due(name, time.time(), tier):
+            if (self._shutdown is not None and self._shutdown.is_set()
+                    or self._mnt_inflight
+                    or not self._due(name, time.time(), tier)):
                 return
             self._mnt_inflight = True
         self._publish_worker_state()
@@ -477,6 +501,7 @@ class PollScheduler:
         self._mnt_worker.start()
 
     def _start_mnt_worker(self, shutdown):
+        self._shutdown = shutdown
         self._mnt_async = True
         set_shutdown = getattr(self.mnt, "set_shutdown_event", None)
         if set_shutdown is not None:

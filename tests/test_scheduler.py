@@ -231,6 +231,21 @@ def test_next_deadline_skips_missed_ticks_instead_of_replaying_them():
     assert _next_deadline(60, 119, 60) == 120
 
 
+def test_next_deadline_recovers_from_large_backward_clock_correction():
+    assert _next_deadline(3600, 100, 60) == 160
+    assert _next_deadline(401, 100, 60) == 160
+
+
+def test_dataset_deadline_recovers_from_large_backward_clock_correction():
+    scheduler = PollScheduler(_cfg(), object(), object())
+    scheduler.next_run["deployment"] = 3600.0
+
+    runs = []
+    scheduler._run("deployment", 100.0, 300, lambda: runs.append(True))
+
+    assert runs == [True]
+
+
 def test_dataconnect_cooldown_lane_does_not_block_other_collection_planes():
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
@@ -389,6 +404,31 @@ def test_paced_mnt_lane_does_not_block_rest_and_deduplicates_cycles():
     assert runs == [True]
     assert metrics.ise_mnt_worker_busy._value.get() == 0
     shutdown.set()
+    scheduler._stop_mnt_worker()
+
+
+def test_shutdown_rejects_new_dataconnect_and_mnt_work():
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1, request_timeout=1),
+        object(), object(), mnt=object(),
+    )
+    shutdown = threading.Event()
+    runs = []
+    scheduler._start_dataconnect_worker(shutdown)
+    scheduler._start_mnt_worker(shutdown)
+    shutdown.set()
+
+    scheduler._run_dataconnect(
+        "dataconnect_radius_active", 7200, lambda: runs.append("dataconnect"))
+    scheduler._run_mnt(
+        "mnt_active_posture", 900, lambda: runs.append("mnt"))
+
+    assert runs == []
+    assert scheduler._dataconnect_queue.empty()
+    assert not scheduler._dataconnect_inflight
+    assert not scheduler._mnt_inflight
+    assert scheduler._mnt_worker is None
+    scheduler._stop_dataconnect_worker()
     scheduler._stop_mnt_worker()
 
 
@@ -602,6 +642,16 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     scheduler._update_freshness(172901.0)
+    assert metrics.ise_dataset_fresh.labels(
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 0
+
+
+def test_future_success_after_large_backward_clock_correction_is_not_fresh():
+    scheduler = PollScheduler(_cfg(), object(), object())
+    scheduler.last_success["dataconnect_radius"] = 3600.0
+
+    scheduler._update_dataset_freshness("dataconnect_radius", 100.0)
+
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 0
 
