@@ -72,8 +72,10 @@ logger = logging.getLogger(__name__)
 
 def acquire_runtime_lock(state_path):
     """Hold one exporter/reset owner for a state namespace."""
-    target = Path(os.path.abspath(os.path.expanduser(str(
-        state_path or "/var/lib/ise-exporter/state.sqlite3"))))
+    raw_path = str(state_path or "/var/lib/ise-exporter/state.sqlite3")
+    if raw_path == ":memory:":
+        raw_path = "/tmp/ise-exporter-memory-state"
+    target = Path(os.path.abspath(os.path.expanduser(raw_path)))
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
     lock_path = Path(f"{target}.runtime.lock")
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
@@ -181,7 +183,9 @@ def reset_exporter_state(state_path, guard_paths=()):
 
 class StateStore:
     def __init__(self, path):
-        self.path = str(path or ":memory:")
+        raw_path = str(path or ":memory:")
+        self.path = raw_path if raw_path == ":memory:" else os.path.abspath(
+            os.path.expanduser(raw_path))
         self._file_path = None if self.path == ":memory:" else Path(self.path)
         self._prepare_state_file()
         try:

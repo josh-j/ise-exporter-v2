@@ -1,4 +1,6 @@
 import fcntl
+import os
+from pathlib import Path
 import sqlite3
 import stat
 from concurrent.futures import ThreadPoolExecutor
@@ -91,6 +93,29 @@ def test_reset_normalizes_relative_and_home_paths(tmp_path, monkeypatch):
     removed = reset_exporter_state("state.sqlite3", ("~/guard",))
 
     assert set(removed) == {str(state), str(guard)}
+
+
+def test_state_store_normalizes_relative_and_home_paths(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    relative = StateStore("relative.sqlite3")
+    home = StateStore("~/home.sqlite3")
+    try:
+        assert relative.path == str(tmp_path / "relative.sqlite3")
+        assert home.path == str(tmp_path / "home.sqlite3")
+    finally:
+        relative.close()
+        home.close()
+
+
+def test_memory_state_uses_stable_runtime_lock_namespace():
+    descriptor = acquire_runtime_lock(":memory:")
+    try:
+        target = Path(os.readlink(f"/proc/self/fd/{descriptor}"))
+        assert target == Path("/tmp/ise-exporter-memory-state.runtime.lock")
+    finally:
+        release_runtime_lock(descriptor)
 
 
 def test_reset_cannot_delete_its_runtime_lock(tmp_path):
