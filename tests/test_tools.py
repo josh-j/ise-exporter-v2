@@ -40,6 +40,9 @@ def test_install_script_exposes_cli_to_all_users_without_exposing_config():
     assert 'chmod -R a+rX "$VENV"' in script
     assert 'chmod 640 "$ENV_FILE"' in script
     assert 'chmod 750 "$CERTS_DIR"' in script
+    assert 'chmod 640 "$CERTS_DIR"/*' in script
+    assert 'chmod 644 "$CERTS_DIR"/*.cer "$CERTS_DIR"/*.crt' in script
+    assert 'chmod 644 "$CERTS_DIR"/*.pem' not in script
     assert 'STATE_DIR=/var/lib/ise-exporter' in script
     assert 'SHARED_STATE_DIR="$STATE_DIR/shared"' in script
     assert 'install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$STATE_DIR"' in script
@@ -78,13 +81,32 @@ def test_fresh_install_never_starts_placeholder_configuration():
     workflow = (root / ".github/workflows/ubuntu-noble-install.yml").read_text()
 
     assert 'systemctl enable "$SERVICE_NAME"' in script
-    assert 'systemctl enable --now "$SERVICE_NAME"' not in script
     assert 'PLACEHOLDER_CONFIG=0' in script
-    assert 'ISE_DATACONNECT_PASSWORD=changeme' in script
+    assert 'SERVICE_INSTALLED_BEFORE=0' in script
+    assert 'ISE_DATACONNECT_PASSWORD' in script
+    assert "['\\\"]?changeme['\\\"]?" in script
+    assert "[[:space:]]*=[[:space:]]*" in script
     assert 'systemctl stop "$SERVICE_NAME"' in script
     assert 'restarting active $SERVICE_NAME (upgrade)' in script
     assert 'preserving operator-selected stopped state' in script
     assert 'intentionally NOT running' in script
+    fresh_config_branch = script.split(
+        'if [[ "$FRESH_CONFIG" -eq 1 ]]', 1)[1].split(
+            'elif [[ "$PLACEHOLDER_CONFIG" -eq 1 ]]', 1)[0]
+    assert 'systemctl enable --now "$SERVICE_NAME"' not in fresh_config_branch
     assert 'systemctl is-enabled --quiet ise-exporter' in workflow
     assert 'systemctl is-active --quiet ise-exporter' in workflow
     assert 'property=NRestarts' in workflow
+
+
+def test_pre_staged_first_install_starts_only_valid_configuration():
+    script = (Path(__file__).parents[1] / "deploy/install.sh").read_text()
+
+    assert 'if [[ -f "$UNIT_PATH" ]]; then' in script
+    assert 'elif [[ "$SERVICE_INSTALLED_BEFORE" -eq 0 ]]; then' in script
+    assert 'systemctl enable --now "$SERVICE_NAME"' in script
+    placeholder_branch = script.split(
+        'elif [[ "$PLACEHOLDER_CONFIG" -eq 1 ]]', 1)[1].split(
+            'elif [[ "$SERVICE_INSTALLED_BEFORE" -eq 0 ]]', 1)[0]
+    assert 'systemctl enable "$SERVICE_NAME"' in placeholder_branch
+    assert 'systemctl enable --now "$SERVICE_NAME"' not in placeholder_branch

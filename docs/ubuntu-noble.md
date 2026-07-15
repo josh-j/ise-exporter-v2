@@ -221,3 +221,13 @@ systemd-unit validation, and the safe fresh-install state: enabled, inactive, an
 with zero restarts while placeholders remain. Live startup and the metrics endpoint
 require the exact supported ISE and Data Connect credentials, so those are covered
 by the lab smoke test rather than public CI.
+
+If `/etc/ise-exporter/ise-exporter.env` is pre-staged before the first install,
+the installer enables and starts the service only when no example or `changeme`
+values remain. A pre-staged placeholder configuration is enabled but kept stopped.
+On later upgrades, an intentionally stopped service remains stopped.
+
+Files under `/etc/ise-exporter/certs` are restricted to root and the exporter
+service group by default. Public `.cer` and `.crt` files may be world-readable;
+ambiguous `.pem` files remain group-readable only because PEM can contain a
+private key as well as a certificate.

@@ -21,6 +21,10 @@ SERVICE_NAME=ise-exporter
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 CLI_LINK=/usr/local/bin/ise-cli
 REVISION_FILE="$INSTALL_DIR/REVISION"
+SERVICE_INSTALLED_BEFORE=0
+if [[ -f "$UNIT_PATH" ]]; then
+    SERVICE_INSTALLED_BEFORE=1
+fi
 
 if [[ $EUID -ne 0 ]]; then
     echo "must run as root: sudo $0 [path-to-repo-checkout]" >&2
@@ -173,12 +177,13 @@ chown root:"$SERVICE_USER" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 chown root:"$SERVICE_USER" "$CERTS_DIR"
 chmod 750 "$CERTS_DIR"
-# any cert/key files already dropped in $CERTS_DIR by a previous run — re-assert
-# ownership without touching content, and keep the private key tighter than certs.
+# Any certificate/key files already dropped in $CERTS_DIR by a previous run:
+# re-assert ownership without touching content. PEM is deliberately treated as
+# private because the extension does not distinguish a certificate from a key.
 if compgen -G "$CERTS_DIR"'/*' > /dev/null; then
     chown root:"$SERVICE_USER" "$CERTS_DIR"/*
-    chmod 644 "$CERTS_DIR"/*.cer "$CERTS_DIR"/*.pem 2>/dev/null || true
-    chmod 640 "$CERTS_DIR"/*.key 2>/dev/null || true
+    chmod 640 "$CERTS_DIR"/*
+    chmod 644 "$CERTS_DIR"/*.cer "$CERTS_DIR"/*.crt 2>/dev/null || true
 fi
 
 # --- systemd unit -------------------------------------------------------
@@ -192,7 +197,7 @@ systemctl daemon-reload
 # systemd restart loop would repeatedly try the example hosts and credentials.
 PLACEHOLDER_CONFIG=0
 if grep -Eq \
-    '^(ISE_HOST=pan1\.example\.mil|ISE_MNT_HOST=mnt1\.example\.mil|ISE_PASS=changeme|ISE_DATACONNECT_HOST=mnt1\.example\.mil|ISE_DATACONNECT_PASSWORD=changeme)$' \
+    "^[[:space:]]*(ISE_HOST[[:space:]]*=[[:space:]]*['\"]?pan1\.example\.mil['\"]?|ISE_MNT_HOST[[:space:]]*=[[:space:]]*['\"]?mnt1\.example\.mil['\"]?|ISE_PASS[[:space:]]*=[[:space:]]*['\"]?changeme['\"]?|ISE_DATACONNECT_HOST[[:space:]]*=[[:space:]]*['\"]?mnt1\.example\.mil['\"]?|ISE_DATACONNECT_PASSWORD[[:space:]]*=[[:space:]]*['\"]?changeme['\"]?)[[:space:]]*$" \
     "$ENV_FILE"; then
     PLACEHOLDER_CONFIG=1
 fi
@@ -206,10 +211,20 @@ if [[ "$FRESH_CONFIG" -eq 1 ]]; then
     fi
 elif [[ "$PLACEHOLDER_CONFIG" -eq 1 ]]; then
     echo "==> WARNING: placeholder values remain in $ENV_FILE; service will not be started"
+    # A configuration-management system may stage the env file before the
+    # package/unit exists. The service should still participate in normal boot
+    # once the operator replaces the placeholders and starts it deliberately.
+    if [[ "$SERVICE_INSTALLED_BEFORE" -eq 0 ]]; then
+        echo "==> enabling $SERVICE_NAME without starting it (configuration required)"
+        systemctl enable "$SERVICE_NAME"
+    fi
     if systemctl is-active --quiet "$SERVICE_NAME"; then
         echo "==> stopping $SERVICE_NAME so placeholder credentials cannot be retried"
         systemctl stop "$SERVICE_NAME"
     fi
+elif [[ "$SERVICE_INSTALLED_BEFORE" -eq 0 ]]; then
+    echo "==> enabling and starting $SERVICE_NAME (pre-staged configuration)"
+    systemctl enable --now "$SERVICE_NAME"
 elif systemctl is-active --quiet "$SERVICE_NAME"; then
     echo "==> restarting active $SERVICE_NAME (upgrade)"
     systemctl restart "$SERVICE_NAME"
