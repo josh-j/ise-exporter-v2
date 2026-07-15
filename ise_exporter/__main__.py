@@ -170,6 +170,7 @@ def main(argv=None):
         except Exception as exc:
             logger.error("Data Connect startup validation failed: %s", exc)
             return 1
+        dataconnect.set_schema(schema)
         logger.info("validated %d Cisco ISE Data Connect reporting views", len(schema))
         mnt = (MnTActiveSessionClient(cfg, auth_guard=rest_auth_guard)
                if cfg.collect_mnt_active_posture else None)

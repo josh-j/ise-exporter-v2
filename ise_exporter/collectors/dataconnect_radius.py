@@ -103,7 +103,12 @@ def _active_cte(stale_minutes):
     """
 
 
-def _queries(limit, stale_minutes=60, window_hours=6):
+def _queries(limit, stale_minutes=60, window_hours=6,
+             authentication_policy_column="authorization_policy"):
+    authentication_policy_column = str(authentication_policy_column).lower()
+    if authentication_policy_column not in {
+            "authorization_policy", "policy_set_name"}:
+        raise ValueError("unsupported RADIUS authentication policy column")
     active_cte = _active_cte(stale_minutes)
     auth_recent = recent_event_predicate("timestamp", window_hours)
     auth_summary_recent = recent_event_predicate("timestamp", window_hours)
@@ -117,7 +122,8 @@ def _queries(limit, stale_minutes=60, window_hours=6):
                        CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END
                            AS status,
                        authentication_method, authentication_protocol, device_name,
-                       authorization_policy, ise_node, COUNT(*) AS events,
+                       {authentication_policy_column} AS authorization_policy,
+                       ise_node, COUNT(*) AS events,
                        COUNT(response_time) AS samples,
                        AVG(response_time) AS avg_response_ms,
                        MAX(response_time) AS max_response_ms
@@ -126,7 +132,7 @@ def _queries(limit, stale_minutes=60, window_hours=6):
                 GROUP BY GROUPING SETS (
                     (CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
                      authentication_method, authentication_protocol, device_name,
-                     authorization_policy, ise_node),
+                     {authentication_policy_column}, ise_node),
                     (CASE WHEN NVL(failed, 0) > 0 THEN 'failed' ELSE 'passed' END,
                      device_name, ise_node)
                 )
@@ -238,9 +244,25 @@ def _queries(limit, stale_minutes=60, window_hours=6):
     }
 
 
-def _reporting_queries(limit, window_hours=6):
-    return {name: sql for name, sql in _queries(limit, window_hours=window_hours).items()
+def _reporting_queries(limit, window_hours=6,
+                       authentication_policy_column="authorization_policy"):
+    return {name: sql for name, sql in _queries(
+                limit, window_hours=window_hours,
+                authentication_policy_column=authentication_policy_column).items()
             if name != "active_sessions"}
+
+
+def _authentication_policy_column(dataconnect):
+    schema = getattr(dataconnect, "schema", {})
+    columns = schema.get("RADIUS_AUTHENTICATIONS", {}) \
+        if isinstance(schema, dict) else {}
+    if "AUTHORIZATION_POLICY" in columns:
+        return "authorization_policy"
+    if columns and "POLICY_SET_NAME" in columns:
+        return "policy_set_name"
+    # Direct collector integrations predating capability negotiation retain the
+    # lab Patch 11 behavior. The production client always has discovered schema.
+    return "authorization_policy"
 
 
 def collect_reporting(dataconnect, cfg):
@@ -251,7 +273,8 @@ def collect_reporting(dataconnect, cfg):
             dataconnect,
             _reporting_queries(
                 limit, event_window_hours(
-                    cfg, getattr(cfg, "dataconnect_radius_interval", 86400))),
+                    cfg, getattr(cfg, "dataconnect_radius_interval", 86400)),
+                _authentication_policy_column(dataconnect)),
         )
         rows = {
             "authentication": [row for row in combined["authentication"]

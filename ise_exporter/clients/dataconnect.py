@@ -219,11 +219,31 @@ class DataConnectClient:
         self._batch_views = []
         self._batch_rows = 0
         self._batch_result_bytes = 0
+        self.schema = {}
         metrics.ise_dataconnect_query_pacing_seconds.set(self.min_query_interval)
         metrics.ise_dataconnect_max_duty_cycle_percent.set(self.max_duty_cycle)
         metrics.ise_dataconnect_query_timeout_seconds.set(self.timeout)
         metrics.ise_dataconnect_result_row_ceiling.set(MAX_RESULT_ROWS)
         metrics.ise_dataconnect_result_byte_ceiling.set(MAX_RESULT_BYTES)
+
+    def set_schema(self, schema):
+        """Retain startup-discovered view capabilities without another DB query."""
+        if not isinstance(schema, dict):
+            raise TypeError("Data Connect schema must be a table mapping")
+        self.schema = {
+            str(table).upper(): {
+                str(column).upper(): str(data_type).upper()
+                for column, data_type in columns.items()
+            }
+            for table, columns in schema.items()
+            if isinstance(columns, dict)
+        }
+        radius_columns = self.schema.get("RADIUS_AUTHENTICATIONS", {})
+        if (radius_columns and "AUTHORIZATION_POLICY" not in radius_columns
+                and "POLICY_SET_NAME" in radius_columns):
+            logger.warning(
+                "RADIUS_AUTHENTICATIONS has no optional AUTHORIZATION_POLICY column; "
+                "using POLICY_SET_NAME for the authorization-policy metric dimension")
 
     def set_shutdown_event(self, shutdown):
         """Make long adaptive pacing waits interruptible during service stop."""

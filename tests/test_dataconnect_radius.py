@@ -163,6 +163,14 @@ def test_authentication_and_latency_share_one_bounded_view_scan():
     assert "policy_set_name" not in queries["authentication"]
 
 
+def test_authentication_query_falls_back_to_policy_set_for_mnt_schema_variant():
+    query = dataconnect_radius._queries(
+        25, authentication_policy_column="policy_set_name")["authentication"]
+
+    assert "policy_set_name AS authorization_policy" in query
+    assert "authentication_protocol, device_name,\n                     policy_set_name" in query
+
+
 def test_exact_volume_uses_patch11_aggregate_view_not_raw_authentication_rows():
     queries = dataconnect_radius._queries(25)
 

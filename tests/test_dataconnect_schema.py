@@ -73,8 +73,9 @@ def test_contract_requires_columns_used_unconditionally_by_latest_session_querie
         VIEW_CONTRACTS["POSTURE_ASSESSMENT_BY_ENDPOINT"].required
 
 
-def test_contract_requires_patch11_radius_summary_and_authorization_policy():
-    assert "AUTHORIZATION_POLICY" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].required
+def test_contract_negotiates_optional_radius_authorization_policy():
+    assert "AUTHORIZATION_POLICY" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].optional
+    assert "POLICY_SET_NAME" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].required
     assert {
         "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "PASSED_COUNT", "FAILED_COUNT",
     } <= VIEW_CONTRACTS["RADIUS_AUTHENTICATION_SUMMARY"].required
