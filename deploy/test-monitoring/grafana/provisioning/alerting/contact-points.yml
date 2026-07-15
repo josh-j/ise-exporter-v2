@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# Alertmanager owns environment-specific destinations, secrets, inhibition,
+# and delivery retries. Grafana only forwards its evaluated alert instances.
+contactPoints:
+  - orgId: 1
+    name: Local Alertmanager
+    receivers:
+      - uid: ise-local-alertmanager
+        type: prometheus-alertmanager
+        disableResolveMessage: false
+        settings:
+          url: http://127.0.0.1:9093

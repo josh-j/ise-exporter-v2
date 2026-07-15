@@ -972,9 +972,9 @@ def test_username_and_certificate_rows_have_contextual_drilldowns():
 
 
 def test_alert_rules_cover_requested_failures_and_link_real_panels():
-    alerting = (DASHBOARDS.parent /
-                "deploy/test-monitoring/grafana/provisioning/alerting/alerting.yml")
-    text = alerting.read_text()
+    alerting_dir = (DASHBOARDS.parent /
+                    "deploy/test-monitoring/grafana/provisioning/alerting")
+    text = (alerting_dir / "alerting.yml").read_text()
     required_metrics = (
         "ise_up", "ise_dataset_up", "ise_dataset_fresh",
         "ise_dataconnect_oldest_queued_seconds",
@@ -984,9 +984,11 @@ def test_alert_rules_cover_requested_failures_and_link_real_panels():
         "ise_dataconnect_node_memory_utilization_percent",
     )
     assert all(metric in text for metric in required_metrics)
-    assert "type: prometheus-alertmanager" in text
-    assert "url: http://127.0.0.1:9093" in text
-    assert "receiver: Local Alertmanager" in text
+    contact_points = (alerting_dir / "contact-points.yml").read_text()
+    policies = (alerting_dir / "policies.yml").read_text()
+    assert "type: prometheus-alertmanager" in contact_points
+    assert "url: http://127.0.0.1:9093" in contact_points
+    assert "receiver: Local Alertmanager" in policies
 
     dashboard_uids = {
         json.loads(path.read_text())["uid"]: json.loads(path.read_text())
