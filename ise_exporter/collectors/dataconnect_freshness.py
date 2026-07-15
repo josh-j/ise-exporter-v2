@@ -81,7 +81,8 @@ def _query(cfg, now=None):
                 ORDER BY {column} DESC NULLS LAST FETCH FIRST 1 ROWS ONLY
             )
         """)
-    return "\nUNION ALL\n".join(branches)
+    return "/* ise_exporter:dataconnect_freshness */\n" + \
+        "\nUNION ALL\n".join(branches)
 
 
 def collect(dataconnect, cfg):

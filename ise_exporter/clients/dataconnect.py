@@ -52,6 +52,8 @@ _QUERY_VIEWS = (
 def _query_view(sql):
     """Return a bounded metric label; never put arbitrary SQL into Prometheus."""
     normalized = str(sql or "").lower()
+    if "ise_exporter:dataconnect_freshness" in normalized:
+        return "freshness_probe"
     # Schema validation embeds every reporting view name in an IN clause. Classify
     # metadata access before scanning those literals or startup looks like a real
     # query against whichever reporting view happens to appear first.

@@ -59,6 +59,7 @@ def test_100k_default_profile_stays_below_10_scheduled_statements_per_hour():
 def test_freshness_uses_one_statement_for_every_timestamped_view():
     query = dataconnect_freshness._query(Config(), now=2_000_000_000)
 
+    assert query.startswith("/* ise_exporter:dataconnect_freshness */")
     assert query.count("UNION ALL") == len(
         dataconnect_freshness._timestamped_views()) - 1
     assert query.count("FETCH FIRST 1 ROWS ONLY") == len(

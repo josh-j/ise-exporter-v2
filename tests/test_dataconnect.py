@@ -137,6 +137,15 @@ def test_radius_summary_has_its_own_bounded_telemetry_label():
     ) == "radius_authentication_summary"
 
 
+def test_combined_freshness_probe_has_its_own_bounded_telemetry_label():
+    sql = """/* ise_exporter:dataconnect_freshness */
+        SELECT * FROM tacacs_authentication_last_two_days
+        UNION ALL SELECT * FROM radius_authentications
+    """
+
+    assert dataconnect._query_view(sql) == "freshness_probe"
+
+
 def test_adaptive_pacing_wait_is_interruptible_during_shutdown():
     cfg = types.SimpleNamespace(
         dataconnect_host="mnt.example.mil", dataconnect_port=2484,
