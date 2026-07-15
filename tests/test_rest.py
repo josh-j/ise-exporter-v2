@@ -210,7 +210,7 @@ def test_get_ers_paginates_iteratively():
     c.session = None
     base = "https://h:9060/ers/config/networkdevice"
     pages = {
-        base: {"SearchResult": {"resources": [{"id": "1"}],
+        base: {"SearchResult": {"total": 3, "resources": [{"id": "1"}],
                                 "nextPage": {"href": base + "?page=2"}}},
         base + "?page=2": {"SearchResult": {"resources": [{"id": "2"}],
                                             "nextPage": {"href": base + "?page=3"}}},
@@ -354,7 +354,8 @@ def test_get_ers_preserves_valid_empty_search_result():
     c = ISERestClient.__new__(ISERestClient)
     c.ers_url = "https://h:9060/ers"
     c.session = None
-    c._get_json = lambda *args, **kwargs: {"SearchResult": {"resources": []}}
+    c._get_json = lambda *args, **kwargs: {
+        "SearchResult": {"total": 0, "resources": []}}
 
     assert c.get_ers("/config/internaluser", get_all=True) == []
 
@@ -382,6 +383,7 @@ def test_get_ers_bounds_unique_next_page_chain_and_reports_protocol_error(monkey
         nonlocal calls
         calls += 1
         return {"SearchResult": {
+            "total": 100,
             "resources": [{"id": str(calls)}],
             "nextPage": {"href": f"https://h:9060/ers/config/endpoint?page={calls + 1}"},
         }}
@@ -395,6 +397,30 @@ def test_get_ers_bounds_unique_next_page_chain_and_reports_protocol_error(monkey
         "/config/endpoint", get_all=True, api_name="ers_endpoint") is None
     assert calls == 2
     assert counter._value.get() == before + 1
+
+
+def test_get_ers_all_requires_bounded_total_and_same_resource_path(monkeypatch):
+    client = ISERestClient.__new__(ISERestClient)
+    client.ers_url = "https://ise.example:9060/ers"
+    client.session = None
+    client._get_json = lambda *_args, **_kwargs: {
+        "SearchResult": {"resources": []}}
+
+    assert client.get_ers("/config/endpoint", get_all=True) is None
+
+    monkeypatch.setattr(rest_module, "ERS_MAX_ROWS", 2)
+    client._get_json = lambda *_args, **_kwargs: {
+        "SearchResult": {"total": 3, "resources": []}}
+    assert client.get_ers("/config/endpoint", get_all=True) is None
+
+    client._get_json = lambda *_args, **_kwargs: {"SearchResult": {
+        "total": 2,
+        "resources": [{"id": "one"}],
+        "nextPage": {
+            "href": "https://ise.example:9060/ers/config/internaluser?page=2",
+        },
+    }}
+    assert client.get_ers("/config/endpoint", get_all=True) is None
 
 
 def test_get_ers_total_rejects_malformed_envelope_without_raising():

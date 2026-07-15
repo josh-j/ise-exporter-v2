@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # This ceiling still permits inventories twice the supported 100k endpoint scale,
 # while bounding a broken server that emits an endless chain of unique next links.
 ERS_MAX_PAGES = 2000
+ERS_MAX_ROWS = 200000
 PAN_MAX_PAGES = 100
 HTTP_READ_CHUNK_BYTES = 64 * 1024
 MAX_HTTP_RESPONSE_BYTES = 64 * 1024 * 1024
@@ -423,9 +424,26 @@ class ISERestClient:
             self._ers_protocol_error(api_name, "Malformed ERS resources for %s", url)
             return None
         resources = list(resources)
+        if len(resources) > ERS_MAX_ROWS:
+            self._ers_protocol_error(
+                api_name, "ERS response exceeded %d rows for %s", ERS_MAX_ROWS, url)
+            return None
         expected_total = sr.get("total")
+        if get_all:
+            try:
+                expected_total = int(expected_total)
+            except (TypeError, ValueError):
+                self._ers_protocol_error(
+                    api_name, "Malformed ERS total for %s: %r", url, expected_total)
+                return None
+            if not 0 <= expected_total <= ERS_MAX_ROWS:
+                self._ers_protocol_error(
+                    api_name, "ERS total outside the 0-%d row bound for %s: %r",
+                    ERS_MAX_ROWS, url, expected_total)
+                return None
         visited = set()
         pages = 1
+        resource_path = path.split("?", 1)[0]
         # follow nextPage.href iteratively — recursion would be one frame per page
         # and blow the stack on large result sets (tens of thousands of NADs)
         while get_all:
@@ -447,7 +465,12 @@ class ISERestClient:
                     api_name, "Invalid ERS nextPage href for %s: %r", url, href)
                 return None
             visited.add(href)
-            page = self._get_json(self.session, f"{self.ers_url}{href.split('/ers', 1)[1]}",
+            next_path = href.split("/ers", 1)[1]
+            if next_path.split("?", 1)[0] != resource_path:
+                self._ers_protocol_error(
+                    api_name, "ERS nextPage changed resource path for %s: %r", url, href)
+                return None
+            page = self._get_json(self.session, f"{self.ers_url}{next_path}",
                                   api_name=api_name)
             if page is None:
                 return None
@@ -460,15 +483,15 @@ class ISERestClient:
                 self._ers_protocol_error(
                     api_name, "Malformed ERS pagination response for %s", href)
                 return None
-            resources.extend(sr.get("resources", []))
-            pages += 1
-        if get_all and expected_total is not None:
-            try:
-                expected_total = int(expected_total)
-            except (TypeError, ValueError):
+            page_resources = sr.get("resources", [])
+            if len(resources) + len(page_resources) > ERS_MAX_ROWS:
                 self._ers_protocol_error(
-                    api_name, "Malformed ERS total for %s: %r", url, expected_total)
+                    api_name, "ERS pagination exceeded %d rows for %s",
+                    ERS_MAX_ROWS, url)
                 return None
+            resources.extend(page_resources)
+            pages += 1
+        if get_all:
             if len(resources) != expected_total:
                 self._ers_protocol_error(
                     api_name, "Incomplete ERS pagination for %s: got %d of %d rows",
