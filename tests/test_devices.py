@@ -55,7 +55,7 @@ def test_failed_device_detail_keeps_authoritative_inventory_with_zero_coverage(
     assert metrics.ise_network_device_detail_refresh_failures._value.get() == 1
 
 
-def test_programmatic_config_cannot_relax_device_detail_load_ceilings(
+def test_programmatic_config_keeps_count_ceiling_but_honors_request_pacing(
         tmp_path, monkeypatch):
     inventory = [{"id": f"nad-{index}", "name": f"switch-{index}"}
                  for index in range(101)]
@@ -80,7 +80,7 @@ def test_programmatic_config_cannot_relax_device_detail_load_ceilings(
 
     assert devices.collect(Client(), cfg) == inventory
     assert len(detail_calls) == 100
-    assert sleeps == [0.1] * 99
+    assert sleeps == []
     assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 1
 
 

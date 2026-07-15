@@ -308,7 +308,7 @@ def test_active_list_growth_past_preflight_ceiling_fails_closed():
     assert not _rows(metrics.ise_mnt_active_posture_endpoints, "status")
 
 
-def test_programmatic_config_cannot_relax_posture_load_ceilings(monkeypatch):
+def test_programmatic_config_keeps_count_ceilings_but_honors_request_pacing(monkeypatch):
     sessions = [{"calling_station_id": f"00:00:00:{index >> 16:02X}:"
                  f"{(index >> 8) & 255:02X}:{index & 255:02X}"}
                 for index in range(1001)]
@@ -338,7 +338,7 @@ def test_programmatic_config_cannot_relax_posture_load_ceilings(monkeypatch):
 
     assert metrics.ise_mnt_session_list_ceiling._value.get() == 250000
     assert metrics.ise_mnt_active_posture_candidate_endpoints_total._value.get() == 1001
-    assert captured == {"count": 250, "workers": 4, "interval": 0.25}
+    assert captured == {"count": 250, "workers": 4, "interval": 0}
 
 
 def test_persistent_cache_bounds_cold_start_and_survives_restart(tmp_path):

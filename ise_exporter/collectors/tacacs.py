@@ -443,10 +443,10 @@ def collect_config(client, cfg):
         )
         now = time.time()
         refresh_ttl = max(
-            86400, int(getattr(cfg, "tacacs_internal_user_detail_ttl", 604800)))
+            1, int(getattr(cfg, "tacacs_internal_user_detail_ttl", 604800)))
         refresh_limit = max(1, min(250, int(getattr(
             cfg, "tacacs_internal_user_detail_max_requests", 100))))
-        request_interval = max(0.1, int(getattr(
+        request_interval = max(0, int(getattr(
             cfg, "tacacs_internal_user_detail_request_interval_ms", 250)) / 1000)
         selected_by_id = {
             str(resource["id"]): resource for resource in selected
@@ -524,10 +524,10 @@ def collect_config(client, cfg):
         )
         selected_policy_ids = [str(policy["id"]) for policy in selected_policies]
         policy_refresh_ttl = max(
-            86400, int(getattr(cfg, "tacacs_policy_rule_ttl", 604800)))
+            1, int(getattr(cfg, "tacacs_policy_rule_ttl", 604800)))
         policy_refresh_limit = max(1, min(25, int(getattr(
             cfg, "tacacs_policy_rule_refresh_max", 10))))
-        policy_request_interval = max(0.1, int(getattr(
+        policy_request_interval = max(0, int(getattr(
             cfg, "tacacs_policy_rule_request_interval_ms", 250)) / 1000)
         policy_store = StateStore(_state_path(cfg))
         try:
@@ -551,7 +551,7 @@ def collect_config(client, cfg):
             pan_requests = 0
             for policy_id in policy_refresh_ids:
                 try:
-                    if pan_requests:
+                    if pan_requests and policy_request_interval:
                         time.sleep(policy_request_interval)
                     pan_requests += 1
                     authentication_count = len(_object_list(
@@ -559,7 +559,8 @@ def collect_config(client, cfg):
                             f"/policy/device-admin/policy-set/{policy_id}/authentication",
                             api_name="tacacs_authentication_rules"),
                         f"Device Admin authentication rules for {policy_id}"))
-                    time.sleep(policy_request_interval)
+                    if policy_request_interval:
+                        time.sleep(policy_request_interval)
                     pan_requests += 1
                     authorization_count = len(_object_list(
                         client.get_pan_api(

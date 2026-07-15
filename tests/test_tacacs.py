@@ -250,7 +250,7 @@ def test_internal_user_detail_refresh_is_bounded_and_converges(tmp_path, monkeyp
 
     tacacs.collect_config(client, cfg)
     assert client.detail_requests == ["u0", "u1"]
-    assert 0.1 in sleeps
+    assert 0.1 not in sleeps
     assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == pytest.approx(2 / 3)
     assert metrics.ise_tacacs_internal_user_detail_refresh_deferred._value.get() == 1
 

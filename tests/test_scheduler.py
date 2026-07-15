@@ -120,7 +120,7 @@ def test_startup_journal_lists_dataset_source_cadence_and_time(caplog, monkeypat
     assert "startup_rate_limit_seconds=7" in caplog.text
     assert "scheduled dataset=deployment source=rest enabled=true" in caplog.text
     assert "interval_seconds=300" in caplog.text
-    assert "first_attempt_not_before=1970-01-01T00:01:40Z" in caplog.text
+    assert "due_at=1970-01-01T00:01:40Z" in caplog.text
     assert "scheduled dataset=tacacs_activity source=dataconnect enabled=false" in caplog.text
 
 

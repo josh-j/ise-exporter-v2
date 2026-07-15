@@ -155,11 +155,11 @@ class PollScheduler:
                     "DataConnect=historical-reporting MnT=bounded-active-posture")
 
     def _log_startup_schedule(self):
-        """Journal every enabled cadence and its earliest post-start attempt."""
+        """Journal every cadence and its true due time at process start."""
         now = time.time()
-        cold_slot = 0
         logger.info(
-            "startup schedule: dataset_count=%d startup_rate_limit_seconds=%s",
+            "startup schedule: dataset_count=%d startup_rate_limit_seconds=%s; "
+            "cold-start attempts are globally spaced after becoming due",
             sum(enabled for _source, _interval, enabled in self.dataset_plan.values()),
             self.startup_rate_limit_seconds,
         )
@@ -172,20 +172,19 @@ class PollScheduler:
                 continue
             restored_due = self.next_run.get(name)
             if restored_due is None:
-                not_before = now + cold_slot * self.startup_rate_limit_seconds
-                cold_slot += 1
+                due_at = now
                 reason = "cold_start"
             else:
-                not_before = restored_due
+                due_at = restored_due
                 reason = "restored_snapshot"
             logger.info(
                 "scheduled dataset=%s source=%s enabled=true interval_seconds=%s "
-                "first_attempt_not_before=%s first_attempt_in_seconds=%.0f reason=%s",
+                "due_at=%s due_in_seconds=%.0f reason=%s",
                 name,
                 source,
                 interval,
-                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(not_before)),
-                max(0.0, not_before - now),
+                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(due_at)),
+                max(0.0, due_at - now),
                 reason,
             )
 
@@ -449,6 +448,12 @@ class PollScheduler:
             self._startup_next_at = starts_at + spacing
             self._startup_started.add(name)
         delay = max(0.0, starts_at - time.monotonic())
+        logger.info(
+            "startup attempt dataset=%s reserved_not_before=%s wait_seconds=%.3f",
+            name,
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + delay)),
+            delay,
+        )
         if delay <= 0:
             return True
         if self._shutdown is None:

@@ -64,6 +64,42 @@ def test_explicit_state_reset_rejects_symlink_target(tmp_path):
     assert target.read_bytes() == b"preserve"
 
 
+def test_reset_preflights_all_targets_before_deleting_anything(tmp_path):
+    path = tmp_path / "state.sqlite3"
+    path.write_bytes(b"preserve state")
+    target = tmp_path / "real.guard"
+    target.write_bytes(b"preserve guard")
+    bad_guard = tmp_path / "auth.guard"
+    bad_guard.symlink_to(target)
+
+    with pytest.raises(OSError, match="not a regular file"):
+        reset_exporter_state(path, (bad_guard,))
+
+    assert path.read_bytes() == b"preserve state"
+    assert target.read_bytes() == b"preserve guard"
+
+
+def test_reset_normalizes_relative_and_home_paths(tmp_path, monkeypatch):
+    state = tmp_path / "state.sqlite3"
+    state.write_bytes(b"state")
+    guard = tmp_path / "guard"
+    guard.write_bytes(b"guard")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    removed = reset_exporter_state("state.sqlite3", ("~/guard",))
+
+    assert set(removed) == {str(state), str(guard)}
+
+
+def test_reset_cannot_delete_its_runtime_lock(tmp_path):
+    state = tmp_path / "state.sqlite3"
+    runtime_lock = tmp_path / "state.sqlite3.runtime.lock"
+
+    with pytest.raises(ValueError, match="runtime lock"):
+        reset_exporter_state(state, (runtime_lock,))
+
+
 def test_reset_refuses_while_exporter_runtime_owns_state(tmp_path):
     path = tmp_path / "state.sqlite3"
     descriptor = acquire_runtime_lock(path)

@@ -72,7 +72,8 @@ logger = logging.getLogger(__name__)
 
 def acquire_runtime_lock(state_path):
     """Hold one exporter/reset owner for a state namespace."""
-    target = Path(str(state_path or "/var/lib/ise-exporter/state.sqlite3"))
+    target = Path(os.path.abspath(os.path.expanduser(str(
+        state_path or "/var/lib/ise-exporter/state.sqlite3"))))
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
     lock_path = Path(f"{target}.runtime.lock")
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
@@ -107,24 +108,36 @@ def reset_exporter_state(state_path, guard_paths=()):
     """One-shot reset of cache, snapshots, auth guards, and DB pacing state."""
     state_path = str(state_path or "")
     if not state_path or state_path == ":memory:":
-        candidates = [Path(str(path)) for path in guard_paths if path]
+        candidates = [Path(os.path.abspath(os.path.expanduser(str(path))))
+                      for path in guard_paths if path]
         runtime_state = "/tmp/ise-exporter-memory-state"
     else:
-        target = Path(state_path)
+        target = Path(os.path.abspath(os.path.expanduser(state_path)))
         candidates = [Path(f"{target}{suffix}") for suffix in ("", "-wal", "-shm")]
-        candidates.extend(Path(str(path)) for path in guard_paths if path)
-        runtime_state = state_path
+        candidates.extend(
+            Path(os.path.abspath(os.path.expanduser(str(path))))
+            for path in guard_paths if path)
+        runtime_state = str(target)
     descriptor = acquire_runtime_lock(runtime_state)
     removed = []
     try:
-        for candidate in dict.fromkeys(candidates):
+        candidates = tuple(dict.fromkeys(candidates))
+        runtime_lock_path = Path(f"{Path(runtime_state)}.runtime.lock")
+        if runtime_lock_path in candidates:
+            raise ValueError("reset target cannot be the exporter runtime lock")
+        existing = []
+        # Validate the complete reset set before deleting any member. A bad
+        # guard path must not turn an intended full reset into a partial one.
+        for candidate in candidates:
             try:
                 candidate_metadata = candidate.lstat()
             except FileNotFoundError:
                 continue
             if not stat.S_ISREG(candidate_metadata.st_mode):
                 raise OSError(
-                    f"state database reset target is not a regular file: {candidate}")
+                    f"exporter reset target is not a regular file: {candidate}")
+            existing.append(candidate)
+        for candidate in existing:
             candidate.unlink()
             removed.append(str(candidate))
     finally:
