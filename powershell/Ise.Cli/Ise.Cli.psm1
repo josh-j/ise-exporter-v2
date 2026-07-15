@@ -10,7 +10,7 @@ $script:IseCommands = @(
     'device-admin-policy-sets', 'authorization-profiles', 'tacacs-command-sets',
     'tacacs-shell-profiles', 'certificates', 'radius-auth', 'endpoint-report',
     'radius-errors', 'radius-accounting', 'posture', 'psn-metrics',
-    'tacacs-activity', 'dataconnect-schema', 'schema', 'get'
+    'tacacs-activity', 'dataconnect-schema', 'dataconnect-query', 'schema', 'get'
 )
 
 function Get-IseBackendCommand {
@@ -128,7 +128,7 @@ function Invoke-IseBackend {
             'device-admin-policy-sets', 'authorization-profiles', 'tacacs-command-sets',
             'tacacs-shell-profiles', 'certificates', 'radius-auth', 'endpoint-report',
             'radius-errors', 'radius-accounting', 'posture', 'psn-metrics',
-            'tacacs-activity', 'dataconnect-schema', 'schema', 'get')]
+            'tacacs-activity', 'dataconnect-schema', 'dataconnect-query', 'schema', 'get')]
         [string]$Command,
         [AllowEmptyCollection()][AllowEmptyString()][string[]]$ArgumentList = @(),
         [string]$ConfigFile
@@ -160,7 +160,7 @@ function Invoke-IseCommand {
             'device-admin-policy-sets', 'authorization-profiles', 'tacacs-command-sets',
             'tacacs-shell-profiles', 'certificates', 'radius-auth', 'endpoint-report',
             'radius-errors', 'radius-accounting', 'posture', 'psn-metrics',
-            'tacacs-activity', 'dataconnect-schema', 'schema', 'get')]
+            'tacacs-activity', 'dataconnect-schema', 'dataconnect-query', 'schema', 'get')]
         [string]$Name,
         [Parameter(Position = 1, ValueFromRemainingArguments)]
         [string[]]$ArgumentList = @(),
@@ -522,6 +522,52 @@ function Get-IseDataConnectSchema {
 Update-TypeData -TypeName Ise.Cli.DataConnectColumn `
     -DefaultDisplayPropertySet column_id,column_name,data_type,nullable -Force
 
+function Search-IseDataConnect {
+    <#
+    .SYNOPSIS
+    Searches a live ISE Data Connect reporting view with bounded, validated filters.
+    .DESCRIPTION
+    Table and column names are checked against live Data Connect metadata. Filter
+    values are always bound, event views are constrained to the configured recent
+    window, and results default to 100 rows. Use Get-IseDataConnectSchema first to
+    discover views and columns.
+    .EXAMPLE
+    Search-IseDataConnect TACACS_AUTHORIZATION_LAST_TWO_DAYS -Column LOGGED_TIME,USERNAME,DEVICE_NAME,AUTHORIZATION_POLICY,COMMAND_FROM_DEVICE -Like @{ USERNAME='admin*' }
+    .EXAMPLE
+    Search-IseDataConnect RADIUS_AUTHENTICATIONS -Where @{ USERNAME='alice' } -OrderBy TIMESTAMP -Descending -Limit 50
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position=0)][string]$Table,
+        [string[]]$Column = @(),
+        [hashtable]$Where = @{},
+        [hashtable]$Like = @{},
+        [string]$OrderBy,
+        [switch]$Descending,
+        [ValidateRange(1,48)][int]$Hours,
+        [ValidateRange(1,5000)][int]$Limit = 100,
+        [switch]$AllowExpensive,
+        [string]$ConfigFile
+    )
+    $arguments = New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive
+    [void]$arguments.Insert(0, $Table)
+    foreach ($item in $Column) {
+        [void]$arguments.Add('--column'); [void]$arguments.Add($item)
+    }
+    foreach ($key in ($Where.Keys | Sort-Object)) {
+        [void]$arguments.Add('--where'); [void]$arguments.Add("$key=$($Where[$key])")
+    }
+    foreach ($key in ($Like.Keys | Sort-Object)) {
+        [void]$arguments.Add('--like'); [void]$arguments.Add("$key=$($Like[$key])")
+    }
+    Add-IseValueArgument -Arguments $arguments -Name '--order-by' -Value $OrderBy
+    Add-IseSwitchArgument -Arguments $arguments -Value:$Descending -Name '--descending'
+    if ($PSBoundParameters.ContainsKey('Hours')) {
+        [void]$arguments.Add('--hours'); [void]$arguments.Add([string]$Hours)
+    }
+    Invoke-IseBackend -Command dataconnect-query -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile
+}
+
 function Get-IseSchema {
     <# .SYNOPSIS Returns the backend contract for one command or the complete command set. #>
     [CmdletBinding()]
@@ -643,6 +689,31 @@ $schemaCompleter = {
 }
 Register-ArgumentCompleter -CommandName Get-IseSchema -ParameterName Name -ScriptBlock $schemaCompleter
 
+$dataConnectTableCompleter = {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    New-IseCompletionResult (Get-IseLegacyCompletion "dataconnect-schema $wordToComplete")
+}
+Register-ArgumentCompleter -CommandName @(
+    'Get-IseDataConnectSchema','Search-IseDataConnect'
+) -ParameterName Table -ScriptBlock $dataConnectTableCompleter
+
+$dataConnectColumnCompleter = {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    $table = [string]$fakeBoundParameters['Table']
+    if (-not $table) { return }
+    try {
+        $rows = @(Invoke-IseBackend -Command dataconnect-schema -ArgumentList @($table))
+        New-IseCompletionResult @($rows.column_name | Where-Object {
+            $_ -like "$wordToComplete*"
+        } | Sort-Object -Unique)
+    }
+    catch { return }
+}
+Register-ArgumentCompleter -CommandName Search-IseDataConnect `
+    -ParameterName Column -ScriptBlock $dataConnectColumnCompleter
+Register-ArgumentCompleter -CommandName Search-IseDataConnect `
+    -ParameterName OrderBy -ScriptBlock $dataConnectColumnCompleter
+
 $nativeCompleter = {
     param($wordToComplete, $commandAst, $cursorPosition)
     $line = [string]$commandAst.Extent.Text
@@ -669,5 +740,5 @@ Export-ModuleMember -Function @(
     'Get-IseTacacsShellProfile','Get-IseCertificate','Get-IseRadiusAuthentication',
     'Get-IseEndpointReport','Get-IseRadiusError','Get-IseRadiusAccounting',
     'Get-IsePostureAssessment','Get-IsePsnMetric','Get-IseTacacsActivity',
-    'Get-IseDataConnectSchema','Get-IseSchema','Invoke-IseReadOnlyRequest'
+    'Get-IseDataConnectSchema','Search-IseDataConnect','Get-IseSchema','Invoke-IseReadOnlyRequest'
 ) -Alias 'Find-Endpoint'

@@ -39,6 +39,7 @@ function global:Show-IseCliHelp {
         'advanced' = @(
             'Get-IseSchema [COMMAND]               Routes and response contracts',
             'Get-IseDataConnectSchema [TABLE]      Reporting-view metadata',
+            'Search-IseDataConnect TABLE           Bounded live reporting-view search',
             'Invoke-IseReadOnlyRequest             Explicit bounded GET diagnostic',
             'Get-Command -Module Ise.Cli           Complete command inventory')
     }
@@ -59,6 +60,7 @@ function global:Show-IseCliHelp {
     Write-Host "  Get-IseCollectorStatus '*radius*' | Format-Table"
     Write-Host "  Debug-IseAuthentication 'LAB-PC01' | Group-Object section"
     Write-Host "  Find-Endpoint 'LAB-*' | Select-Object hostname,mac_address,posture_status"
+    Write-Host "  Search-IseDataConnect RADIUS_AUTHENTICATIONS -Like @{ USERNAME='admin*' } -Limit 50"
     Write-Host "`nUse: ise-help CATEGORY, Get-Help COMMAND -Full, or Get-Command -Module Ise.Cli"
 }
 

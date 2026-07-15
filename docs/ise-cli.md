@@ -144,6 +144,7 @@ section remains visible even when there is no current session or recent event.
 | `endpoint-report` | Query bounded endpoint inventory directly from Data Connect |
 | `radius-auth`, `radius-errors`, `radius-accounting` | Query the configured bounded RADIUS window from Data Connect |
 | `posture`, `psn-metrics`, `tacacs-activity` | Query bounded posture, PSN, and TACACS reports from Data Connect |
+| `dataconnect-query TABLE` | Safely search any discovered reporting view with validated columns and bound filters |
 | `dataconnect-schema [TABLE]` | Show reporting-view column metadata without reading event rows |
 | `schema [COMMAND]` | Return API routes and contracts without credentials or network access |
 | `get FAMILY PATH` | Perform an explicit generic GET against `ers`, `openapi`, or `mnt` |
@@ -152,6 +153,43 @@ Inventory commands return at most 100 rows by default and 1,000 rows without an
 explicit production-impact acknowledgement. Complete enumeration requires both
 `--all` and `--allow-expensive`. MnT ActiveList retrieval and leading-wildcard
 searches such as `*LAPTOP*` likewise require `--allow-expensive`.
+
+### Data Connect investigation
+
+Use schema discovery to choose a reporting view, inspect its columns, then query
+real rows as ordinary PowerShell objects:
+
+```powershell
+Get-IseDataConnectSchema
+Get-IseDataConnectSchema TACACS_AUTHORIZATION_LAST_TWO_DAYS
+
+Search-IseDataConnect TACACS_AUTHORIZATION_LAST_TWO_DAYS `
+  -Column LOGGED_TIME,USERNAME,DEVICE_NAME,AUTHORIZATION_POLICY,COMMAND_FROM_DEVICE `
+  -Like @{ USERNAME = 'admin*' } -Limit 100 |
+  Format-Table -AutoSize
+```
+
+Exact filters use `-Where`; wildcard filters use `-Like` with `*` and `?`.
+Hashtables make multiple criteria readable, and the result remains composable:
+
+```powershell
+Search-IseDataConnect RADIUS_AUTHENTICATIONS `
+  -Column TIMESTAMP,USERNAME,CALLING_STATION_ID,DEVICE_NAME,POLICY_SET_NAME,FAILED `
+  -Where @{ DEVICE_NAME = 'laba-sw-001' } -Like @{ USERNAME = 'svc-*' } `
+  -OrderBy TIMESTAMP -Descending -Limit 200 |
+  Group-Object POLICY_SET_NAME | Sort-Object Count -Descending
+
+Search-IseDataConnect TACACS_AUTHORIZATION_LAST_TWO_DAYS `
+  -Column USERNAME,DEVICE_NAME,AUTHORIZATION_POLICY,COMMAND_FROM_DEVICE `
+  -Like @{ COMMAND_FROM_DEVICE = 'show*' } -Hours 48 -AllowExpensive |
+  Export-Csv ./tacacs-show-commands.csv -NoTypeInformation
+```
+
+The backend validates every table and column against live metadata and binds every
+filter value. It never accepts arbitrary SQL. Event views default to the configured
+recent window (at most six hours); widening it up to 48 hours is explicit and needs
+`-AllowExpensive`. Results default to 100 rows, with the same production ceiling as
+the other bulk commands. Tab completion is available for table and column names.
 
 ### Endpoint search grammar
 

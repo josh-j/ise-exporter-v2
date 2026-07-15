@@ -134,7 +134,9 @@ class FakeDataConnect:
                             "ID", "ENDPOINT_ID", "MAC_ADDRESS", "ENDPOINT_IP",
                             "HOSTNAME", "ENDPOINT_POLICY", "IDENTITY_GROUP_ID",
                             "UPDATE_TIME")]
-            return [{"column_name": name} for name in (
+            return [{"column_name": name,
+                     "data_type": "TIMESTAMP" if name == "TIMESTAMP" else "VARCHAR2"}
+                    for name in (
                 "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "DEVICE_NAME",
                 "ISE_NODE", "AUTHENTICATION_METHOD", "AUTHENTICATION_PROTOCOL",
                 "POLICY_SET_NAME", "FAILED", "RESPONSE_TIME")]
@@ -1021,6 +1023,60 @@ def test_dataconnect_report_is_bounded_and_filters_normalized_mac(capsys):
     assert "NUMTODSINTERVAL(6, 'HOUR')" in report_sql
     assert "CALLING_STATION_ID = :endpoint_identifier" in report_sql
     assert parameters["endpoint_identifier"] == "AA:BB:CC:DD:EE:FF"
+
+
+def test_dataconnect_query_validates_identifiers_and_binds_operator_filters(capsys):
+    dataconnect = FakeDataConnect()
+
+    assert cli.main([
+        "dataconnect-query", "RADIUS_AUTHENTICATIONS",
+        "--column", "TIMESTAMP", "--column", "USERNAME",
+        "--where", "DEVICE_NAME=nad-1", "--like", "USERNAME=ali*",
+        "--order-by", "TIMESTAMP", "--descending", "--limit", "5", "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+
+    assert json.loads(capsys.readouterr().out)[0]["username"] == "alice"
+    sql, parameters = dataconnect.calls[-1]
+    assert "SELECT q.TIMESTAMP, q.USERNAME FROM RADIUS_AUTHENTICATIONS q" in sql
+    assert "q.DEVICE_NAME = :exact_0" in sql
+    assert "UPPER(q.USERNAME) LIKE :pattern_0 ESCAPE '\\'" in sql
+    assert "NUMTODSINTERVAL(6, 'HOUR')" in sql
+    assert "ORDER BY q.TIMESTAMP DESC FETCH FIRST 5 ROWS ONLY" in sql
+    assert parameters["exact_0"] == "nad-1"
+    assert parameters["pattern_0"] == "ALI%"
+    assert "nad-1" not in sql and "ali" not in sql.lower()
+
+
+def test_dataconnect_query_rejects_unvalidated_table_and_column(capsys):
+    dataconnect = FakeDataConnect()
+
+    assert cli.main([
+        "dataconnect-query", "RADIUS_AUTHENTICATIONS;DROP_TABLE",
+        "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 2
+    assert "only letters, numbers, and underscores" in capsys.readouterr().err
+
+    assert cli.main([
+        "dataconnect-query", "RADIUS_AUTHENTICATIONS", "--column", "PASSWORD",
+        "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 2
+    assert "unknown RADIUS_AUTHENTICATIONS column 'PASSWORD'" in capsys.readouterr().err
+
+
+def test_dataconnect_query_requires_acknowledgement_for_wider_event_window(capsys):
+    dataconnect = FakeDataConnect()
+
+    assert cli.main([
+        "dataconnect-query", "RADIUS_AUTHENTICATIONS", "--hours", "48", "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 2
+    assert "production-safe maximum 6 hours" in capsys.readouterr().err
+
+    assert cli.main([
+        "dataconnect-query", "RADIUS_AUTHENTICATIONS", "--hours", "48",
+        "--allow-expensive", "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+    capsys.readouterr()
+    assert "NUMTODSINTERVAL(48, 'HOUR')" in dataconnect.calls[-1][0]
 
 
 def test_dataconnect_schema_is_metadata_only_and_table_is_bound(capsys):

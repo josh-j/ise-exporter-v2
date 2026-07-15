@@ -24,7 +24,7 @@ def test_powershell_cli_is_a_pwsh_module_over_private_bounded_backend():
         "Get-IsePxGridStatus",
         "Find-IseEndpoint", "Get-IseEndpoint", "Get-IseSecureClient",
         "Get-IseRadiusAuthentication", "Get-IseTacacsActivity",
-        "Get-IseSchema", "Invoke-IseReadOnlyRequest",
+        "Search-IseDataConnect", "Get-IseSchema", "Invoke-IseReadOnlyRequest",
     ):
         assert f"'{command}'" in manifest
         assert f"function {command}" in implementation
@@ -134,6 +134,7 @@ def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path
         "{\"table_name\":\"ENDPOINTS_DATA\",\"column_id\":2,\"column_name\":\"HOSTNAME\",\"data_type\":\"VARCHAR2\",\"nullable\":\"Y\"},"
         "{\"table_name\":\"RADIUS_AUTHENTICATIONS\",\"column_id\":1,\"column_name\":\"TIMESTAMP\",\"data_type\":\"TIMESTAMP\",\"nullable\":\"N\"}]' ;;\n"
         "  *\" radius-errors \"*) printf '%s\\n' '[]' ;;\n"
+        "  *\" dataconnect-query \"*) printf '%s\\n' '[{\"username\":\"alice\"}]' ;;\n"
         "  *) printf '%s\\n' '[]' ;;\n"
         "esac\n")
     backend.chmod(0o755)
@@ -159,6 +160,10 @@ def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path
         }}
         $help = Get-IseDataConnectSchema --help
         if ($help.Trim() -ne 'SCHEMA HELP') {{ throw "unexpected help: $help" }}
+        $query = @(Search-IseDataConnect RADIUS_AUTHENTICATIONS `
+            -Column TIMESTAMP,USERNAME -Where @{{ DEVICE_NAME='nad-1' }} `
+            -Like @{{ USERNAME='ali*' }} -OrderBy TIMESTAMP -Descending -Limit 25)
+        if ($query[0].username -ne 'alice') {{ throw 'Data Connect query object missing' }}
         Get-IseRadiusError
     """
     result = subprocess.run(
@@ -171,6 +176,7 @@ def test_powershell_empty_arguments_help_and_empty_results_have_good_ux(tmp_path
         "dataconnect-schema ENDPOINTS_DATA --output json",
         "dataconnect-schema --output json",
         "dataconnect-schema --help",
+        "dataconnect-query RADIUS_AUTHENTICATIONS --limit 25 --column TIMESTAMP --column USERNAME --where DEVICE_NAME=nad-1 --like USERNAME=ali* --order-by TIMESTAMP --descending --output json",
         "radius-errors --limit 100 --output json",
     ]
 

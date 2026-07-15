@@ -253,6 +253,12 @@ COMMAND_SCHEMAS = {
         "api": "Data Connect metadata", "host_env": "ISE_DATACONNECT_HOST",
         "method": "SELECT", "view": "USER_TAB_COLUMNS", "reads_event_rows": False,
     },
+    "dataconnect-query": {
+        "api": "Data Connect", "host_env": "ISE_DATACONNECT_HOST",
+        "method": "SELECT", "view": "operator-selected reporting view",
+        "bounded_default": 100,
+        "safety": "live schema validation, bound filter values, recent-event window",
+    },
     "get": {
         "api": "ERS, OpenAPI, or MnT", "method": "GET only",
         "host_env": {"ers": "ISE_HOST", "openapi": "ISE_HOST", "mnt": "ISE_MNT_HOST"},
@@ -384,7 +390,7 @@ DATACONNECT_REPORTS = {
 }
 
 DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {
-    "dataconnect-schema", "endpoint-fields", "endpoints"}
+    "dataconnect-schema", "dataconnect-query", "endpoint-fields", "endpoints"}
 CACHED_EXPORTER_COMMANDS = {
     "overview", "collector-status", "psn-summary", "nad-summary", "pxgrid-status"}
 REST_OPTIONAL_COMMANDS = DATACONNECT_COMMANDS | CACHED_EXPORTER_COMMANDS | {
@@ -706,6 +712,19 @@ def build_parser(*, require_command=False):
 
     sub = command("dataconnect-schema", "show Data Connect reporting-view columns")
     sub.add_argument("table", nargs="?", help="optional reporting view name")
+
+    sub = report("dataconnect-query", "query a Data Connect reporting view safely")
+    sub.add_argument("table", help="reporting view name from dataconnect-schema")
+    sub.add_argument("--column", action="append", default=[],
+                     help="column to return; repeatable (default: first 20 safe columns)")
+    sub.add_argument("--where", action="append", default=[], metavar="COLUMN=VALUE",
+                     help="exact bound filter; repeatable")
+    sub.add_argument("--like", action="append", default=[], metavar="COLUMN=PATTERN",
+                     help="case-insensitive wildcard filter using * and ?; repeatable")
+    sub.add_argument("--order-by", help="column to sort by")
+    sub.add_argument("--descending", action="store_true", help="sort descending")
+    sub.add_argument("--hours", type=int,
+                     help="recent event window in hours (default: configured window, max: 48)")
 
     sub = command("schema", "show command API routes and response contract")
     sub.add_argument("name", nargs="?", choices=tuple(COMMAND_SCHEMAS))
@@ -1588,6 +1607,121 @@ def _dataconnect_report(args, client, dataconnect, cfg):
         raise CLIError(f"Data Connect query failed for {table}: {error}") from error
 
 
+def _dataconnect_filter(items, option):
+    result = []
+    for item in items:
+        column, separator, value = str(item).partition("=")
+        column = column.strip().upper()
+        if not separator or not column or value == "":
+            raise CLIError(f"invalid {option} {item!r}; expected COLUMN=VALUE")
+        result.append((column, value))
+    return result
+
+
+def _dataconnect_query(args, dataconnect, cfg):
+    """Build one bounded SELECT after validating every identifier against live metadata."""
+    if dataconnect is None:
+        raise CLIError("this command requires configured Data Connect credentials")
+    if args.limit < 1 or args.limit > 5000:
+        raise CLIError("--limit must be between 1 and 5000")
+    table = str(args.table or "").strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", table):
+        raise CLIError("Data Connect table must contain only letters, numbers, and underscores")
+    try:
+        column_types = _dataconnect_table_columns(dataconnect, table)
+    except Exception as error:
+        raise CLIError(f"Data Connect schema lookup failed for {table}: {error}") from error
+    if not column_types:
+        raise CLIError(
+            f"Data Connect view {table} is unavailable; run dataconnect-schema to list views")
+
+    available = list(column_types)
+
+    def checked(column, context):
+        normalized = str(column or "").strip().upper()
+        if normalized not in column_types:
+            suggestions = [name for name in available if normalized in name][:5]
+            suffix = f"; similar columns: {', '.join(suggestions)}" if suggestions else ""
+            raise CLIError(f"unknown {table} column {column!r} in {context}{suffix}")
+        return normalized
+
+    selected = list(dict.fromkeys(
+        checked(column, "--column") for column in args.column))
+    if not selected:
+        selected = [column for column in available
+                    if "BLOB" not in column_types[column]][:20]
+    if not selected:
+        raise CLIError(f"Data Connect view {table} has no safely displayable columns")
+    unsupported = [column for column in selected if "BLOB" in column_types[column]]
+    if unsupported:
+        raise CLIError(
+            f"binary Data Connect columns cannot be displayed: {', '.join(unsupported)}")
+
+    predicates = []
+    parameters = {}
+    for index, (raw_column, value) in enumerate(_dataconnect_filter(args.where, "--where")):
+        column = checked(raw_column, "--where")
+        if "BLOB" in column_types[column]:
+            raise CLIError(f"binary Data Connect column {column} cannot be filtered")
+        parameter = f"exact_{index}"
+        predicates.append(f"q.{column} = :{parameter}")
+        parameters[parameter] = value
+    for index, (raw_column, pattern) in enumerate(_dataconnect_filter(args.like, "--like")):
+        column = checked(raw_column, "--like")
+        data_type = column_types[column]
+        if not _searchable_datatype(data_type):
+            raise CLIError(f"Data Connect column {column} ({data_type}) cannot use --like")
+        parameter = f"pattern_{index}"
+        predicates.append(
+            f"UPPER({_text_expression('q', column, data_type)}) "
+            f"LIKE :{parameter} ESCAPE '\\'")
+        parameters[parameter] = _sql_pattern(pattern)
+
+    timestamp_column = _first_column(available, "TIMESTAMP", "LOGGED_AT", "LOGGED_TIME")
+    epoch_column = _first_column(available, "EPOCH_TIME")
+    safe_window = max(1, min(6, int(getattr(
+        cfg, "dataconnect_event_window_hours", 6))))
+    window = args.hours if args.hours is not None else safe_window
+    if window < 1 or window > 48:
+        raise CLIError("--hours must be between 1 and 48")
+    if args.hours is not None and not (timestamp_column or epoch_column):
+        raise CLIError(f"Data Connect view {table} has no recognized event time column")
+    if window > safe_window:
+        _require_expensive(
+            args, cfg, f"event window above the production-safe maximum {safe_window} hours")
+    if timestamp_column:
+        predicates.append(
+            f"q.{timestamp_column} >= SYSTIMESTAMP - "
+            f"NUMTODSINTERVAL({window}, 'HOUR')")
+    elif epoch_column:
+        predicates.append(f"q.{epoch_column} >= :minimum_epoch")
+        parameters["minimum_epoch"] = int(time.time()) - window * 3600
+
+    order_column = checked(args.order_by, "--order-by") if args.order_by else (
+        timestamp_column or epoch_column)
+    direction = "DESC" if args.descending or not args.order_by else "ASC"
+    where = " WHERE " + " AND ".join(predicates) if predicates else ""
+    order = f" ORDER BY q.{order_column} {direction}" if order_column else ""
+    select_expressions = []
+    for column in selected:
+        data_type = column_types[column]
+        if "TIME ZONE" in data_type:
+            expression = (
+                f"TO_CHAR(q.{column}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF TZH:TZM') AS {column}")
+        elif "CLOB" in data_type:
+            expression = f"DBMS_LOB.SUBSTR(q.{column}, 4000, 1) AS {column}"
+        else:
+            expression = f"q.{column}"
+        select_expressions.append(expression)
+    sql = (
+        f"SELECT {', '.join(select_expressions)} FROM {table} q{where}{order} "
+        f"FETCH FIRST {args.limit} ROWS ONLY")
+    try:
+        return dataconnect.query(sql, parameters)
+    except Exception as error:
+        raise CLIError(f"Data Connect query failed for {table}: {error}") from error
+
+
 def _dataconnect_health(dataconnect):
     if dataconnect is None:
         return None
@@ -2019,6 +2153,9 @@ def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
     if command in DATACONNECT_REPORTS:
         _guard_row_limit(args, cfg)
         return _dataconnect_report(args, client, dataconnect, cfg)
+    if command == "dataconnect-query":
+        _guard_row_limit(args, cfg)
+        return _dataconnect_query(args, dataconnect, cfg)
     if command == "dataconnect-schema":
         return _dataconnect_schema(dataconnect, args.table)
     if command == "sessions":
@@ -2556,7 +2693,7 @@ class ISEShell(cmd.Cmd):
             return [] if positionals else self._endpoint_field_name_values(prefix)
         if command == "schema":
             return [] if positionals else list(COMMAND_SCHEMAS)
-        if command == "dataconnect-schema":
+        if command in ("dataconnect-schema", "dataconnect-query"):
             return [] if positionals else self._quote_values(
                 self._dataconnect_tables(prefix), prefix)
         if command == "get":

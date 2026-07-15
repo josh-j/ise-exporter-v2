@@ -51,6 +51,7 @@
         'Get-IsePsnMetric',
         'Get-IseTacacsActivity',
         'Get-IseDataConnectSchema',
+        'Search-IseDataConnect',
         'Get-IseSchema',
         'Invoke-IseReadOnlyRequest'
     )
