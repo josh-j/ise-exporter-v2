@@ -196,6 +196,30 @@ def test_latency_aggregate_caps_distinct_step_label_domain():
     assert set(steps) == {str(code) for code in range(1, 257)}
 
 
+def test_active_posture_aggregates_cap_free_form_label_domains(monkeypatch):
+    monkeypatch.setattr(mnt_active_posture, "MAX_STATUS_GROUPS", 3)
+    monkeypatch.setattr(mnt_active_posture, "MAX_AGENT_GROUPS", 3)
+    monkeypatch.setattr(mnt_active_posture, "MAX_POLICY_GROUPS", 3)
+    details = [{
+        "posture_status": f"status-{index}",
+        "posture_assessment_status": f"assessment-{index}",
+        "posture_agent_version": f"custom-os {index}",
+        "posture_report": f"policy-{index}\\;Passed\\;(details)",
+    } for index in range(5)]
+
+    statuses, _applicable, assessments, agents, policies, *_rest = (
+        mnt_active_posture._aggregate(details))
+
+    assert sum(statuses.values()) == 5
+    assert sum(assessments.values()) == 5
+    assert sum(agents.values()) == 5
+    assert sum(policies.values()) == 5
+    assert len(statuses) <= 3 and ("Other", "Unknown", "Unknown") in statuses
+    assert len(assessments) <= 3 and "Other" in assessments
+    assert len(agents) <= 3 and "Other" in agents
+    assert len(policies) <= 3 and ("Other", "Passed") in policies
+
+
 def test_compact_posture_fields_are_bounded_by_utf8_bytes():
     compact = mnt_active_posture._compact_detail({
         "posture_report": "ä" * 65_536,

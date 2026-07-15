@@ -38,6 +38,9 @@ from . import CollectorFailed, observe
 
 MAX_STEP_CODES = 256
 MAX_ACTIVE_COUNT = 1_000_000_000
+MAX_STATUS_GROUPS = 256
+MAX_AGENT_GROUPS = 256
+MAX_POLICY_GROUPS = 1024
 
 
 _FIELDS = (
@@ -289,6 +292,12 @@ def _aggregate(details):
     steps = defaultdict(list)
     total_latency = []
 
+    def increment_bounded(counter, key, limit, overflow):
+        if key in counter or len(counter) < limit - 1:
+            counter[key] += 1
+        else:
+            counter[overflow] += 1
+
     for detail in details:
         raw_other = first_nonempty(detail, "other_attr_string", "otherAttrString")
         attrs = parse_other_attr_string(raw_other)
@@ -324,14 +333,20 @@ def _aggregate(details):
         status = metric_label(
             normalize_posture(posture_status) if posture_status else "Unknown",
             "Unknown", 128)
-        statuses[(status, os_name, psn)] += 1
+        increment_bounded(
+            statuses, (status, os_name, psn), MAX_STATUS_GROUPS,
+            ("Other", "Unknown", "Unknown"))
         applicable[normalize_bool_label(posture_applicable)] += 1
         assessment_status = metric_label(
             normalize_posture(assessment) if assessment else "Unknown", "Unknown", 128)
-        assessments[assessment_status] += 1
-        agents[metric_label(agent, "Unknown", 128)] += 1
+        increment_bounded(
+            assessments, assessment_status, MAX_STATUS_GROUPS, "Other")
+        increment_bounded(
+            agents, metric_label(agent, "Unknown", 128), MAX_AGENT_GROUPS, "Other")
         for policy, result in set(parse_posture_report(report)):
-            policies[(metric_label(policy, "Unknown", 128), result)] += 1
+            increment_bounded(
+                policies, (metric_label(policy, "Unknown", 128), result),
+                MAX_POLICY_GROUPS, ("Other", result))
 
         execution_steps = _value(
             detail, attrs, "execution_steps", "ExecutionSteps", "Steps")

@@ -95,6 +95,21 @@ def test_snapshot_replacement_rejects_nonfinite_samples_and_rolls_back(invalid):
     assert scalar._value.get() == 2
 
 
+def test_snapshot_replacement_rejects_excessive_series_and_rolls_back(monkeypatch):
+    registry = CollectorRegistry()
+    metric = Gauge("snapshot_bounded", "test", ["key"], registry=registry)
+    metric.labels(key="old").set(7)
+    monkeypatch.setattr(snapshots_module, "MAX_METRIC_SNAPSHOT_SAMPLES", 2)
+
+    with pytest.raises(ValueError, match="hard 2-sample limit"):
+        replace_metric_snapshot((metric,), tuple(
+            lambda key=key: metric.labels(key=key).set(1)
+            for key in ("one", "two", "three")))
+
+    assert {(sample.labels["key"], sample.value)
+            for sample in metric.collect()[0].samples} == {("old", 7)}
+
+
 def test_locked_registry_waits_for_snapshot_publication_boundary():
     registry = CollectorRegistry()
     Gauge("locked_registry_value", "test", registry=registry).set(1)

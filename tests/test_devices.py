@@ -1,3 +1,4 @@
+from collections import defaultdict
 import types
 
 import pytest
@@ -168,6 +169,18 @@ def test_device_group_metric_labels_are_byte_bounded(tmp_path, monkeypatch):
             metrics.ise_network_devices_by_type):
         assert all(len(label.encode("utf-8")) <= 256
                    for labels in metric._metrics for label in labels)
+
+
+def test_device_classification_groups_are_bounded_with_exact_totals(monkeypatch):
+    monkeypatch.setattr(devices, "MAX_CLASSIFICATION_GROUPS", 3)
+    counts = defaultdict(int)
+
+    for key in ("one", "two", "three", "four", "five"):
+        devices._increment_classification(counts, key)
+
+    assert len(counts) == 3
+    assert counts == {"one": 1, "two": 1, "Other": 3}
+    assert sum(counts.values()) == 5
 
 
 def test_device_detail_refresh_is_bounded_and_converges_across_restarts(

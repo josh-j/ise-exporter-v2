@@ -17,6 +17,7 @@ from .util import MAX_METRIC_LABEL_BYTES
 
 
 snapshot_lock = RLock()
+MAX_METRIC_SNAPSHOT_SAMPLES = 20_000
 MAX_PERSISTED_SNAPSHOT_SAMPLES = 20_000
 
 
@@ -39,6 +40,16 @@ def _validate_finite_metric_values(metric_families):
             if not finite:
                 raise ValueError(
                     f"metric snapshot value is invalid for {metric._name}")
+
+
+def _validate_metric_sample_count(metric_families):
+    """Prevent any collector from publishing row-like Grafana state."""
+    total = 0
+    for metric in metric_families:
+        total += len(metric._metrics) if hasattr(metric, "_metrics") else 1
+        if total > MAX_METRIC_SNAPSHOT_SAMPLES:
+            raise ValueError(
+                f"metric snapshot exceeds the hard {MAX_METRIC_SNAPSHOT_SAMPLES}-sample limit")
 
 
 class LockedCollectorRegistry:
@@ -88,6 +99,7 @@ def replace_metric_snapshot(metric_families, writers):
                     metric.set(0)
             for writer in writers:
                 writer()
+            _validate_metric_sample_count(families)
             _validate_finite_metric_values(families)
         except Exception:
             for metric, (kind, previous) in backups.items():

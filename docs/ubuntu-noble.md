@@ -145,6 +145,10 @@ to 20,000 aggregate samples and 32 MiB on write and restore, so the eight domain
 cannot turn this cache into a replica of an 80--200 GB MnT database. Compact MnT
 posture rows and TACACS internal-user detail rows are separately capped at 128 KiB
 and 64 KiB using their actual UTF-8 byte size.
+Live REST, MnT, and Data Connect metric publication also has a universal 20,000
+sample ceiling per atomic domain snapshot. MnT posture and NAD classification
+dimensions apply smaller label-group limits and aggregate overflow as `Other`,
+so the live scrape cannot become a row-level database export either.
 The exporter forces the SQLite database and its live WAL/shared-memory sidecars to
 mode `0600`; this remains true if an operator chooses a non-systemd state path.
 State keys are limited to 256 UTF-8 bytes, generic values to 32 MiB, and cache

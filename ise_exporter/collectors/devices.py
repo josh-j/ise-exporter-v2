@@ -10,6 +10,7 @@ from ..util import metric_label
 from . import observe, CollectorFailed
 
 logger = logging.getLogger(__name__)
+MAX_CLASSIFICATION_GROUPS = 1000
 
 _METRICS = (
     metrics.ise_network_devices_total,
@@ -22,6 +23,14 @@ _METRICS = (
     metrics.ise_network_device_detail_refresh_failures,
     metrics.ise_network_device_detail_refresh_deferred,
 )
+
+
+def _increment_classification(counts, key):
+    """Retain bounded classification groups while preserving the exact total."""
+    if key in counts or len(counts) < MAX_CLASSIFICATION_GROUPS - 1:
+        counts[key] += 1
+    else:
+        counts["Other"] += 1
 
 
 def _sanitized_detail(det):
@@ -167,9 +176,9 @@ def collect(client, cfg):
             if entry is None:
                 continue
             _name, _ip, device_type, location, ops_owner = _classify(entry["detail"])
-            loc_counts[location] += 1
-            ops_counts[ops_owner] += 1
-            type_counts[device_type] += 1
+            _increment_classification(loc_counts, location)
+            _increment_classification(ops_counts, ops_owner)
+            _increment_classification(type_counts, device_type)
 
         covered = sum(device_id in cached for device_id in device_ids)
         deferred = sum(

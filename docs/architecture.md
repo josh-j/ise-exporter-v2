@@ -260,6 +260,12 @@ collection. Across the eight persisted reporting domains, even the theoretical
 size ceiling remains under 256 MiB; this cannot become a local copy of an
 80--200 GB MnT database. Stale, corrupt, oversized, or schema-incompatible
 snapshots are ignored and collected from ISE immediately.
+The same 20,000-sample ceiling is enforced at every live atomic publication
+boundary, including non-persisted REST and MnT domains. Free-form active-posture
+status, agent-version, and policy labels and NAD classification labels have
+smaller domain-specific ceilings; overflow is aggregated into `Other` while
+preserving totals. A collector regression therefore rolls back instead of
+turning a bounded query or API response into row-like Prometheus state.
 The state layer validates its exact table contract at startup and bounds all keys,
 values, and reconciliation sets before materialization. Explicit SQLite physical
 corruption is recovered under a cross-process lock by preserving the original
