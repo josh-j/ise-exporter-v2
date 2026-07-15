@@ -5,6 +5,7 @@ Cumulative policy hit counters are intentionally not exported because lifetime
 totals look like current traffic and cannot provide account attribution.
 """
 from datetime import datetime, timezone
+import heapq
 import json
 import logging
 import time
@@ -49,6 +50,8 @@ _CONFIG_METRICS = (
 _INTERNAL_USERS_STATE = "tacacs.internal_users"
 _INTERNAL_LAST_SEEN_STATE = "tacacs.internal_last_seen"
 _INTERNAL_STATE_MAX_BYTES = 1024 * 1024
+_MAX_POLICY_SETS = 1000
+_MAX_POLICY_OBJECTS = 10_000
 _INTERNAL_USER_DETAIL_FIELDS = (
     "id", "name", "enabled", "passwordNeverExpires", "changePassword",
     "passwordIDStore", "dateCreated", "dateModified",
@@ -57,9 +60,12 @@ _EVENT_TYPES = ("authentication", "authorization", "accounting")
 logger = logging.getLogger(__name__)
 
 
-def _object_list(value, description):
+def _object_list(value, description, max_rows=None):
     if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
         raise CollectorFailed(f"{description} returned an invalid object list")
+    if max_rows is not None and len(value) > max_rows:
+        raise CollectorFailed(
+            f"{description} exceeded the {max_rows}-row production ceiling")
     return value
 
 
@@ -404,7 +410,8 @@ def collect_config(client, cfg):
         policy_sets = client.get_pan_api(
             "/policy/device-admin/policy-set", api_name="tacacs_policy_sets")
         _object_list(resources, "TACACS internal-user inventory")
-        _object_list(policy_sets, "Device Admin policy-set inventory")
+        _object_list(
+            policy_sets, "Device Admin policy-set inventory", _MAX_POLICY_SETS)
         resource_ids = [str(row.get("id") or "").strip() for row in resources]
         if (any(not user_id or not str(row.get("name") or "").strip()
                 for user_id, row in zip(resource_ids, resources))
@@ -418,14 +425,13 @@ def collect_config(client, cfg):
                 or len(set(policy_ids)) != len(policy_ids)):
             raise CollectorFailed("Device Admin policy-set inventory contained invalid IDs")
         limit = max(1, min(1000, int(getattr(cfg, "tacacs_internal_user_max", 1000))))
-        ordered_resources = sorted(
-            resources,
+        selected = heapq.nsmallest(
+            limit, resources,
             key=lambda resource: (
                 str(resource.get("name") or "").casefold(),
                 str(resource.get("id") or ""),
             ) if isinstance(resource, dict) else ("", ""),
         )
-        selected = ordered_resources[:limit]
         now = time.time()
         refresh_ttl = max(
             86400, int(getattr(cfg, "tacacs_internal_user_detail_ttl", 604800)))
@@ -500,13 +506,13 @@ def collect_config(client, cfg):
 
         policy_limit = max(1, min(1000, int(getattr(
             cfg, "tacacs_policy_set_max", 100))))
-        selected_policies = sorted(
-            policy_sets,
+        selected_policies = heapq.nsmallest(
+            policy_limit, policy_sets,
             key=lambda policy: (
                 str(policy.get("name") or "").casefold(),
                 str(policy.get("id") or ""),
             ),
-        )[:policy_limit]
+        )
         selected_policy_ids = [str(policy["id"]) for policy in selected_policies]
         policy_refresh_ttl = max(
             86400, int(getattr(cfg, "tacacs_policy_rule_ttl", 604800)))
@@ -583,8 +589,10 @@ def collect_config(client, cfg):
             "/policy/device-admin/command-sets", api_name="tacacs_command_sets")
         shell_profiles = client.get_pan_api(
             "/policy/device-admin/shell-profiles", api_name="tacacs_shell_profiles")
-        _object_list(command_sets, "Device Admin command-set inventory")
-        _object_list(shell_profiles, "Device Admin shell-profile inventory")
+        _object_list(
+            command_sets, "Device Admin command-set inventory", _MAX_POLICY_OBJECTS)
+        _object_list(
+            shell_profiles, "Device Admin shell-profile inventory", _MAX_POLICY_OBJECTS)
 
         detail_count = len(users)
         review_days = max(1, getattr(cfg, "tacacs_unused_account_days", 180))

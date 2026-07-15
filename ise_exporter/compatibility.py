@@ -14,6 +14,7 @@ SUPPORTED_PATCH_LEVEL = 11
 MAX_CERTIFICATES_PER_STORE = 1000
 MAX_CERTIFICATE_ROWS = 5000
 MAX_DEPLOYMENT_NODES = 100
+MAX_LICENSE_TIERS = 32
 DEPLOYMENT_NODE_STATES = (
     "Connected", "Disconnected", "InProgress", "NotApplicable", "NotInSync",
     "NotUpgraded", "RegistrationFailed", "ReplicationStopped",

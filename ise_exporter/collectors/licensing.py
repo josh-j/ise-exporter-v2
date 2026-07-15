@@ -4,6 +4,7 @@ import logging
 import math
 
 from .. import metrics
+from ..compatibility import MAX_LICENSE_TIERS
 from ..snapshots import replace_metric_snapshot
 from ..util import metric_label
 from . import observe, CollectorFailed
@@ -34,9 +35,14 @@ def collect(client, cfg):
         if not isinstance(tiers, (dict, list)):
             raise CollectorFailed("license tier-state was not an object or list")
 
+        tier_rows = tiers if isinstance(tiers, list) else [tiers]
+        if len(tier_rows) > MAX_LICENSE_TIERS:
+            raise CollectorFailed(
+                f"license tier-state exceeded the {MAX_LICENSE_TIERS}-tier ceiling")
+
         rows = []
         names = set()
-        for tier in (tiers if isinstance(tiers, list) else [tiers]):
+        for tier in tier_rows:
             if not isinstance(tier, dict):
                 raise CollectorFailed("license tier-state contained a non-object")
             raw_name = str(tier.get("name") or "").strip()

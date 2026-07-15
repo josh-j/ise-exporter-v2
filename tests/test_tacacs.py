@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from ise_exporter import metrics
+from ise_exporter import collectors, metrics
 from ise_exporter.collectors import tacacs
 from ise_exporter.state import StateStore
 from ise_exporter.util import clear_metric
@@ -36,6 +36,35 @@ def test_oversized_internal_account_state_is_pruned_before_json_load(
     store = StateStore(path)
     assert store.get_value(tacacs._INTERNAL_USERS_STATE) is None
     store.close()
+
+
+@pytest.mark.parametrize("path", (
+    "/policy/device-admin/policy-set",
+    "/policy/device-admin/command-sets",
+    "/policy/device-admin/shell-profiles",
+))
+def test_direct_pan_tacacs_inventories_have_hard_row_ceilings(
+        monkeypatch, path):
+    monkeypatch.setattr(tacacs, "_MAX_POLICY_SETS", 1)
+    monkeypatch.setattr(tacacs, "_MAX_POLICY_OBJECTS", 1)
+
+    class Oversized(Client):
+        def get_pan_api(self, requested, api_name="x"):
+            if requested == path:
+                return [{"id": "one"}, {"id": "two"}]
+            return super().get_pan_api(requested, api_name=api_name)
+
+    tacacs.collect_config(Oversized(), types.SimpleNamespace(
+        state_db_path=":memory:", tacacs_internal_user_max=1,
+        tacacs_internal_user_detail_max_requests=1,
+        tacacs_internal_user_detail_ttl=86400,
+        tacacs_internal_user_detail_request_interval_ms=100,
+        tacacs_policy_set_max=1, tacacs_policy_rule_refresh_max=1,
+        tacacs_policy_rule_ttl=86400, tacacs_policy_rule_request_interval_ms=100,
+        tacacs_unused_account_days=180,
+    ))
+
+    assert collectors.outcome("tacacs_config") is False
 
 
 class Client:

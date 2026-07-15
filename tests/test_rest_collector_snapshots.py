@@ -185,6 +185,17 @@ def test_certificate_security_binding_and_issuer_coverage(monkeypatch):
         hostname="psn-1", cert_name="EAP cert")._value.get() == 1
 
 
+def test_certificate_dn_matching_is_bounded_and_component_indexed():
+    identities = certificates._subject_identities(
+        "CN=Lab Issuing CA,O=Example," + "X" * 10_000)
+
+    assert certificates._issuer_matches("Lab Issuing CA", identities)
+    assert certificates._issuer_matches("Example", identities)
+    assert not certificates._issuer_matches("Issuing", identities)
+    assert all(len(value.encode("utf-8")) <= certificates.MAX_CERTIFICATE_DN_BYTES
+               for value in identities)
+
+
 def test_certificate_metric_labels_are_byte_bounded(monkeypatch):
     long_value = "ä" * 300
     monkeypatch.setattr(
@@ -418,6 +429,22 @@ def test_license_tier_metric_label_is_byte_bounded():
 
     label = next(iter(metrics.ise_license_consumption._metrics))[0]
     assert len(label.encode("utf-8")) <= 256
+
+
+def test_license_tier_list_ceiling_preserves_previous_snapshot(monkeypatch):
+    metrics.ise_license_consumption.labels(tier="old").set(7)
+    monkeypatch.setattr(licensing, "MAX_LICENSE_TIERS", 2)
+
+    class Client:
+        def get_pan_api(self, *args, **kwargs):
+            return [{
+                "name": f"tier-{index}", "consumptionCounter": index,
+                "status": "ENABLED", "compliance": "COMPLIANT",
+            } for index in range(3)]
+
+    licensing.collect(Client(), _cfg())
+
+    assert set(metrics.ise_license_consumption._metrics) == {("old",)}
 
 
 def test_malformed_patch_entry_preserves_version_and_patch_snapshot():
