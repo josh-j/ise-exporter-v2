@@ -853,6 +853,7 @@ def test_endpoint_resolution_does_not_order_by_absent_optional_timestamp():
     assert "UPDATE_TIME" not in sql
     assert "CREATE_TIME" not in sql
     assert "FETCH FIRST 10 ROWS ONLY" in sql
+    assert "ORDER BY" not in sql
 
 
 def test_endpoint_resolution_uses_interactive_point_lookup_path():
@@ -896,7 +897,7 @@ def test_endpoint_resolution_uses_required_columns_without_catalog_round_trip():
     sql = dataconnect.calls[0][1].upper()
     assert "SELECT MAC_ADDRESS, ENDPOINT_IP, HOSTNAME" in sql
     assert "ID," not in sql
-    assert "ORDER BY UPDATE_TIME DESC NULLS LAST" in sql
+    assert "ORDER BY" not in sql
 
 
 def test_endpoint_resolution_rejects_missing_search_capability_before_row_query():

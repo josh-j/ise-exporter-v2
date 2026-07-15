@@ -884,16 +884,13 @@ def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
         # optional IDs are selected only when the runtime already cached them.
         columns = {
             "MAC_ADDRESS": "VARCHAR2", "ENDPOINT_IP": "VARCHAR2",
-            "HOSTNAME": "VARCHAR2", "UPDATE_TIME": "TIMESTAMP",
+            "HOSTNAME": "VARCHAR2",
         }
     if comparison_column not in columns:
         raise CLIError(
             f"ENDPOINTS_DATA cannot resolve endpoints by {kind}; "
             f"column {comparison_column} is unavailable")
     selected = [column for column in candidates if column in columns]
-    order_column = next(
-        (column for column in ("UPDATE_TIME", "CREATE_TIME") if column in columns), None)
-    order = f"ORDER BY {order_column} DESC NULLS LAST" if order_column else ""
     parameters = {"identifier": identifier}
     if kind == "ip":
         comparison = f"{comparison_column} = :identifier"
@@ -915,7 +912,6 @@ def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
         SELECT {", ".join(selected)}
         FROM endpoints_data
         WHERE {comparison}
-        {order}
         FETCH FIRST 10 ROWS ONLY
     """, parameters)
 
