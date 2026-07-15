@@ -124,7 +124,7 @@ class PollScheduler:
             "dataconnect_endpoints": (
                 "dataconnect", getattr(cfg, "dataconnect_endpoints_interval", 86400), True),
             "dataconnect_freshness": (
-                "dataconnect", getattr(cfg, "dataconnect_freshness_interval", 43200), True),
+                "dataconnect", getattr(cfg, "dataconnect_freshness_interval", 86400), True),
             "dataconnect_nad_health": (
                 "dataconnect", getattr(cfg, "dataconnect_nad_health_interval", 21600), True),
             "mnt_active_posture": (
@@ -278,7 +278,17 @@ class PollScheduler:
                     )
             else:
                 if collectors.failures(name) >= MAX_CONSECUTIVE_FAILURES:
-                    retry = max(self.cfg.slow_interval, effective_interval)
+                    if source == "dataconnect":
+                        retry = max(self.cfg.slow_interval, effective_interval)
+                    else:
+                        # REST and MnT already share the persistent authentication
+                        # guard. Do not turn a five-failure streak on a fast health
+                        # dataset into the global six-hour slow tier; recover on the
+                        # dataset cadence once the account-safety backoff expires.
+                        retry = max(
+                            effective_interval,
+                            getattr(self.cfg, "auth_failure_backoff", 900),
+                        )
                 elif source == "dataconnect":
                     # A failed reporting query can still consume substantial ISE
                     # database work. Never hammer it at the exporter loop cadence,

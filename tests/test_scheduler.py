@@ -84,6 +84,15 @@ def test_scheduler_publishes_cadence_aligned_scan_windows():
     assert samples["tacacs_activity"] == 6
 
 
+def test_scheduler_freshness_fallback_matches_daily_production_cadence():
+    cfg = _cfg()
+
+    scheduler = PollScheduler(cfg, object(), object())
+
+    assert scheduler.dataset_plan["dataconnect_freshness"] == (
+        "dataconnect", 86400, True)
+
+
 def test_scheduler_uses_only_the_dedicated_mnt_client(monkeypatch):
     class Client:
         def get_mnt_xml(self, *args, **kwargs):
@@ -421,6 +430,21 @@ def test_repeated_failures_use_slow_backoff(monkeypatch):
     scheduler._run("dataconnect_radius", 100.0, 60, fail)
 
     assert scheduler.next_run["dataconnect_radius"] == 3800.0
+
+
+def test_repeated_rest_failures_use_auth_guard_not_global_slow_tier(monkeypatch):
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: 200.0)
+    scheduler = PollScheduler(_cfg(
+        slow_interval=21600, auth_failure_backoff=900), object(), object())
+    collectors._failures["deployment"] = scheduler_module.MAX_CONSECUTIVE_FAILURES - 1
+
+    def fail():
+        with collectors.observe("deployment"):
+            raise RuntimeError("still unavailable")
+
+    scheduler._run("deployment", 100.0, 300, fail)
+
+    assert scheduler.next_run["deployment"] == 1100.0
 
 
 def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):

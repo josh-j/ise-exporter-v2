@@ -294,7 +294,10 @@ they emit distinct metric families and never substitute for one another.
   Data Connect, MnT XML, pxGrid, or per-endpoint ERS. An early Data Connect failure
   retries no faster than five minutes and normally at the one-hour slow interval,
   so one transient startup failure cannot leave a daily dashboard empty for 24
-  hours. Five consecutive failures return to the full protected domain cadence.
+  hours. Five consecutive Data Connect failures return to the full protected
+  domain cadence. REST and MnT datasets instead retry at the slower of their own
+  cadence and the persistent authentication-guard backoff, so a fast health
+  dataset does not inherit the unrelated six-hour configuration tier.
 - A reporting-plane failure must not be represented as a valid empty snapshot.
 - Successful grouped query results replace their metric snapshot atomically so
   removed groups do not linger.
