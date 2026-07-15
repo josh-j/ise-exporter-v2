@@ -6,6 +6,11 @@ import logging
 from collections import defaultdict
 
 from .. import metrics
+from ..compatibility import (
+    DEPLOYMENT_NODE_ROLES,
+    DEPLOYMENT_NODE_SERVICES,
+    DEPLOYMENT_NODE_STATES,
+)
 from ..snapshots import replace_metric_snapshot
 from ..util import metric_label
 from . import observe, CollectorFailed
@@ -13,7 +18,6 @@ from .nodes import get_nodes
 
 logger = logging.getLogger(__name__)
 
-_STATES = ("Connected", "Disconnected", "Registering", "Syncing")
 _info_set = False
 _METRICS = (metrics.ise_deployment_status, metrics.ise_node_count,
             metrics.ise_pan_ha_enabled, metrics.ise_node_service_enabled)
@@ -41,13 +45,17 @@ def collect(client, cfg):
                     or len(hostname) > 253 or hostname in hostnames):
                 metrics.ise_up.set(0)
                 raise CollectorFailed("deployment node response contained an invalid hostname")
-            if status not in _STATES:
+            if status not in DEPLOYMENT_NODE_STATES:
                 metrics.ise_up.set(0)
                 raise CollectorFailed(
                     f"deployment node {hostname!r} contained invalid status {status!r}")
             if (not isinstance(roles, list) or not isinstance(services, list)
                     or any(not isinstance(value, str) or not value.strip()
-                           for value in roles + services)):
+                           for value in roles + services)
+                    or any(role not in DEPLOYMENT_NODE_ROLES for role in roles)
+                    or any(service not in DEPLOYMENT_NODE_SERVICES for service in services)
+                    or len(roles) != len(set(roles))
+                    or len(services) != len(set(services))):
                 metrics.ise_up.set(0)
                 raise CollectorFailed(
                     f"deployment node {hostname!r} contained invalid roles or services")

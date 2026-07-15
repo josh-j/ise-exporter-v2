@@ -396,6 +396,16 @@ class PollScheduler:
             if self._dataconnect_worker.is_alive():
                 logger.warning("Data Connect worker did not stop within %ss", timeout)
             else:
+                # The priority sentinel exits ahead of ordinary queued domains.
+                # Discard those abandoned callbacks so reusing this scheduler
+                # cannot execute stale work after a stop/start cycle.
+                while True:
+                    try:
+                        self._dataconnect_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    else:
+                        self._dataconnect_queue.task_done()
                 with self._dataconnect_lock:
                     self._dataconnect_busy = False
                     self._dataconnect_inflight.clear()

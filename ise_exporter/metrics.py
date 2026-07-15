@@ -1,6 +1,8 @@
 """Central metric registry and the only metric import surface for collectors."""
 from prometheus_client import Gauge, Counter, Info, Enum, Histogram
 
+from .compatibility import DEPLOYMENT_NODE_STATES
+
 # --- availability / deployment ---
 ise_exporter_build_info = Gauge(
     "ise_exporter_build_info", "Exporter package and exact ISE compatibility identity",
@@ -10,7 +12,7 @@ ise_info = Info("ise", "ISE deployment info")
 ise_deployment_status = Enum(
     "ise_deployment_status", "Status of nodes in deployment",
     labelnames=["node", "roles", "services"],
-    states=["Connected", "Disconnected", "Registering", "Syncing", "Unknown"])
+    states=DEPLOYMENT_NODE_STATES)
 ise_node_count = Gauge("ise_node_count", "Number of nodes by role", ["role"])
 ise_pan_ha_enabled = Gauge("ise_pan_ha_enabled", "PAN HA enabled (1=yes, 0=no)")
 ise_node_service_enabled = Gauge(

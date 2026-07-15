@@ -238,6 +238,34 @@ def test_dataconnect_worker_serializes_domains_and_deduplicates_queued_runs():
     scheduler._stop_dataconnect_worker()
 
 
+def test_dataconnect_shutdown_discards_abandoned_queued_callbacks():
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    shutdown = threading.Event()
+    started = threading.Event()
+    release = threading.Event()
+    stale_runs = []
+    scheduler._start_dataconnect_worker(shutdown)
+
+    def current():
+        with collectors.observe("dataconnect_radius_active"):
+            started.set()
+            assert release.wait(1)
+
+    scheduler._run_dataconnect("dataconnect_radius_active", 1800, current)
+    assert started.wait(1)
+    scheduler._run_dataconnect(
+        "dataconnect_performance", 3600, lambda: stale_runs.append(True))
+    shutdown.set()
+    release.set()
+    scheduler._stop_dataconnect_worker()
+
+    assert scheduler._dataconnect_queue.empty()
+    assert scheduler._dataconnect_queue.unfinished_tasks == 0
+    assert not scheduler._dataconnect_inflight
+    assert stale_runs == []
+
+
 def test_dataconnect_backlog_prioritizes_operational_domains():
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())

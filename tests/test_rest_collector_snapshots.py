@@ -260,6 +260,34 @@ def test_deployment_success_replaces_removed_nodes(monkeypatch):
     assert metrics.ise_up._value.get() == 1
 
 
+@pytest.mark.parametrize("status", (
+    "Connected", "Disconnected", "InProgress", "NotApplicable", "NotInSync",
+    "NotUpgraded", "RegistrationFailed", "ReplicationStopped",
+))
+def test_deployment_accepts_every_patch_11_node_status(monkeypatch, status):
+    monkeypatch.setattr(
+        deployment, "get_nodes",
+        lambda *args, **kwargs: [{
+            "hostname": "laba-ise-001", "nodeStatus": status,
+            "roles": ["PrimaryAdmin"], "services": ["Session"],
+        }],
+    )
+
+    class Client:
+        host = "ise.example"
+
+        def get_pan_api(self, *args, **kwargs):
+            return {"isEnabled": False}
+
+    deployment.collect(Client(), _cfg())
+
+    samples = metrics.ise_deployment_status.collect()[0].samples
+    assert any(sample.labels.get("node") == "laba-ise-001"
+               and sample.labels.get("ise_deployment_status") == status
+               and sample.value == 1 for sample in samples)
+    assert metrics.ise_up._value.get() == 1
+
+
 @pytest.mark.parametrize("pan_ha", ({"isEnabled": "false"}, {"isEnabled": 1}, {}))
 def test_deployment_rejects_non_boolean_pan_ha_without_replacing_snapshot(
         monkeypatch, pan_ha):

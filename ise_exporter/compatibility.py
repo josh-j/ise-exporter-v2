@@ -11,6 +11,19 @@ from dataclasses import dataclass
 
 SUPPORTED_ISE_VERSION = "3.3.0.430"
 SUPPORTED_PATCH_LEVEL = 11
+DEPLOYMENT_NODE_STATES = (
+    "Connected", "Disconnected", "InProgress", "NotApplicable", "NotInSync",
+    "NotUpgraded", "RegistrationFailed", "ReplicationStopped",
+)
+DEPLOYMENT_NODE_ROLES = frozenset({
+    "PrimaryAdmin", "PrimaryDedicatedMonitoring", "PrimaryMonitoring",
+    "SecondaryAdmin", "SecondaryDedicatedMonitoring", "SecondaryMonitoring",
+    "Standalone",
+})
+DEPLOYMENT_NODE_SERVICES = frozenset({
+    "DeviceAdmin", "PassiveIdentity", "Profiler", "SXP", "Session", "TC-NAC",
+    "pxGrid", "pxGridCloud",
+})
 
 
 class ISECompatibilityError(RuntimeError):
@@ -77,10 +90,18 @@ def _deployment_nodes(payload):
             raise ISECompatibilityError(
                 "ISE compatibility check failed: GET /api/v1/deployment/node "
                 f"node {index} has an invalid hostname")
-        if not isinstance(node["roles"], list) or not isinstance(node["services"], list):
+        roles = node["roles"]
+        services = node["services"]
+        if (node["nodeStatus"] not in DEPLOYMENT_NODE_STATES
+                or not isinstance(roles, list) or not isinstance(services, list)
+                or any(not isinstance(value, str) for value in roles + services)
+                or any(role not in DEPLOYMENT_NODE_ROLES for role in roles)
+                or any(service not in DEPLOYMENT_NODE_SERVICES for service in services)
+                or len(roles) != len(set(roles))
+                or len(services) != len(set(services))):
             raise ISECompatibilityError(
                 "ISE compatibility check failed: GET /api/v1/deployment/node "
-                f"node {hostname!r} has invalid roles or services")
+                f"node {hostname!r} has invalid status, roles, or services")
         hostnames.append(hostname)
     return tuple(hostnames)
 

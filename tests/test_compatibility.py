@@ -89,7 +89,11 @@ def test_rejects_unusable_patch_responses(payload, message):
     ([], "returned no deployment nodes"),
     ([{"hostname": "laba-ise-001"}], "missing fields: nodeStatus, roles, services"),
     ([{"hostname": "laba-ise-001", "nodeStatus": "Connected", "roles": "PAN",
-       "services": []}], "invalid roles or services"),
+       "services": []}], "invalid status, roles, or services"),
+    ([{"hostname": "laba-ise-001", "nodeStatus": "Syncing", "roles": [],
+       "services": []}], "invalid status, roles, or services"),
+    ([{"hostname": "laba-ise-001", "nodeStatus": "Connected", "roles": ["PAN"],
+       "services": []}], "invalid status, roles, or services"),
 ])
 def test_rejects_incompatible_deployment_responses(nodes, message):
     client = compatible_client()
