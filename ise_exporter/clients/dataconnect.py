@@ -37,7 +37,14 @@ MAX_RESULT_BYTES = 64 * 1024 * 1024
 MAX_BATCH_QUERIES = 5
 MIN_DUTY_CYCLE_PERCENT = 0.01
 MAX_DUTY_CYCLE_PERCENT = 0.1
-MAX_SHARED_PACING_FUTURE_SECONDS = 366 * 86400
+# One statement may spend one timeout connecting and one executing, then repeat
+# both after the single permitted disconnect retry. Crash leases must reserve
+# all four periods because the flock disappears when the process dies.
+MAX_STATEMENT_TIMEOUT_PERIODS = 4
+# Five maximally slow statements at the 0.01% hard duty floor require just under
+# 35 days of cooldown. Anything beyond 36 days cannot be produced by this client
+# and is a stale/corrupt deadline or a corrected wall clock, not valid pacing.
+MAX_SHARED_PACING_FUTURE_SECONDS = 36 * 86400
 _PACING_BUSY = object()
 
 
@@ -243,7 +250,7 @@ class DataConnectClient:
             # and leave the next process free to hit a large MnT immediately.
             # One reconnect is permitted for the immediately pending statement.
             # Multi-statement batches advance this lease before each later query.
-            worst_case_duration = 2 * self.timeout
+            worst_case_duration = MAX_STATEMENT_TIMEOUT_PERIODS * self.timeout
             crash_cooldown = max(
                 self.min_query_interval,
                 (worst_case_duration * (100 / self.max_duty_cycle - 1)
@@ -495,7 +502,9 @@ class DataConnectClient:
             for index, (name, sql) in enumerate(items):
                 if index:
                     self._wait(self.min_query_interval)
-                    worst_case_duration = self._batch_duration + 2 * self.timeout
+                    worst_case_duration = (
+                        self._batch_duration
+                        + MAX_STATEMENT_TIMEOUT_PERIODS * self.timeout)
                     crash_cooldown = max(
                         self.min_query_interval,
                         worst_case_duration * (100 / self.max_duty_cycle - 1),

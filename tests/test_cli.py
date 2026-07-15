@@ -411,6 +411,14 @@ def test_leading_wildcard_requires_explicit_production_acknowledgement():
     assert client.calls == []
 
 
+def test_endpoint_search_rejects_excessive_query_complexity_before_network_access():
+    with pytest.raises(cli.CLIError, match="at most 8 criteria"):
+        cli._parse_endpoint_criteria([f"field-{index}=value" for index in range(9)])
+
+    with pytest.raises(cli.CLIError, match="may not exceed 256 characters"):
+        cli._parse_endpoint_criteria(["name=" + "x" * 257])
+
+
 def test_complete_inventory_requires_explicit_production_acknowledgement():
     client = FakeClient()
 

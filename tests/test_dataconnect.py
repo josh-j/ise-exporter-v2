@@ -255,6 +255,10 @@ def test_atomic_query_batch_advances_shared_crash_lease_per_statement(
     # Initial one-statement lease, completed-work lease, next-statement lease,
     # then the second completed-work lease. Final unlock is class-owned.
     assert len(writes) == 4
+    expected_initial = 100.0 + (
+        dataconnect.MAX_STATEMENT_TIMEOUT_PERIODS * client.timeout
+        * (100 / client.max_duty_cycle - 1))
+    assert writes[0] == pytest.approx(expected_initial)
     assert writes[1] < writes[0]
     assert writes[2] > writes[1]
 
@@ -463,7 +467,7 @@ def test_catalog_crash_lease_is_bounded_to_metadata_attempt(monkeypatch, tmp_pat
 
     descriptor = client._shared_gate(adaptive_duty=False)
     try:
-        assert float(path.read_text().strip()) == pytest.approx(130.0)
+        assert float(path.read_text().strip()) == pytest.approx(160.0)
     finally:
         client._release_shared_gate(descriptor, 0)
 
@@ -570,7 +574,9 @@ def test_shared_pacing_gate_publishes_crash_safe_lease_before_query(
     descriptor = client._shared_gate()
     try:
         deadline = float(path.read_text().strip())
-        expected_cooldown = 2 * client.timeout * (100 / client.max_duty_cycle - 1)
+        expected_cooldown = (
+            dataconnect.MAX_STATEMENT_TIMEOUT_PERIODS * client.timeout
+            * (100 / client.max_duty_cycle - 1))
         assert deadline == pytest.approx(100.0 + expected_cooldown)
     finally:
         client._release_shared_gate(descriptor, 0)
@@ -621,6 +627,10 @@ def test_shared_pacing_gate_rejects_implausibly_distant_deadline(
 
     with pytest.raises(RuntimeError, match="implausibly far in the future"):
         dataconnect.DataConnectClient(cfg)._shared_gate()
+
+
+def test_shared_pacing_deadline_cannot_strand_collection_for_a_year():
+    assert dataconnect.MAX_SHARED_PACING_FUTURE_SECONDS == 36 * 86400
 
 
 def test_shared_pacing_lock_wait_is_interruptible_during_shutdown(tmp_path):

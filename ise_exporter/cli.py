@@ -406,6 +406,8 @@ COMPLETION_LIMIT = 25
 COMPLETION_CACHE_TTL = 300.0
 COMPLETION_MIN_LIVE_PREFIX = 2
 ENDPOINT_SEARCH_CANDIDATE_LIMIT = 5000
+ENDPOINT_SEARCH_MAX_CRITERIA = 8
+ENDPOINT_SEARCH_MAX_PATTERN_CHARS = 256
 _SAFE_LIVE_COMPLETION_TABLES = frozenset(("ENDPOINTS_DATA", "USER_TAB_COLUMNS"))
 
 COMPLETION_STATUS_VALUES = {
@@ -1042,6 +1044,9 @@ def _endpoint_fields(dataconnect, pattern=None, *, query=None):
 
 
 def _parse_endpoint_criteria(items):
+    if len(items) > ENDPOINT_SEARCH_MAX_CRITERIA:
+        raise CLIError(
+            f"endpoint search accepts at most {ENDPOINT_SEARCH_MAX_CRITERIA} criteria")
     criteria = []
     for item in items:
         field, separator, pattern = str(item).partition("=")
@@ -1052,6 +1057,10 @@ def _parse_endpoint_criteria(items):
         if not field or not pattern:
             raise CLIError(
                 f"invalid endpoint search {item!r}; use FIELD=PATTERN, e.g. location=Berlin-*")
+        if len(pattern) > ENDPOINT_SEARCH_MAX_PATTERN_CHARS:
+            raise CLIError(
+                f"endpoint search patterns may not exceed "
+                f"{ENDPOINT_SEARCH_MAX_PATTERN_CHARS} characters")
         criteria.append((field, pattern))
     return criteria
 
