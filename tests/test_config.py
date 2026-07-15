@@ -95,6 +95,11 @@ def test_summary_excludes_password(monkeypatch):
     assert "super-secret" not in cfg.summary()
     assert "database-secret" not in cfg.summary()
     assert "pan1.example.mil" in cfg.summary()
+    assert "dataconnect_target='mnt2.example.mil':2484/cpm10" in cfg.summary()
+    assert "dataconnect_query_timeout_seconds=15" in cfg.summary()
+    assert "dataconnect_min_query_interval_ms=5000" in cfg.summary()
+    assert "dataconnect_max_duty_cycle_percent=0.1" in cfg.summary()
+    assert "dataconnect_max_groups=1000" in cfg.summary()
     assert cfg.dataconnect_ready is True
     assert cfg.dataconnect_host == "mnt2.example.mil"
 

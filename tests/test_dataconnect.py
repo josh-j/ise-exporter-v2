@@ -144,6 +144,12 @@ def test_client_hard_caps_oracle_call_timeout(monkeypatch):
 
     assert client.timeout == 15
     assert connection.call_timeout == 15000
+    assert metrics.ise_dataconnect_query_timeout_seconds._value.get() == 15
+    assert metrics.ise_dataconnect_max_duty_cycle_percent._value.get() == 0.1
+    assert metrics.ise_dataconnect_result_row_ceiling._value.get() == (
+        dataconnect.MAX_RESULT_ROWS)
+    assert metrics.ise_dataconnect_result_byte_ceiling._value.get() == (
+        dataconnect.MAX_RESULT_BYTES)
 
 
 def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):

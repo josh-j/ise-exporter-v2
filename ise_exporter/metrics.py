@@ -542,6 +542,18 @@ ise_dataconnect_query_rows = Gauge(
 ise_dataconnect_query_pacing_seconds = Gauge(
     "ise_dataconnect_query_pacing_seconds",
     "Configured minimum idle time between Data Connect statements")
+ise_dataconnect_max_duty_cycle_percent = Gauge(
+    "ise_dataconnect_max_duty_cycle_percent",
+    "Configured hard maximum Data Connect reporting-query duty cycle in percent")
+ise_dataconnect_query_timeout_seconds = Gauge(
+    "ise_dataconnect_query_timeout_seconds",
+    "Hard total timeout for one Data Connect query attempt")
+ise_dataconnect_result_row_ceiling = Gauge(
+    "ise_dataconnect_result_row_ceiling",
+    "Hard maximum rows retained from one Data Connect statement")
+ise_dataconnect_result_byte_ceiling = Gauge(
+    "ise_dataconnect_result_byte_ceiling",
+    "Hard maximum materialized bytes retained from one Data Connect statement or batch")
 ise_dataconnect_scan_window_hours = Gauge(
     "ise_dataconnect_scan_window_hours",
     "Scheduled event-history scan window after applying the production ceiling",

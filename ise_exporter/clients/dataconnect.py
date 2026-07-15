@@ -206,6 +206,10 @@ class DataConnectClient:
         self._batch_rows = 0
         self._batch_result_bytes = 0
         metrics.ise_dataconnect_query_pacing_seconds.set(self.min_query_interval)
+        metrics.ise_dataconnect_max_duty_cycle_percent.set(self.max_duty_cycle)
+        metrics.ise_dataconnect_query_timeout_seconds.set(self.timeout)
+        metrics.ise_dataconnect_result_row_ceiling.set(MAX_RESULT_ROWS)
+        metrics.ise_dataconnect_result_byte_ceiling.set(MAX_RESULT_BYTES)
 
     def set_shutdown_event(self, shutdown):
         """Make long adaptive pacing waits interruptible during service stop."""

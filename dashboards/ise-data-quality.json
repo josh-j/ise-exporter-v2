@@ -417,6 +417,21 @@
       "gridPos": {"h": 5, "w": 24, "x": 0, "y": 98},
       "targets": [{"expr": "ise_exporter_build_info", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "fieldConfig": {"defaults": {}, "overrides": []}
+    },
+    {
+      "id": 39,
+      "type": "table",
+      "title": "Data Connect Enforced Safety Limits",
+      "description": "Effective hard client limits. Production should show a duty-cycle ceiling no higher than 0.1%, a query timeout no higher than 15 seconds, 5,000 rows, and 64 MiB retained bytes.",
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 103},
+      "targets": [
+        {"expr": "ise_dataconnect_max_duty_cycle_percent", "instant": true, "legendFormat": "maximum duty cycle percent", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_dataconnect_query_timeout_seconds", "instant": true, "legendFormat": "query timeout seconds", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_dataconnect_result_row_ceiling", "instant": true, "legendFormat": "result row ceiling", "refId": "C", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_dataconnect_result_byte_ceiling", "instant": true, "legendFormat": "result byte ceiling", "refId": "D", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+      ],
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {"showHeader": true}
     }
   ],
   "templating": {

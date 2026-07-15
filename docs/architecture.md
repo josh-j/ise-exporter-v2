@@ -202,7 +202,10 @@ Cross-process lock acquisition is non-blocking and cancellation-aware, so a CLI
 process holding the shared pacing gate cannot strand exporter shutdown behind a
 kernel lock during a long adaptive cooldown.
 The Data Quality dashboard exposes per-view statement rate, latest duration, rows
-returned, configured/effective cadence, pacing, and shared statement cooldown.
+returned, configured/effective cadence, pacing, shared statement cooldown, and
+the effective hard duty-cycle, timeout, result-row, and materialized-byte
+ceilings. Production monitoring therefore proves the guardrails in the running
+process rather than relying on a sample environment file.
 The scheduler does not apply that cooldown a second time when calculating its
 next domain run. ISE-expired Oracle sessions are reconnected and retried once;
 authentication errors and SQL failures are never retried. Before a
