@@ -269,6 +269,24 @@ class ISERestClient:
             raise TypeError("shutdown must be a threading.Event")
         self.shutdown_event = shutdown
 
+    def close(self):
+        """Close every owned connection pool; safe to call more than once."""
+        errors = []
+        with self._transport_lock():
+            for attribute in ("session", "mnt_session"):
+                session = getattr(self, attribute, None)
+                # Detach first so a failed close is still idempotent and cannot
+                # leave a half-closed pool available to later callers.
+                setattr(self, attribute, None)
+                if session is None:
+                    continue
+                try:
+                    session.close()
+                except Exception as error:
+                    errors.append(error)
+        if errors:
+            raise errors[0]
+
     def _transport_lock(self):
         # A few compatibility tests construct the client with __new__. Lazily
         # initializing preserves that surface while ensuring a requests.Session
@@ -321,6 +339,10 @@ class ISERestClient:
                 session, url, params=params, timeout=timeout, api_name=api_name)
 
     def _request_serialized(self, session, url, params=None, timeout=30, api_name="unknown"):
+        shutdown = getattr(self, "shutdown_event", None)
+        if shutdown is not None and shutdown.is_set():
+            ise_api_requests_total.labels(api=api_name, status="shutdown").inc()
+            return None
         now = time.time()
         try:
             auth_blocked = self._auth_guard_state().blocked(now)
@@ -859,3 +881,14 @@ class ISEOperatorClient:
         control = self.control.health_check()
         diagnostics = self.mnt.health_check()
         return {"pan": control["pan"], "mnt": diagnostics["mnt"]}
+
+    def close(self):
+        """Release both plane-specific pools even if one close fails."""
+        errors = []
+        for client in (self.control, self.mnt):
+            try:
+                client.close()
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise errors[0]

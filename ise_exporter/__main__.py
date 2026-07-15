@@ -36,6 +36,35 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 DEPLOY_ENV_FILE = os.environ.get("ISE_EXPORTER_ENV_FILE", "/etc/ise-exporter/ise-exporter.env")
 
 
+def _close_quietly(resource, name):
+    if resource is None:
+        return
+    try:
+        resource.close()
+    except Exception as error:
+        logger.warning("could not close %s: %s", name, error)
+
+
+def _stop_metrics_server(started):
+    """Release the Prometheus listener returned by supported client versions."""
+    if not isinstance(started, tuple) or not started:
+        return
+    server = started[0]
+    thread = started[1] if len(started) > 1 else None
+    try:
+        server.shutdown()
+    except Exception as error:
+        logger.warning("could not stop metrics listener: %s", error)
+    try:
+        server.server_close()
+    except Exception as error:
+        logger.warning("could not close metrics listener: %s", error)
+    if thread is not None:
+        thread.join(timeout=2)
+        if thread.is_alive():
+            logger.warning("metrics listener thread did not stop within 2s")
+
+
 def dataconnect_check(cfg):
     if not cfg.dataconnect_ready:
         logger.error("Data Connect check requires ISE_DATACONNECT_HOST, "
@@ -120,45 +149,60 @@ def main(argv=None):
 
     rest_auth_guard = RestAuthGuard(cfg)
     client = ISEControlPlaneClient(cfg, auth_guard=rest_auth_guard)
+    dataconnect = None
+    mnt = None
+    scheduler = None
+    metrics_server = None
     try:
-        compatibility = validate_ise_compatibility(client)
-    except ISECompatibilityError as exc:
-        logger.error("%s", exc)
-        return 1
-    logger.info("validated Cisco ISE %s Patch %d on %s",
-                compatibility.ise_version, compatibility.patch_level,
-                ", ".join(compatibility.deployment_nodes))
+        try:
+            compatibility = validate_ise_compatibility(client)
+        except ISECompatibilityError as exc:
+            logger.error("%s", exc)
+            return 1
+        logger.info("validated Cisco ISE %s Patch %d on %s",
+                    compatibility.ise_version, compatibility.patch_level,
+                    ", ".join(compatibility.deployment_nodes))
 
-    dataconnect = DataConnectClient(cfg)
-    try:
-        schema = validate_dataconnect_schema(
-            dataconnect, include_tacacs=getattr(cfg, "collect_tacacs", True))
-    except Exception as exc:
-        dataconnect.close()
-        logger.error("Data Connect startup validation failed: %s", exc)
-        return 1
-    logger.info("validated %d Cisco ISE Data Connect reporting views", len(schema))
-    mnt = (MnTActiveSessionClient(cfg, auth_guard=rest_auth_guard)
-           if cfg.collect_mnt_active_posture else None)
+        dataconnect = DataConnectClient(cfg)
+        try:
+            schema = validate_dataconnect_schema(
+                dataconnect, include_tacacs=getattr(cfg, "collect_tacacs", True))
+        except Exception as exc:
+            logger.error("Data Connect startup validation failed: %s", exc)
+            return 1
+        logger.info("validated %d Cisco ISE Data Connect reporting views", len(schema))
+        mnt = (MnTActiveSessionClient(cfg, auth_guard=rest_auth_guard)
+               if cfg.collect_mnt_active_posture else None)
 
-    shutdown = threading.Event()
-    signal.signal(signal.SIGTERM, lambda *_: shutdown.set())
-    signal.signal(signal.SIGINT, lambda *_: shutdown.set())
+        shutdown = threading.Event()
+        signal.signal(signal.SIGTERM, lambda *_: shutdown.set())
+        signal.signal(signal.SIGINT, lambda *_: shutdown.set())
 
-    start_http_server(cfg.exporter_port, registry=LockedCollectorRegistry())
-    logger.info("metrics on :%d (REST/OpenAPI config + Data Connect reporting + "
-                "bounded MnT active posture)",
-                cfg.exporter_port)
-    scheduler = PollScheduler(cfg, client, dataconnect=dataconnect, mnt=mnt)
+        metrics_server = start_http_server(
+            cfg.exporter_port, registry=LockedCollectorRegistry())
+        logger.info("metrics on :%d (REST/OpenAPI config + Data Connect reporting + "
+                    "bounded MnT active posture)",
+                    cfg.exporter_port)
+        scheduler = PollScheduler(cfg, client, dataconnect=dataconnect, mnt=mnt)
 
-    scheduler.loop(shutdown)   # blocks until SIGTERM/SIGINT
-    if dataconnect is not None and not scheduler.dataconnect_worker_alive:
-        dataconnect.close()
-    elif dataconnect is not None:
-        # The worker is a daemon and the process is already shutting down. Do
-        # not close its database connection from another thread mid-call.
-        logger.warning("leaving Data Connect client open for process teardown because "
-                       "the worker is still stopping")
+        scheduler.loop(shutdown)   # blocks until SIGTERM/SIGINT
+    finally:
+        if dataconnect is not None and not (
+                scheduler is not None and scheduler.dataconnect_worker_alive):
+            _close_quietly(dataconnect, "Data Connect client")
+        elif dataconnect is not None:
+            # The worker is a daemon and the process is already shutting down. Do
+            # not close its database connection from another thread mid-call.
+            logger.warning("leaving Data Connect client open for process teardown because "
+                           "the worker is still stopping")
+        if mnt is not None and not (
+                scheduler is not None and scheduler.mnt_worker_alive):
+            _close_quietly(mnt, "MnT client")
+        elif mnt is not None:
+            logger.warning("leaving MnT client open for process teardown because "
+                           "the worker is still stopping")
+        _close_quietly(client, "control-plane client")
+        _stop_metrics_server(metrics_server)
     logger.info("shutdown complete")
     return 0
 

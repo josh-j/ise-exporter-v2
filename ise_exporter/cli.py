@@ -2289,8 +2289,17 @@ class ISEShell(cmd.Cmd):
         return self._cached_completion(key, load)
 
     def close(self):
-        if self.dataconnect is not None:
-            self.dataconnect.close()
+        errors = []
+        for resource in (self.dataconnect, self.client):
+            close = getattr(resource, "close", None)
+            if not callable(close):
+                continue
+            try:
+                close()
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise errors[0]
 
 
 def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdout=None):
@@ -2323,8 +2332,13 @@ def main(argv=None, *, client=None, cfg=None, dataconnect=None, stdin=None, stdo
         print(f"ise-cli: error: {error}", file=sys.stderr)
         return 2
     finally:
-        if dataconnect is not None:
-            dataconnect.close()
+        try:
+            if dataconnect is not None:
+                dataconnect.close()
+        finally:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
     return 2
 
 

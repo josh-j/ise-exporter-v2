@@ -448,6 +448,11 @@ class PollScheduler:
         worker = self._dataconnect_worker
         return worker is not None and worker.is_alive()
 
+    @property
+    def mnt_worker_alive(self):
+        worker = self._mnt_worker
+        return worker is not None and worker.is_alive()
+
     def _run_mnt(self, name, tier, callback):
         """Keep the paced detail-refresh cycle off the REST scheduler lane."""
         if not self._mnt_async:

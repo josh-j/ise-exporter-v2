@@ -57,6 +57,74 @@ def test_runtime_and_diagnostics_clients_do_not_construct_the_other_plane():
     assert operator.control._auth_guard is operator.mnt._auth_guard
 
 
+def test_rest_client_close_releases_owned_pools_and_is_idempotent():
+    client = ISERestClient.__new__(ISERestClient)
+    client._request_lock = threading.RLock()
+
+    class Session:
+        def __init__(self):
+            self.closes = 0
+
+        def close(self):
+            self.closes += 1
+
+    control = Session()
+    mnt = Session()
+    client.session = control
+    client.mnt_session = mnt
+
+    client.close()
+    client.close()
+
+    assert control.closes == 1
+    assert mnt.closes == 1
+    assert client.session is None
+    assert client.mnt_session is None
+
+
+def test_operator_close_attempts_both_planes_when_first_close_fails():
+    operator = ISEOperatorClient.__new__(ISEOperatorClient)
+    calls = []
+
+    class Plane:
+        def __init__(self, name, error=None):
+            self.name = name
+            self.error = error
+
+        def close(self):
+            calls.append(self.name)
+            if self.error is not None:
+                raise self.error
+
+    failure = RuntimeError("control close failed")
+    operator.control = Plane("control", failure)
+    operator.mnt = Plane("mnt")
+
+    with pytest.raises(RuntimeError, match="control close failed"):
+        operator.close()
+
+    assert calls == ["control", "mnt"]
+
+
+def test_shutdown_rejects_queued_rest_request_before_wire_attempt():
+    client = ISERestClient.__new__(ISERestClient)
+    client.shutdown_event = threading.Event()
+    client.shutdown_event.set()
+    client._request_lock = threading.RLock()
+
+    class Session:
+        def get(self, *_args, **_kwargs):
+            raise AssertionError("shutdown request reached the wire")
+
+    assert client._request(
+        Session(), "https://ise.example/ers", api_name="shutdown_test") is None
+    sample = next(
+        item for item in rest_module.ise_api_requests_total.collect()[0].samples
+        if item.name.endswith("_total")
+        and item.labels == {"api": "shutdown_test", "status": "shutdown"})
+    assert sample.value >= 1
+
+
 def test_operator_client_delegates_bounded_pan_pagination():
     operator = ISEOperatorClient.__new__(ISEOperatorClient)
 

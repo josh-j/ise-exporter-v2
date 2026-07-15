@@ -87,6 +87,84 @@ def test_dataconnect_check_requires_credentials():
     assert app.dataconnect_check(_cfg(dataconnect_ready=False)) == 1
 
 
+def test_compatibility_failure_closes_control_plane_client(monkeypatch):
+    closed = []
+
+    class Client:
+        def __init__(self, cfg, auth_guard=None):
+            pass
+
+        def close(self):
+            closed.append("control")
+
+    monkeypatch.setattr(app, "Config", types.SimpleNamespace(from_env=lambda: _cfg(
+        ise_mnt_host="", collect_mnt_active_posture=False)))
+    monkeypatch.setattr(app, "ISEControlPlaneClient", Client)
+    monkeypatch.setattr(
+        app, "validate_ise_compatibility",
+        lambda _client: (_ for _ in ()).throw(app.ISECompatibilityError("unsupported")),
+    )
+
+    assert app.main([]) == 1
+    assert closed == ["control"]
+
+
+def test_schema_failure_closes_database_and_control_clients(monkeypatch):
+    closed = []
+
+    class Control:
+        def __init__(self, cfg, auth_guard=None):
+            pass
+
+        def close(self):
+            closed.append("control")
+
+    class DataConnect:
+        def __init__(self, cfg):
+            pass
+
+        def close(self):
+            closed.append("dataconnect")
+            raise RuntimeError("database close failed")
+
+    compatibility = types.SimpleNamespace(
+        ise_version="3.3.0.430", patch_level=11, deployment_nodes=("ise-1",))
+    monkeypatch.setattr(app, "Config", types.SimpleNamespace(from_env=lambda: _cfg(
+        ise_mnt_host="", collect_mnt_active_posture=False, collect_tacacs=True)))
+    monkeypatch.setattr(app, "ISEControlPlaneClient", Control)
+    monkeypatch.setattr(app, "DataConnectClient", DataConnect)
+    monkeypatch.setattr(app, "validate_ise_compatibility", lambda _client: compatibility)
+    monkeypatch.setattr(
+        app, "validate_dataconnect_schema",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("schema failed")),
+    )
+
+    assert app.main([]) == 1
+    assert closed == ["dataconnect", "control"]
+
+
+def test_stop_metrics_server_closes_listener_and_joins_thread():
+    calls = []
+
+    class Server:
+        def shutdown(self):
+            calls.append("shutdown")
+
+        def server_close(self):
+            calls.append("server_close")
+
+    class Thread:
+        def join(self, timeout):
+            calls.append(("join", timeout))
+
+        def is_alive(self):
+            return False
+
+    app._stop_metrics_server((Server(), Thread()))
+
+    assert calls == ["shutdown", "server_close", ("join", 2)]
+
+
 def test_dataconnect_schema_prints_catalog_metadata_and_closes(monkeypatch, capsys):
     calls = []
 

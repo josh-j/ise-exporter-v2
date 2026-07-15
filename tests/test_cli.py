@@ -702,6 +702,25 @@ def test_no_subcommand_enters_repl_and_question_mark_shows_commands():
     assert '"api": "MnT XML"' in rendered
 
 
+def test_shell_close_releases_dataconnect_and_rest_clients():
+    closed = []
+
+    class Resource:
+        def __init__(self, name):
+            self.name = name
+
+        def close(self):
+            closed.append(self.name)
+
+    shell = cli.ISEShell(
+        client=Resource("rest"), dataconnect=Resource("dataconnect"),
+        stdin=io.StringIO(), stdout=io.StringIO())
+
+    shell.close()
+
+    assert closed == ["dataconnect", "rest"]
+
+
 def test_repl_recovers_from_parse_error_and_runs_next_command():
     stdin = io.StringIO("not-a-command\nschema health -o json\nexit\n")
     stdout = io.StringIO()
