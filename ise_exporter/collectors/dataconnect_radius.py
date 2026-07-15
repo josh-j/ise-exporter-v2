@@ -13,6 +13,7 @@ from .dataconnect_common import (
     integer,
     label,
     number,
+    query_set,
     recent_event_predicate,
     replace_snapshot,
 )
@@ -246,10 +247,12 @@ def collect_reporting(dataconnect, cfg):
     """Atomically replace a bounded recent RADIUS reporting snapshot."""
     with observe("dataconnect_radius"):
         limit = group_limit(cfg)
-        combined = {name: dataconnect.query(sql)
-                    for name, sql in _reporting_queries(
-                        limit, event_window_hours(
-                            cfg, getattr(cfg, "dataconnect_radius_interval", 86400))).items()}
+        combined = query_set(
+            dataconnect,
+            _reporting_queries(
+                limit, event_window_hours(
+                    cfg, getattr(cfg, "dataconnect_radius_interval", 86400))),
+        )
         rows = {
             "authentication": [row for row in combined["authentication"]
                                if row.get("breakdown") == "authentication"],

@@ -47,6 +47,19 @@ def recent_event_predicate(column, hours):
     return f"{column} >= SYSTIMESTAMP - NUMTODSINTERVAL({hours}, 'HOUR')"
 
 
+def query_set(dataconnect, statements, parameters=None):
+    """Execute an atomic domain's small statement set under one client lease."""
+    query_many = getattr(dataconnect, "query_many", None)
+    if callable(query_many):
+        return query_many(statements, parameters)
+    parameter_sets = parameters or {}
+    return {
+        name: (dataconnect.query(sql, parameter_sets[name])
+               if name in parameter_sets else dataconnect.query(sql))
+        for name, sql in statements.items()
+    }
+
+
 def epoch(value):
     if isinstance(value, datetime):
         parsed = value

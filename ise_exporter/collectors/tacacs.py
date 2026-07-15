@@ -13,7 +13,12 @@ from .. import metrics
 from ..state import StateStore
 from ..util import metric_label, normalize_bool_label
 from . import CollectorFailed, observe
-from .dataconnect_common import event_window_hours, group_limit, replace_snapshot
+from .dataconnect_common import (
+    event_window_hours,
+    group_limit,
+    query_set,
+    replace_snapshot,
+)
 
 
 _CONFIG_METRICS = (
@@ -299,8 +304,8 @@ def _collect_dataconnect(dataconnect, cfg):
     parameters.update({f"internal_user_{index}": raw
                        for index, (_label_name, raw) in enumerate(internal_accounts)})
     queries = _activity_queries(limit, cutoff, len(internal_accounts))
-    combined = {kind: dataconnect.query(sql, parameters)
-            for kind, sql in queries.items()}
+    combined = query_set(
+        dataconnect, queries, {kind: parameters for kind in queries})
     rows = {kind: [row for row in values
                    if row.get("breakdown") != "internal_last_seen"]
             for kind, values in combined.items()}

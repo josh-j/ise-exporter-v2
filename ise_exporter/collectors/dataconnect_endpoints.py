@@ -6,6 +6,7 @@ from .dataconnect_common import (
     group_limit,
     integer,
     label,
+    query_set,
     recent_event_predicate,
     replace_snapshot,
 )
@@ -101,10 +102,12 @@ def _queries(limit, window_hours=6):
 def collect(dataconnect, cfg):
     """Atomically replace current inventory and bounded profiling snapshots."""
     with observe("dataconnect_endpoints"):
-        rows = {name: dataconnect.query(sql)
-                for name, sql in _queries(
-                    group_limit(cfg), event_window_hours(
-                        cfg, getattr(cfg, "dataconnect_endpoints_interval", 86400))).items()}
+        rows = query_set(
+            dataconnect,
+            _queries(
+                group_limit(cfg), event_window_hours(
+                    cfg, getattr(cfg, "dataconnect_endpoints_interval", 86400))),
+        )
         coverage = next((row for row in rows["inventory"]
                          if row.get("dimension") == "coverage"), {})
         total = integer(coverage.get("endpoints"))

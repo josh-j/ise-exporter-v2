@@ -94,13 +94,23 @@ endpoints use one sequential connection, five-second statement pacing, a 0.1%
 adaptive query-duty-cycle ceiling, 15-second total Oracle-attempt timeouts, and independent
 30-minute to 24-hour domain cadences. The client enforces five seconds, 0.1%,
 and a 15-second Oracle-call timeout as hard safety limits and refuses to
-materialize more than 5,000 rows from any statement. Results are streamed in
-100-row batches, with 1 MiB per-field and
-64 MiB per-query retained-payload ceilings, even when a CLI caller or alternate
+materialize more than 5,000 rows from a standalone statement or complete domain
+batch. Results are streamed in 100-row fetches, with 1 MiB per-field and 64 MiB
+retained-payload ceilings per standalone statement or complete batch, even when
+a CLI caller or alternate
 configuration object requests a more aggressive value; grouped output is likewise
 capped at 1,000 series per breakdown. Operators may lower the duty-cycle ceiling
-as far as 0.01%; values above 0.1% are always clamped. Summary
-and top-group results share one Oracle aggregation wherever
+as far as 0.01%; values above 0.1% are always clamped.
+Multi-view domains execute as atomic batches of at most five statements under one
+shared lease. Statements remain sequential and retain the fixed five-second gap;
+the adaptive cooldown is calculated from their combined Oracle execution time and
+begins after the complete snapshot is available. This preserves the long-run duty
+cycle without imposing a multi-hour cooldown between the statements required for
+one dashboard update. The crash-safe deadline rolls forward one statement at a
+time, so an early exporter failure cannot leave a pessimistic whole-batch lease.
+The 5,000-row and 64 MiB retained-result ceilings cover the whole batch rather
+than multiplying by its statement count.
+Summary and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate event scan. Exact
 RADIUS volume, failure totals, and distinct endpoint/user counts come from Cisco's
 `RADIUS_AUTHENTICATION_SUMMARY` aggregate view, including failure class,

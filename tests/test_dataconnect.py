@@ -123,6 +123,142 @@ def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
     assert dataconnect._query_view("SELECT * FROM arbitrary_table") == "other"
 
 
+def test_atomic_query_batch_uses_fixed_gaps_then_one_aggregate_cooldown(monkeypatch):
+    connection = Connection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    clock = [0.0]
+
+    def tick():
+        clock[0] += 0.1
+        return clock[0]
+
+    monkeypatch.setattr(dataconnect.time, "monotonic", tick)
+    sleeps = []
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.mil", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        dataconnect_min_query_interval_ms=5000,
+        dataconnect_shared_pacing_file="",
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(client, "_wait", sleeps.append)
+
+    result = client.query_many({
+        "authentication": "SELECT username FROM radius_authentications",
+        "accounting": "SELECT username FROM radius_accounting",
+    })
+
+    assert result == {
+        "authentication": [{"username": "netadmin", "hits": 3}],
+        "accounting": [{"username": "netadmin", "hits": 3}],
+    }
+    assert sleeps == [5.0]
+    assert client._next_query_at > clock[0] + 100
+    assert client._batch_active is False
+
+
+def test_atomic_query_batch_advances_shared_crash_lease_per_statement(
+        monkeypatch, tmp_path):
+    connection = Connection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+    clock = [0.0]
+
+    def tick():
+        clock[0] += 0.1
+        return clock[0]
+
+    monkeypatch.setattr(dataconnect.time, "monotonic", tick)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15,
+        dataconnect_shared_pacing_file=str(tmp_path / "dataconnect.pacing"),
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(client, "_wait", lambda _seconds: None)
+    writes = []
+    real_write = client._write_shared_deadline
+
+    def record_write(descriptor, deadline):
+        writes.append(deadline)
+        real_write(descriptor, deadline)
+
+    monkeypatch.setattr(client, "_write_shared_deadline", record_write)
+
+    client.query_many({
+        "authentication": "SELECT username FROM radius_authentications",
+        "accounting": "SELECT username FROM radius_accounting",
+    })
+
+    # Initial one-statement lease, completed-work lease, next-statement lease,
+    # then the second completed-work lease. Final unlock is class-owned.
+    assert len(writes) == 4
+    assert writes[1] < writes[0]
+    assert writes[2] > writes[1]
+
+
+def test_query_batch_has_a_hard_statement_ceiling():
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15,
+    )
+
+    with pytest.raises(ValueError, match="5-query ceiling"):
+        dataconnect.DataConnectClient(cfg).query_many({
+            str(index): "SELECT 1 FROM endpoints_data" for index in range(6)
+        })
+
+
+def test_query_batch_applies_result_row_ceiling_across_statements(monkeypatch):
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: Connection())
+    monkeypatch.setattr(dataconnect, "MAX_RESULT_ROWS", 2)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file="",
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(client, "_wait", lambda _seconds: None)
+
+    with pytest.raises(RuntimeError, match="2-row safety ceiling"):
+        client.query_many({
+            "one": "SELECT username FROM endpoints_data",
+            "two": "SELECT username FROM endpoints_data",
+            "three": "SELECT username FROM endpoints_data",
+        })
+
+    assert client._batch_rows == 0
+
+
+def test_query_batch_applies_result_byte_ceiling_across_statements(monkeypatch):
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: Connection())
+    monkeypatch.setattr(dataconnect, "MAX_RESULT_BYTES", 40)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file="",
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(client, "_wait", lambda _seconds: None)
+
+    with pytest.raises(RuntimeError, match="40-byte safety ceiling"):
+        client.query_many({
+            "one": "SELECT username FROM endpoints_data",
+            "two": "SELECT username FROM endpoints_data",
+        })
+
+    assert client._batch_result_bytes == 0
+
+
 def test_client_cannot_relax_production_pressure_invariants():
     cfg = types.SimpleNamespace(
         dataconnect_host="mnt.example.mil", dataconnect_port=2484,

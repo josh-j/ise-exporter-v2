@@ -6,6 +6,7 @@ from .dataconnect_common import (
     group_limit,
     integer,
     label,
+    query_set,
     recent_event_predicate,
     replace_snapshot,
 )
@@ -151,10 +152,12 @@ def _queries(limit, window_hours=6):
 def collect(dataconnect, cfg):
     """Atomically replace posture snapshots without exporting endpoint identity."""
     with observe("dataconnect_posture"):
-        rows = {name: dataconnect.query(sql)
-                for name, sql in _queries(
-                    group_limit(cfg), event_window_hours(
-                        cfg, getattr(cfg, "dataconnect_posture_interval", 21600))).items()}
+        rows = query_set(
+            dataconnect,
+            _queries(
+                group_limit(cfg), event_window_hours(
+                    cfg, getattr(cfg, "dataconnect_posture_interval", 21600))),
+        )
         snapshot = rows["snapshot"]
         snapshot_groups = {
             breakdown: [row for row in snapshot if row.get("breakdown") == breakdown]

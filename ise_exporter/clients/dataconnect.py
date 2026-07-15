@@ -27,6 +27,7 @@ MAX_RESULT_ROWS = 5000
 FETCH_BATCH_ROWS = 100
 MAX_FIELD_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 64 * 1024 * 1024
+MAX_BATCH_QUERIES = 5
 MIN_DUTY_CYCLE_PERCENT = 0.01
 MAX_DUTY_CYCLE_PERCENT = 0.1
 MAX_SHARED_PACING_FUTURE_SECONDS = 366 * 86400
@@ -148,6 +149,12 @@ class DataConnectClient:
         self._blocked_until = 0.0
         self._next_query_at = 0.0
         self._shutdown = None
+        self._batch_active = False
+        self._batch_gate = None
+        self._batch_duration = 0.0
+        self._batch_views = []
+        self._batch_rows = 0
+        self._batch_result_bytes = 0
         metrics.ise_dataconnect_query_pacing_seconds.set(self.min_query_interval)
 
     def set_shutdown_event(self, shutdown):
@@ -225,7 +232,9 @@ class DataConnectClient:
             # completion replaces it with the measured duty-cycle cooldown, but
             # SIGKILL, host loss, or interpreter failure cannot release the flock
             # and leave the next process free to hit a large MnT immediately.
-            worst_case_duration = 2 * self.timeout  # one reconnect is permitted
+            # One reconnect is permitted for the immediately pending statement.
+            # Multi-statement batches advance this lease before each later query.
+            worst_case_duration = 2 * self.timeout
             crash_cooldown = max(
                 self.min_query_interval,
                 worst_case_duration * (100 / self.max_duty_cycle - 1),
@@ -296,18 +305,20 @@ class DataConnectClient:
         connection.call_timeout = max(1, math.ceil(remaining * 1000))
 
     def query(self, sql, parameters=None, *, wait_for_pacing=True):
-        remaining = self._next_query_at - time.monotonic()
-        if remaining > 0:
-            if not wait_for_pacing:
-                return None
-            self._wait(remaining)
+        if not self._batch_active:
+            remaining = self._next_query_at - time.monotonic()
+            if remaining > 0:
+                if not wait_for_pacing:
+                    return None
+                self._wait(remaining)
         attempt_started = time.monotonic()
-        shared_gate = None
+        shared_gate = self._batch_gate
         started = None
         view = _query_view(sql)
         result = "error"
         try:
-            shared_gate = self._shared_gate(wait=wait_for_pacing)
+            if not self._batch_active:
+                shared_gate = self._shared_gate(wait=wait_for_pacing)
         except Exception:
             finished = time.monotonic()
             duration = max(0.0, finished - attempt_started)
@@ -345,19 +356,26 @@ class DataConnectClient:
                             if not batch:
                                 break
                             for raw_row in batch:
-                                if len(rows) >= MAX_RESULT_ROWS:
+                                retained_rows = (
+                                    self._batch_rows if self._batch_active else 0)
+                                if retained_rows + len(rows) >= MAX_RESULT_ROWS:
                                     raise RuntimeError(
                                         f"Data Connect result exceeded the hard "
                                         f"{MAX_RESULT_ROWS}-row safety ceiling")
                                 row = dict(zip(
                                     columns, (_materialize(value) for value in raw_row)))
                                 result_bytes += _materialized_size(row)
-                                if result_bytes > MAX_RESULT_BYTES:
+                                retained_bytes = (
+                                    self._batch_result_bytes if self._batch_active else 0)
+                                if retained_bytes + result_bytes > MAX_RESULT_BYTES:
                                     raise RuntimeError(
                                         f"Data Connect result exceeded the hard "
                                         f"{MAX_RESULT_BYTES}-byte safety ceiling")
                                 rows.append(row)
                     result = "success"
+                    if self._batch_active:
+                        self._batch_rows += len(rows)
+                        self._batch_result_bytes += result_bytes
                     metrics.ise_dataconnect_query_rows.labels(view=view).set(len(rows))
                     return rows
                 except Exception as error:
@@ -377,13 +395,20 @@ class DataConnectClient:
             finished = time.monotonic()
             duration = max(0.0, finished - (
                 started if started is not None else attempt_started))
-            duty_cycle_cooldown = duration * (100 / self.max_duty_cycle - 1)
-            cooldown = max(self.min_query_interval, duty_cycle_cooldown)
-            metrics.ise_dataconnect_query_cooldown_seconds.labels(view=view).set(cooldown)
-            self._next_query_at = finished + cooldown
+            if self._batch_active:
+                self._batch_duration += duration
+                self._batch_views.append(view)
+                cooldown = None
+            else:
+                duty_cycle_cooldown = duration * (100 / self.max_duty_cycle - 1)
+                cooldown = max(self.min_query_interval, duty_cycle_cooldown)
+                metrics.ise_dataconnect_query_cooldown_seconds.labels(
+                    view=view).set(cooldown)
+                self._next_query_at = finished + cooldown
             query_failed = result == "error"
             try:
-                self._release_shared_gate(shared_gate, time.time() + cooldown)
+                if not self._batch_active:
+                    self._release_shared_gate(shared_gate, time.time() + cooldown)
             except Exception:
                 # A failed release means the cross-process safety deadline was
                 # not durably published. Do not report an otherwise successful
@@ -404,6 +429,86 @@ class DataConnectClient:
                     view=view, result=result).set(duration)
                 if result == "error":
                     metrics.ise_dataconnect_query_rows.labels(view=view).set(0)
+
+    def query_many(self, statements, parameters=None):
+        """Run one small atomic domain batch under a single duty-cycle lease.
+
+        Statements remain individually timeout- and result-bounded. The shared
+        gate stays locked across fixed five-second-or-longer gaps, then publishes
+        one cooldown based on total Oracle work. This makes multi-view snapshots
+        achievable without increasing long-run database duty cycle.
+        """
+        items = list(statements.items())
+        if not items:
+            return {}
+        if len(items) > MAX_BATCH_QUERIES:
+            raise ValueError(
+                f"Data Connect batch exceeds the hard {MAX_BATCH_QUERIES}-query ceiling")
+        if self._batch_active:
+            raise RuntimeError("nested Data Connect batches are not supported")
+        remaining = self._next_query_at - time.monotonic()
+        if remaining > 0:
+            self._wait(remaining)
+        # Acquire with a one-statement crash lease. The lease is advanced below
+        # immediately before each later statement, so a kill early in the batch
+        # cannot strand all Data Connect work behind a multi-day worst-case lease.
+        gate = self._shared_gate()
+        self._batch_active = True
+        self._batch_gate = gate
+        self._batch_duration = 0.0
+        self._batch_views = []
+        self._batch_rows = 0
+        self._batch_result_bytes = 0
+        batch_failed = False
+        try:
+            results = {}
+            parameter_sets = parameters or {}
+            for index, (name, sql) in enumerate(items):
+                if index:
+                    self._wait(self.min_query_interval)
+                    worst_case_duration = self._batch_duration + 2 * self.timeout
+                    crash_cooldown = max(
+                        self.min_query_interval,
+                        worst_case_duration * (100 / self.max_duty_cycle - 1),
+                    )
+                    if gate is not None:
+                        self._write_shared_deadline(
+                            gate, time.time() + crash_cooldown)
+                results[name] = self.query(sql, parameter_sets.get(name))
+                completed_cooldown = max(
+                    self.min_query_interval,
+                    self._batch_duration * (100 / self.max_duty_cycle - 1),
+                )
+                if gate is not None:
+                    self._write_shared_deadline(
+                        gate, time.time() + completed_cooldown)
+            return results
+        except BaseException:
+            batch_failed = True
+            raise
+        finally:
+            finished = time.monotonic()
+            duty_cycle_cooldown = (
+                self._batch_duration * (100 / self.max_duty_cycle - 1))
+            cooldown = max(self.min_query_interval, duty_cycle_cooldown)
+            self._next_query_at = finished + cooldown
+            for view in set(self._batch_views):
+                metrics.ise_dataconnect_query_cooldown_seconds.labels(
+                    view=view).set(cooldown)
+            self._batch_active = False
+            self._batch_gate = None
+            self._batch_duration = 0.0
+            self._batch_views = []
+            self._batch_rows = 0
+            self._batch_result_bytes = 0
+            try:
+                self._release_shared_gate(gate, time.time() + cooldown)
+            except Exception:
+                if batch_failed:
+                    logger.exception(
+                        "Data Connect batch pacing gate release also failed")
+                else:
+                    raise
 
     def query_if_ready(self, sql, parameters=None):
         """Issue a statement only when the production pacing gate is ready now.

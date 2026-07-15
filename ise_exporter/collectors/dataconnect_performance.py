@@ -7,6 +7,7 @@ from .dataconnect_common import (
     integer,
     label,
     number,
+    query_set,
     recent_event_predicate,
     replace_snapshot,
 )
@@ -92,10 +93,12 @@ def _queries(limit, window_hours=6):
 def collect(dataconnect, cfg):
     """Atomically replace latest node samples and diagnostic aggregates."""
     with observe("dataconnect_performance"):
-        rows = {name: dataconnect.query(sql)
-                for name, sql in _queries(
-                    group_limit(cfg), event_window_hours(
-                        cfg, getattr(cfg, "dataconnect_performance_interval", 3600))).items()}
+        rows = query_set(
+            dataconnect,
+            _queries(
+                group_limit(cfg), event_window_hours(
+                    cfg, getattr(cfg, "dataconnect_performance_interval", 3600))),
+        )
         kpis = [{
             "node": label(row.get("ise_node")),
             "requests": number(row.get("radius_requests_hr")),

@@ -119,7 +119,12 @@ ISE_REST_AUTH_GUARD_FILE=/var/lib/ise-exporter/shared/rest-auth.guard
 Five seconds between statements, a 0.1% duty cycle, and 1,000 grouped results are
 hard maximum-pressure boundaries. Environment overrides may make collection more
 conservative down to a 0.01% duty-cycle floor, but the exporter and `ise-cli`
-clamp attempts to make it more aggressive. The 15-second timeout is enforced
+clamp attempts to make it more aggressive. Atomic domain batches keep those
+limits: no more than five sequential
+statements share a lease, and one cooldown based on their combined execution time
+starts only after the domain snapshot completes. The rolling crash deadline covers
+only completed work plus the immediately pending statement. The 15-second timeout
+is enforced
 across the complete execute/fetch attempt, not independently for every Oracle
 round trip. This applies even when the configured Data Connect host is a secondary
 MnT because an exposed reporting view may still consume cluster-wide resources.
