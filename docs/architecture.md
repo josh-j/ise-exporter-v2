@@ -132,6 +132,9 @@ numeric-epoch ceiling to every view. This avoids 14 adaptive pacing waits holdin
 the serialized worker while retaining one atomic freshness snapshot.
 Production cadence settings are minimum intervals: operators may collect less
 often, but environment overrides cannot restore the former aggressive schedule.
+The scheduler enforces those minima independently of environment parsing, so a
+direct `Config(...)` or Config-like integration cannot issue the same statements
+at a faster cadence.
 The exporter and CLI also serialize through one persistent pacing gate so separate
 processes cannot bypass the cooldown. An empty pacing-path environment value is
 normalized back to the protected service-state path rather than disabling this

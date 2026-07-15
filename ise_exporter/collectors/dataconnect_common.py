@@ -28,9 +28,16 @@ def group_limit(cfg):
 
 def event_window_hours(cfg, interval_seconds):
     """Match a scan to its cadence without exceeding the production ceiling."""
-    ceiling = max(1, min(6, int(getattr(
-        cfg, "dataconnect_event_window_hours", 6))))
-    cadence = max(1, math.ceil(int(interval_seconds) / 3600))
+    try:
+        ceiling = int(getattr(cfg, "dataconnect_event_window_hours", 6))
+    except (TypeError, ValueError):
+        ceiling = 6
+    try:
+        interval_seconds = int(interval_seconds)
+    except (TypeError, ValueError):
+        interval_seconds = 3600
+    ceiling = max(1, min(6, ceiling))
+    cadence = max(1, math.ceil(interval_seconds / 3600))
     return min(ceiling, cadence)
 
 

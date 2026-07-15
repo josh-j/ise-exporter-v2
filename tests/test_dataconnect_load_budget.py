@@ -10,7 +10,7 @@ from ise_exporter.collectors import (
     dataconnect_radius,
     tacacs,
 )
-from ise_exporter.collectors.dataconnect_common import group_limit
+from ise_exporter.collectors.dataconnect_common import event_window_hours, group_limit
 from ise_exporter.config import Config
 
 
@@ -102,6 +102,12 @@ def test_radius_reporting_scans_each_large_historical_view_only_once():
 def test_alternate_config_cannot_export_more_than_production_group_ceiling():
     assert group_limit(types.SimpleNamespace(dataconnect_max_groups=999_999)) == 1000
     assert len(tacacs._activity_queries(1000)) == 3
+
+
+def test_malformed_config_like_scan_window_fails_safe():
+    cfg = types.SimpleNamespace(dataconnect_event_window_hours="invalid")
+
+    assert event_window_hours(cfg, "invalid") == 1
 
 
 def test_tacacs_internal_last_seen_reuses_each_existing_view_scan():

@@ -38,6 +38,15 @@ MAX_CONSECUTIVE_FAILURES = 5
 _DATACONNECT_SHUTDOWN_TIMEOUT = 17
 _MNT_SHUTDOWN_TIMEOUT = 32
 
+
+def _minimum_interval(value, default, minimum):
+    """Return a production-safe cadence for unchecked Config-like callers."""
+    try:
+        interval = int(value)
+    except (TypeError, ValueError):
+        interval = default
+    return max(minimum, interval)
+
 # Lower values run first whenever more than one due domain is waiting. This does
 # not add query concurrency or preempt an atomic collector; it prevents daily
 # inventory/freshness work from keeping current operational health behind a cold-
@@ -77,6 +86,14 @@ def _next_deadline(deadline, now, interval):
 class PollScheduler:
     def __init__(self, cfg, client, dataconnect=None, mnt=None):
         self.cfg = cfg
+        self.scrape_interval = _minimum_interval(
+            getattr(cfg, "scrape_interval", 120), 120, 60)
+        self.medium_interval = _minimum_interval(
+            getattr(cfg, "medium_interval", 300), 300, 300)
+        self.slow_interval = _minimum_interval(
+            getattr(cfg, "slow_interval", 3600), 3600, 3600)
+        self.auth_failure_backoff = _minimum_interval(
+            getattr(cfg, "auth_failure_backoff", 900), 900, 300)
         self.client = client
         self.dataconnect = dataconnect
         self.mnt = mnt
@@ -108,33 +125,41 @@ class PollScheduler:
     def _dataset_plan(self):
         cfg = self.cfg
         return {
-            "deployment": ("rest", cfg.medium_interval, True),
-            "devices": ("rest", cfg.medium_interval, True),
-            "certificates": ("rest", cfg.slow_interval, cfg.collect_certificates),
-            "licensing": ("rest", cfg.slow_interval, cfg.collect_licensing),
-            "backup": ("rest", cfg.slow_interval, cfg.collect_backup_status),
-            "patches": ("rest", cfg.slow_interval, cfg.collect_patches),
+            "deployment": ("rest", self.medium_interval, True),
+            "devices": ("rest", self.medium_interval, True),
+            "certificates": ("rest", self.slow_interval, cfg.collect_certificates),
+            "licensing": ("rest", self.slow_interval, cfg.collect_licensing),
+            "backup": ("rest", self.slow_interval, cfg.collect_backup_status),
+            "patches": ("rest", self.slow_interval, cfg.collect_patches),
             "dataconnect_radius": (
-                "dataconnect", getattr(cfg, "dataconnect_radius_interval", 86400), True),
+                "dataconnect", _minimum_interval(
+                    getattr(cfg, "dataconnect_radius_interval", 86400), 86400, 86400), True),
             "dataconnect_radius_active": (
-                "dataconnect", getattr(
-                    cfg, "dataconnect_radius_active_interval", 1800), True),
+                "dataconnect", _minimum_interval(getattr(
+                    cfg, "dataconnect_radius_active_interval", 1800), 1800, 1800), True),
             "dataconnect_performance": (
-                "dataconnect", getattr(cfg, "dataconnect_performance_interval", 3600), True),
+                "dataconnect", _minimum_interval(getattr(
+                    cfg, "dataconnect_performance_interval", 3600), 3600, 3600), True),
             "dataconnect_posture": (
-                "dataconnect", getattr(cfg, "dataconnect_posture_interval", 21600), True),
+                "dataconnect", _minimum_interval(getattr(
+                    cfg, "dataconnect_posture_interval", 21600), 21600, 21600), True),
             "dataconnect_endpoints": (
-                "dataconnect", getattr(cfg, "dataconnect_endpoints_interval", 86400), True),
+                "dataconnect", _minimum_interval(getattr(
+                    cfg, "dataconnect_endpoints_interval", 86400), 86400, 86400), True),
             "dataconnect_freshness": (
-                "dataconnect", getattr(cfg, "dataconnect_freshness_interval", 86400), True),
+                "dataconnect", _minimum_interval(getattr(
+                    cfg, "dataconnect_freshness_interval", 86400), 86400, 86400), True),
             "dataconnect_nad_health": (
-                "dataconnect", getattr(cfg, "dataconnect_nad_health_interval", 21600), True),
+                "dataconnect", _minimum_interval(getattr(
+                    cfg, "dataconnect_nad_health_interval", 21600), 21600, 21600), True),
             "mnt_active_posture": (
-                "mnt", getattr(cfg, "mnt_active_posture_interval", cfg.medium_interval),
+                "mnt", _minimum_interval(getattr(
+                    cfg, "mnt_active_posture_interval", self.medium_interval), 900, 900),
                 getattr(cfg, "collect_mnt_active_posture", True)),
-            "tacacs_config": ("rest", cfg.slow_interval, cfg.collect_tacacs),
+            "tacacs_config": ("rest", self.slow_interval, cfg.collect_tacacs),
             "tacacs_activity": (
-                "dataconnect", getattr(cfg, "dataconnect_tacacs_interval", 21600),
+                "dataconnect", _minimum_interval(getattr(
+                    cfg, "dataconnect_tacacs_interval", 21600), 21600, 21600),
                 cfg.collect_tacacs),
         }
 
@@ -148,6 +173,9 @@ class PollScheduler:
             metrics.ise_dataset_up.labels(dataset=name, source=source).set(0)
             metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(0)
             metrics.ise_collector_enabled.labels(collector=name).set(int(enabled))
+        # The scan window may intentionally be shorter than the protected run
+        # cadence, so report the collector's configured sampling window rather
+        # than implying that a full cadence interval is queried.
         scan_intervals = {
             "dataconnect_radius": getattr(
                 self.cfg, "dataconnect_radius_interval", 86400),
@@ -281,7 +309,7 @@ class PollScheduler:
             else:
                 if collectors.failures(name) >= MAX_CONSECUTIVE_FAILURES:
                     if source == "dataconnect":
-                        retry = max(self.cfg.slow_interval, effective_interval)
+                        retry = max(self.slow_interval, effective_interval)
                     else:
                         # REST and MnT already share the persistent authentication
                         # guard. Do not turn a five-failure streak on a fast health
@@ -289,7 +317,7 @@ class PollScheduler:
                         # dataset cadence once the account-safety backoff expires.
                         retry = max(
                             effective_interval,
-                            getattr(self.cfg, "auth_failure_backoff", 900),
+                            self.auth_failure_backoff,
                         )
                 elif source == "dataconnect":
                     # A failed reporting query can still consume substantial ISE
@@ -297,9 +325,9 @@ class PollScheduler:
                     # but do not leave a daily dataset empty for 24 hours after one
                     # transient startup failure. The client-side adaptive duty-cycle
                     # gate remains authoritative when a slow query needs more rest.
-                    retry = max(300, min(effective_interval, self.cfg.slow_interval))
+                    retry = max(300, min(effective_interval, self.slow_interval))
                 else:
-                    retry = min(tier, getattr(self.cfg, "scrape_interval", tier))
+                    retry = min(tier, self.scrape_interval)
                 self.next_run[name] = completed + retry
                 self._update_dataset_freshness(name, completed)
 
@@ -467,25 +495,25 @@ class PollScheduler:
         cfg, now = self.cfg, time.time()
 
         # REST/OpenAPI control plane: always authoritative in every profile.
-        self._run("deployment", now, cfg.medium_interval,
+        self._run("deployment", now, self.dataset_plan["deployment"][1],
                   lambda: deployment.collect(self.client, cfg))
         def collect_devices():
             # A failed current REST attempt invalidates the join input; retaining
             # an older list would make NAD health look authoritative while ERS is down.
             self._nad_inventory = devices.collect(self.client, cfg)
 
-        self._run("devices", now, cfg.medium_interval, collect_devices)
+        self._run("devices", now, self.dataset_plan["devices"][1], collect_devices)
         if cfg.collect_certificates:
-            self._run("certificates", now, cfg.slow_interval,
+            self._run("certificates", now, self.dataset_plan["certificates"][1],
                       lambda: certificates.collect(self.client, cfg))
         if cfg.collect_licensing:
-            self._run("licensing", now, cfg.slow_interval,
+            self._run("licensing", now, self.dataset_plan["licensing"][1],
                       lambda: licensing.collect(self.client, cfg))
         if cfg.collect_backup_status:
-            self._run("backup", now, cfg.slow_interval,
+            self._run("backup", now, self.dataset_plan["backup"][1],
                       lambda: backup.collect(self.client, cfg))
         if cfg.collect_patches:
-            self._run("patches", now, cfg.slow_interval,
+            self._run("patches", now, self.dataset_plan["patches"][1],
                       lambda: patches.collect(self.client, cfg))
 
         # Exact historical reporting and current active-session reconstruction
@@ -520,7 +548,7 @@ class PollScheduler:
         # MnT owns only a bounded current active-endpoint posture snapshot. It
         # never writes or substitutes for Data Connect historical metrics.
         if getattr(cfg, "collect_mnt_active_posture", True):
-            interval = getattr(cfg, "mnt_active_posture_interval", cfg.medium_interval)
+            interval = self.dataset_plan["mnt_active_posture"][1]
             self._run_mnt(
                 "mnt_active_posture", interval,
                 lambda: mnt_active_posture.collect(self.mnt, cfg))
@@ -528,7 +556,7 @@ class PollScheduler:
         # TACACS configuration is REST-owned; activity is Data Connect-owned in
         # standard mode. The collector exposes distinct metric families for each.
         if cfg.collect_tacacs:
-            self._run("tacacs_config", now, cfg.slow_interval,
+            self._run("tacacs_config", now, self.dataset_plan["tacacs_config"][1],
                       lambda: tacacs.collect_config(self.client, cfg))
             self._run_dataconnect(
                 "tacacs_activity", self.dataset_plan["tacacs_activity"][1],
@@ -543,7 +571,7 @@ class PollScheduler:
             nxt = time.time()
             while not shutdown.is_set():
                 self.run_cycle()
-                nxt = _next_deadline(nxt, time.time(), self.cfg.scrape_interval)
+                nxt = _next_deadline(nxt, time.time(), self.scrape_interval)
                 while time.time() < nxt and not shutdown.is_set():
                     shutdown.wait(max(0, min(nxt - time.time(), 1)))
         finally:

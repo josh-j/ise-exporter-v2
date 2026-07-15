@@ -93,6 +93,48 @@ def test_scheduler_freshness_fallback_matches_daily_production_cadence():
         "dataconnect", 86400, True)
 
 
+def test_unchecked_config_cannot_relax_production_scheduler_cadences():
+    scheduler = PollScheduler(_cfg(
+        scrape_interval=1,
+        medium_interval=1,
+        slow_interval=1,
+        auth_failure_backoff=1,
+        mnt_active_posture_interval=1,
+        dataconnect_radius_interval=1,
+        dataconnect_radius_active_interval=1,
+        dataconnect_performance_interval=1,
+        dataconnect_posture_interval=1,
+        dataconnect_endpoints_interval=1,
+        dataconnect_freshness_interval=1,
+        dataconnect_nad_health_interval=1,
+        dataconnect_tacacs_interval=1,
+    ), object(), object(), mnt=object())
+
+    assert scheduler.scrape_interval == 60
+    assert scheduler.auth_failure_backoff == 300
+    assert {name: interval for name, (_source, interval, _enabled)
+            in scheduler.dataset_plan.items()} == {
+        "deployment": 300,
+        "devices": 300,
+        "certificates": 3600,
+        "licensing": 3600,
+        "backup": 3600,
+        "patches": 3600,
+        "dataconnect_radius": 86400,
+        "dataconnect_radius_active": 1800,
+        "dataconnect_performance": 3600,
+        "dataconnect_posture": 21600,
+        "dataconnect_endpoints": 86400,
+        "dataconnect_freshness": 86400,
+        "dataconnect_nad_health": 21600,
+        "mnt_active_posture": 900,
+        "tacacs_config": 3600,
+        "tacacs_activity": 21600,
+    }
+    assert metrics.ise_dataconnect_scan_window_hours.labels(
+        dataset="dataconnect_radius")._value.get() == 1
+
+
 def test_scheduler_uses_only_the_dedicated_mnt_client(monkeypatch):
     class Client:
         def get_mnt_xml(self, *args, **kwargs):
@@ -559,15 +601,14 @@ def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
     )
     clock = [400.0]
     monkeypatch.setattr(scheduler_module.time, "time", lambda: clock[0])
-    cfg = _cfg(
-        state_db_path=str(tmp_path / "state.sqlite3"), dataconnect_radius_interval=300)
+    cfg = _cfg(state_db_path=str(tmp_path / "state.sqlite3"))
     first = PollScheduler(cfg, object(), object())
 
     def succeed():
         with collectors.observe("dataconnect_radius"):
             persisted.labels(key="restored").set(42)
 
-    first._run("dataconnect_radius", 100.0, 300, succeed)
+    first._run("dataconnect_radius", 100.0, 86400, succeed)
     persisted._metrics.clear()
     clock[0] = 401.0
     restarted = PollScheduler(cfg, object(), object())
@@ -576,7 +617,7 @@ def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
                for sample in persisted.collect()[0].samples}
     assert samples == {("restored", 42)}
     assert restarted.last_success["dataconnect_radius"] == 400.0
-    assert restarted.next_run["dataconnect_radius"] == 700.0
+    assert restarted.next_run["dataconnect_radius"] == 86800.0
     assert metrics.ise_dataset_up.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     assert metrics.ise_dataset_fresh.labels(
@@ -606,17 +647,16 @@ def test_stale_dataconnect_snapshot_is_not_restored(monkeypatch, tmp_path):
     )
     clock = [100.0]
     monkeypatch.setattr(scheduler_module.time, "time", lambda: clock[0])
-    cfg = _cfg(
-        state_db_path=str(tmp_path / "state.sqlite3"), dataconnect_radius_interval=300)
+    cfg = _cfg(state_db_path=str(tmp_path / "state.sqlite3"))
     first = PollScheduler(cfg, object(), object())
 
     def succeed():
         with collectors.observe("dataconnect_radius"):
             persisted.set(42)
 
-    first._run("dataconnect_radius", 100.0, 300, succeed)
+    first._run("dataconnect_radius", 100.0, 86400, succeed)
     persisted.set(0)
-    clock[0] = 701.0
+    clock[0] = 172901.0
     restarted = PollScheduler(cfg, object(), object())
 
     assert persisted._value.get() == 0
