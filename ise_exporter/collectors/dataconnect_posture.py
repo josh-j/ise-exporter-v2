@@ -44,7 +44,9 @@ def _latest_posture_cte(window_hours=6):
     posture_recent = recent_event_predicate("timestamp", window_hours)
     return f"""
         WITH ranked_posture AS (
-            SELECT p.*,
+            SELECT endpoint_mac_address, posture_status,
+                   endpoint_operating_system, posture_agent_version,
+                   posture_policy_matched, ise_node, message_code,
                    ROW_NUMBER() OVER (
                        PARTITION BY CASE
                            WHEN TRIM(endpoint_mac_address) IS NOT NULL
@@ -58,7 +60,10 @@ def _latest_posture_cte(window_hours=6):
             FROM posture_assessment_by_endpoint p
             WHERE {posture_recent}
         ), latest_posture AS (
-            SELECT /*+ MATERIALIZE */ * FROM ranked_posture WHERE row_num = 1
+            SELECT /*+ MATERIALIZE */ endpoint_mac_address, posture_status,
+                   endpoint_operating_system, posture_agent_version,
+                   posture_policy_matched, ise_node, message_code
+            FROM ranked_posture WHERE row_num = 1
         )
     """
 

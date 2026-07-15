@@ -111,14 +111,22 @@ class StateStore:
             chunk = macs[offset:offset + 500]
             placeholders = ",".join("?" for _ in chunk)
             for row in self.db.execute(
-                    f"SELECT * FROM mnt_posture_cache WHERE mac IN ({placeholders})", chunk):
+                    f"""
+                    SELECT mac, session_signature,
+                           CASE WHEN typeof(detail_json) = 'text'
+                                     AND length(CAST(detail_json AS BLOB)) <= ?
+                                THEN detail_json END AS detail_json,
+                           updated_at
+                    FROM mnt_posture_cache
+                    WHERE mac IN ({placeholders})
+                    """, (MAX_POSTURE_CACHE_DETAIL_BYTES, *chunk)):
                 try:
                     detail = json.loads(row["detail_json"])
                     updated_at = float(row["updated_at"])
                     if (not isinstance(detail, dict) or not math.isfinite(updated_at)
                             or updated_at < 0):
                         raise ValueError("invalid posture cache row")
-                except (TypeError, ValueError):
+                except (RecursionError, TypeError, ValueError):
                     invalid.append(row["mac"])
                     continue
                 rows[row["mac"]] = {
@@ -130,7 +138,7 @@ class StateStore:
         return rows
 
     def put_posture(self, mac, signature, detail, now=None):
-        now = time.time() if now is None else float(now)
+        now = self._valid_timestamp(now)
         encoded = json.dumps(
             detail, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
         if len(encoded.encode("utf-8")) > MAX_POSTURE_CACHE_DETAIL_BYTES:
@@ -147,7 +155,7 @@ class StateStore:
         """, (mac, signature, encoded, now, now))
 
     def finish_posture_cycle(self, active_macs, now=None):
-        now = time.time() if now is None else float(now)
+        now = self._valid_timestamp(now)
         active_macs = tuple(dict.fromkeys(active_macs))
         if active_macs:
             for offset in range(0, len(active_macs), 500):
@@ -184,15 +192,22 @@ class StateStore:
             chunk = user_ids[offset:offset + 500]
             placeholders = ",".join("?" for _ in chunk)
             for row in self.db.execute(
-                    f"SELECT * FROM tacacs_internal_user_cache "
-                    f"WHERE user_id IN ({placeholders})", chunk):
+                    f"""
+                    SELECT user_id,
+                           CASE WHEN typeof(detail_json) = 'text'
+                                     AND length(CAST(detail_json AS BLOB)) <= ?
+                                THEN detail_json END AS detail_json,
+                           updated_at
+                    FROM tacacs_internal_user_cache
+                    WHERE user_id IN ({placeholders})
+                    """, (MAX_TACACS_CACHE_DETAIL_BYTES, *chunk)):
                 try:
                     detail = json.loads(row["detail_json"])
                     updated_at = float(row["updated_at"])
                     if (not isinstance(detail, dict) or not math.isfinite(updated_at)
                             or updated_at < 0):
                         raise ValueError("invalid TACACS cache row")
-                except (TypeError, ValueError):
+                except (RecursionError, TypeError, ValueError):
                     invalid.append(row["user_id"])
                     continue
                 rows[row["user_id"]] = {
@@ -217,7 +232,7 @@ class StateStore:
         self.commit()
 
     def put_tacacs_user(self, user_id, detail, now=None):
-        now = time.time() if now is None else float(now)
+        now = self._valid_timestamp(now)
         encoded = json.dumps(
             detail, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
         if len(encoded.encode("utf-8")) > MAX_TACACS_CACHE_DETAIL_BYTES:
@@ -234,7 +249,7 @@ class StateStore:
 
     def finish_tacacs_user_cycle(self, active_ids, now=None):
         """Mark active cache rows and prune accounts removed from ISE."""
-        now = time.time() if now is None else float(now)
+        now = self._valid_timestamp(now)
         active_ids = tuple(dict.fromkeys(str(value) for value in active_ids if value))
         if active_ids:
             for offset in range(0, len(active_ids), 500):
@@ -259,6 +274,13 @@ class StateStore:
         return int(self.db.execute(
             "SELECT COUNT(*) FROM tacacs_internal_user_cache").fetchone()[0])
 
+    @staticmethod
+    def _valid_timestamp(value):
+        value = time.time() if value is None else float(value)
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("cache timestamp must be finite and non-negative")
+        return value
+
     def get_value(self, key, default=None):
         row = self.db.execute(
             "SELECT value FROM exporter_state WHERE key=?", (key,)).fetchone()
@@ -273,31 +295,49 @@ class StateStore:
             self.commit()
 
     def dataset_snapshot(self, dataset):
-        raw = self.get_value(f"dataset_snapshot.{dataset}")
-        if not raw:
+        key = f"dataset_snapshot.{dataset}"
+        row = self.db.execute("""
+            SELECT CASE WHEN typeof(value) = 'text'
+                              AND length(CAST(value AS BLOB)) <= ?
+                        THEN value END AS value
+            FROM exporter_state WHERE key=?
+        """, (MAX_PERSISTED_SNAPSHOT_BYTES, key)).fetchone()
+        if row is None:
             return None
-        if (not isinstance(raw, str)
-                or len(raw) > MAX_PERSISTED_SNAPSHOT_BYTES
-                or len(raw.encode("utf-8")) > MAX_PERSISTED_SNAPSHOT_BYTES):
+        raw = row["value"]
+        if not raw:
+            self._delete_state_key(key)
             return None
         try:
             value = json.loads(raw)
-        except (TypeError, ValueError):
+        except (RecursionError, TypeError, ValueError):
+            self._delete_state_key(key)
             return None
         if not isinstance(value, dict):
+            self._delete_state_key(key)
             return None
         try:
             updated_at = float(value["updated_at"])
         except (KeyError, TypeError, ValueError):
+            self._delete_state_key(key)
             return None
         payload = value.get("payload")
-        return (updated_at, payload) if isinstance(payload, dict) else None
+        if (not math.isfinite(updated_at) or updated_at < 0
+                or not isinstance(payload, dict)):
+            self._delete_state_key(key)
+            return None
+        return updated_at, payload
 
     def replace_dataset_snapshot(self, dataset, updated_at, payload):
+        updated_at = self._valid_timestamp(updated_at)
         value = json.dumps({
-            "updated_at": float(updated_at), "payload": payload,
+            "updated_at": updated_at, "payload": payload,
         }, separators=(",", ":"), allow_nan=False)
         if (len(value) > MAX_PERSISTED_SNAPSHOT_BYTES
                 or len(value.encode("utf-8")) > MAX_PERSISTED_SNAPSHOT_BYTES):
             raise ValueError("dataset snapshot exceeds the persisted size limit")
         self.set_value(f"dataset_snapshot.{dataset}", value)
+
+    def _delete_state_key(self, key):
+        self.db.execute("DELETE FROM exporter_state WHERE key=?", (key,))
+        self.commit()

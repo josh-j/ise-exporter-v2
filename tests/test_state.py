@@ -119,6 +119,7 @@ def test_oversized_persisted_dataset_snapshot_is_ignored(tmp_path, monkeypatch):
     monkeypatch.setattr(state_module, "MAX_PERSISTED_SNAPSHOT_BYTES", 32)
 
     assert store.dataset_snapshot("radius") is None
+    assert store.get_value("dataset_snapshot.radius") is None
     store.close()
 
 
@@ -129,6 +130,27 @@ def test_oversized_dataset_snapshot_is_not_written(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="size limit"):
         store.replace_dataset_snapshot("radius", 10, {"value": "x" * 100})
 
+    assert store.get_value("dataset_snapshot.radius") is None
+    store.close()
+
+
+@pytest.mark.parametrize("updated_at", (float("nan"), float("inf"), -1))
+def test_dataset_snapshot_rejects_invalid_timestamp(tmp_path, updated_at):
+    store = StateStore(tmp_path / "state.sqlite3")
+
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        store.replace_dataset_snapshot("radius", updated_at, {})
+
+    assert store.get_value("dataset_snapshot.radius") is None
+    store.close()
+
+
+def test_invalid_dataset_snapshot_is_pruned(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.set_value(
+        "dataset_snapshot.radius", '{"updated_at":"NaN","payload":{}}')
+
+    assert store.dataset_snapshot("radius") is None
     assert store.get_value("dataset_snapshot.radius") is None
     store.close()
 
@@ -156,4 +178,57 @@ def test_oversized_cache_detail_is_not_written(
         write()
 
     assert store.db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    store.close()
+
+
+@pytest.mark.parametrize(("method", "table", "key"), (
+    ("posture", "mnt_posture_cache", "AA:BB:CC:DD:EE:FF"),
+    ("tacacs", "tacacs_internal_user_cache", "u1"),
+))
+def test_oversized_cache_detail_is_not_materialized_and_is_pruned(
+        tmp_path, monkeypatch, method, table, key):
+    store = StateStore(tmp_path / "state.sqlite3")
+    oversized = '{"value":"' + ("x" * 100) + '"}'
+    if method == "posture":
+        monkeypatch.setattr(state_module, "MAX_POSTURE_CACHE_DETAIL_BYTES", 32)
+        store.db.execute(
+            "INSERT INTO mnt_posture_cache VALUES (?, ?, ?, ?, ?)",
+            (key, "signature", oversized, 10, 10),
+        )
+        def read():
+            return store.posture_entries([key])
+    else:
+        monkeypatch.setattr(state_module, "MAX_TACACS_CACHE_DETAIL_BYTES", 32)
+        store.db.execute(
+            "INSERT INTO tacacs_internal_user_cache VALUES (?, ?, ?, ?)",
+            (key, oversized, 10, 10),
+        )
+        def read():
+            return store.tacacs_user_entries([key])
+    store.commit()
+
+    assert read() == {}
+    assert store.db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    store.close()
+
+
+@pytest.mark.parametrize("now", (float("nan"), float("inf"), -1))
+@pytest.mark.parametrize("operation", (
+    "put_posture", "finish_posture_cycle", "put_tacacs", "finish_tacacs_cycle",
+))
+def test_cache_operations_reject_invalid_timestamps(tmp_path, operation, now):
+    store = StateStore(tmp_path / "state.sqlite3")
+
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        if operation == "put_posture":
+            store.put_posture("AA:BB:CC:DD:EE:FF", "signature", {}, now=now)
+        elif operation == "finish_posture_cycle":
+            store.finish_posture_cycle(["AA:BB:CC:DD:EE:FF"], now=now)
+        elif operation == "put_tacacs":
+            store.put_tacacs_user("u1", {}, now=now)
+        else:
+            store.finish_tacacs_user_cycle(["u1"], now=now)
+
+    assert store.posture_count() == 0
+    assert store.tacacs_user_count() == 0
     store.close()

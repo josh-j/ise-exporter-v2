@@ -39,7 +39,9 @@ def _queries(limit, window_hours=6):
             SELECT ise_node, radius_requests_hr, logged_to_mnt_hr, noise_hr,
                    suppression_hr, avg_load, max_load, avg_latency_per_req, avg_tps
             FROM (
-                SELECT k.*, ROW_NUMBER() OVER
+                SELECT ise_node, radius_requests_hr, logged_to_mnt_hr, noise_hr,
+                       suppression_hr, avg_load, max_load, avg_latency_per_req, avg_tps,
+                       ROW_NUMBER() OVER
                     (PARTITION BY ise_node ORDER BY logged_time DESC) AS row_num
                 FROM key_performance_metrics k
                 WHERE {kpi_recent}
@@ -50,7 +52,9 @@ def _queries(limit, window_hours=6):
                    diskspace_boot, diskspace_opt, diskspace_storedconfig,
                    diskspace_tmp, diskspace_runtime
             FROM (
-                SELECT s.*, ROW_NUMBER() OVER
+                SELECT ise_node, cpu_utilization, memory_utilization, diskspace_root,
+                       diskspace_boot, diskspace_opt, diskspace_storedconfig,
+                       diskspace_tmp, diskspace_runtime, ROW_NUMBER() OVER
                     (PARTITION BY ise_node ORDER BY timestamp DESC) AS row_num
                 FROM system_summary s
                 WHERE {timestamp_recent}
