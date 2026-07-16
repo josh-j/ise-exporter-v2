@@ -26,13 +26,207 @@ exporter itself still uses supported remote interfaces only.
 
 ## ISE prerequisites
 
-- ISE `3.3.0.430` with Patch `11` installed.
-- ERS/OpenAPI enabled and a read-only API account.
-- HTTPS access to the MnT XML session API when bounded active posture is enabled.
-- Data Connect enabled on the MnT node with an Essentials license.
-- The fixed Data Connect user, a non-expired password, TCPS port `2484`, and
-  service `cpm10`.
-- The MnT Admin certificate's issuing CA chain when TLS verification is enabled.
+Complete these steps on ISE before installing the exporter. Menu names below are
+for ISE `3.3.0.430` Patch `11`; Cisco's [ISE 3.3 documentation
+collection](https://www.cisco.com/c/en/us/td/docs/security/ise/collections/ise-3-3.html)
+is the vendor reference.
+
+### 1. Deployment, DNS, licenses, and firewall
+
+- Install Patch `11` on every node. The exporter deliberately rejects any other
+  ISE release or patch.
+- Give every PAN, MnT, and pxGrid node a stable FQDN. The configured hostname
+  must resolve from the exporter host and appear in that service certificate's
+  DNS SAN. Do not configure an IP address when hostname verification is enabled
+  unless the certificate also contains that IP SAN.
+- Keep an Essentials license compliant for Data Connect. Enabling the pxGrid
+  persona requires the applicable ISE Advantage entitlement.
+- Permit the exporter host to reach the required node addresses:
+
+  | Data plane | Destination persona | Port |
+  |---|---|---:|
+  | Admin/OpenAPI HTTPS | PAN | TCP `443` |
+  | ERS HTTPS and SDK | PAN | TCP `9060` |
+  | OpenAPI, when exposed separately | PAN | TCP `9070` |
+  | MnT XML active-session API | MnT | TCP `443` |
+  | Data Connect Oracle TCPS | Active Data Connect MnT | TCP `2484` |
+  | pxGrid 2.0 REST and WebSocket | pxGrid node | TCP `8910` |
+
+No inbound connection from ISE to the exporter is required. Prometheus is the
+only system that needs access to the exporter's TCP `9618` listener.
+
+### 2. Enable ERS/OpenAPI and create the API account
+
+1. In ISE, open **Administration > System > Settings > API Settings > API
+   Service Settings**.
+2. Enable **ERS (Read/Write)** and **Open API (Read/Write)** on the primary PAN.
+   Enable the read-only services on other nodes only if they will be queried.
+3. Save the settings. Cisco documents this under [Enable API
+   Service](https://developer.cisco.com/docs/identity-services-engine/latest/).
+4. Create a dedicated network-admin account and grant only the ERS Operator and
+   OpenAPI/read permissions needed by this deployment. Do not reuse a human
+   Super Admin account. Put its password in `ISE_PASS`; never put it in Git.
+5. Confirm that the account can read ERS inventory on `9060`, OpenAPI on the
+   PAN, and the MnT XML session API on `443` when
+   `collectors.mnt_active_posture = true`.
+
+The exporter never writes through ERS/OpenAPI. ISE calls the PAN toggle
+"Read/Write" because it enables that API service; the exporter account should
+still be restricted to read-only administration roles.
+
+### 3. Enable and configure Data Connect
+
+1. Open **Administration > System > Settings > Data Connect**.
+2. Enable Data Connect on the monitoring node. In a two-MnT deployment, record
+   which node ISE selects as active.
+3. Set a unique Data Connect password and an operationally appropriate expiry.
+   ISE fixes the username to `dataconnect`, the service name to `cpm10`, and the
+   TCPS port to `2484`; they are not ordinary Oracle accounts or listener
+   settings.
+4. Store the password in `ISE_DATACONNECT_PASSWORD`. Monitor its expiry and
+   rotate it before it expires.
+5. On the same Data Connect page, choose **Export Data Connect Certificate** and
+   download the public certificate/chain. This is the supported source for the
+   client trust material. Cisco's [Data Connect
+   procedure](https://www.cisco.com/c/en/us/td/docs/security/ise/3-3/admin_guide/b_ise_admin_3_3.pdf)
+   also notes that moving Data Connect to another MnT requires downloading the
+   new certificate again.
+
+Data Connect uses the selected MnT Admin certificate. Put its issuing
+intermediate CA certificates followed by the root CA certificate in one PEM
+file; do not copy a private key. Configure the MnT FQDN, not an unmatched IP:
+
+```toml
+[dataconnect]
+host = "mnt1.example.com"
+port = 2484
+service = "cpm10"
+user = "dataconnect"
+ca_bundle = "/etc/ise-exporter/certs/ise-dataconnect-ca.pem"
+verify_tls = true
+```
+
+You can also inspect exactly what the live TCPS listener presents. This is a
+diagnostic capture, not a substitute for authenticating the CA fingerprint
+through the ISE certificate page or your CA administrator:
+
+```bash
+ISE_MNT=mnt1.example.com
+openssl s_client -connect "${ISE_MNT}:2484" -servername "$ISE_MNT" \
+  -showcerts </dev/null 2>/dev/null |
+  sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' \
+  >ise-dataconnect-observed-chain.pem
+
+openssl crl2pkcs7 -nocrl -certfile ise-dataconnect-observed-chain.pem |
+  openssl pkcs7 -print_certs -noout
+openssl s_client -connect "${ISE_MNT}:2484" -servername "$ISE_MNT" \
+  -CAfile /etc/ise-exporter/certs/ise-dataconnect-ca.pem \
+  -verify_return_error </dev/null
+```
+
+The first certificate normally shown by `s_client` is the MnT leaf certificate;
+the remaining certificates are its advertised issuing chain. Trust only the CA
+certificates whose SHA-256 fingerprints you verified independently. If ISE does
+not advertise a root, export that root from **Administration > System >
+Certificates > Trusted Certificates** or obtain it directly from the issuing
+CA. Cisco documents certificate export and PEM/DER formats in [Import and Export
+Certificates in ISE](https://www.cisco.com/c/en/us/support/docs/security/identity-services-engine/215927-how-to-import-and-export-certificate-fro.html).
+
+### 4. Configure certificate trust for REST and MnT HTTPS
+
+Identify the system certificate bound to the Admin service on each queried PAN
+or MnT node. Export its issuing intermediate/root certificates from ISE's
+Trusted Certificates store or from the issuing CA, concatenate them into a PEM
+bundle, and configure both TLS planes:
+
+```toml
+[ise.rest_tls]
+verify = true
+ca_bundle = "/etc/ise-exporter/certs/ise-rest-ca.pem"
+
+[ise.mnt_tls]
+verify = true
+ca_bundle = "/etc/ise-exporter/certs/ise-mnt-ca.pem"
+```
+
+To view the presented chains without credentials, repeat the `s_client` command
+against `${ISE_PAN}:443`, `${ISE_PAN}:9060`, and `${ISE_MNT}:443`. Always pass
+`-servername` so virtual-host/SNI selection and hostname diagnostics match the
+configured FQDN. Cisco recommends that ISE system certificates carry the node
+FQDN and IP address in SAN and describes the certificate roles in [Configure
+TLS/SSL Certificates in
+ISE](https://www.cisco.com/c/en/us/support/docs/security/identity-services-engine/215621-tls-ssl-certificates-in-ise.html).
+
+### 5. Enable pxGrid 2.0 for the PowerShell CLI
+
+pxGrid is an optional operator data source for `ise-cli`; scheduled exporter
+collectors do not depend on it.
+
+1. Open **Administration > System > Deployment**, edit at least one node, and
+   enable its **pxGrid** persona.
+2. Bind a pxGrid system certificate whose DNS SAN contains every FQDN that ISE
+   advertises in pxGrid service URLs. The certificate needs server and client
+   authentication suitability. Do not reuse the client certificate as the
+   pxGrid server certificate.
+3. For this CLI's password-authentication mode, open **Administration > pxGrid
+   Services > Settings**, enable **Allow password based account creation**, and
+   save. Leave automatic approval disabled in production.
+4. Create the client once with `AccountCreate`, storing the generated password
+   immediately in a secret manager. The endpoint is unauthenticated but its TLS
+   server must already be verified:
+
+   ```bash
+   ISE_PXGRID=pxgrid1.example.com
+   NODE_NAME=ise-cli-hostname
+   curl --fail --silent --show-error \
+     --cacert /etc/ise-exporter/certs/ise-pxgrid-ca.pem \
+     -H 'Content-Type: application/json' \
+     -d "{\"userName\":\"${NODE_NAME}\"}" \
+     "https://${ISE_PXGRID}:8910/pxgrid/api/AccountCreate"
+   ```
+
+5. Put the returned password in `ISE_PXGRID_PASSWORD`, configure `[pxgrid]`
+   with the same node name and CA bundle, then run `Test-IsePxGrid`. The first
+   activation request normally becomes `PENDING`.
+6. In **Administration > pxGrid Services > Client Management > Clients**, select
+   the new client and approve it. Assign only the groups/policies needed for the
+   read-only services. Run `Test-IsePxGrid` again until it returns `ENABLED`.
+7. Run `Get-IsePxGridService` and confirm that expected providers advertise
+   resolvable HTTPS/WSS URLs. Cisco describes approval, policies, diagnostics,
+   and password-based accounts in the [ISE 3.3 pxGrid
+   guide](https://www.cisco.com/c/en/us/td/docs/security/ise/3-3/admin_guide/b_ise_admin_3_3/b_ISE_admin_33_pxgrid.html)
+   and the [pxGrid technical
+   overview](https://developer.cisco.com/docs/pxgrid/technical-overview/).
+
+For certificate-authenticated pxGrid, generate a separate client certificate,
+configure `client_cert` and `client_key`, and omit the password. Keep the client
+private key readable only by the CLI backend/service account.
+
+### 6. Validate the ISE side before starting collection
+
+From the exporter host, verify DNS, listeners, certificates, credentials, and
+provider registration in that order:
+
+```bash
+getent hosts pan1.example.com mnt1.example.com pxgrid1.example.com
+openssl s_client -connect mnt1.example.com:2484 -servername mnt1.example.com \
+  -CAfile /etc/ise-exporter/certs/ise-dataconnect-ca.pem \
+  -verify_return_error </dev/null
+ise-exporter --dataconnect-check
+ise-exporter --dataconnect-schema
+```
+
+```powershell
+Test-IseHealth
+Test-IseDataConnect
+Test-IsePxGrid
+Get-IsePxGridService | Format-Table serviceName,nodeName
+```
+
+If Data Connect is failed over, disabled/re-enabled on another node, or its
+Admin certificate is renewed, retrieve and verify the replacement CA chain
+before reconnecting. Apply the same rule to Admin/MnT and pxGrid certificate
+renewals.
 
 Data Connect uses `python-oracledb` Thin mode over TCPS. It does not require a
 rooted ISE appliance, direct database-table access, or native Oracle libraries.
