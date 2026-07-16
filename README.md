@@ -228,30 +228,41 @@ authorization profile, or ANC enforcement policy merely to read pxGrid data.
 
 1. Under **Groups**, create a dedicated group such as `ISE-CLI-Readers`.
 2. Under **Clients**, assign only the `ise-cli` client to that group.
-3. Under **Policy**, map the group to only the services you intend to query.
-   The useful mappings for the shipped cmdlets are:
+3. Under **Policy**, create one rule for each service you intend to query. For
+   every REST query service below, set **Operation** to `<CUSTOM>`, enter the
+   literal custom operation `gets`, and select `ISE-CLI-Readers` under
+   **Groups**:
 
-   | pxGrid service | Required for | Read operations used by this client |
-   |---|---|---|
-   | `com.cisco.ise.session` | Sessions and user groups | `getSessions`, `getSessionByIpAddress`, `getSessionByMacAddress`, `getUserGroups`, `getUserGroupByUserName` |
-   | `com.cisco.ise.system` | Node health and performance | `getHealths`, `getPerformances` |
-   | `com.cisco.ise.endpoint` | Endpoint context | `getEndpoints` |
-   | `com.cisco.ise.radius` | RADIUS failure investigation | `getFailures`, `getFailureById` |
-   | `com.cisco.ise.sxp` | SXP bindings | `getBindings` |
-   | `com.cisco.ise.config.trustsec` | SGTs, SGACLs, virtual networks, and egress policy/matrix data | `getSecurityGroups`, `getSecurityGroupAcls`, `getVirtualNetwork`, `getEgressPolicies`, `getEgressMatrices` |
-   | `com.cisco.ise.mdm` | MDM endpoint context | `getEndpoints`, `getEndpointByMacAddress`, `getEndpointsByType`, `getEndpointsByOsType` |
-   | `com.cisco.ise.config.profiler` | Profiler policy trees | `getProfiles` |
-   | `com.cisco.ise.config.anc` | Read ANC policies and current assignments | `getPolicies`, `getPolicyByName`, `getEndpoints`, `getEndpointByMacAddress`, `getEndpointPolicies` |
-   | `com.cisco.ise.pubsub` | Topic discovery or a future read-only subscription | Subscribe only; do not grant `publish` |
+   | pxGrid service | ISE Operation | Custom Operation | Required for |
+   |---|---|---|---|
+   | `com.cisco.ise.session` | `<CUSTOM>` | `gets` | Sessions and user groups |
+   | `com.cisco.ise.system` | `<CUSTOM>` | `gets` | Node health and performance |
+   | `com.cisco.ise.endpoint` | `<CUSTOM>` | `gets` | Endpoint context |
+   | `com.cisco.ise.radius` | `<CUSTOM>` | `gets` | RADIUS failure investigation |
+   | `com.cisco.ise.sxp` | `<CUSTOM>` | `gets` | SXP bindings |
+   | `com.cisco.ise.config.trustsec` | `<CUSTOM>` | `gets` | SGTs, SGACLs, virtual networks, and egress policy/matrix data |
+   | `com.cisco.ise.mdm` | `<CUSTOM>` | `gets` | MDM endpoint context |
+   | `com.cisco.ise.config.profiler` | `<CUSTOM>` | `gets` | Profiler policy trees |
+   | `com.cisco.ise.config.anc` | `<CUSTOM>` | `gets` | Read ANC policies and current assignments |
+
+   `gets` is the pxGrid policy operation for REST API get calls. Do **not** put
+   API method names such as `getSessions`, `getEndpoints`, or `getPolicies` in
+   the Custom Operation field.
 
 For the smallest useful information-gathering setup, start with `session`,
 `system`, and `endpoint`, then add the optional services as their corresponding
-cmdlets are needed. If the ISE Policy page supports the exact operation as a
-**Custom** operation, enter the read operations from the table. Otherwise use
-`<ANY>` for that one service and rely on the dedicated group plus the CLI's
-read-only allowlist. Never grant this client `com.cisco.ise.pxgrid.admin`, a
-`publish` operation, or unrelated `dnac`, `config.deployment.node`, or
-`config.upn` services.
+cmdlets are needed. Do not use `<ANY>`: it also authorizes set operations made
+outside this CLI. Never grant this client `com.cisco.ise.pxgrid.admin`, the
+custom operation `sets`, a `publish` operation, or unrelated `dnac`,
+`config.deployment.node`, or `config.upn` services.
+
+The current CLI performs service and topic discovery but does not open a
+WebSocket subscription, so it requires no `com.cisco.ise.pubsub` policy. If a
+future subscriber is enabled, add a separate pubsub rule only for its exact
+topic using **Operation** `<CUSTOM>` and a custom operation of `subscribe`
+followed by that advertised topic path, for example
+`subscribe /topic/com.cisco.ise.session`. Never use `publish` for this read-only
+client.
 
 Cisco notes that only clients in a policy's selected groups can use that
 service. Adding a custom group can also remove implicit access previously held
