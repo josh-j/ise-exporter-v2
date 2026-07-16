@@ -109,7 +109,25 @@ class PxGridControl:
         rows = []
         for name in names:
             for service in self.lookup(name):
-                rows.append({"serviceName": name, **service})
+                # ISE 3.3 can advertise both restBaseURL and restBaseUrl in the
+                # same properties object.  They are distinct JSON keys but
+                # collide in PowerShell's case-insensitive object model.  Keep
+                # the last advertised spelling/value so ConvertFrom-Json can
+                # turn service discovery into native PowerShell objects.
+                normalized = dict(service)
+                properties = normalized.get("properties")
+                if isinstance(properties, dict):
+                    unique = {}
+                    spellings = {}
+                    for key, value in properties.items():
+                        folded = key.casefold()
+                        previous = spellings.get(folded)
+                        if previous is not None:
+                            unique.pop(previous, None)
+                        unique[key] = value
+                        spellings[folded] = key
+                    normalized["properties"] = unique
+                rows.append({"serviceName": name, **normalized})
         return rows
 
     def topics(self, service_name=None):

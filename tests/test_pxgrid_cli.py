@@ -66,6 +66,27 @@ def test_pxgrid_topic_discovery_returns_flat_objects(monkeypatch):
     }]
 
 
+def test_pxgrid_service_discovery_removes_case_colliding_properties():
+    client = object.__new__(PxGridControl)
+    client.lookup = lambda _name: [{
+        "nodeName": "ise01",
+        "properties": {
+            "restBaseURL": "https://ise/legacy",
+            "restBaseUrl": "https://ise/current",
+            "sessionTopic": "/topic/session",
+        },
+    }]
+
+    assert client.services("com.cisco.ise.session") == [{
+        "serviceName": "com.cisco.ise.session",
+        "nodeName": "ise01",
+        "properties": {
+            "restBaseUrl": "https://ise/current",
+            "sessionTopic": "/topic/session",
+        },
+    }]
+
+
 def test_pxgrid_rejects_non_https_service_url(monkeypatch):
     client = object.__new__(PxGridControl)
     client._services = {}
