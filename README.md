@@ -162,6 +162,23 @@ ISE](https://www.cisco.com/c/en/us/support/docs/security/identity-services-engin
 pxGrid is an optional operator data source for `ise-cli`; scheduled exporter
 collectors do not depend on it.
 
+**The pxGrid password is not mandatory.** Choose exactly one client
+authentication mode:
+
+- **Password authentication:** configure `node_name` and
+  `ISE_PXGRID_PASSWORD`. ISE generates this password when `AccountCreate` is
+  called. **Allow password based account creation** must be enabled while the
+  account is created.
+- **Client-certificate authentication:** configure `node_name`, `client_cert`,
+  and `client_key`; leave `password` and `ISE_PXGRID_PASSWORD` unset. The
+  certificate must be trusted by ISE, be suitable for TLS client
+  authentication, and represent the same pxGrid client identity. It can be
+  generated under **Administration > pxGrid Services > Client Management >
+  Certificates** or issued by another CA trusted by ISE.
+
+The CA bundle is required in either mode when the pxGrid server certificate is
+not already trusted by the host. It verifies ISE; it is not a client credential.
+
 1. Open **Administration > System > Deployment**, edit at least one node, and
    enable its **pxGrid** persona.
 2. Bind a pxGrid system certificate whose DNS SAN contains every FQDN that ISE
@@ -185,12 +202,13 @@ collectors do not depend on it.
      "https://${ISE_PXGRID}:8910/pxgrid/api/AccountCreate"
    ```
 
-5. Put the returned password in `ISE_PXGRID_PASSWORD`, configure `[pxgrid]`
-   with the same node name and CA bundle, then run `Test-IsePxGrid`. The first
-   activation request normally becomes `PENDING`.
+5. For password mode, put the returned password in `ISE_PXGRID_PASSWORD`. For
+   certificate mode, configure `client_cert` and `client_key` instead. Configure
+   `[pxgrid]` with the same node name and CA bundle, then run
+   `Test-IsePxGrid`. The first activation request normally becomes `PENDING`.
 6. In **Administration > pxGrid Services > Client Management > Clients**, select
-   the new client and approve it. Assign only the groups/policies needed for the
-   read-only services. Run `Test-IsePxGrid` again until it returns `ENABLED`.
+   the new client and approve it. Run `Test-IsePxGrid` again until it returns
+   `ENABLED`.
 7. Run `Get-IsePxGridService` and confirm that expected providers advertise
    resolvable HTTPS/WSS URLs. Cisco describes approval, policies, diagnostics,
    and password-based accounts in the [ISE 3.3 pxGrid
@@ -201,6 +219,45 @@ collectors do not depend on it.
 For certificate-authenticated pxGrid, generate a separate client certificate,
 configure `client_cert` and `client_key`, and omit the password. Keep the client
 private key readable only by the CLI backend/service account.
+
+#### pxGrid groups and policies required by `ise-cli`
+
+These are pxGrid authorization policies under **Administration > pxGrid
+Services > Client Management**. Do not create a Network Access policy set,
+authorization profile, or ANC enforcement policy merely to read pxGrid data.
+
+1. Under **Groups**, create a dedicated group such as `ISE-CLI-Readers`.
+2. Under **Clients**, assign only the `ise-cli` client to that group.
+3. Under **Policy**, map the group to only the services you intend to query.
+   The useful mappings for the shipped cmdlets are:
+
+   | pxGrid service | Required for | Read operations used by this client |
+   |---|---|---|
+   | `com.cisco.ise.session` | Sessions and user groups | `getSessions`, `getSessionByIpAddress`, `getSessionByMacAddress`, `getUserGroups`, `getUserGroupByUserName` |
+   | `com.cisco.ise.system` | Node health and performance | `getHealths`, `getPerformances` |
+   | `com.cisco.ise.endpoint` | Endpoint context | `getEndpoints` |
+   | `com.cisco.ise.radius` | RADIUS failure investigation | `getFailures`, `getFailureById` |
+   | `com.cisco.ise.sxp` | SXP bindings | `getBindings` |
+   | `com.cisco.ise.config.trustsec` | SGTs, SGACLs, virtual networks, and egress policy/matrix data | `getSecurityGroups`, `getSecurityGroupAcls`, `getVirtualNetwork`, `getEgressPolicies`, `getEgressMatrices` |
+   | `com.cisco.ise.mdm` | MDM endpoint context | `getEndpoints`, `getEndpointByMacAddress`, `getEndpointsByType`, `getEndpointsByOsType` |
+   | `com.cisco.ise.config.profiler` | Profiler policy trees | `getProfiles` |
+   | `com.cisco.ise.config.anc` | Read ANC policies and current assignments | `getPolicies`, `getPolicyByName`, `getEndpoints`, `getEndpointByMacAddress`, `getEndpointPolicies` |
+   | `com.cisco.ise.pubsub` | Topic discovery or a future read-only subscription | Subscribe only; do not grant `publish` |
+
+For the smallest useful information-gathering setup, start with `session`,
+`system`, and `endpoint`, then add the optional services as their corresponding
+cmdlets are needed. If the ISE Policy page supports the exact operation as a
+**Custom** operation, enter the read operations from the table. Otherwise use
+`<ANY>` for that one service and rely on the dedicated group plus the CLI's
+read-only allowlist. Never grant this client `com.cisco.ise.pxgrid.admin`, a
+`publish` operation, or unrelated `dnac`, `config.deployment.node`, or
+`config.upn` services.
+
+Cisco notes that only clients in a policy's selected groups can use that
+service. Adding a custom group can also remove implicit access previously held
+by ungrouped clients, so review other registered integrations before changing
+existing policies. See [Control pxGrid Policies in the ISE 3.3 administrator
+guide](https://www.cisco.com/c/en/us/td/docs/security/ise/3-3/admin_guide/b_ise_admin_3_3/b_ISE_admin_33_pxgrid.html).
 
 ### 6. Validate the ISE side before starting collection
 
