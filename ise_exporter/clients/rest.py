@@ -822,38 +822,92 @@ class ISERestClient:
 
         return {"total": 1 if detail else 0, "sessions": [detail] if detail else []}
 
+    def _health_probe(self, session, url, *, params=None):
+        result = {"reachable": False, "authenticated": False, "http_status": 0}
+        response = None
+        try:
+            if self._auth_guard_state().blocked(time.time()):
+                result["http_status"] = 401
+                return result
+            with self._transport_lock():
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", InsecureRequestWarning)
+                    response = session.get(
+                        url, params=params,
+                        timeout=_request_timeout(min(5, int(getattr(
+                            getattr(self, "cfg", None), "request_timeout", 30)))),
+                        stream=True,
+                        allow_redirects=False)
+            result["reachable"] = True
+            result["http_status"] = response.status_code
+            # Redirects are deliberately not followed. A 3xx commonly points
+            # at an interactive login page and does not prove API credentials.
+            result["authenticated"] = 200 <= response.status_code < 300
+            if response.status_code == 401:
+                self._record_auth_failure()
+            elif result["authenticated"]:
+                self._auth_guard_state().success()
+        except Exception as error:
+            logger.debug("health probe failed for %s: %s", url, error)
+        finally:
+            if response is not None:
+                self._close_response(response)
+        return result
+
+    def check_api(self, family):
+        """Probe one authenticated API with a single bounded, read-only GET."""
+        checks = {
+            "ers": (
+                "ERS", self.session, self.host, self.cfg.ers_port,
+                "/ers/config/networkdevice?size=1&page=1",
+                f"https://{self.host}:{self.cfg.ers_port}/ers/config/networkdevice",
+                {"size": 1, "page": 1},
+            ),
+            "openapi": (
+                "OpenAPI", self.session, self.host, 443,
+                "/api/v1/deployment/node",
+                f"https://{self.host}/api/v1/deployment/node", None,
+            ),
+            "mnt": (
+                "MnT API", self.mnt_session, self.mnt_host, 443,
+                "/admin/API/mnt/Session/ActiveCount",
+                f"https://{self.mnt_host}/admin/API/mnt/Session/ActiveCount", None,
+            ),
+        }
+        if family not in checks:
+            raise ValueError(f"unsupported ISE API check: {family}")
+        service, session, host, port, path, url, params = checks[family]
+        if session is None:
+            raise RuntimeError(f"{service} client is not configured")
+        result = self._health_probe(session, url, params=params)
+        code = result["http_status"]
+        result.update({
+            "service": service,
+            "host": host,
+            "port": port,
+            "path": path,
+            "authorized": result["authenticated"],
+            "healthy": result["authenticated"],
+        })
+        if result["healthy"]:
+            result["status"] = "ok"
+            result["detail"] = "authenticated read-only probe succeeded"
+        elif code == 401:
+            result["status"] = "authentication_failed"
+            result["detail"] = "ISE rejected the configured API credentials"
+        elif code == 403:
+            result["authenticated"] = True
+            result["status"] = "authorization_failed"
+            result["detail"] = "the API account lacks access to this endpoint"
+        elif result["reachable"]:
+            result["status"] = "http_error"
+            result["detail"] = f"ISE returned HTTP {code}"
+        else:
+            result["status"] = "unreachable"
+            result["detail"] = "connection or TLS validation failed"
+        return result
+
     def health_check(self):
-        def probe(session, url, *, params=None):
-            result = {"reachable": False, "authenticated": False, "http_status": 0}
-            response = None
-            try:
-                if self._auth_guard_state().blocked(time.time()):
-                    result["http_status"] = 401
-                    return result
-                with self._transport_lock():
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore", InsecureRequestWarning)
-                        response = session.get(
-                            url, params=params,
-                            timeout=_request_timeout(min(5, int(getattr(
-                                getattr(self, "cfg", None), "request_timeout", 30)))),
-                            stream=True,
-                            allow_redirects=False)
-                result["reachable"] = True
-                result["http_status"] = response.status_code
-                # Redirects are deliberately not followed. A 3xx commonly points
-                # at an interactive login page and does not prove API credentials.
-                result["authenticated"] = 200 <= response.status_code < 300
-                if response.status_code == 401:
-                    self._record_auth_failure()
-                elif result["authenticated"]:
-                    self._auth_guard_state().success()
-            except Exception as error:
-                logger.debug("health probe failed for %s: %s", url, error)
-            finally:
-                if response is not None:
-                    self._close_response(response)
-            return result
 
         health = {
             "pan": {"reachable": False, "authenticated": False, "http_status": 0},
@@ -862,14 +916,14 @@ class ISERestClient:
         if self.session is not None:
             # A real one-row ERS resource request verifies both routing and the
             # supplied credentials without enumerating inventory.
-            health["pan"] = probe(
+            health["pan"] = self._health_probe(
                 self.session,
                 f"https://{self.host}:{self.cfg.ers_port}/ers/config/networkdevice",
                 params={"size": 1, "page": 1},
             )
         if self.mnt_session is not None:
             # ActiveCount is authenticated but does not return ActiveList rows.
-            health["mnt"] = probe(
+            health["mnt"] = self._health_probe(
                 self.mnt_session,
                 f"https://{self.mnt_host}/admin/API/mnt/Session/ActiveCount",
             )
@@ -930,6 +984,13 @@ class ISEOperatorClient:
 
     def get_mnt_xml(self, *args, **kwargs):
         return self._mnt_client().get_mnt_xml(*args, **kwargs)
+
+    def check_api(self, family):
+        if family in ("ers", "openapi"):
+            return self.control.check_api(family)
+        if family == "mnt":
+            return self._mnt_client().check_api(family)
+        raise ValueError(f"unsupported ISE API check: {family}")
 
     def health_check(self):
         control = self.control.health_check()

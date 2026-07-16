@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The installer exposes this launcher through /usr/local/bin. Resolve that
+# symlink before locating the adjacent profile/module; BASH_SOURCE otherwise
+# points at /usr/local/bin and PowerShell cannot find Ise.Cli.Profile.ps1.
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 export PSModulePath="${SCRIPT_DIR}${PSModulePath:+:${PSModulePath}}"
 PROFILE="${SCRIPT_DIR}/Ise.Cli.Profile.ps1"
 

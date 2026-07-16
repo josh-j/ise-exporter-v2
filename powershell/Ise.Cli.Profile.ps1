@@ -8,7 +8,10 @@ function global:Show-IseCliHelp {
         'overview' = @(
             'Get-IseOverview                       Cached deployment and exporter summary',
             'Get-IseCollectorStatus [PATTERN]      Dataset health, freshness, age, and failures',
-            'Test-IseHealth                        Live PAN/ERS, MnT, and Data Connect probes')
+            'Test-IseHealth                        Live PAN/ERS, MnT, and Data Connect probes',
+            'Test-IseErs                           ERS login and authorization check',
+            'Test-IseOpenApi                       OpenAPI login and authorization check',
+            'Test-IseMnt                           MnT login and ActiveCount check')
         'troubleshooting' = @(
             'Get-IseEndpointSummary ID             Endpoint identity and current session',
             'Debug-IseAuthentication ID            Resolve and correlate recent authentication',
@@ -16,7 +19,7 @@ function global:Show-IseCliHelp {
             'Get-IseNadSummary NAD [-Live]         Cached NAD health with optional ERS refresh',
             'Get-IsePxGridStatus [-Live]           pxGrid ownership and deployment visibility')
         'pxgrid' = @(
-            'Test-IsePxGrid                        Account state and protocol version',
+            'Test-IsePxGrid                        Account and provider-discovery check',
             'Get-IsePxGridService [NAME]           Discover REST/pubsub providers',
             'Get-IsePxGridTopic [SERVICE]          Discover advertised pubsub topics',
             'Get-IsePxGridSession [-IpAddress IP]  Sessions as PowerShell objects',

@@ -179,10 +179,12 @@ def test_exporter_health_owns_exporter_data_quality_and_freshness():
         assert metric not in overview
 
 
-def test_pxgrid_cannot_return_to_exporter_runtime():
+def test_pxgrid_remains_operator_only_in_the_exporter_binary():
     root = DASHBOARDS.parent
     main_text = (root / "ise_exporter/__main__.py").read_text().lower()
-    assert "pxgrid" not in main_text
+    assert "--pxgrid-check" in main_text
+    assert "collect_pxgrid" not in main_text
+    assert "scheduler = pollscheduler(cfg, client, dataconnect=dataconnect, mnt=mnt)" in main_text
     cli_text = (root / "ise_exporter/cli.py").read_text().lower()
     assert "clients.pxgrid" in cli_text
     assert (root / "ise_exporter/clients/pxgrid.py").exists()

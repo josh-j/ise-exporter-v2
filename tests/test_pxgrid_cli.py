@@ -2,7 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ise_exporter.clients.pxgrid import PxGridControl
+from ise_exporter import cli
+from ise_exporter.clients.pxgrid import KNOWN_SERVICES, PxGridControl
 from ise_exporter.config import Config
 
 
@@ -99,3 +100,41 @@ def test_pxgrid_rejects_non_https_service_url(monkeypatch):
 def test_pxgrid_requires_credentials():
     with pytest.raises(RuntimeError, match="not configured"):
         PxGridControl(SimpleNamespace(pxgrid_ready=False))
+
+
+def test_pxgrid_account_state_enables_followup_provider_discovery(monkeypatch):
+    client = object.__new__(PxGridControl)
+    client._active = False
+    client.control = lambda _operation, _body: {
+        "accountState": "ENABLED", "version": "2.0"}
+
+    assert client.account_state() == {
+        "accountState": "ENABLED", "version": "2.0"}
+    assert client._active is True
+
+
+def test_pxgrid_check_reports_account_and_provider_discovery(monkeypatch):
+    class FakePxGrid:
+        def __init__(self, _cfg):
+            self.closed = False
+
+        def account_state(self):
+            return {"accountState": "ENABLED", "version": "2.0"}
+
+        def services(self):
+            return [{"serviceName": name} for name in KNOWN_SERVICES]
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(cli, "PxGridControl", FakePxGrid)
+
+    result = cli._pxgrid_check(SimpleNamespace(
+        pxgrid_host="ise.example.com", pxgrid_port=8910))
+
+    assert result["healthy"] is True
+    assert result["status"] == "ok"
+    assert result["account_state"] == "ENABLED"
+    assert result["version"] == "2.0"
+    assert result["provider_count"] == len(KNOWN_SERVICES)
+    assert result["missing_providers"] == []

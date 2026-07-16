@@ -123,10 +123,14 @@ section remains visible even when there is no current session or recent event.
 | `psn-summary PSN [--live]` | Prefer cached PSN metrics with an optional bounded Data Connect refresh |
 | `nad-summary NAD [--live]` | Prefer cached NAD metrics with an optional ERS refresh |
 | `pxgrid-status [--live]` | Explain pxGrid ownership and optionally inspect deployment service assignment |
-| `pxgrid-account` | Test pxGrid 2.0 activation state |
+| `pxgrid-check` | Check pxGrid 2.0 activation and provider discovery |
+| `pxgrid-account` | Return the pxGrid 2.0 activation state |
 | `pxgrid-services`, `pxgrid-topics` | Discover pxGrid providers and topics |
 | `pxgrid-query OPERATION` | Private bounded backend for PowerShell pxGrid cmdlets |
 | `health` | Check reachability and authentication independently for PAN/ERS, MnT, and configured Data Connect |
+| `ers-check` | Check ERS reachability, credentials, and authorization with one inventory row |
+| `openapi-check` | Check OpenAPI reachability, credentials, and deployment-read authorization |
+| `mnt-check` | Check MnT reachability and credentials with bounded `ActiveCount` |
 | `nodes` | List deployment nodes from OpenAPI |
 | `nads` | List Network Access Devices from ERS |
 | `endpoints [[FIELD=]PATTERN ...]` | Search endpoints by inventory and recent context attributes |

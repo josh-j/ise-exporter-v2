@@ -73,7 +73,7 @@ if command -v apt-get >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1; 
     fi
 fi
 
-for command_name in python3 useradd install systemctl; do
+for command_name in python3 useradd install systemctl readlink; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         echo "error: required command not found: $command_name" >&2
         echo "install Python 3.10+, venv, CA certificates, passwd, coreutils, and systemd" >&2
@@ -173,6 +173,11 @@ rm -rf "$PWSH_MODULE_LINK"
 ln -s "$PWSH_CLI_DIR/Ise.Cli" "$PWSH_MODULE_LINK"
 install -d -o root -g root -m 755 "$(dirname "$CLI_LINK")"
 ln -sfn "$PWSH_CLI_DIR/ise-cli" "$CLI_LINK"
+if [[ ! -r "$PWSH_CLI_DIR/Ise.Cli.Profile.ps1" ]] \
+        || [[ ! -r "$PWSH_CLI_DIR/Ise.Cli/Ise.Cli.psd1" ]]; then
+    echo "error: installed ise-cli PowerShell profile/module self-check failed" >&2
+    exit 1
+fi
 if ! ISE_CLI_FORCE_BACKEND=1 ISE_CLI_BACKEND="$VENV/bin/ise-cli-backend" \
         "$CLI_LINK" --version >/dev/null; then
     echo "error: installed ise-cli launcher/backend self-check failed" >&2

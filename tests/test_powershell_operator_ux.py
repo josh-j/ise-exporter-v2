@@ -68,11 +68,37 @@ def test_launcher_remains_shell_safe():
     )
 
 
+def test_installed_launcher_resolves_usr_local_style_symlink(tmp_path):
+    installed = tmp_path / "opt" / "ise-exporter" / "powershell"
+    shutil.copytree(ROOT / "powershell", installed)
+    bin_dir = tmp_path / "usr" / "local" / "bin"
+    bin_dir.mkdir(parents=True)
+    launcher_link = bin_dir / "ise-cli"
+    launcher_link.symlink_to(installed / "ise-cli")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_pwsh = fake_bin / "pwsh"
+    fake_pwsh.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\"\n"
+        "printf '%s\\n' \"$PSModulePath\"\n")
+    fake_pwsh.chmod(0o755)
+
+    result = subprocess.run(
+        [str(launcher_link)], check=True, text=True, capture_output=True,
+        env=os.environ | {"PATH": f"{fake_bin}:{os.environ['PATH']}"})
+
+    lines = result.stdout.splitlines()
+    assert lines[0] == f"-NoLogo -NoProfile -NoExit -File {installed / 'Ise.Cli.Profile.ps1'}"
+    assert lines[1].split(":", 1)[0] == str(installed)
+
+
 def test_installer_deploys_and_verifies_the_global_cli():
     installer = INSTALLER.read_text()
 
     assert "CLI_LINK=/usr/local/bin/ise-cli" in installer
     assert 'ln -sfn "$PWSH_CLI_DIR/ise-cli" "$CLI_LINK"' in installer
+    assert "PowerShell profile/module self-check failed" in installer
     assert 'ISE_CLI_BACKEND="$VENV/bin/ise-cli-backend"' in installer
     assert '"$CLI_LINK" --version' in installer
     assert "installed ise-cli launcher/backend self-check failed" in installer

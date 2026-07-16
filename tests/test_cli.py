@@ -55,6 +55,13 @@ class FakeClient:
     def health_check(self):
         return {"pan": True, "mnt": False}
 
+    def check_api(self, family):
+        self.calls.append(("check", family))
+        return {
+            "service": family, "healthy": True, "status": "ok",
+            "reachable": True, "authenticated": True,
+        }
+
     def get_ers(self, path, params=None, get_all=False, api_name="x"):
         self.calls.append(("ers", path, params, get_all, api_name))
         if path == "/config/endpoint/id-1":
@@ -399,6 +406,24 @@ def test_health_reports_reachability_and_authentication(capsys):
          "probe_status": "completed",
          "reachable": False, "service": "MnT"},
     ]
+
+
+@pytest.mark.parametrize(("command", "family"), (
+    ("ers-check", "ers"),
+    ("openapi-check", "openapi"),
+    ("mnt-check", "mnt"),
+))
+def test_focused_api_checks_return_powershell_friendly_objects(
+        command, family, capsys):
+    client = FakeClient()
+
+    assert cli.main([command, "-o", "json"], client=client) == 0
+
+    assert json.loads(capsys.readouterr().out) == [{
+        "authenticated": True, "healthy": True, "reachable": True,
+        "service": family, "status": "ok",
+    }]
+    assert client.calls == [("check", family)]
 
 
 def test_health_works_with_only_dataconnect_configuration(capsys):

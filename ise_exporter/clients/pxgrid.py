@@ -84,16 +84,22 @@ class PxGridControl:
     def control(self, operation, body=None):
         return self._post(f"{self.control_base}/{operation}", body or {})
 
-    def activate(self):
-        data = self.control("AccountActivate", {"description": "ise-cli PowerShell operator"})
-        state = str(data.get("accountState", "")).upper()
-        if state == "ENABLED":
+    def account_state(self):
+        """Request the current account state without requiring it to be enabled."""
+        data = self.control(
+            "AccountActivate", {"description": "ise-cli PowerShell operator"})
+        if str(data.get("accountState", "")).upper() == "ENABLED":
             self._active = True
-        elif state == "PENDING":
+        return data
+
+    def activate(self):
+        data = self.account_state()
+        state = str(data.get("accountState", "")).upper()
+        if state == "PENDING":
             raise RuntimeError("pxGrid account is PENDING approval in ISE")
         elif state == "DISABLED":
             raise RuntimeError("pxGrid account is DISABLED in ISE")
-        else:
+        elif state != "ENABLED":
             raise RuntimeError(f"pxGrid returned an unexpected account state: {state or data!r}")
         return data
 

@@ -97,6 +97,24 @@ COMMAND_SCHEMAS = {
             "service", "host", "reachable", "authenticated", "http_status",
             "probe_status"],
     },
+    "ers-check": {
+        "api": "ERS", "method": "GET",
+        "path": "/ers/config/networkdevice?size=1&page=1",
+        "bounded_default": 1,
+    },
+    "openapi-check": {
+        "api": "OpenAPI", "method": "GET",
+        "path": "/api/v1/deployment/node",
+    },
+    "mnt-check": {
+        "api": "MnT", "method": "GET",
+        "path": "/admin/API/mnt/Session/ActiveCount",
+    },
+    "pxgrid-check": {
+        "api": "pxGrid 2.0", "method": "POST",
+        "operations": ["AccountActivate", "ServiceLookup"],
+        "reads_event_rows": False,
+    },
     "endpoints": {
         "api": "Data Connect + ERS", "host_env": ["ISE_DATACONNECT_HOST", "ISE_HOST"],
         "method": "SELECT or GET", "path": "/ers/config/endpoint",
@@ -405,7 +423,8 @@ DATACONNECT_COMMANDS = set(DATACONNECT_REPORTS) | {
 CACHED_EXPORTER_COMMANDS = {
     "overview", "collector-status", "psn-summary", "nad-summary", "pxgrid-status"}
 REST_OPTIONAL_COMMANDS = DATACONNECT_COMMANDS | CACHED_EXPORTER_COMMANDS | {
-    "health", "schema", "pxgrid-account", "pxgrid-services", "pxgrid-topics",
+    "health", "schema", "ers-check", "openapi-check", "mnt-check",
+    "pxgrid-check", "pxgrid-account", "pxgrid-services", "pxgrid-topics",
     "pxgrid-query"}
 
 ENDPOINT_CONTEXT_SOURCES = {
@@ -588,7 +607,8 @@ def build_parser(*, require_command=False):
     sub = command("pxgrid-status", "show pxGrid deployment visibility and collector ownership")
     sub.add_argument("--live", action="store_true", help="refresh deployment-node services from OpenAPI")
 
-    command("pxgrid-account", "test pxGrid 2.0 account activation and return its state")
+    command("pxgrid-check", "check pxGrid 2.0 account activation and provider discovery")
+    command("pxgrid-account", "return the pxGrid 2.0 account activation state")
     sub = command("pxgrid-services", "discover pxGrid 2.0 REST and pubsub service providers")
     sub.add_argument("--name", choices=KNOWN_SERVICES, help="limit discovery to one service")
     sub = command("pxgrid-topics", "discover pxGrid 2.0 published topics")
@@ -600,6 +620,9 @@ def build_parser(*, require_command=False):
     expensive(sub)
 
     command("health", "check PAN/ERS, MnT, and Data Connect reachability and authentication")
+    command("ers-check", "check ERS reachability, authentication, and authorization")
+    command("openapi-check", "check OpenAPI reachability, authentication, and authorization")
+    command("mnt-check", "check MnT API reachability, authentication, and authorization")
     sub = command("nodes", "list deployment nodes")
     sub.add_argument("--limit", type=int, default=50,
                      help="maximum rows (default: 50)")
@@ -2132,6 +2155,69 @@ def _pxgrid_status(snapshot, client=None, *, live=False):
     return rows
 
 
+def _pxgrid_check(cfg):
+    """Return one diagnostic object without turning an unhealthy state into invalid JSON."""
+    result = {
+        "service": "pxGrid 2.0",
+        "host": getattr(cfg, "pxgrid_host", ""),
+        "port": getattr(cfg, "pxgrid_port", 8910),
+        "reachable": False,
+        "authenticated": False,
+        "healthy": False,
+        "account_state": "UNKNOWN",
+        "version": "",
+        "provider_count": 0,
+        "expected_provider_count": len(KNOWN_SERVICES),
+        "missing_providers": list(KNOWN_SERVICES),
+        "status": "unreachable",
+        "detail": "pxGrid control connection failed",
+    }
+    pxgrid = None
+    try:
+        pxgrid = PxGridControl(cfg)
+        account = pxgrid.account_state()
+        state = str(account.get("accountState", "UNKNOWN")).upper()
+        result.update({
+            "reachable": True,
+            "authenticated": True,
+            "account_state": state,
+            "version": account.get("version", ""),
+        })
+        if state != "ENABLED":
+            result["status"] = state.casefold()
+            result["detail"] = f"pxGrid account is {state}; approve or enable it in ISE"
+            return result
+        providers = pxgrid.services()
+        discovered = sorted({
+            str(row.get("serviceName", "")) for row in providers
+            if row.get("serviceName")
+        })
+        missing = sorted(set(KNOWN_SERVICES) - set(discovered))
+        result.update({
+            "provider_count": len(discovered),
+            "expected_provider_count": len(KNOWN_SERVICES),
+            "missing_providers": missing,
+            "healthy": bool(discovered),
+        })
+        if discovered:
+            result["status"] = "ok" if not missing else "partial"
+            result["detail"] = (
+                "account enabled and provider discovery succeeded"
+                if not missing else
+                "account enabled; provider discovery succeeded with optional providers absent"
+            )
+        else:
+            result["status"] = "no_providers"
+            result["detail"] = "account enabled but ISE returned no pxGrid service providers"
+    except Exception as error:
+        result["status"] = "failed" if result["reachable"] else "unreachable"
+        result["detail"] = str(error)
+    finally:
+        if pxgrid is not None:
+            pxgrid.close()
+    return result
+
+
 def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
     command = args.command
     if command in CACHED_EXPORTER_COMMANDS and exporter_snapshot is None:
@@ -2184,6 +2270,14 @@ def _execute(args, client, cfg, dataconnect=None, exporter_snapshot=None):
         return rows
     if command == "pxgrid-status":
         return _pxgrid_status(exporter_snapshot, client, live=args.live)
+    if command in ("ers-check", "openapi-check", "mnt-check"):
+        if client is None:
+            raise CLIError(f"{command} requires configured ISE REST credentials")
+        return [client.check_api(command.removesuffix("-check"))]
+    if command == "pxgrid-check":
+        if cfg is None:
+            raise CLIError("pxGrid check requires configuration")
+        return [_pxgrid_check(cfg)]
     if command.startswith("pxgrid-"):
         if cfg is None:
             raise CLIError("pxGrid commands require configuration")

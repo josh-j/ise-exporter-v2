@@ -16,7 +16,13 @@ from prometheus_client import start_http_server
 from . import __version__, build_revision, SUPPORTED_ISE_RELEASE, version_string
 from . import metrics
 from .config import Config
-from .clients.rest import ISEControlPlaneClient, MnTActiveSessionClient, RestAuthGuard
+from .clients.rest import (
+    ISEControlPlaneClient,
+    ISEOperatorClient,
+    MnTActiveSessionClient,
+    RestAuthGuard,
+)
+from .cli import _pxgrid_check
 from .clients.dataconnect import DataConnectClient
 from .compatibility import (
     ISECompatibilityError,
@@ -35,7 +41,8 @@ from .state import (
     reset_exporter_state,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+JOURNAL_LOG_FORMAT = "%(name)s - %(levelname)s - %(message)s"
+logging.basicConfig(level=logging.INFO, format=JOURNAL_LOG_FORMAT)
 logger = logging.getLogger("ise_exporter")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -106,15 +113,46 @@ def dataconnect_schema(cfg):
         _close_quietly(client, "Data Connect schema client")
 
 
+def api_check(cfg, family):
+    """Run one bounded authenticated HTTP API probe and print its contract."""
+    client = None
+    try:
+        client = ISEOperatorClient(cfg)
+        result = client.check_api(family)
+        print(json.dumps(result, indent=2, default=str))
+        return 0 if result.get("healthy") else 1
+    except Exception as exc:
+        logger.error("%s check failed: %s", family.upper(), exc)
+        return 1
+    finally:
+        _close_quietly(client, f"{family} check client")
+
+
+def pxgrid_check(cfg):
+    """Run the same account and provider diagnostic exposed by PowerShell."""
+    result = _pxgrid_check(cfg)
+    print(json.dumps(result, indent=2, default=str))
+    return 0 if result.get("healthy") else 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", action="version", version=version_string("ise-exporter"))
-    parser.add_argument("--dataconnect-check", action="store_true",
-                        help="validate Data Connect credentials, TLS, and view access")
-    parser.add_argument("--dataconnect-schema", action="store_true",
-                        help="print reporting-view column metadata as JSON")
-    parser.add_argument("--reset-state", action="store_true",
-                        help="clear exporter caches, snapshots, auth backoff, and DB pacing")
+    one_shot = parser.add_mutually_exclusive_group()
+    one_shot.add_argument("--ers-check", action="store_true",
+                          help="validate ERS credentials and read authorization")
+    one_shot.add_argument("--openapi-check", action="store_true",
+                          help="validate OpenAPI credentials and read authorization")
+    one_shot.add_argument("--mnt-check", action="store_true",
+                          help="validate MnT credentials with a bounded ActiveCount request")
+    one_shot.add_argument("--dataconnect-check", action="store_true",
+                          help="validate Data Connect credentials, TLS, and view access")
+    one_shot.add_argument("--pxgrid-check", action="store_true",
+                          help="validate pxGrid account state and provider discovery")
+    one_shot.add_argument("--dataconnect-schema", action="store_true",
+                          help="print reporting-view column metadata as JSON")
+    one_shot.add_argument("--reset-state", action="store_true",
+                          help="clear exporter caches, snapshots, auth backoff, and DB pacing")
     args = parser.parse_args(argv)
 
     metrics.ise_exporter_build_info.labels(
@@ -126,6 +164,14 @@ def main(argv=None):
 
     if args.dataconnect_check:
         return dataconnect_check(cfg)
+    if args.ers_check:
+        return api_check(cfg, "ers")
+    if args.openapi_check:
+        return api_check(cfg, "openapi")
+    if args.mnt_check:
+        return api_check(cfg, "mnt")
+    if args.pxgrid_check:
+        return pxgrid_check(cfg)
     if args.dataconnect_schema:
         return dataconnect_schema(cfg)
     if args.reset_state:

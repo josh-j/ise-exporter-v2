@@ -214,10 +214,17 @@ openssl s_client -connect mnt1.example.com:2484 -servername mnt1.example.com \
   -verify_return_error </dev/null
 ise-exporter --dataconnect-check
 ise-exporter --dataconnect-schema
+ise-exporter --ers-check
+ise-exporter --openapi-check
+ise-exporter --mnt-check
+ise-exporter --pxgrid-check
 ```
 
 ```powershell
 Test-IseHealth
+Test-IseErs
+Test-IseOpenApi
+Test-IseMnt
 Test-IseDataConnect
 Test-IsePxGrid
 Get-IsePxGridService | Format-Table serviceName,nodeName

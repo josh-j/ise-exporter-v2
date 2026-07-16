@@ -1,3 +1,4 @@
+import json
 import types
 
 import pytest
@@ -42,6 +43,11 @@ def test_exporter_version_reports_revision_and_exact_ise_target(monkeypatch, cap
     assert exited.value.code == 0
     assert capsys.readouterr().out == (
         "ise-exporter 2.0.0 (revision abc1234; Cisco ISE 3.3.0.430 Patch 11)\n")
+
+
+def test_journal_log_format_does_not_duplicate_the_journal_timestamp():
+    assert "%(asctime)" not in app.JOURNAL_LOG_FORMAT
+    assert "%(name)s" in app.JOURNAL_LOG_FORMAT
 
 
 def test_build_revision_falls_back_to_bounded_installer_marker(
@@ -143,6 +149,67 @@ def test_dataconnect_check_validates_contract_and_closes(monkeypatch):
 
 def test_dataconnect_check_requires_credentials():
     assert app.dataconnect_check(_cfg(dataconnect_ready=False)) == 1
+
+
+@pytest.mark.parametrize("family", ("ers", "openapi", "mnt"))
+def test_api_check_prints_diagnostic_json_and_closes(monkeypatch, capsys, family):
+    calls = []
+
+    class Client:
+        def __init__(self, cfg):
+            calls.append(("init", cfg))
+
+        def check_api(self, requested):
+            calls.append(("check", requested))
+            return {"service": requested, "healthy": True, "status": "ok"}
+
+        def close(self):
+            calls.append(("close", family))
+
+    cfg = _cfg()
+    monkeypatch.setattr(app, "ISEOperatorClient", Client)
+
+    assert app.api_check(cfg, family) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "healthy": True, "service": family, "status": "ok"}
+    assert calls == [("init", cfg), ("check", family), ("close", family)]
+
+
+def test_pxgrid_check_flag_uses_shared_diagnostic_contract(monkeypatch, capsys):
+    monkeypatch.setattr(app, "_pxgrid_check", lambda _cfg: {
+        "service": "pxGrid 2.0", "healthy": True, "status": "ok"})
+
+    assert app.pxgrid_check(_cfg()) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "healthy": True, "service": "pxGrid 2.0", "status": "ok"}
+
+
+@pytest.mark.parametrize(("flag", "family"), (
+    ("--ers-check", "ers"),
+    ("--openapi-check", "openapi"),
+    ("--mnt-check", "mnt"),
+))
+def test_exporter_api_check_flags_are_one_shot(monkeypatch, flag, family):
+    cfg = _cfg()
+    calls = []
+    monkeypatch.setattr(app, "Config", types.SimpleNamespace(from_env=lambda: cfg))
+    monkeypatch.setattr(
+        app, "api_check", lambda actual_cfg, requested: calls.append(
+            (actual_cfg, requested)) or 0)
+
+    assert app.main([flag]) == 0
+    assert calls == [(cfg, family)]
+
+
+def test_exporter_pxgrid_check_flag_is_one_shot(monkeypatch):
+    cfg = _cfg()
+    calls = []
+    monkeypatch.setattr(app, "Config", types.SimpleNamespace(from_env=lambda: cfg))
+    monkeypatch.setattr(
+        app, "pxgrid_check", lambda actual_cfg: calls.append(actual_cfg) or 0)
+
+    assert app.main(["--pxgrid-check"]) == 0
+    assert calls == [cfg]
 
 
 def test_compatibility_failure_closes_control_plane_client(monkeypatch):

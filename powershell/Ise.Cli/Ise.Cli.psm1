@@ -2,9 +2,10 @@ Set-StrictMode -Version Latest
 
 $script:IseCommands = @(
     'overview', 'collector-status', 'endpoint-summary', 'troubleshoot-auth',
-    'psn-summary', 'nad-summary', 'pxgrid-status', 'pxgrid-account',
+    'psn-summary', 'nad-summary', 'pxgrid-status', 'pxgrid-check', 'pxgrid-account',
     'pxgrid-services', 'pxgrid-topics', 'pxgrid-query',
-    'health', 'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
+    'health', 'ers-check', 'openapi-check', 'mnt-check',
+    'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
     'sessions', 'session', 'auth-status', 'secure-client', 'nads', 'profiles',
     'tacacs-users', 'identity-groups', 'network-device-groups', 'licenses',
     'patches', 'backup-status', 'repositories', 'network-policy-sets',
@@ -122,9 +123,10 @@ function Invoke-IseBackend {
     param(
         [Parameter(Mandatory)][ValidateSet(
             'overview', 'collector-status', 'endpoint-summary', 'troubleshoot-auth',
-            'psn-summary', 'nad-summary', 'pxgrid-status', 'pxgrid-account',
+            'psn-summary', 'nad-summary', 'pxgrid-status', 'pxgrid-check', 'pxgrid-account',
             'pxgrid-services', 'pxgrid-topics', 'pxgrid-query',
-            'health', 'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
+            'health', 'ers-check', 'openapi-check', 'mnt-check',
+            'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
             'sessions', 'session', 'auth-status', 'secure-client', 'nads', 'profiles',
             'tacacs-users', 'identity-groups', 'network-device-groups', 'licenses',
             'patches', 'backup-status', 'repositories', 'network-policy-sets',
@@ -159,9 +161,10 @@ Runs any bounded legacy command and returns PowerShell objects.
         [Parameter(Mandatory, Position = 0)]
         [ValidateSet(
             'overview', 'collector-status', 'endpoint-summary', 'troubleshoot-auth',
-            'psn-summary', 'nad-summary', 'pxgrid-status', 'pxgrid-account',
+            'psn-summary', 'nad-summary', 'pxgrid-status', 'pxgrid-check', 'pxgrid-account',
             'pxgrid-services', 'pxgrid-topics', 'pxgrid-query',
-            'health', 'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
+            'health', 'ers-check', 'openapi-check', 'mnt-check',
+            'nodes', 'endpoints', 'endpoint-fields', 'endpoint', 'resolve',
             'sessions', 'session', 'auth-status', 'secure-client', 'nads', 'profiles',
             'tacacs-users', 'identity-groups', 'network-device-groups', 'licenses',
             'patches', 'backup-status', 'repositories', 'network-policy-sets',
@@ -221,6 +224,33 @@ function Invoke-IseInventory {
 }
 
 function Test-IseHealth { [CmdletBinding()] param([string]$ConfigFile) Invoke-IseBackend -Command health -ConfigFile $ConfigFile }
+function Test-IseErs {
+    <#
+.SYNOPSIS
+Checks ERS reachability, credentials, and endpoint authorization.
+#>
+    [CmdletBinding()]
+    param([string]$ConfigFile)
+    Invoke-IseBackend -Command ers-check -ConfigFile $ConfigFile
+}
+function Test-IseOpenApi {
+    <#
+.SYNOPSIS
+Checks ISE OpenAPI reachability, credentials, and deployment-read authorization.
+#>
+    [CmdletBinding()]
+    param([string]$ConfigFile)
+    Invoke-IseBackend -Command openapi-check -ConfigFile $ConfigFile
+}
+function Test-IseMnt {
+    <#
+.SYNOPSIS
+Checks the MnT API with a bounded ActiveCount request.
+#>
+    [CmdletBinding()]
+    param([string]$ConfigFile)
+    Invoke-IseBackend -Command mnt-check -ConfigFile $ConfigFile
+}
 function Get-IseNode {
     [CmdletBinding()]
     param([ValidateRange(1,5000)][int]$Limit=50,[switch]$AllowExpensive,[string]$ConfigFile)
@@ -277,11 +307,11 @@ function Get-IsePxGridStatus {
 function Test-IsePxGrid {
     <#
 .SYNOPSIS
-Tests pxGrid 2.0 account activation and returns the account state.
+Checks pxGrid 2.0 account activation and service-provider discovery.
 #>
     [CmdletBinding()]
     param([string]$ConfigFile)
-    Invoke-IseBackend -Command pxgrid-account -ConfigFile $ConfigFile
+    Invoke-IseBackend -Command pxgrid-check -ConfigFile $ConfigFile
 }
 
 function Get-IsePxGridService {
@@ -1121,7 +1151,8 @@ Export-ModuleMember -Function @(
     'Get-IsePxGridEndpoint','Get-IsePxGridSxpBinding','Get-IsePxGridRadiusFailure',
     'Get-IsePxGridMdmEndpoint','Get-IsePxGridProfilerProfile','Get-IsePxGridAncPolicy',
     'Get-IsePxGridAncEndpoint','Get-IsePxGridAncEndpointPolicy',
-    'Test-IseHealth','Get-IseNode','Find-IseEndpoint',
+    'Test-IseHealth','Test-IseErs','Test-IseOpenApi','Test-IseMnt',
+    'Get-IseNode','Find-IseEndpoint',
     'Get-IseEndpointField','Get-IseEndpoint','Resolve-IseEndpoint','Get-IseSession',
     'Get-IseActiveSession','Get-IseAuthenticationStatus','Get-IseSecureClient',
     'Get-IseNetworkDevice','Get-IseProfilerProfile','Get-IseTacacsUser',

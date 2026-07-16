@@ -92,13 +92,14 @@ ActiveList, and the hard 5,000-row Data Connect ceiling.
 | `Debug-IsePsn` | Cached PSN telemetry with an explicit `-Live` Data Connect refresh |
 | `Get-IseNadSummary` | Cached NAD activity/health with an explicit `-Live` ERS refresh |
 | `Get-IsePxGridStatus` | pxGrid collector ownership and optional live deployment-service visibility |
-| `Test-IsePxGrid` | pxGrid 2.0 account state and protocol version |
+| `Test-IsePxGrid` | pxGrid 2.0 account state and provider discovery |
 | `Get-IsePxGridService`, `Get-IsePxGridTopic` | Service and pubsub-topic discovery |
 | `Get-IsePxGridSession`, `Get-IsePxGridEndpoint` | Bounded context snapshots as PowerShell objects |
 | `Get-IsePxGridRadiusFailure`, `Get-IsePxGridTrustSec` | RADIUS and TrustSec information gathering |
 | `Get-IsePxGridMdmEndpoint`, `Get-IsePxGridProfilerProfile` | MDM and profiler context |
 | `Get-IsePxGridAncPolicy`, `Get-IsePxGridAncEndpoint` | Read-only ANC inventory and assignments |
 | `Test-IseHealth` | PAN/ERS, MnT, and Data Connect health |
+| `Test-IseErs`, `Test-IseOpenApi`, `Test-IseMnt` | Focused authenticated health checks for each ISE HTTP API family |
 | `Get-IseNode` | Deployment nodes |
 | `Find-IseEndpoint` | Endpoint inventory and context wildcard search |
 | `Get-IseEndpointField` | Live searchable-field schema |
