@@ -256,7 +256,12 @@ def test_domain_dashboards_expose_authoritative_dataset_availability():
             for target in panel.get("targets", [])
         }
         for dataset, source in datasets:
-            selector = f'ise_dataset_up{{dataset="{dataset}",source="{source}"}}'
+            if name == "ise-psn-troubleshooting.json":
+                selector = (
+                    'ise_dataset_up{instance=~"$deployment",'
+                    f'dataset="{dataset}",source="{source}"}}')
+            else:
+                selector = f'ise_dataset_up{{dataset="{dataset}",source="{source}"}}'
             assert any(selector in expression for expression in expressions), (
                 f"{name} has no visible availability query for {dataset}/{source}")
 
@@ -507,6 +512,9 @@ def test_dashboard_legends_reference_real_metric_labels():
 
 def test_dashboard_selectors_reference_real_metric_labels():
     labels_by_metric = _exported_metric_labels()
+    # Prometheus attaches these target labels to every scraped exporter metric;
+    # they are intentionally absent from the Python registry declarations.
+    target_labels = {"instance", "job"}
     invalid = []
     for path in sorted(DASHBOARDS.glob("*.json")):
         dashboard = json.loads(path.read_text())
@@ -517,7 +525,8 @@ def test_dashboard_selectors_reference_real_metric_labels():
                         r"\b(ise_[a-zA-Z0-9_]+)\s*\{([^{}]*)\}", expression):
                     used = set(re.findall(
                         r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:=~|!~|!=|=)", selector))
-                    for label in sorted(used - labels_by_metric.get(metric, set())):
+                    known = labels_by_metric.get(metric, set()) | target_labels
+                    for label in sorted(used - known):
                         invalid.append(
                             f"{path.name}: panel {panel.get('id')}: {metric}.{label}")
 
@@ -812,7 +821,8 @@ def test_psn_diagnostic_headline_respects_node_filter():
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 4)
     expression = panel["targets"][0]["expr"]
 
-    assert 'sum(ise_dataconnect_diagnostic_events{node=~"$psn"})' in expression
+    assert ('sum(ise_dataconnect_diagnostic_events{instance=~"$deployment",'
+            'node=~"$psn"})') in expression
     assert "ise_dataconnect_diagnostic_events_total" not in expression
 
 
@@ -821,7 +831,8 @@ def test_psn_dashboard_hides_stale_deployment_snapshot():
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 14)
     expression = panel["targets"][0]["expr"]
 
-    assert 'ise_dataset_up{dataset="deployment",source="rest"}' in expression
+    assert ('ise_dataset_up{instance=~"$deployment",dataset="deployment",'
+            'source="rest"}') in expression
     assert "== 1" in expression
 
 
@@ -894,7 +905,7 @@ def test_troubleshooting_variables_match_exported_metric_dimensions():
     access = _dashboard("ise-access-troubleshooting.json")
     health = _dashboard("ise-exporter-health.json")
 
-    assert set(_variables(psn)) == {"DS_PROMETHEUS", "psn"}
+    assert set(_variables(psn)) == {"DS_PROMETHEUS", "deployment", "psn"}
     assert set(_variables(access)) == {
         "DS_PROMETHEUS", "psn", "nad", "status", "authorization_policy"}
     assert set(_variables(health)) == {"DS_PROMETHEUS", "dataset", "source"}
@@ -917,9 +928,18 @@ def test_dashboard_navigation_preserves_time_and_variables():
 
 def test_psn_and_access_queries_apply_supported_filters():
     psn = _dashboard("ise-psn-troubleshooting.json")
+    variables = _variables(psn)
+    assert variables["deployment"]["query"]["query"] == \
+        'query_result(ise_dataset_enabled{dataset="deployment",source="rest"} == 1)'
+    assert variables["deployment"]["regex"] == '/instance="([^"]+)"/'
+    assert 'roles=~"PSN|Standalone"' in variables["psn"]["query"]["query"]
+    assert 'ise_deployment_status="Connected"' in variables["psn"]["query"]["query"]
+    assert variables["psn"]["regex"] == '/node="([^"]+)"/'
     for item in _panels(psn["panels"]):
         for target in item.get("targets", []):
             expr = target.get("expr", "")
+            if "ise_" in expr:
+                assert 'instance=~"$deployment"' in expr, (item["title"], expr)
             if any(metric in expr for metric in (
                     "ise_dataconnect_psn_", "ise_dataconnect_node_",
                     "ise_dataconnect_diagnostic_events", "ise_deployment_status")):
