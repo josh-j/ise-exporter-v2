@@ -328,9 +328,9 @@ without recreating the old environment-variable configuration surface. The TOML
 sample is production-oriented for up to 100,000 endpoints:
 database-side aggregation, collapsed summary/top-group scans, serialized five-second
 query pacing, cadence-aligned event scans capped at six hours, daily RADIUS reporting,
-hourly bounded active-session reconstruction, six-hour performance reporting,
-daily posture/TACACS/NAD reporting, daily source-freshness checks, and daily
-inventory state. A private
+30-minute bounded active-session reconstruction, five-minute PSN performance
+reporting, six-hour posture/TACACS/NAD reporting, daily source-freshness checks,
+and daily inventory state. A private
 SQLite cache survives restarts. MnT fetches at most 250 new or rotating endpoint
 details per 15-minute cycle, while cached active details retain dashboard coverage.
 RADIUS exact volume, failure, and distinct-identity totals use Cisco's Patch 11
@@ -342,11 +342,10 @@ authorization policy. Failure class, authorization profile, location, identity
 store/group, device type, and security group remain on the aggregate view.
 Configured-NAD activity health also sums passed and failed
 counts from that aggregate view rather than grouping raw events again. RADIUS
-historical gauges come from one exact
-configured-window snapshot per day. The
+historical gauges come from one exact configured-window snapshot per day. The
 separate active-session dataset scans only the configured stale window every
-hour by default, matching its hard one-hour stale ceiling; no locally merged
-historical event windows can grow without bound.
+30 minutes in the production example, within its hard one-hour stale ceiling;
+no locally merged historical event windows can grow without bound.
 Legacy `radius_active_seconds` values above one hour are normalized to one hour
 with a startup warning so the cadence cannot exceed the reconstruction window.
 TACACS applies a six-hour bound inside Cisco's two-day views, and endpoint totals,

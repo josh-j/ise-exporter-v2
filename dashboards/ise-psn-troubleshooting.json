@@ -73,7 +73,7 @@
       "id": 91,
       "type": "stat",
       "title": "Dataset Collection Age",
-      "description": "Seconds since the last successful PSN snapshot replacement. Yellow after one missed 15-minute cycle; red after two.",
+      "description": "Seconds since the last successful PSN snapshot replacement. Yellow after one five-minute interval plus grace; red after two intervals.",
       "gridPos": {
         "h": 4,
         "w": 12,
@@ -103,11 +103,11 @@
               },
               {
                 "color": "yellow",
-                "value": 1350
+                "value": 450
               },
               {
                 "color": "red",
-                "value": 1800
+                "value": 600
               }
             ]
           },

@@ -20,7 +20,7 @@ port = 9618
 state_db = "/var/lib/ise-exporter/state.sqlite3"
 # Default polling tiers used by collectors without a dedicated interval below.
 scrape_interval_seconds = 60
-medium_interval_seconds = 900
+medium_interval_seconds = 300
 slow_interval_seconds = 21600
 # Minimum spacing between cold-start collector attempts. This avoids a burst of
 # requests when the service starts; set lower only if ISE can absorb the burst.
@@ -147,7 +147,7 @@ radius_seconds = 86400 # 1 day
 # Values above 3600 are normalized to the hard one-hour stale window.
 radius_active_seconds = 1800 # 30 minutes
 # PSN CPU, memory, latency, diagnostics, and throughput troubleshooting.
-performance_seconds = 900 # 15 minutes
+performance_seconds = 300 # 5 minutes
 # Historical posture assessments.
 posture_seconds = 21600 # 6 hours
 # Endpoint inventory and source-view freshness checks are large, slow datasets.

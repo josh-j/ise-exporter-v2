@@ -1230,5 +1230,6 @@
         "justifyMode": "auto"
       }
     }
-  ]
+  ],
+  "refresh": "5m"
 }

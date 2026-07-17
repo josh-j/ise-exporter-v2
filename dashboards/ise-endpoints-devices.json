@@ -690,7 +690,7 @@
       }
     }
   ],
-  "refresh": "15m",
+  "refresh": "6h",
   "schemaVersion": 39,
   "tags": [
     "ise",

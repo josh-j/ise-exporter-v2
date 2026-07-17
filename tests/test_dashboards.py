@@ -731,7 +731,7 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
             (129600, 172800),
         ("ise-endpoints-devices.json", "Dataset Collection Age"):
             (129600, 172800),
-        ("ise-psn-troubleshooting.json", "Dataset Collection Age"): (1350, 1800),
+        ("ise-psn-troubleshooting.json", "Dataset Collection Age"): (450, 600),
         ("ise-secureclient.json", "Active Snapshot Age (MnT)"): (1350, 1800),
         ("ise-secureclient.json", "Historical Snapshot Age (Data Connect)"):
             (32400, 43200),
@@ -746,10 +746,21 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
         assert tuple(step["value"] for step in steps[1:]) == thresholds
 
 
-def test_psn_troubleshooting_refresh_matches_collection_cadence():
-    dashboard = _dashboard("ise-psn-troubleshooting.json")
+def test_dashboard_refreshes_match_their_fastest_owned_collection_cadence():
+    expected = {
+        "ise-access-troubleshooting.json": "30m",
+        "ise-endpoints-devices.json": "6h",
+        "ise-exporter-health.json": "30s",
+        "ise-overview.json": "5m",
+        "ise-psn-troubleshooting.json": "5m",
+        "ise-secureclient.json": "15m",
+        "ise-tacacs.json": "6h",
+    }
 
-    assert dashboard["refresh"] == "5m"
+    assert {
+        filename: _dashboard(filename).get("refresh")
+        for filename in expected
+    } == expected
 
 
 def test_schema_degradation_is_visible_on_health_and_psn_dashboards():

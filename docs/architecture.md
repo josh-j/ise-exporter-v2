@@ -170,7 +170,10 @@ summary view, not an additional raw authentication scan.
 The three large daily RADIUS sources each use one `GROUPING SETS` statement for
 their paired breakdowns (authentication/latency, volume/failure context, and
 accounting/session duration), rather than rescanning the same six-hour window.
-The nominal due workload is below two statements per hour after startup.
+Frequent PSN health batches stay bounded to four short statements, while the
+larger historical and inventory views retain their slower cadences. Measured
+Oracle work, rather than statement count alone, drives the shared adaptive
+duty-cycle cooldown.
 Cold-start attempts across REST, MnT, and Data Connect share an interruptible
 startup limiter. `exporter.startup_rate_limit_seconds` sets the minimum spacing
 between each dataset's first attempt (five seconds by default, zero disables it)
@@ -181,27 +184,27 @@ historical reporting. While schema discovery is in flight, its operational Data
 Connect work is retained in the serialized queue instead of waiting for the next
 scheduler cycle.
 Daily RADIUS reporting samples six hours, while a disjoint active-session query
-scans at most its hard 60-minute stale window every hour by default. No historical windows
-are merged locally, so a reconciliation baseline cannot silently grow into a
-three-day reporting window.
-Other scheduled event scans match their cadence: six hours for PSN performance
-and diagnostics, and daily for posture, NAD health, and endpoint profiling.
+scans at most its hard 60-minute stale window every 30 minutes in the production
+example. No historical windows are merged locally, so a reconciliation baseline
+cannot silently grow into a three-day reporting window.
+PSN performance and diagnostics run every five minutes over bounded current or
+six-hour source windows. Historical posture and NAD health run every six hours;
+endpoint profiling remains daily.
 `dataconnect.event_window_hours` is an absolute six-hour-or-lower ceiling;
 daily domains intentionally sample rather than aggregating a full day.
 The posture snapshot materializes its bounded latest-assessment set once and uses
 one `GROUPING SETS` pass for status/version and failure breakdowns plus eligible
 endpoint coverage; it does not rebuild the same assessment window per dashboard.
-TACACS also runs daily and applies an `EPOCH_TIME` lower bound to
-Cisco's two-day views before grouping, so the view's retention does not become
-the exporter's scan size. The 14-view source-freshness diagnostic runs daily as
-one bounded `UNION ALL` statement, applying the same at-most-six-hour timestamp or
-numeric-epoch ceiling to every view. This avoids 14 adaptive pacing waits holding
-the serialized worker while retaining one atomic freshness snapshot.
-Production cadence settings are minimum intervals: operators may collect less
-often, but TOML cannot restore the former aggressive schedule. The scheduler
-enforces those minima independently of configuration parsing, so a
-direct `Config(...)` or Config-like integration cannot issue the same statements
-at a faster cadence.
+TACACS runs every six hours in the production example and applies an `EPOCH_TIME`
+lower bound to Cisco's two-day views before grouping, so the view's retention does
+not become the exporter's scan size. The 14-view source-freshness diagnostic runs
+daily as one bounded `UNION ALL` statement, applying the same at-most-six-hour
+timestamp or numeric-epoch ceiling to every view. This avoids 14 adaptive pacing
+waits holding the serialized worker while retaining one atomic freshness snapshot.
+Operator-configured cadences remain subject to hard query timeouts, bounded result
+sizes, serialization, and the measured shared duty-cycle cooldown. The active
+RADIUS interval is additionally capped at one hour so it cannot exceed that
+dataset's reconstruction window.
 The exporter and CLI also serialize through one persistent pacing gate so separate
 processes cannot bypass the cooldown. An empty pacing-path environment value is
 normalized back to the protected service-state path rather than disabling this
@@ -387,10 +390,13 @@ live diagnostic fallback within CLI resolution only.
 
 ## One-owner dataset matrix
 
+The cadences below are the production example profile; deployments may choose
+slower intervals while retaining the same ownership boundaries and safety gates.
+
 | Dataset | Sole metric owner | Interface | Runtime cadence |
 |---|---|---|---|
 | ISE compatibility, version, patches | Platform | PAN OpenAPI | startup / slow |
-| Deployment, personas, services, PAN HA | Platform | PAN OpenAPI | 15 minutes |
+| Deployment, personas, services, PAN HA | Platform | PAN OpenAPI | 5 minutes |
 | Network devices and group classification | Configuration | ERS | 6 hours |
 | Certificates | Platform | PAN OpenAPI | 6 hours |
 | Licensing | Platform | PAN OpenAPI | 6 hours |
@@ -399,10 +405,10 @@ live diagnostic fallback within CLI resolution only.
 | RADIUS authentication, failures, and latency | Reporting | Data Connect | 24 hours |
 | RADIUS accounting and session duration | Reporting | Data Connect | 24 hours |
 | Endpoint inventory and profiling | Reporting | Data Connect | 24 hours |
-| Historical posture and Secure Client | Reporting | Data Connect | 24 hours |
+| Historical posture and Secure Client | Reporting | Data Connect | 6 hours |
 | Current active-session posture and latency sample | Current state | MnT XML | 15 minutes |
-| PSN performance and diagnostics | Reporting | Data Connect | 6 hours |
-| TACACS account and command activity | Reporting | Data Connect | medium |
+| PSN performance and diagnostics | Reporting | Data Connect | 5 minutes |
+| TACACS account and command activity | Reporting | Data Connect | 6 hours |
 
 There is one writer for each metric family. Control-plane configuration and
 reporting-plane activity may describe the same feature, such as TACACS, but

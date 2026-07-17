@@ -15,15 +15,15 @@ There is no live-event or dynamic source fallback layer. A missing dataset remai
 
 ## Dashboard inventory
 
-| Dashboard | Purpose | Source |
-|---|---|---|
-| `ise-overview.json` | Deployment, certificates, licensing, backups, and patches | REST/OpenAPI |
-| `ise-access-troubleshooting.json` | RADIUS authentication, accounting-derived sessions, latency, and failure triage | Data Connect |
-| `ise-endpoints-devices.json` | Endpoint/profile summary and authoritative NAD inventory | Data Connect and REST/OpenAPI |
-| `ise-secureclient.json` | Posture status, policies, conditions, agent versions, OS, and failures | Data Connect |
-| `ise-psn-troubleshooting.json` | RADIUS workload, latency, TPS, resource utilization, and diagnostics by node | Data Connect plus REST deployment health |
-| `ise-tacacs.json` | Device Administration configuration, account hygiene, and attributed TACACS activity | REST/OpenAPI and Data Connect |
-| `ise-exporter-health.json` | Dataset availability, collection and source freshness, coverage, worker queues, query safety, and build identity | Exporter telemetry and Data Connect |
+| Dashboard | Purpose | Source | Auto-refresh |
+|---|---|---|---|
+| `ise-overview.json` | Deployment, certificates, licensing, backups, and patches | REST/OpenAPI | 5 minutes |
+| `ise-access-troubleshooting.json` | RADIUS authentication, accounting-derived sessions, latency, and failure triage | Data Connect | 30 minutes |
+| `ise-endpoints-devices.json` | Endpoint/profile summary and authoritative NAD inventory | Data Connect and REST/OpenAPI | 6 hours |
+| `ise-secureclient.json` | Posture status, policies, conditions, agent versions, OS, and failures | Data Connect | 15 minutes |
+| `ise-psn-troubleshooting.json` | RADIUS workload, latency, TPS, resource utilization, and diagnostics by node | Data Connect plus REST deployment health | 5 minutes |
+| `ise-tacacs.json` | Device Administration configuration, account hygiene, and attributed TACACS activity | REST/OpenAPI and Data Connect | 6 hours |
+| `ise-exporter-health.json` | Dataset availability, collection and source freshness, coverage, worker queues, query safety, and build identity | Exporter telemetry and Data Connect | 30 seconds |
 
 `ISE Exporter Health` is the single home for exporter availability, freshness,
 coverage, queue, and collection-safety diagnostics. Domain dashboards keep their

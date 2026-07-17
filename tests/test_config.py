@@ -27,7 +27,8 @@ def test_example_is_complete_and_parseable(monkeypatch):
     assert config.dataconnect_password == "database-secret"
     assert config.pxgrid_password == "pxgrid-secret"
     assert config.pxgrid_ready
-    assert config.dataconnect_performance_interval == 900
+    assert config.medium_interval == 300
+    assert config.dataconnect_performance_interval == 300
     assert config.dataconnect_max_duty_cycle_percent == 0.1
     assert config.mnt_active_posture_interval == 900
 

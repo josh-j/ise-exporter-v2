@@ -1380,7 +1380,7 @@
       }
     }
   ],
-  "refresh": "5m",
+  "refresh": "30m",
   "schemaVersion": 39,
   "tags": [
     "ise",
