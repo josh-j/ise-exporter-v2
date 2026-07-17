@@ -2,11 +2,16 @@ import ast
 import json
 from pathlib import Path
 import re
+import subprocess
+import sys
 
 from ise_exporter.config import Config
 
 
 DASHBOARDS = Path(__file__).parents[1] / "dashboards"
+OPS_OWNER_GENERATOR = (
+    Path(__file__).parents[1] / "tools/generate_ops_owner_dashboards.py"
+)
 
 
 def _panels(panels):
@@ -23,6 +28,84 @@ def _panel(dashboard, title):
     return next(
         panel for panel in _panels(dashboard["panels"])
         if panel.get("title") == title)
+
+
+def _generate_ops_owner_dashboards(tmp_path, metrics):
+    metrics_path = tmp_path / "metrics.txt"
+    metrics_path.write_text(metrics)
+    return subprocess.run(
+        [
+            sys.executable,
+            str(OPS_OWNER_GENERATOR),
+            "--metrics-file",
+            str(metrics_path),
+            "--output-dir",
+            str(tmp_path / "dashboards"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_generator_creates_one_fixed_dashboard_per_real_ops_owner(tmp_path):
+    result = _generate_ops_owner_dashboards(tmp_path, """
+# TYPE ise_network_devices_by_ops_owner gauge
+ise_network_devices_by_ops_owner{ops_owner="Campus West"} 15
+ise_network_devices_by_ops_owner{ops_owner="Branch \\"A\\""} 4
+ise_network_devices_by_ops_owner{ops_owner="unknown"} 2
+""")
+
+    assert result.returncode == 0, result.stderr
+    output = tmp_path / "dashboards"
+    paths = sorted(output.glob("ise-ops-owner-*.json"))
+    assert [path.name for path in paths] == [
+        "ise-ops-owner-branch-a.json",
+        "ise-ops-owner-campus-west.json",
+    ]
+
+    dashboards = [json.loads(path.read_text()) for path in paths]
+    assert {dashboard["title"] for dashboard in dashboards} == {
+        'ISE Branch "A" Site Troubleshooting',
+        "ISE Campus West Site Troubleshooting",
+    }
+    assert len({dashboard["uid"] for dashboard in dashboards}) == 2
+    assert all("__OPS_OWNER" not in json.dumps(dashboard)
+               for dashboard in dashboards)
+    assert all(
+        {item["name"] for item in dashboard["templating"]["list"]} == {
+            "DS_PROMETHEUS", "deployment", "location", "nad"}
+        for dashboard in dashboards
+    )
+
+    branch = dashboards[0]
+    expressions = " ".join(
+        target["expr"]
+        for panel in branch["panels"]
+        for target in panel.get("targets", [])
+    )
+    assert 'ops_owner="Branch \\"A\\""' in expressions
+    assert "on(instance,nad) group_left(location,ops_owner)" in expressions
+
+
+def test_generator_prunes_only_previously_generated_owner_dashboards(tmp_path):
+    first = _generate_ops_owner_dashboards(tmp_path, """
+ise_network_devices_by_ops_owner{ops_owner="Campus"} 5
+ise_network_devices_by_ops_owner{ops_owner="Branch"} 3
+""")
+    assert first.returncode == 0, first.stderr
+    output = tmp_path / "dashboards"
+    unrelated = output / "keep.json"
+    unrelated.write_text("{}\n")
+
+    second = _generate_ops_owner_dashboards(tmp_path, """
+ise_network_devices_by_ops_owner{ops_owner="Campus"} 5
+""")
+    assert second.returncode == 0, second.stderr
+    assert sorted(path.name for path in output.glob("*.json")) == [
+        "ise-ops-owner-campus.json",
+        "keep.json",
+    ]
 
 
 def test_visible_table_footers_include_legacy_reducer():
@@ -117,15 +200,22 @@ def test_pxgrid_dashboard_is_removed():
 
 
 def test_dashboard_set_is_consolidated_around_operator_workflows():
-    assert {path.name for path in DASHBOARDS.glob("*.json")} == {
+    expected = {
         "ise-access-troubleshooting.json",
         "ise-endpoints-devices.json",
         "ise-exporter-health.json",
         "ise-overview.json",
+        "ise-pan-mnt-troubleshooting.json",
         "ise-psn-troubleshooting.json",
         "ise-secureclient.json",
         "ise-tacacs.json",
     }
+    actual = {path.name for path in DASHBOARDS.glob("*.json")}
+    assert expected <= actual
+    assert all(
+        name in expected or re.fullmatch(r"ise-ops-owner-[a-z0-9-]+\.json", name)
+        for name in actual
+    )
 
 
 def test_distribution_panels_use_readable_horizontal_bars():
@@ -147,6 +237,14 @@ def test_distribution_panels_use_readable_horizontal_bars():
             if not thresholds:
                 violations.append(
                     f"{path.name}: panel {panel.get('id')} uses implicit colors")
+            for target in panel.get("targets", []):
+                expression = target.get("expr", "")
+                if target.get("instant") is not True:
+                    violations.append(
+                        f"{path.name}: panel {panel.get('id')} is not instant")
+                if not expression.startswith(("sort_desc(", "topk(")):
+                    violations.append(
+                        f"{path.name}: panel {panel.get('id')} is not sorted")
 
     assert not violations, "poor distribution visualizations: " + ", ".join(violations)
 
@@ -256,7 +354,17 @@ def test_domain_dashboards_expose_authoritative_dataset_availability():
             ("dataconnect_posture", "dataconnect"),
         },
         "ise-psn-troubleshooting.json": {
-            ("dataconnect_performance", "dataconnect"), ("deployment", "rest"),
+            ("dataconnect_performance", "dataconnect"),
+            ("dataconnect_radius", "dataconnect"),
+            ("dataconnect_radius_active", "dataconnect"),
+            ("deployment", "rest"),
+        },
+        "ise-pan-mnt-troubleshooting.json": {
+            ("backup", "rest"),
+            ("certificates", "rest"),
+            ("deployment", "rest"),
+            ("mnt_active_posture", "mnt"),
+            ("patches", "rest"),
         },
         "ise-tacacs.json": {
             ("tacacs_config", "rest"),
@@ -271,7 +379,9 @@ def test_domain_dashboards_expose_authoritative_dataset_availability():
             for target in panel.get("targets", [])
         }
         for dataset, source in datasets:
-            if name == "ise-psn-troubleshooting.json":
+            if name in {
+                    "ise-pan-mnt-troubleshooting.json",
+                    "ise-psn-troubleshooting.json"}:
                 selector = (
                     'ise_dataset_up{instance=~"$deployment",'
                     f'dataset="{dataset}",source="{source}"}}')
@@ -380,7 +490,7 @@ def test_secureclient_dashboard_separates_active_mnt_from_historical_dataconnect
         "Active Secure Client / Posture Agent Versions (MnT)":
             "ise_mnt_active_secure_client_endpoints",
         "Active Endpoints by OS (MnT)": "sum by (os) (ise_mnt_active_posture_endpoints)",
-        "Active Endpoints by PSN (MnT)": "sum by (psn, status)",
+        "Active Endpoints by PSN (MnT)": "sum by (psn)",
         "Active Posture Policies: Passed vs Failed (MnT)":
             "ise_mnt_active_posture_policy_results",
         "Failed Active Posture Policies (MnT)": "ise_mnt_active_posture_policy_results",
@@ -752,6 +862,7 @@ def test_dashboard_refreshes_match_their_fastest_owned_collection_cadence():
         "ise-endpoints-devices.json": "6h",
         "ise-exporter-health.json": "30s",
         "ise-overview.json": "5m",
+        "ise-pan-mnt-troubleshooting.json": "5m",
         "ise-psn-troubleshooting.json": "5m",
         "ise-secureclient.json": "15m",
         "ise-tacacs.json": "6h",
@@ -873,6 +984,49 @@ def test_psn_diagnostic_headline_respects_node_filter():
     assert "ise_dataconnect_diagnostic_events_total" not in expression
 
 
+def test_psn_dashboard_exposes_active_sessions_and_session_delta_per_psn():
+    dashboard = _dashboard("ise-psn-troubleshooting.json")
+
+    active = _panel(dashboard, "Active Sessions per PSN")
+    active_expression = active["targets"][0]["expr"]
+    assert active["type"] == "bargauge"
+    assert "sum by (psn) (ise_dataconnect_radius_active_sessions" in \
+        active_expression
+    assert 'instance=~"$deployment",psn=~"$psn"' in active_expression
+    assert 'dataset="dataconnect_radius_active",source="dataconnect"' in \
+        active_expression
+
+    delta = _panel(dashboard, "Session Delta per PSN")
+    delta_expression = delta["targets"][0]["expr"]
+    assert delta["type"] == "bargauge"
+    assert "sum by (psn)" in delta_expression
+    assert 'event_type=~"(?i).*start.*"' in delta_expression
+    assert 'event_type=~"(?i).*stop.*"' in delta_expression
+    assert "* -1" in delta_expression
+    assert 'instance=~"$deployment",psn=~"$psn"' in delta_expression
+    assert 'dataset="dataconnect_radius",source="dataconnect"' in \
+        delta_expression
+
+
+def test_psn_comparison_panels_collapse_secondary_dimensions():
+    contracts = (
+        ("ise-access-troubleshooting.json", "Authentication by PSN", "psn"),
+        ("ise-access-troubleshooting.json", "Response Time by PSN", "psn"),
+        ("ise-access-troubleshooting.json", "Errors by PSN", "psn"),
+        ("ise-secureclient.json", "Active Endpoints by PSN (MnT)", "psn"),
+        ("ise-secureclient.json",
+         "Historical Assessments by PSN (Data Connect)", "psn"),
+        ("ise-psn-troubleshooting.json",
+         "Highest Disk Utilization per PSN", "node"),
+    )
+
+    for filename, title, label in contracts:
+        panel = _panel(_dashboard(filename), title)
+        target = panel["targets"][0]
+        assert f"by ({label})" in target["expr"]
+        assert f"{{{{{label}}}}}" == target["legendFormat"]
+
+
 def test_psn_dashboard_hides_stale_deployment_snapshot():
     dashboard = json.loads((DASHBOARDS / "ise-psn-troubleshooting.json").read_text())
     panel = next(panel for panel in _panels(dashboard["panels"]) if panel.get("id") == 14)
@@ -890,7 +1044,7 @@ def test_exporter_health_query_duration_survives_sparse_production_cadence():
 
     assert panel["type"] == "bargauge"
     assert panel["title"] == "Latest Data Connect Query Duration"
-    assert target["expr"] == "ise_dataconnect_query_last_duration_seconds"
+    assert target["expr"] == "sort_desc(ise_dataconnect_query_last_duration_seconds)"
     assert target["instant"] is True
     assert "histogram_quantile" not in target["expr"]
 
@@ -949,15 +1103,18 @@ def _variables(dashboard):
 
 def test_troubleshooting_variables_match_exported_metric_dimensions():
     psn = _dashboard("ise-psn-troubleshooting.json")
+    pan_mnt = _dashboard("ise-pan-mnt-troubleshooting.json")
     access = _dashboard("ise-access-troubleshooting.json")
     health = _dashboard("ise-exporter-health.json")
 
     assert set(_variables(psn)) == {"DS_PROMETHEUS", "deployment", "psn"}
+    assert set(_variables(pan_mnt)) == {
+        "DS_PROMETHEUS", "deployment", "pan", "mnt"}
     assert set(_variables(access)) == {
         "DS_PROMETHEUS", "psn", "nad", "status", "authorization_policy"}
     assert set(_variables(health)) == {"DS_PROMETHEUS", "dataset", "source"}
 
-    for dashboard in (psn, access, health):
+    for dashboard in (psn, pan_mnt, access, health):
         for item in list(_variables(dashboard).values())[1:]:
             assert item["multi"] is True
             assert item["includeAll"] is True
@@ -968,7 +1125,8 @@ def test_dashboard_navigation_preserves_time_and_variables():
     for path in sorted(DASHBOARDS.glob("*.json")):
         dashboard = json.loads(path.read_text())
         destinations = {link["title"] for link in dashboard["links"]}
-        assert destinations == {"Overview", "Access", "PSN", "Exporter Health"}
+        assert destinations == {
+            "Overview", "Access", "PSN", "PAN & MnT", "Exporter Health"}
         assert all(link["keepTime"] and link["includeVars"]
                    for link in dashboard["links"])
 
@@ -1001,6 +1159,32 @@ def test_psn_and_access_queries_apply_supported_filters():
     assert 'nad=~"$nad"' in expressions
     assert 'status=~"$status"' in expressions
     assert 'authorization_policy=~"$authorization_policy"' in expressions
+
+
+def test_pan_mnt_dashboard_uses_deployment_roles_and_node_filters():
+    dashboard = _dashboard("ise-pan-mnt-troubleshooting.json")
+    variables = _variables(dashboard)
+
+    assert variables["deployment"]["query"]["query"] == \
+        'query_result(ise_dataset_enabled{dataset="deployment",source="rest"} == 1)'
+    assert "PrimaryAdmin|SecondaryAdmin|Standalone" in \
+        variables["pan"]["query"]["query"]
+    assert "PrimaryDedicatedMonitoring|PrimaryMonitoring" in \
+        variables["mnt"]["query"]["query"]
+    assert "SecondaryDedicatedMonitoring|SecondaryMonitoring|Standalone" in \
+        variables["mnt"]["query"]["query"]
+
+    for panel in _panels(dashboard["panels"]):
+        for target in panel.get("targets", []):
+            expression = target.get("expr", "")
+            if "ise_" in expression:
+                assert 'instance=~"$deployment"' in expression, (
+                    panel["title"], expression)
+
+    assert 'node=~"$pan"' in _panel(
+        dashboard, "PAN Node Status")["targets"][0]["expr"]
+    assert 'node=~"$mnt"' in _panel(
+        dashboard, "MnT Node Status")["targets"][0]["expr"]
 
 
 def test_dataset_failures_route_to_responsible_dashboard():

@@ -217,11 +217,16 @@ queued` explains serialized Data Connect backlog, `collection started` records
 the source, cadence, prior success age, and failure count, and `collection
 completed` records outcome, duration, publication state, next due/retry time,
 and the scheduling reason. Collector-specific summaries between those records
-describe the result counts. A `Data Connect query waiting` line means collection
-is deliberately paused by the shared or local database-protection gate; it gives
-the bounded reporting view, wait duration, resume time when known, and exact
-pacing reason. Use `LOG_LEVEL=DEBUG` only when request/query detail is required;
-normal collection progress should not require DEBUG.
+describe the result counts. A failed attempt is a structured warning containing
+`dataset`, `source`, `reason`, redacted `detail`, `exception_type`,
+`previous_success_age_seconds`, `snapshot_state`, `consecutive_failures`, and the
+retry time/action. Partial device, MnT, or TACACS detail refreshes similarly state
+what failed or was deferred and whether cached values were retained. A `Data
+Connect query waiting` line means collection is deliberately paused by the shared
+or local database-protection gate; it gives the bounded reporting view, wait
+duration, resume time when known, and exact pacing reason. Use `LOG_LEVEL=DEBUG`
+only when request/query detail is required; normal collection progress should not
+require DEBUG.
 
 For a completely fresh exporter state, stop the service and run the one-shot
 reset command as the service account, then start it again:

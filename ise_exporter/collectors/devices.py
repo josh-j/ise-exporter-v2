@@ -17,6 +17,7 @@ _METRICS = (
     metrics.ise_network_devices_by_location,
     metrics.ise_network_devices_by_ops_owner,
     metrics.ise_network_devices_by_type,
+    metrics.ise_network_device_ndg_assignment,
     metrics.ise_network_device_detail_coverage,
     metrics.ise_network_device_detail_cache_entries,
     metrics.ise_network_device_detail_refresh_requests,
@@ -100,6 +101,10 @@ def collect(client, cfg):
                 or any(len(device_id.encode("utf-8")) > 256 for device_id in device_ids)
                 or any(not str(row.get("name") or "").strip() for row in devices)):
             raise CollectorFailed("network device inventory contained invalid identities")
+        device_names = {
+            str(row["id"]).strip(): metric_label(str(row["name"]).strip())
+            for row in devices
+        }
 
         if not cfg.collect_device_details:
             replace_metric_snapshot(
@@ -169,6 +174,7 @@ def collect(client, cfg):
         loc_counts = defaultdict(int)
         ops_counts = defaultdict(int)
         type_counts = defaultdict(int)
+        assignments = []
 
         for dev_id in device_ids:
             entry = cached.get(dev_id)
@@ -178,6 +184,8 @@ def collect(client, cfg):
             _increment_classification(loc_counts, location)
             _increment_classification(ops_counts, ops_owner)
             _increment_classification(type_counts, device_type)
+            assignments.append((
+                device_names[dev_id], location, ops_owner, device_type))
 
         covered = sum(device_id in cached for device_id in device_ids)
         deferred = sum(
@@ -198,11 +206,30 @@ def collect(client, cfg):
                 metrics.ise_network_devices_by_ops_owner.labels(ops_owner=key).set(value)
             for key, value in type_counts.items():
                 metrics.ise_network_devices_by_type.labels(device_type=key).set(value)
+            for nad, location, ops_owner, device_type in assignments:
+                metrics.ise_network_device_ndg_assignment.labels(
+                    nad=nad,
+                    location=location,
+                    ops_owner=ops_owner,
+                    device_type=device_type,
+                ).set(1)
 
         replace_metric_snapshot(_METRICS, (publish,))
         inventory = devices
-        logger.info(
-            "Devices: %d total, %d detail cached, %d refresh requests, %d deferred",
-            len(devices), covered, attempted, deferred)
+        log = logger.warning if failures else logger.info
+        log(
+            "collector detail dataset=devices source=rest component=device_details "
+            "outcome=%s inventory_total=%d detail_covered=%d cache_entries=%d "
+            "refresh_requests=%d refresh_failures=%d refresh_deferred=%d "
+            "action=%s",
+            "partial" if failures else "success",
+            len(devices),
+            covered,
+            cache_entries,
+            attempted,
+            failures,
+            deferred,
+            "retain_cached_details_and_retry_next_cycle" if failures else "none",
+        )
 
     return inventory

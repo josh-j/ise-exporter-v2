@@ -13,7 +13,7 @@ import time
 from .. import metrics
 from ..state import StateStore
 from ..util import metric_label, normalize_bool_label
-from . import CollectorFailed, observe
+from . import CollectorFailed, failure_detail, observe
 from .dataconnect_common import (
     event_window_hours,
     group_limit,
@@ -528,23 +528,36 @@ def collect_config(client, cfg):
                 if refresh_requests and request_interval:
                     time.sleep(request_interval)
                 refresh_requests += 1
+                issue_detail = None
+                exception_type = "not_available"
                 try:
                     result = client.get_ers(
                         f"/config/internaluser/{user_id}",
                         api_name="ers_tacacs_internal_user_detail")
                 except Exception as exc:
                     result = None
-                    logger.warning("internal-user detail refresh raised for %s: %s",
-                                   user_id, exc)
+                    issue_detail = failure_detail("detail_refresh_failed", str(exc))
+                    exception_type = type(exc).__name__
                 detail = result.get("InternalUser") if isinstance(result, dict) else None
                 if not isinstance(detail, dict):
                     refresh_failures += 1
                     logger.warning(
-                        "internal-user detail refresh failed for %s; retaining cached value",
-                        user_id)
+                        "collector issue dataset=tacacs_config source=rest "
+                        "component=internal_user_detail object_id=%s "
+                        "reason=detail_refresh_failed detail=%s exception_type=%s "
+                        "snapshot_state=%s action=retain_cached_value",
+                        user_id,
+                        issue_detail or "ISE returned no usable internal-user detail",
+                        exception_type,
+                        "retained" if user_id in cached else "none_available",
+                    )
                     if refresh_failures >= 3:
                         logger.warning(
-                            "stopping internal-user detail refresh after three failures")
+                            "collector issue dataset=tacacs_config source=rest "
+                            "component=internal_user_detail reason=failure_limit_reached "
+                            "consecutive_failures=%d action=stop_bounded_refresh",
+                            refresh_failures,
+                        )
                         break
                     continue
                 detail = {field: detail[field] for field in _INTERNAL_USER_DETAIL_FIELDS
@@ -603,6 +616,8 @@ def collect_config(client, cfg):
             policy_refresh_failures = 0
             pan_requests = 0
             for policy_id in policy_refresh_ids:
+                issue_detail = None
+                exception_type = "not_available"
                 try:
                     if pan_requests and policy_request_interval:
                         time.sleep(policy_request_interval)
@@ -622,16 +637,28 @@ def collect_config(client, cfg):
                         f"Device Admin authorization rules for {policy_id}"))
                 except Exception as exc:
                     authentication_count = authorization_count = None
-                    logger.warning("policy rule refresh raised for %s: %s", policy_id, exc)
+                    issue_detail = failure_detail("rule_refresh_failed", str(exc))
+                    exception_type = type(exc).__name__
                 policy_refresh_requests += 1
                 if authentication_count is None or authorization_count is None:
                     policy_refresh_failures += 1
                     logger.warning(
-                        "policy rule refresh failed for %s; retaining cached counts",
-                        policy_id)
+                        "collector issue dataset=tacacs_config source=rest "
+                        "component=policy_rules object_id=%s reason=rule_refresh_failed "
+                        "detail=%s exception_type=%s snapshot_state=%s "
+                        "action=retain_cached_counts",
+                        policy_id,
+                        issue_detail or "ISE returned no usable policy rule inventory",
+                        exception_type,
+                        "retained" if policy_id in policy_cache else "none_available",
+                    )
                     if policy_refresh_failures >= 3:
                         logger.warning(
-                            "stopping policy rule refresh after three failures")
+                            "collector issue dataset=tacacs_config source=rest "
+                            "component=policy_rules reason=failure_limit_reached "
+                            "consecutive_failures=%d action=stop_bounded_refresh",
+                            policy_refresh_failures,
+                        )
                         break
                     continue
                 policy_store.put_tacacs_policy(
@@ -739,6 +766,29 @@ def collect_config(client, cfg):
                     object_type=object_type).set(count)
 
         replace_snapshot(_CONFIG_METRICS, (publish,))
+        partial_failures = refresh_failures + policy_refresh_failures
+        log = logger.warning if partial_failures else logger.info
+        log(
+            "collector detail dataset=tacacs_config source=rest outcome=%s "
+            "internal_users_total=%d internal_users_selected=%d "
+            "user_detail_covered=%d user_refresh_requests=%d "
+            "user_refresh_failures=%d user_refresh_deferred=%d "
+            "policy_sets_total=%d policy_refresh_requests=%d "
+            "policy_refresh_failures=%d policy_refresh_deferred=%d action=%s",
+            "partial" if partial_failures else "success",
+            len(resources),
+            len(selected_by_id),
+            detail_count,
+            refresh_requests,
+            refresh_failures,
+            refresh_deferred,
+            len(policy_sets),
+            policy_refresh_requests,
+            policy_refresh_failures,
+            policy_refresh_deferred,
+            "retain_cached_details_and_retry_next_cycle"
+            if partial_failures else "none",
+        )
 
 
 def collect_activity(dataconnect, cfg):

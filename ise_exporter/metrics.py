@@ -24,6 +24,10 @@ ise_network_devices_total = Gauge("ise_network_devices_total", "Total network de
 ise_network_devices_by_location = Gauge("ise_network_devices_by_location", "Devices per location", ["location"])
 ise_network_devices_by_ops_owner = Gauge("ise_network_devices_by_ops_owner", "Devices per ops owner", ["ops_owner"])
 ise_network_devices_by_type = Gauge("ise_network_devices_by_type", "Devices by type", ["device_type"])
+ise_network_device_ndg_assignment = Gauge(
+    "ise_network_device_ndg_assignment",
+    "Network-device assignment from normalized ISE Network Device Groups",
+    ["nad", "location", "ops_owner", "device_type"])
 ise_network_device_detail_coverage = Gauge(
     "ise_network_device_detail_coverage",
     "Fraction of the authoritative NAD inventory backed by cached group detail")

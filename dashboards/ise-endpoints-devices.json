@@ -209,6 +209,7 @@
       "targets": [
         {
           "expr": "topk(10, ise_dataconnect_endpoints_by_profile) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{profile}}",
           "refId": "A",
           "datasource": {
@@ -259,6 +260,7 @@
       "targets": [
         {
           "expr": "topk(20, ise_dataconnect_endpoints_by_identity_group) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{identity_group}}",
           "refId": "A",
           "datasource": {
@@ -363,6 +365,7 @@
       "targets": [
         {
           "expr": "topk(25, sum by (profile, source, action) (ise_dataconnect_profile_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{profile}} / {{source}} / {{action}}",
           "refId": "A",
           "datasource": {
@@ -412,7 +415,8 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_by_location and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "expr": "sort_desc(ise_network_devices_by_location) and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{location}}",
           "refId": "A",
           "datasource": {
@@ -462,7 +466,8 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_by_ops_owner and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "expr": "sort_desc(ise_network_devices_by_ops_owner) and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{ops_owner}}",
           "refId": "A",
           "datasource": {
@@ -512,7 +517,8 @@
       },
       "targets": [
         {
-          "expr": "ise_network_devices_by_type and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "expr": "sort_desc(ise_network_devices_by_type) and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{device_type}}",
           "refId": "A",
           "datasource": {
@@ -640,7 +646,8 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_endpoint_field_coverage_ratio and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc(ise_dataconnect_endpoint_field_coverage_ratio) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{field}}",
           "refId": "A",
           "datasource": {
@@ -764,6 +771,16 @@
       "keepTime": true,
       "targetBlank": false,
       "tooltip": "Open PSN with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "PAN & MnT",
+      "url": "/d/ise-pan-mnt-troubleshooting/ise-pan-mnt-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open PAN and MnT troubleshooting with the current time range and filters"
     },
     {
       "type": "link",

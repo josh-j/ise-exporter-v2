@@ -1026,7 +1026,7 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_query_last_duration_seconds",
+          "expr": "sort_desc(ise_dataconnect_query_last_duration_seconds)",
           "instant": true,
           "legendFormat": "{{view}} / {{result}}",
           "refId": "A",
@@ -1079,7 +1079,8 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_query_rows",
+          "expr": "sort_desc(ise_dataconnect_query_rows)",
+          "instant": true,
           "legendFormat": "{{view}}",
           "refId": "A",
           "datasource": {
@@ -1130,7 +1131,8 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_query_cooldown_seconds",
+          "expr": "sort_desc(ise_dataconnect_query_cooldown_seconds)",
+          "instant": true,
           "legendFormat": "{{view}}",
           "refId": "A",
           "datasource": {
@@ -1533,6 +1535,16 @@
       "keepTime": true,
       "targetBlank": false,
       "tooltip": "Open PSN with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "PAN & MnT",
+      "url": "/d/ise-pan-mnt-troubleshooting/ise-pan-mnt-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open PAN and MnT troubleshooting with the current time range and filters"
     },
     {
       "type": "link",

@@ -357,6 +357,7 @@
       "targets": [
         {
           "expr": "sort_desc(sum by (authentication_method) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{authentication_method}}",
           "refId": "A",
           "datasource": {
@@ -419,6 +420,7 @@
       "targets": [
         {
           "expr": "sort_desc(sum by (authentication_protocol) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{authentication_protocol}}",
           "refId": "A",
           "datasource": {
@@ -481,6 +483,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (authorization_policy) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{authorization_policy}}",
           "refId": "A",
           "datasource": {
@@ -542,8 +545,9 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn, status) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
-          "legendFormat": "{{psn}} / {{status}}",
+          "expr": "sort_desc(sum by (psn) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{psn}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -665,8 +669,9 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(max by (psn, stat, status) (ise_dataconnect_radius_response_time_seconds{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
-          "legendFormat": "{{psn}} / {{stat}} / {{status}}",
+          "expr": "sort_desc(max by (psn) (ise_dataconnect_radius_response_time_seconds{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{psn}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -699,6 +704,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -761,6 +767,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_accounting_events{psn=~\"$psn\",nad=~\"$nad\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -853,6 +860,7 @@
       "targets": [
         {
           "expr": "sort_desc(ise_dataconnect_radius_accounting_session_seconds{psn=~\"$psn\",nad=~\"$nad\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{stat}} / {{nad}} / {{psn}}",
           "refId": "A",
           "datasource": {
@@ -899,6 +907,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (message_code) (ise_dataconnect_radius_errors{psn=~\"$psn\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{message_code}}",
           "refId": "A",
           "datasource": {
@@ -961,6 +970,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\",psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{nad}}",
           "refId": "A",
           "datasource": {
@@ -1023,6 +1033,7 @@
       "targets": [
         {
           "expr": "sort_desc(sum by (nad, authentication_method) (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\",psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{nad}} / {{authentication_method}}",
           "refId": "A",
           "datasource": {
@@ -1084,8 +1095,9 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn, message_code) (ise_dataconnect_radius_errors{psn=~\"$psn\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
-          "legendFormat": "{{psn}} / {{message_code}}",
+          "expr": "sort_desc(sum by (psn) (ise_dataconnect_radius_errors{psn=~\"$psn\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{psn}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -1584,6 +1596,16 @@
       "keepTime": true,
       "targetBlank": false,
       "tooltip": "Open PSN with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "PAN & MnT",
+      "url": "/d/ise-pan-mnt-troubleshooting/ise-pan-mnt-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open PAN and MnT troubleshooting with the current time range and filters"
     },
     {
       "type": "link",

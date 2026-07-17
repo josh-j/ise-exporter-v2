@@ -165,7 +165,7 @@ def test_account_not_flagged_when_account_object_is_recent():
     assert metrics.ise_tacacs_suspected_unused_internal_user.collect()[0].samples == []
 
 
-def test_internal_user_detail_failure_publishes_partial_coverage():
+def test_internal_user_detail_failure_publishes_partial_coverage(caplog):
     metrics.ise_tacacs_internal_user_info.labels(
         username="previous", enabled="true", password_never_expires="false",
         change_password="false", identity_store="Internal Users").set(1)
@@ -186,6 +186,12 @@ def test_internal_user_detail_failure_publishes_partial_coverage():
     assert metrics.ise_tacacs_internal_users_total._value.get() == 1
     assert metrics.ise_tacacs_internal_user_detail_coverage._value.get() == 0
     assert metrics.ise_tacacs_internal_user_detail_refresh_failures._value.get() == 1
+    assert "collector issue dataset=tacacs_config source=rest" in caplog.text
+    assert "component=internal_user_detail" in caplog.text
+    assert "snapshot_state=none_available" in caplog.text
+    assert "action=retain_cached_value" in caplog.text
+    assert "collector detail dataset=tacacs_config source=rest outcome=partial" \
+        in caplog.text
 
 
 def test_internal_user_detail_cache_survives_restart_and_detail_failure(tmp_path):

@@ -622,8 +622,11 @@ def test_schema_revalidation_discards_already_queued_incompatible_dataset(caplog
     scheduler._dataconnect_queue.join()
 
     assert ran == []
-    assert "discarding queued Data Connect dataset dataconnect_performance" \
-        in caplog.text
+    assert "collection discarded dataset=dataconnect_performance" in caplog.text
+    assert "reason=schema_missing_view_system_summary" in caplog.text
+    assert "detail=missing view SYSTEM_SUMMARY" in caplog.text
+    assert "query_started=false" in caplog.text
+    assert "action=wait_for_compatible_schema" in caplog.text
     assert not scheduler._dataconnect_inflight
     scheduler._shutdown.set()
     scheduler._stop_dataconnect_worker()
@@ -955,6 +958,7 @@ def test_failed_dataconnect_attempt_never_retries_faster_than_five_minutes(
     now = [105.0]
     monkeypatch.setattr(scheduler_module.time, "time", lambda: now[0])
     scheduler = PollScheduler(_cfg(), object(), object())
+    scheduler.last_success["dataconnect_radius"] = 95.0
     attempts = []
 
     def fail():
@@ -974,8 +978,19 @@ def test_failed_dataconnect_attempt_never_retries_faster_than_five_minutes(
     assert "collection started dataset=dataconnect_radius" in caplog.text
     assert "outcome=failure" in caplog.text
     assert "reason=database_failed" in caplog.text
+    assert "detail=database unavailable" in caplog.text
+    assert "exception_type=RuntimeError" in caplog.text
+    assert "previous_success_age_seconds=10.000" in caplog.text
+    assert "snapshot_state=retained" in caplog.text
     assert "retry_in_seconds=300" in caplog.text
     assert "retry_reason=database_protection" in caplog.text
+    assert "action=retry_scheduled" in caplog.text
+    failures = [
+        record for record in caplog.records
+        if "collection completed dataset=dataconnect_radius" in record.getMessage()
+        and "outcome=failure" in record.getMessage()
+    ]
+    assert failures and all(record.levelname == "WARNING" for record in failures)
 
     scheduler._run("dataconnect_radius", 404.0, 60, fail)
     assert len(attempts) == 1

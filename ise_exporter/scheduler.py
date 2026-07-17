@@ -485,20 +485,37 @@ class PollScheduler:
         """Keep an asynchronous lane alive after scheduler bookkeeping fails."""
         logger.exception("%s worker bookkeeping failed for %s", worker_name, name)
         completed = time.time()
+        previous_success = self.last_success.get(name)
+        success_age = (
+            "never" if previous_success is None else
+            f"{max(0.0, completed - previous_success):.3f}")
         try:
-            collectors.record_failure(name, "worker_exception")
+            collectors.record_failure(
+                name,
+                "worker_exception",
+                f"{worker_name} worker bookkeeping failed",
+                exception_type="SchedulerWorkerError",
+            )
         except Exception:
             logger.exception(
                 "could not publish %s worker failure for %s", worker_name, name)
         retry = self._failure_retry(name, source, tier)
         self.next_run[name] = completed + retry
         self._scheduled_delay[name] = retry
-        logger.info(
+        logger.warning(
             "collection rescheduled dataset=%s source=%s outcome=failure "
-            "published=false reason=worker_exception retry_at=%s "
-            "retry_in_seconds=%s retry_reason=worker_recovery",
+            "published=false reason=worker_exception "
+            "detail=%s exception_type=SchedulerWorkerError "
+            "previous_success_age_seconds=%s snapshot_state=%s "
+            "consecutive_failures=%d retry_at=%s retry_in_seconds=%s "
+            "retry_reason=worker_recovery action=retry_scheduled",
             name,
             source,
+            collectors.failure_detail(
+                "worker_exception", f"{worker_name} worker bookkeeping failed"),
+            success_age,
+            "retained" if previous_success is not None else "none_available",
+            collectors.failures(name),
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(
                 self.next_run[name])),
             retry,
@@ -532,9 +549,18 @@ class PollScheduler:
                 dataset=name, source=source).set(attempted_at)
             try:
                 callback()
-            except Exception:
-                logger.exception("%s callback escaped collector observation", name)
-                collectors.record_failure(name, "unhandled_exception")
+            except Exception as error:
+                logger.exception(
+                    "collection callback escaped dataset=%s source=%s",
+                    name,
+                    source,
+                )
+                collectors.record_failure(
+                    name,
+                    "unhandled_exception",
+                    str(error),
+                    exception_type=type(error).__name__,
+                )
             completed = time.time()
             duration = max(0.0, time.monotonic() - started)
             effective_interval = tier
@@ -570,7 +596,10 @@ class PollScheduler:
                 self.next_run[name] = completed + retry
                 self._scheduled_delay[name] = retry
                 self._update_dataset_freshness(name, completed)
-                failure_reason, failure_detail = collectors.last_failure(name)
+                failure_context = collectors.last_failure_context(name)
+                failure_reason = failure_context["reason"]
+                failure_detail = failure_context["detail"]
+                exception_type = failure_context["exception_type"]
                 failures = collectors.failures(name)
                 if failures >= MAX_CONSECUTIVE_FAILURES:
                     retry_reason = "consecutive_failure_slowdown"
@@ -580,16 +609,22 @@ class PollScheduler:
                     retry_reason = "database_protection"
                 else:
                     retry_reason = "bounded_fast_retry"
-                logger.info(
+                snapshot_state = (
+                    "retained" if previous_success is not None else "none_available")
+                logger.warning(
                     "collection completed dataset=%s source=%s outcome=failure "
                     "duration_seconds=%.3f published=false reason=%s detail=%s "
-                    "consecutive_failures=%d retry_at=%s retry_in_seconds=%s "
-                    "retry_reason=%s",
+                    "exception_type=%s previous_success_age_seconds=%s "
+                    "snapshot_state=%s consecutive_failures=%d retry_at=%s "
+                    "retry_in_seconds=%s retry_reason=%s action=retry_scheduled",
                     name,
                     source,
                     duration,
                     failure_reason or "unknown_failure",
                     failure_detail or "No bounded failure detail was published",
+                    exception_type or "not_available",
+                    success_age,
+                    snapshot_state,
                     failures,
                     time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(
                         self.next_run[name])),
@@ -726,7 +761,15 @@ class PollScheduler:
                 failure_logs.append((
                     name, getattr(failure, "detail", "schema incompatible")))
         for name, detail in failure_logs:
-            logger.warning("Data Connect dataset %s unavailable: %s", name, detail)
+            failure = failures[name]
+            logger.warning(
+                "collection blocked dataset=%s source=dataconnect "
+                "reason=%s detail=%s query_started=false "
+                "action=fix_schema_or_wait_for_revalidation",
+                name,
+                getattr(failure, "reason", "schema_incompatible"),
+                collectors.failure_detail("schema_incompatible", detail),
+            )
         return not was_ready
 
     def _collect_dataconnect_schema(self):
@@ -777,10 +820,16 @@ class PollScheduler:
                     # Recheck after dequeue so a newly incompatible dataset never
                     # executes one stale-contract statement.
                     if self._dataconnect_dataset_blocked(name):
+                        failure = self._dataconnect_schema_failures.get(name)
                         logger.warning(
-                            "discarding queued Data Connect dataset %s after schema "
-                            "revalidation blocked it",
+                            "collection discarded dataset=%s source=dataconnect "
+                            "reason=%s detail=%s query_started=false "
+                            "action=wait_for_compatible_schema",
                             name,
+                            getattr(failure, "reason", "schema_incompatible"),
+                            collectors.failure_detail(
+                                "schema_incompatible",
+                                getattr(failure, "detail", None)),
                         )
                         self._dataconnect_inflight.discard(name)
                         self._publish_worker_state()

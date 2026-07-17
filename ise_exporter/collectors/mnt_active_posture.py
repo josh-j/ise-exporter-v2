@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
+import logging
 import math
 import re
 from threading import Lock
@@ -34,6 +35,9 @@ from ..util import (
     parse_step_latencies,
 )
 from . import CollectorFailed, observe
+
+
+logger = logging.getLogger(__name__)
 
 
 MAX_STEP_CODES = 256
@@ -468,6 +472,7 @@ def collect(client, cfg):
                          and cached[mac]["signature"] == signatures[mac]
                          and mac not in fetched)
         cache_misses = sum(1 for mac in selected if mac not in cached)
+        refresh_failures = max(0, len(planned) - len(fetched))
         oldest_age = max(
             (max(0.0, now - entry["updated_at"]) for entry in usable.values()),
             default=0.0)
@@ -553,3 +558,24 @@ def collect(client, cfg):
             lambda: metrics.ise_mnt_active_total_authentication_latency_samples.set(
                 len(total_latency)))
         replace_metric_snapshot(_METRICS, writers)
+        log = logger.warning if refresh_failures else logger.info
+        log(
+            "collector detail dataset=mnt_active_posture source=mnt "
+            "component=session_details outcome=%s active_sessions=%d "
+            "candidate_endpoints=%d selected_endpoints=%d detail_requests=%d "
+            "detail_failures=%d detail_endpoints=%d cache_hits=%d cache_misses=%d "
+            "refresh_deferred=%d oldest_cache_age_seconds=%.0f action=%s",
+            "partial" if refresh_failures else "success",
+            active_total,
+            len(candidates),
+            len(selected),
+            len(planned),
+            refresh_failures,
+            len(details),
+            cache_hits,
+            cache_misses,
+            deferred,
+            oldest_age,
+            "retain_matching_cache_and_retry_next_cycle"
+            if refresh_failures else "none",
+        )

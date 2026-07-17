@@ -201,6 +201,32 @@ def test_dataset_failure_detail_is_single_line_and_bounded():
     assert len(detail) == 240
 
 
+def test_dataset_failure_detail_redacts_common_secret_formats():
+    detail = collectors.failure_detail(
+        "database_failed",
+        'password=hunter2 token: "abc" <secret>value</secret> Bearer xyz.123',
+    )
+
+    assert "hunter2" not in detail
+    assert 'token: "<redacted>"' in detail
+    assert "<secret><redacted></secret>" in detail
+    assert "Bearer <redacted>" in detail
+
+
+def test_failed_observation_retains_useful_bounded_exception_context():
+    name = "failure_context_test"
+
+    with collectors.observe(name):
+        raise RuntimeError("database unavailable password=hunter2")
+
+    context = collectors.last_failure_context(name)
+    assert context == {
+        "reason": "database_failed",
+        "detail": "database unavailable password=<redacted>",
+        "exception_type": "RuntimeError",
+    }
+
+
 def test_exception_failure_detail_uses_fixed_operator_explanation():
     name = "fixed_failure_detail_test"
     collectors.record_failure(name, "authentication_failed")

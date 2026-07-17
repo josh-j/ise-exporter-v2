@@ -92,6 +92,16 @@
     },
     {
       "type": "link",
+      "title": "PAN & MnT",
+      "url": "/d/ise-pan-mnt-troubleshooting/ise-pan-mnt-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open PAN and MnT troubleshooting with the current time range and filters"
+    },
+    {
+      "type": "link",
       "title": "Exporter Health",
       "url": "/d/ise-exporter-health/ise-exporter-health",
       "icon": "external link",
@@ -555,7 +565,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ise_node_count and on() ((max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"deployment\",source=\"rest\"}) == 1))",
+          "expr": "sort_desc(ise_node_count) and on() ((max(ise_dataset_up{dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"deployment\",source=\"rest\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{role}}",
           "refId": "A"
         }
@@ -876,7 +887,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ise_license_consumption and on() ((max(ise_dataset_up{dataset=\"licensing\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"licensing\",source=\"rest\"}) == 1))",
+          "expr": "sort_desc(ise_license_consumption) and on() ((max(ise_dataset_up{dataset=\"licensing\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"licensing\",source=\"rest\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{tier}}",
           "refId": "A"
         }

@@ -432,6 +432,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (agent_version) (ise_mnt_active_secure_client_endpoints)) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{agent_version}}",
           "refId": "A",
           "datasource": {
@@ -510,7 +511,8 @@
       },
       "targets": [
         {
-          "expr": "ise_mnt_active_posture_field_coverage_ratio and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "expr": "sort_desc(ise_mnt_active_posture_field_coverage_ratio) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{field}}",
           "refId": "A",
           "datasource": {
@@ -544,6 +546,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (os) (ise_mnt_active_posture_endpoints)) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{os}}",
           "refId": "A",
           "datasource": {
@@ -593,8 +596,9 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn, status) (ise_mnt_active_posture_endpoints)) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
-          "legendFormat": "{{psn}} / {{status}}",
+          "expr": "sort_desc(sum by (psn) (ise_mnt_active_posture_endpoints)) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{psn}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -645,6 +649,7 @@
       "targets": [
         {
           "expr": "sort_desc(sum by (policy, result) (ise_mnt_active_posture_policy_results)) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{policy}} / {{result}}",
           "refId": "A",
           "datasource": {
@@ -726,6 +731,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (policy) (ise_mnt_active_posture_policy_results{result=~\"(?i)fail(ed)?\"})) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{policy}}",
           "refId": "A",
           "datasource": {
@@ -886,6 +892,7 @@
       "targets": [
         {
           "expr": "sort_desc(sum by (policy, policy_status) (ise_dataconnect_posture_condition_assessments)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{policy}} / {{policy_status}}",
           "refId": "A",
           "datasource": {
@@ -895,6 +902,7 @@
         },
         {
           "expr": "sort_desc(sum by (enforcement_type, enforcement_status, posture_status) (ise_dataconnect_posture_enforcement_assessments)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{enforcement_type}} / {{enforcement_status}} / {{posture_status}}",
           "refId": "B",
           "datasource": {
@@ -993,6 +1001,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (agent_version) (ise_dataconnect_posture_endpoint_assessments)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{agent_version}}",
           "refId": "A",
           "datasource": {
@@ -1043,6 +1052,7 @@
       "targets": [
         {
           "expr": "topk(20, sum by (os) (ise_dataconnect_posture_endpoint_assessments)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{os}}",
           "refId": "A",
           "datasource": {
@@ -1092,8 +1102,9 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn, status) (ise_dataconnect_posture_endpoint_assessments)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
-          "legendFormat": "{{psn}} / {{status}}",
+          "expr": "sort_desc(sum by (psn) (ise_dataconnect_posture_endpoint_assessments)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{psn}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -1195,6 +1206,16 @@
       "keepTime": true,
       "targetBlank": false,
       "tooltip": "Open PSN with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "PAN & MnT",
+      "url": "/d/ise-pan-mnt-troubleshooting/ise-pan-mnt-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open PAN and MnT troubleshooting with the current time range and filters"
     },
     {
       "type": "link",

@@ -40,7 +40,7 @@ def test_device_collector_returns_authoritative_inventory_without_duplicate_fetc
 
 
 def test_failed_device_detail_keeps_authoritative_inventory_with_zero_coverage(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, caplog):
     class Client:
         def get_ers(self, path, params=None, get_all=False, api_name="ers"):
             if path == "/config/networkdevice":
@@ -53,6 +53,11 @@ def test_failed_device_detail_keeps_authoritative_inventory_with_zero_coverage(
     assert devices.collect(Client(), cfg) == [{"id": "nad-1", "name": "switch-1"}]
     assert metrics.ise_network_device_detail_coverage._value.get() == 0
     assert metrics.ise_network_device_detail_refresh_failures._value.get() == 1
+    assert "collector detail dataset=devices source=rest" in caplog.text
+    assert "outcome=partial" in caplog.text
+    assert "refresh_failures=1" in caplog.text
+    assert "refresh_deferred=1" in caplog.text
+    assert "action=retain_cached_details_and_retry_next_cycle" in caplog.text
 
 
 def test_programmatic_config_keeps_count_ceiling_but_honors_request_pacing(
@@ -169,6 +174,35 @@ def test_device_group_metric_labels_are_byte_bounded(tmp_path, monkeypatch):
             metrics.ise_network_devices_by_type):
         assert all(len(label.encode("utf-8")) <= 256
                    for labels in metric._metrics for label in labels)
+
+
+def test_device_ndg_assignment_preserves_nad_to_ops_owner_and_location(
+        tmp_path, monkeypatch):
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return [{"id": "nad-1", "name": "switch-1"}]
+            return {"NetworkDevice": {
+                "id": "nad-1",
+                "name": "switch-1",
+                "NetworkDeviceGroupList": [
+                    "Location#All Locations#Germany#Berlin",
+                    "Ops Owner#All Ops Owners#Campus",
+                    "Device Type#All Device Types#Switch",
+                ],
+            }}
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    devices.collect(Client(), _cfg(tmp_path))
+
+    assert set(metrics.ise_network_device_ndg_assignment._metrics) == {
+        ("switch-1", "Germany#Berlin", "Campus", "Switch")}
+    assert metrics.ise_network_device_ndg_assignment.labels(
+        nad="switch-1",
+        location="Germany#Berlin",
+        ops_owner="Campus",
+        device_type="Switch",
+    )._value.get() == 1
 
 
 def test_device_classification_groups_are_bounded_with_exact_totals(monkeypatch):

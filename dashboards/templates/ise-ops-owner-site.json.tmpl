@@ -1,0 +1,184 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "description": "Generated site-level troubleshooting dashboard for Ops Owner NDG __OPS_OWNER__. NAD membership comes from the authoritative ERS network-device inventory.",
+  "panels": [
+    {
+      "id": 90,
+      "type": "stat",
+      "title": "Device Inventory Dataset",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}]}, "overrides": []}
+    },
+    {
+      "id": 91,
+      "type": "stat",
+      "title": "Device Inventory Age",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 129600}, {"color": "red", "value": 172800}]}}, "overrides": []}
+    },
+    {
+      "id": 92,
+      "type": "stat",
+      "title": "RADIUS Dataset",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [{"expr": "max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}]}, "overrides": []}
+    },
+    {
+      "id": 93,
+      "type": "stat",
+      "title": "RADIUS Collection Age",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "targets": [{"expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 129600}, {"color": "red", "value": 172800}]}}, "overrides": []}
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Network Devices",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 4},
+      "targets": [{"expr": "sum(ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Authentication Events",
+      "description": "Bounded reporting-window events for NADs assigned to this ops owner.",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 4},
+      "targets": [{"expr": "sum(ise_dataconnect_radius_authentication_events{instance=~\"$deployment\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Failed Authentication",
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 4},
+      "targets": [{"expr": "sum(ise_dataconnect_radius_authentication_events{instance=~\"$deployment\",status=~\"(?i)fail(ed)?|reject(ed)?\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Active Sessions",
+      "description": "Accounting-derived likely-active sessions for owner NADs; depends on NAD Start, Interim, and Stop quality.",
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 4},
+      "targets": [{"expr": "sum(ise_dataconnect_radius_active_sessions{instance=~\"$deployment\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "NDG Detail Coverage",
+      "description": "Fraction of the authoritative NAD inventory with cached NDG detail. Owner and site counts can be incomplete below 100 percent.",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 4},
+      "targets": [{"expr": "ise_network_device_detail_coverage{instance=~\"$deployment\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 0.9}, {"color": "green", "value": 1}]}}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Authentication by Site",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "sort_desc(sum by (location) (ise_dataconnect_radius_authentication_events{instance=~\"$deployment\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "legendFormat": "{{location}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "Failed Authentication by Site",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "sort_desc(sum by (location) (ise_dataconnect_radius_authentication_events{instance=~\"$deployment\",status=~\"(?i)fail(ed)?|reject(ed)?\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "legendFormat": "{{location}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Authentication by NAD",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{instance=~\"$deployment\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "legendFormat": "{{nad}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Failing NADs",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "topk(20, sum by (nad) (ise_dataconnect_radius_authentication_events{instance=~\"$deployment\",status=~\"(?i)fail(ed)?|reject(ed)?\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "legendFormat": "{{nad}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 9,
+      "type": "bargauge",
+      "title": "Active Sessions by Site",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+      "targets": [{"expr": "sort_desc(sum by (location) (ise_dataconnect_radius_active_sessions{instance=~\"$deployment\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "legendFormat": "{{location}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 10,
+      "type": "bargauge",
+      "title": "Authentication by PSN",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+      "targets": [{"expr": "sort_desc(sum by (psn) (ise_dataconnect_radius_authentication_events{instance=~\"$deployment\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "legendFormat": "{{psn}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Worst Response Time by NAD",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+      "targets": [{"expr": "topk(20, max by (nad) (ise_dataconnect_radius_response_time_seconds{instance=~\"$deployment\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "instant": true, "legendFormat": "{{nad}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.1}, {"color": "red", "value": 0.5}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Failure Work Queue",
+      "gridPos": {"h": 12, "w": 16, "x": 0, "y": 32},
+      "targets": [{"expr": "sort_desc(ise_dataconnect_radius_authentication_events{instance=~\"$deployment\",status=~\"(?i)fail(ed)?|reject(ed)?\"} * on(instance,nad) group_left(location,ops_owner) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "options": {"showHeader": true, "footer": {"show": true, "reducer": ["sum"]}},
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true}, "renameByName": {"Value": "events"}}}]
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Owner NAD Inventory",
+      "gridPos": {"h": 12, "w": 8, "x": 16, "y": 32},
+      "targets": [{"expr": "ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "options": {"showHeader": true},
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}}}]
+    }
+  ],
+  "refresh": "30m",
+  "schemaVersion": 39,
+  "tags": ["ise", "ops-owner", "site", "generated", "__OPS_OWNER__"],
+  "templating": {
+    "list": [
+      {"current": {"selected": true, "text": "Prometheus", "value": "prometheus"}, "hide": 0, "label": "Prometheus", "name": "DS_PROMETHEUS", "options": [], "query": "prometheus", "refresh": 1, "regex": "", "type": "datasource"},
+      {"name": "deployment", "label": "ISE deployment", "type": "query", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}, "definition": "query_result(ise_dataset_enabled{dataset=\"deployment\",source=\"rest\"} == 1)", "query": {"query": "query_result(ise_dataset_enabled{dataset=\"deployment\",source=\"rest\"} == 1)", "refId": "var-deployment"}, "refresh": 1, "sort": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": ["All"], "value": ["$__all"]}, "options": [], "hide": 0, "regex": "/instance=\"([^\"]+)\"/", "skipUrlSync": false},
+      {"name": "location", "label": "Site / Location", "type": "query", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}, "definition": "label_values(ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\"}, location)", "query": {"query": "label_values(ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\"}, location)", "refId": "var-location"}, "refresh": 1, "sort": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": ["All"], "value": ["$__all"]}, "options": [], "hide": 0, "regex": "", "skipUrlSync": false},
+      {"name": "nad", "label": "Network device", "type": "query", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}, "definition": "label_values(ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\"}, nad)", "query": {"query": "label_values(ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\"}, nad)", "refId": "var-nad"}, "refresh": 1, "sort": 1, "multi": true, "includeAll": true, "allValue": ".*", "current": {"selected": true, "text": ["All"], "value": ["$__all"]}, "options": [], "hide": 0, "regex": "", "skipUrlSync": false}
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "timezone": "browser",
+  "title": "ISE __OPS_OWNER__ Site Troubleshooting",
+  "uid": "ise-ops-owner-__OPS_OWNER_SLUG__",
+  "version": 1,
+  "__inputs": [{"name": "DS_PROMETHEUS", "label": "Prometheus", "description": "", "type": "datasource", "pluginId": "prometheus", "pluginName": "Prometheus"}],
+  "links": [
+    {"type": "link", "title": "Overview", "url": "/d/ise-overview/ise-overview", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open Overview with the current time range and filters"},
+    {"type": "link", "title": "Access", "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open Access with the current time range and filters"},
+    {"type": "link", "title": "PSN", "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open PSN with the current time range and filters"},
+    {"type": "link", "title": "PAN & MnT", "url": "/d/ise-pan-mnt-troubleshooting/ise-pan-mnt-troubleshooting", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open PAN and MnT troubleshooting with the current time range and filters"},
+    {"type": "link", "title": "Exporter Health", "url": "/d/ise-exporter-health/ise-exporter-health", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open Exporter Health with the current time range and filters"}
+  ]
+}

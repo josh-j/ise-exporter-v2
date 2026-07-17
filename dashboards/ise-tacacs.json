@@ -422,6 +422,7 @@
       "targets": [
         {
           "expr": "sort_desc(sum by (username, status, device) (ise_tacacs_account_authentication_events{username=~\"$username\"})) and on() ((max(ise_dataset_up{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_activity\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{username}} / {{status}} / {{device}}",
           "refId": "A",
           "datasource": {
@@ -612,7 +613,8 @@
       },
       "targets": [
         {
-          "expr": "ise_tacacs_policy_objects_total and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "expr": "sort_desc(ise_tacacs_policy_objects_total) and on() ((max(ise_dataset_up{dataset=\"tacacs_config\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"tacacs_config\",source=\"rest\"}) == 1))",
+          "instant": true,
           "legendFormat": "{{object_type}}",
           "refId": "A",
           "datasource": {
@@ -910,6 +912,16 @@
       "keepTime": true,
       "targetBlank": false,
       "tooltip": "Open PSN with the current time range and filters"
+    },
+    {
+      "type": "link",
+      "title": "PAN & MnT",
+      "url": "/d/ise-pan-mnt-troubleshooting/ise-pan-mnt-troubleshooting",
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "tooltip": "Open PAN and MnT troubleshooting with the current time range and filters"
     },
     {
       "type": "link",

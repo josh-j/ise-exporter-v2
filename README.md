@@ -406,7 +406,11 @@ attempt records when and why it was queued or started, its outcome and duration,
 whether metrics were published, and its next due or retry time. Per-request and
 per-statement traffic remains at `DEBUG`. Long Data Connect safety waits remain
 visible at `INFO` with the reporting view, wait duration, resume time, and pacing
-reason, without printing SQL.
+reason, without printing SQL. Failed attempts emit one structured warning with
+the dataset and source, bounded reason and redacted detail, exception type,
+previous-success age, retained-snapshot state, failure count, and exact retry
+action. Partial bounded detail refreshes report coverage, failures, deferrals,
+and whether cached data was retained.
 
 ## Dashboards and diagnostics
 
@@ -415,6 +419,11 @@ show bounded historical/reporting views. The Secure Client dashboard separately
 labels its MnT panels as a bounded sample of currently active endpoints and shows
 coverage and truncation. Accounting-derived likely-active session counts remain
 Data Connect reconstructions and depend on NAD Start/Interim/Stop quality.
+
+Site troubleshooting dashboards are generated once per Ops Owner NDG. A bounded
+`ise_network_device_ndg_assignment` metric preserves the NAD-to-owner/location
+mapping needed to scope RADIUS aggregates without exporting credentials or raw
+network-device detail.
 
 The active-session metric labels contain only bounded aggregate dimensions such
 as status, OS, PSN, agent version, policy result, and numeric step code. MAC

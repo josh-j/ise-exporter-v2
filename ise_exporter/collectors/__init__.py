@@ -8,7 +8,6 @@ of truth for failure counts and success/failure state.
 Collectors raise CollectorFailed when a primary API call returns no data, so an
 unreachable endpoint counts as a failure (and does NOT bump last_successful_scrape)
 rather than masquerading as a healthy scrape."""
-import logging
 import re
 import time
 from contextlib import contextmanager
@@ -20,11 +19,22 @@ from ..snapshots import (
     stage_metric_snapshots,
 )
 
-logger = logging.getLogger(__name__)
 _failures = {}
 _outcomes = {}
 _failure_reasons = {}
 _failure_details = {}
+_failure_exception_types = {}
+
+_SENSITIVE_LOG_JSON = re.compile(
+    r'(?i)(["\']?(?:password|passwd|passphrase|secret|token|authorization|cookie)'
+    r'["\']?\s*:\s*)["\'][^"\']*["\']')
+_SENSITIVE_LOG_PAIR = re.compile(
+    r'(?i)(\b(?:password|passwd|passphrase|secret|token|authorization|cookie)\s*=)'
+    r'[^&\s,;]+')
+_SENSITIVE_LOG_XML = re.compile(
+    r'(?i)(<(?:password|passwd|passphrase|secret|token|authorization|cookie)\b[^>]*>)'
+    r'.*?(</(?:password|passwd|passphrase|secret|token|authorization|cookie)>)')
+_SENSITIVE_LOG_BEARER = re.compile(r'(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+')
 
 _GENERIC_FAILURE_DETAILS = {
     "authentication_backoff": "Requests are paused by the shared authentication safety backoff",
@@ -47,7 +57,12 @@ def failure_detail(reason, detail=None):
     """Return a bounded, single-line operator explanation safe for a metric label."""
     value = detail or _GENERIC_FAILURE_DETAILS.get(
         reason, str(reason).replace("_", " "))
-    return re.sub(r"\s+", " ", str(value)).strip()[:240] or "No detail available"
+    value = re.sub(r"\s+", " ", str(value)).strip()
+    value = _SENSITIVE_LOG_JSON.sub(r'\1"<redacted>"', value)
+    value = _SENSITIVE_LOG_PAIR.sub(r"\1<redacted>", value)
+    value = _SENSITIVE_LOG_XML.sub(r"\1<redacted>\2", value)
+    value = _SENSITIVE_LOG_BEARER.sub(r"\1<redacted>", value)
+    return value[:240] or "No detail available"
 
 
 def source(name):
@@ -130,7 +145,16 @@ def last_failure(name):
     return _failure_reasons.get(name), _failure_details.get(name)
 
 
-def record_failure(name, error_type, detail=None):
+def last_failure_context(name):
+    """Return bounded fields for one operator-facing collection issue log."""
+    return {
+        "reason": _failure_reasons.get(name),
+        "detail": _failure_details.get(name),
+        "exception_type": _failure_exception_types.get(name),
+    }
+
+
+def record_failure(name, error_type, detail=None, *, exception_type=None):
     """Bump the scrape-error counter + consecutive-failure gauge for a failed collect."""
     with snapshot_lock:
         metrics.ise_scrape_errors_total.labels(
@@ -155,6 +179,8 @@ def record_failure(name, error_type, detail=None):
             detail=bounded_detail).set(1)
         _failure_reasons[name] = error_type
         _failure_details[name] = bounded_detail
+        _failure_exception_types[name] = failure_detail(
+            "exception_type", exception_type or "not_available")[:96]
         _outcomes[name] = False
         metrics.ise_dataset_up.labels(
             dataset=name, source=dataset_source).set(0)
@@ -206,15 +232,20 @@ def observe(name):
             if previous_reason:
                 _failure_reasons.pop(name, None)
                 _failure_details.pop(name, None)
+                _failure_exception_types.pop(name, None)
             _outcomes[name] = True
             _failures[name] = 0
         except CollectorFailed as e:
-            logger.warning("%s: %s", name, e)
-            record_failure(name, e.reason, str(e))
-        except Exception as e:
-            logger.error("%s collection error: %s", name, e)
             record_failure(
-                name, _exception_reason(e), getattr(e, "detail", None))
+                name, e.reason, str(e), exception_type=type(e).__name__)
+        except Exception as e:
+            reason = _exception_reason(e)
+            record_failure(
+                name,
+                reason,
+                getattr(e, "detail", None) or str(e),
+                exception_type=type(e).__name__,
+            )
         finally:
             duration = max(0.0, time.monotonic() - start)
             with snapshot_lock:

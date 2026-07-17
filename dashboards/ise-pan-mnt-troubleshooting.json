@@ -1,0 +1,469 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "description": "Deployment-aware PAN and MnT node health, control-plane state, certificates, backup, bounded active-session collection, and collector diagnostics.",
+  "panels": [
+    {
+      "id": 90,
+      "type": "stat",
+      "title": "Deployment Dataset",
+      "description": "Authoritative PAN deployment and node-role snapshot availability.",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}
+          ],
+          "links": [
+            {"title": "Inspect deployment dataset", "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=deployment&var-source=rest", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 91,
+      "type": "stat",
+      "title": "Deployment Snapshot Age",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 450}, {"color": "red", "value": 600}]}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 92,
+      "type": "stat",
+      "title": "MnT Active Dataset",
+      "description": "Availability of the bounded current active-session posture snapshot from MnT XML.",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [
+        {
+          "expr": "max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}
+          ],
+          "links": [
+            {"title": "Inspect MnT dataset", "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=mnt_active_posture&var-source=mnt", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 93,
+      "type": "stat",
+      "title": "MnT Snapshot Age",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "targets": [
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1350}, {"color": "red", "value": 1800}]}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Policy Administration Nodes",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 4},
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "PAN HA Enabled",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 5},
+      "targets": [
+        {
+          "expr": "ise_pan_ha_enabled{instance=~\"$deployment\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "DISABLED", "color": "yellow"}, "1": {"text": "ENABLED", "color": "green"}}}
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Connected PANs",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 5},
+      "targets": [
+        {
+          "expr": "(count(ise_deployment_status{instance=~\"$deployment\",node=~\"$pan\",roles=~\".*(PrimaryAdmin|SecondaryAdmin|Standalone).*\",ise_deployment_status=\"Connected\"} == 1) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1))) or on() (0 * ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1)))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Backup Age",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 5},
+      "targets": [
+        {
+          "expr": "ise_backup_age_hours{instance=~\"$deployment\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"backup\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"backup\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "h"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Patch Level",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 5},
+      "targets": [
+        {
+          "expr": "ise_patch_level{instance=~\"$deployment\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"patches\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"patches\",source=\"rest\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "PAN Node Status",
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 9},
+      "targets": [
+        {
+          "expr": "(ise_deployment_status{instance=~\"$deployment\",node=~\"$pan\",roles=~\".*(PrimaryAdmin|SecondaryAdmin|Standalone).*\"} == 1) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "options": {"showHeader": true},
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}}}
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "PAN Service Assignments",
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 9},
+      "targets": [
+        {
+          "expr": "(ise_node_service_enabled{instance=~\"$deployment\",node=~\"$pan\"} == 1) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "options": {"showHeader": true},
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}}}
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "PAN Certificate Expiry",
+      "description": "System and trusted certificates whose hostname matches the selected PAN nodes, ordered by remaining lifetime.",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 18},
+      "targets": [
+        {
+          "expr": "sort(ise_certificate_expiry_days{instance=~\"$deployment\",hostname=~\"$pan\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"certificates\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"certificates\",source=\"rest\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "d"}, "overrides": []},
+      "options": {"showHeader": true},
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true}, "renameByName": {"Value": "days"}}}
+      ]
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Monitoring and Troubleshooting Nodes",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Connected MnTs",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 29},
+      "targets": [
+        {
+          "expr": "(count(ise_deployment_status{instance=~\"$deployment\",node=~\"$mnt\",roles=~\".*(PrimaryDedicatedMonitoring|PrimaryMonitoring|SecondaryDedicatedMonitoring|SecondaryMonitoring|Standalone).*\",ise_deployment_status=\"Connected\"} == 1) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1))) or on() (0 * ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1)))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "MnT Active Sessions",
+      "description": "Active sessions reported by the bounded MnT ActiveList collection.",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 29},
+      "targets": [
+        {
+          "expr": "ise_mnt_active_sessions_total{instance=~\"$deployment\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "MnT Detail Coverage",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 29},
+      "targets": [
+        {
+          "expr": "ise_mnt_active_posture_detail_coverage_ratio{instance=~\"$deployment\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []}
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "MnT Detail Truncated",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 29},
+      "targets": [
+        {
+          "expr": "ise_mnt_active_posture_detail_truncated{instance=~\"$deployment\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "COMPLETE", "color": "green"}, "1": {"text": "TRUNCATED", "color": "yellow"}}}
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "MnT Node Status",
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 33},
+      "targets": [
+        {
+          "expr": "(ise_deployment_status{instance=~\"$deployment\",node=~\"$mnt\",roles=~\".*(PrimaryDedicatedMonitoring|PrimaryMonitoring|SecondaryDedicatedMonitoring|SecondaryMonitoring|Standalone).*\"} == 1) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "options": {"showHeader": true},
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}}}
+      ]
+    },
+    {
+      "id": 15,
+      "type": "bargauge",
+      "title": "Active Endpoints by Serving PSN",
+      "description": "Bounded MnT detail sample grouped by the PSN recorded on each active session.",
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 33},
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (psn) (ise_mnt_active_posture_endpoints{instance=~\"$deployment\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{psn}}",
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}
+        },
+        "overrides": []
+      },
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "MnT ActiveList Safety",
+      "description": "ActiveCount preflight, configured unpaged-list ceiling, and whether collection was refused.",
+      "gridPos": {"h": 5, "w": 12, "x": 0, "y": 42},
+      "targets": [
+        {"expr": "ise_mnt_session_list_preflight_count{instance=~\"$deployment\"}", "instant": true, "legendFormat": "active sessions", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_mnt_session_list_ceiling{instance=~\"$deployment\"}", "instant": true, "legendFormat": "download ceiling", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_mnt_session_list_skipped{instance=~\"$deployment\"}", "instant": true, "legendFormat": "list refused", "refId": "C", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+      ],
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}},
+        "overrides": []
+      },
+      "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"}
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "PAN and MnT Collector Health",
+      "gridPos": {"h": 5, "w": 12, "x": 12, "y": 42},
+      "targets": [
+        {"expr": "time() - ise_last_successful_scrape_timestamp{instance=~\"$deployment\",collector=~\"deployment|mnt_active_posture\"}", "format": "table", "instant": true, "legendFormat": "success age", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_consecutive_failures{instance=~\"$deployment\",collector=~\"deployment|mnt_active_posture\"}", "format": "table", "instant": true, "legendFormat": "failures", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
+        {"expr": "ise_mnt_worker_busy{instance=~\"$deployment\"}", "format": "table", "instant": true, "legendFormat": "worker busy", "refId": "C", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}
+      ],
+      "options": {"showHeader": true}
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["ise", "pan", "mnt", "troubleshooting"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": true, "text": "Prometheus", "value": "prometheus"},
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "name": "deployment",
+        "label": "ISE deployment",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "definition": "query_result(ise_dataset_enabled{dataset=\"deployment\",source=\"rest\"} == 1)",
+        "query": {"query": "query_result(ise_dataset_enabled{dataset=\"deployment\",source=\"rest\"} == 1)", "refId": "var-deployment"},
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "options": [],
+        "hide": 0,
+        "regex": "/instance=\"([^\"]+)\"/",
+        "skipUrlSync": false
+      },
+      {
+        "name": "pan",
+        "label": "PAN",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "definition": "query_result(ise_deployment_status{instance=~\"$deployment\",roles=~\".*(PrimaryAdmin|SecondaryAdmin|Standalone).*\",ise_deployment_status=\"Connected\"} == 1)",
+        "query": {"query": "query_result(ise_deployment_status{instance=~\"$deployment\",roles=~\".*(PrimaryAdmin|SecondaryAdmin|Standalone).*\",ise_deployment_status=\"Connected\"} == 1)", "refId": "var-pan"},
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "options": [],
+        "hide": 0,
+        "regex": "/node=\"([^\"]+)\"/",
+        "skipUrlSync": false
+      },
+      {
+        "name": "mnt",
+        "label": "MnT",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "definition": "query_result(ise_deployment_status{instance=~\"$deployment\",roles=~\".*(PrimaryDedicatedMonitoring|PrimaryMonitoring|SecondaryDedicatedMonitoring|SecondaryMonitoring|Standalone).*\",ise_deployment_status=\"Connected\"} == 1)",
+        "query": {"query": "query_result(ise_deployment_status{instance=~\"$deployment\",roles=~\".*(PrimaryDedicatedMonitoring|PrimaryMonitoring|SecondaryDedicatedMonitoring|SecondaryMonitoring|Standalone).*\",ise_deployment_status=\"Connected\"} == 1)", "refId": "var-mnt"},
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "options": [],
+        "hide": 0,
+        "regex": "/node=\"([^\"]+)\"/",
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "timezone": "browser",
+  "title": "ISE PAN and MnT Troubleshooting",
+  "uid": "ise-pan-mnt-troubleshooting",
+  "version": 1,
+  "__inputs": [
+    {"name": "DS_PROMETHEUS", "label": "Prometheus", "description": "", "type": "datasource", "pluginId": "prometheus", "pluginName": "Prometheus"}
+  ],
+  "links": [
+    {"type": "link", "title": "Overview", "url": "/d/ise-overview/ise-overview", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open Overview with the current time range and filters"},
+    {"type": "link", "title": "Access", "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open Access with the current time range and filters"},
+    {"type": "link", "title": "PSN", "url": "/d/ise-psn-troubleshooting/ise-psn-troubleshooting", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open PSN with the current time range and filters"},
+    {"type": "link", "title": "PAN & MnT", "url": "/d/ise-pan-mnt-troubleshooting/ise-pan-mnt-troubleshooting", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open PAN and MnT troubleshooting with the current time range and filters"},
+    {"type": "link", "title": "Exporter Health", "url": "/d/ise-exporter-health/ise-exporter-health", "icon": "external link", "includeVars": true, "keepTime": true, "targetBlank": false, "tooltip": "Open Exporter Health with the current time range and filters"}
+  ]
+}
