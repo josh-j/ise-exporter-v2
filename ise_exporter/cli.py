@@ -15,6 +15,7 @@ import fnmatch
 import io
 import ipaddress
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -1212,13 +1213,42 @@ def _interactive_catalog_query(dataconnect):
             or dataconnect.query)
 
 
+def _dataconnect_catalog_busy_error(dataconnect):
+    """Explain the pacing state that prevented an interactive schema lookup."""
+    status_getter = getattr(dataconnect, "pacing_blocker", None)
+    status = status_getter() if callable(status_getter) else None
+    reason = (status or {}).get("reason")
+    if reason == "shared_query_in_progress":
+        blocker = (
+            "the shared pacing gate is held by an active exporter or ise-cli query"
+        )
+        retry = "retry after that query finishes"
+    elif reason in {
+            "local_query_cooldown", "shared_database_protection_cooldown"}:
+        remaining = max(0.0, float((status or {}).get("remaining_seconds", 0)))
+        blocker = (
+            "the Data Connect database-protection cooldown has "
+            f"{remaining:.1f}s remaining"
+        )
+        retry = f"retry in {max(1, math.ceil(remaining))}s"
+    else:
+        blocker = (
+            "another exporter or ise-cli query currently holds the shared pacing "
+            "gate, or the database-protection cooldown is still active"
+        )
+        retry = "retry after the active query or cooldown finishes"
+    return CLIError(
+        "Data Connect catalog lookup deferred: "
+        f"{blocker}. The requested ise-cli query was not started because catalog "
+        "metadata is required to validate accessible tables and columns; "
+        f"{retry}.")
+
+
 def _dataconnect_table_columns(dataconnect, table, *, interactive=False):
     query = _interactive_catalog_query(dataconnect) if interactive else None
     columns = table_columns(dataconnect, table, query=query)
     if columns is None:
-        raise CLIError(
-            "Data Connect catalog is busy with another query; retry after the "
-            "current exporter or CLI query finishes")
+        raise _dataconnect_catalog_busy_error(dataconnect)
     return columns
 
 
@@ -1233,9 +1263,7 @@ def _radius_authentication_report_schema(dataconnect, args, preferred_columns):
             query=_interactive_catalog_query(dataconnect),
         )
         if rows is None:
-            raise CLIError(
-                "Data Connect catalog is busy with another query; retry after "
-                "the current exporter or CLI query finishes")
+            raise _dataconnect_catalog_busy_error(dataconnect)
         schema = schema_by_table(rows)
 
     required = set()
@@ -1282,8 +1310,10 @@ def _endpoint_field_bindings(dataconnect, *, query=None):
         # would multiply adaptive cooldown without providing fresher metadata.
         metadata = metadata_rows(dataconnect, tables, query=query)
         if metadata is None:
-            raise CLIError("Data Connect pacing gate is busy")
+            raise _dataconnect_catalog_busy_error(dataconnect)
         schemas_by_table = schema_by_table(metadata)
+    except CLIError:
+        raise
     except Exception as error:
         raise CLIError(f"Data Connect endpoint schema lookup failed: {error}") from error
 
@@ -1898,10 +1928,10 @@ def _dataconnect_catalog(dataconnect, pattern=None):
         query = _interactive_catalog_query(dataconnect)
         rows = query(sql, parameters)
         if rows is None:
-            raise CLIError(
-                "Data Connect catalog is busy with another query; retry after the "
-                "current exporter or CLI query finishes")
+            raise _dataconnect_catalog_busy_error(dataconnect)
         return rows
+    except CLIError:
+        raise
     except Exception as error:
         raise CLIError(f"Data Connect catalog query failed: {error}") from error
 
@@ -1950,10 +1980,10 @@ def _dataconnect_schema(dataconnect, table=None):
             rows = metadata_rows(
                 dataconnect, query=_interactive_catalog_query(dataconnect))
             if rows is None:
-                raise CLIError(
-                    "Data Connect catalog is busy with another query; retry after the "
-                    "current exporter or CLI query finishes")
+                raise _dataconnect_catalog_busy_error(dataconnect)
             return rows
+        except CLIError:
+            raise
         except Exception as error:
             raise CLIError(f"Data Connect schema query failed: {error}") from error
     parameters = {}
@@ -1970,10 +2000,10 @@ def _dataconnect_schema(dataconnect, table=None):
             ORDER BY table_name, column_id
         """, parameters)
         if rows is None:
-            raise CLIError(
-                "Data Connect catalog is busy with another query; retry after the "
-                "current exporter or CLI query finishes")
+            raise _dataconnect_catalog_busy_error(dataconnect)
         return rows
+    except CLIError:
+        raise
     except Exception as error:
         raise CLIError(f"Data Connect schema query failed: {error}") from error
 

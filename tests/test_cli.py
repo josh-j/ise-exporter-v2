@@ -1000,8 +1000,27 @@ def test_endpoint_resolution_reports_busy_catalog_instead_of_missing_column():
         def query_catalog_if_ready(self, _sql, _parameters=None):
             return None
 
-    with pytest.raises(cli.CLIError, match="catalog is busy"):
+    with pytest.raises(cli.CLIError, match="catalog lookup deferred"):
         cli._dataconnect_endpoint_candidates(BusyCatalog(), "client", "hostname")
+
+
+def test_busy_catalog_explains_why_ise_cli_query_was_prevented():
+    class BusyCatalog:
+        schema = {}
+
+        def query_catalog_if_ready(self, _sql, _parameters=None):
+            return None
+
+        def pacing_blocker(self):
+            return {"reason": "shared_query_in_progress", "view": "schema_metadata"}
+
+    with pytest.raises(cli.CLIError) as error:
+        cli._dataconnect_endpoint_candidates(BusyCatalog(), "client", "hostname")
+
+    message = str(error.value)
+    assert "shared pacing gate is held by an active exporter or ise-cli query" in message
+    assert "requested ise-cli query was not started" in message
+    assert "catalog metadata is required" in message
 
 
 def test_endpoint_resolution_rejects_missing_search_capability_before_row_query():
@@ -1227,7 +1246,9 @@ def test_interactive_dataconnect_metadata_returns_busy_instead_of_waiting(capsys
         dataconnect = BusyCatalog()
         assert cli.main(
             arguments, client=FakeClient(), dataconnect=dataconnect) == 2
-        assert "catalog is busy with another query" in capsys.readouterr().err
+        error = capsys.readouterr().err
+        assert "catalog lookup deferred" in error
+        assert "requested ise-cli query was not started" in error
         assert len(dataconnect.calls) == 1
 
 

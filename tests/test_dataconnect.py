@@ -907,9 +907,34 @@ def test_completion_query_does_not_wait_for_shared_gate(monkeypatch, tmp_path):
     try:
         assert client.query_if_ready(
             "SELECT username FROM radius_authentications") is None
+        assert client.pacing_blocker() == {
+            "reason": "shared_query_in_progress",
+            "view": "radius_authentications",
+        }
     finally:
         fcntl.flock(owner.fileno(), fcntl.LOCK_UN)
         owner.close()
+
+
+def test_nonblocking_catalog_query_reports_local_cooldown(monkeypatch):
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(dataconnect.time, "monotonic", lambda: 100.0)
+    client._next_query_at = 104.25
+
+    assert client.query_catalog_if_ready(
+        "SELECT column_name FROM user_tab_columns") is None
+    assert client.pacing_blocker() == {
+        "reason": "local_query_cooldown",
+        "view": "schema_metadata",
+        "remaining_seconds": pytest.approx(4.25),
+    }
 
 
 def test_interactive_query_waits_only_for_local_catalog_gap(monkeypatch):

@@ -746,10 +746,10 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
         assert tuple(step["value"] for step in steps[1:]) == thresholds
 
 
-def test_psn_troubleshooting_refresh_matches_prometheus_scrape_cadence():
+def test_psn_troubleshooting_refresh_matches_collection_cadence():
     dashboard = _dashboard("ise-psn-troubleshooting.json")
 
-    assert dashboard["refresh"] == "1m"
+    assert dashboard["refresh"] == "5m"
 
 
 def test_schema_degradation_is_visible_on_health_and_psn_dashboards():

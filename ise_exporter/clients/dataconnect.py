@@ -230,6 +230,7 @@ class DataConnectClient:
         self._connect_failures = 0
         self._blocked_until = 0.0
         self._next_query_at = 0.0
+        self._last_pacing_blocker = None
         self._shutdown = None
         self._batch_active = False
         self._batch_gate = None
@@ -245,6 +246,16 @@ class DataConnectClient:
         metrics.ise_dataconnect_query_timeout_seconds.set(self.timeout)
         metrics.ise_dataconnect_result_row_ceiling.set(MAX_RESULT_ROWS)
         metrics.ise_dataconnect_result_byte_ceiling.set(MAX_RESULT_BYTES)
+
+    def pacing_blocker(self):
+        """Describe why the latest non-blocking query was not started."""
+        return dict(self._last_pacing_blocker) if self._last_pacing_blocker else None
+
+    def _set_pacing_blocker(self, reason, *, view, remaining_seconds=None):
+        blocker = {"reason": reason, "view": view}
+        if remaining_seconds is not None:
+            blocker["remaining_seconds"] = max(0.0, float(remaining_seconds))
+        self._last_pacing_blocker = blocker
 
     def set_schema(self, schema, dataset_failures=None):
         """Retain startup-discovered view capabilities without another DB query."""
@@ -369,6 +380,8 @@ class DataConnectClient:
                     break
                 except BlockingIOError:
                     if not wait:
+                        self._set_pacing_blocker(
+                            "shared_query_in_progress", view=view)
                         os.close(descriptor)
                         return _PACING_BUSY
                     if not lock_wait_logged:
@@ -388,6 +401,9 @@ class DataConnectClient:
                 raise OSError("pacing gate deadline is implausibly far in the future")
             if remaining > 0 and adaptive_duty:
                 if not wait:
+                    self._set_pacing_blocker(
+                        "shared_database_protection_cooldown", view=view,
+                        remaining_seconds=remaining)
                     fcntl.flock(descriptor, fcntl.LOCK_UN)
                     os.close(descriptor)
                     return _PACING_BUSY
@@ -514,10 +530,14 @@ class DataConnectClient:
     def _query(self, sql, parameters=None, *, wait_for_pacing=True,
                adaptive_duty=True):
         view = _query_view(sql)
+        self._last_pacing_blocker = None
         if not self._batch_active:
             remaining = self._next_query_at - time.monotonic()
             if remaining > 0:
                 if not wait_for_pacing:
+                    self._set_pacing_blocker(
+                        "local_query_cooldown", view=view,
+                        remaining_seconds=remaining)
                     return None
                 logger.info(
                     "Data Connect query waiting view=%s wait_seconds=%.1f "
