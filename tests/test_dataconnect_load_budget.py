@@ -16,7 +16,7 @@ from ise_exporter.config import Config
 from ise_exporter.clients.dataconnect import MAX_BATCH_RESULT_ROWS, MAX_RESULT_ROWS
 
 
-def test_large_mnt_default_profile_stays_below_two_due_statements_per_hour():
+def test_large_mnt_default_profile_stays_below_two_and_a_quarter_statements_per_hour():
     cfg = Config()
     statements_per_run = {
         "radius": len(dataconnect_radius._reporting_queries(cfg.dataconnect_max_groups)),
@@ -55,8 +55,8 @@ def test_large_mnt_default_profile_stays_below_two_due_statements_per_hour():
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(1.7083333333333333)
-    assert statements_per_hour < 2
+    assert statements_per_hour == pytest.approx(2.2083333333333335)
+    assert statements_per_hour < 2.25
 
 
 def test_freshness_uses_one_statement_for_every_timestamped_view():
@@ -83,7 +83,7 @@ def test_endpoint_inventory_uses_one_current_table_scan():
 
     assert list(queries) == ["inventory", "profiling"]
     assert queries["inventory"].lower().count("from endpoints_data") == 1
-    assert "GROUPING SETS ((), (endpoint_policy), (identity_group_id))" in \
+    assert "GROUPING SETS ((), (metric_profile), (metric_identity_group))" in \
         queries["inventory"]
 
 
@@ -149,14 +149,16 @@ def test_tacacs_internal_last_seen_reuses_each_existing_view_scan():
 
 def test_maximum_group_profile_fits_hard_statement_and_batch_row_budgets():
     groups = group_limit(Config())
-    # RADIUS: authentication + latency, summary + failure context,
-    # accounting + session duration, and errors.
-    radius_rows = (2 * groups) + (1 + groups) + (2 * groups) + groups
+    # RADIUS: authentication + latency, exact summary + failure context + four
+    # optional summary dimensions, accounting + session duration, and errors.
+    summary_rows = 1 + (5 * groups)
+    radius_rows = (2 * groups) + summary_rows + (2 * groups) + groups
     # TACACS: top-K detail plus at most one last-seen row per bounded internal
     # account, repeated across authentication, authorization, and accounting.
     tacacs_rows = 3 * (groups + Config().tacacs_internal_user_max)
 
-    assert 2 * groups <= MAX_RESULT_ROWS
-    assert radius_rows == 6001
+    assert summary_rows == 5001
+    assert summary_rows <= MAX_RESULT_ROWS
+    assert radius_rows == 10001
     assert tacacs_rows == 6000
     assert max(radius_rows, tacacs_rows) <= MAX_BATCH_RESULT_ROWS

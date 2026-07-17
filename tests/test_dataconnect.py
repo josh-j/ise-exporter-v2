@@ -61,8 +61,67 @@ def test_client_retains_normalized_startup_schema_without_querying(caplog):
         "RADIUS_AUTHENTICATIONS": {"POLICY_SET_NAME": "VARCHAR2"},
         "RADIUS_ACCOUNTING": {"ACCT_STATUS_TYPE": "VARCHAR2"},
     }
-    assert "using POLICY_SET_NAME" in caplog.text
-    assert "using 'none'" in caplog.text
+    assert "base authentication view and 'none'" in caplog.text
+    assert "and 'none'" in caplog.text
+
+
+def test_client_exports_bounded_schema_capabilities():
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    client.set_schema({
+        "KEY_PERFORMANCE_METRICS": {
+            "LOGGED_TIME": "TIMESTAMP", "ISE_NODE": "VARCHAR2",
+            "AVG_TPS": "NUMBER",
+        },
+    })
+
+    samples = metrics.ise_dataconnect_schema_column_available.collect()[0].samples
+    values = {(sample.labels["view"], sample.labels["column"]): sample.value
+              for sample in samples}
+    assert values[("KEY_PERFORMANCE_METRICS", "AVG_TPS")] == 1
+    assert values[("KEY_PERFORMANCE_METRICS", "AVG_LOAD")] == 0
+    assert metrics.ise_dataconnect_schema_optional_columns_missing._value.get() > 0
+    view_samples = metrics.ise_dataconnect_schema_view_available.collect()[0].samples
+    views = {(sample.labels["view"], sample.labels["requirement"]): sample.value
+             for sample in view_samples}
+    assert views[("KEY_PERFORMANCE_METRICS", "dataset")] == 1
+    assert views[("RADIUS_AUTHENTICATIONS_WEEK", "alternative")] == 0
+
+
+def test_client_marks_both_radius_authentication_views_as_alternatives():
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=12,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    client.set_schema({
+        "RADIUS_AUTHENTICATIONS_WEEK": {
+            "TIMESTAMP": "TIMESTAMP", "AUTHORIZATION_POLICY": "VARCHAR2",
+        },
+    })
+
+    samples = metrics.ise_dataconnect_schema_view_available.collect()[0].samples
+    views = {(sample.labels["view"], sample.labels["requirement"]): sample.value
+             for sample in samples}
+    assert views[("RADIUS_AUTHENTICATIONS", "alternative")] == 0
+    assert views[("RADIUS_AUTHENTICATIONS_WEEK", "alternative")] == 1
+    assert ("RADIUS_AUTHENTICATIONS", "dataset") not in views
+
+
+def test_week_authentication_view_has_its_own_bounded_query_label():
+    assert dataconnect._query_view(
+        "SELECT * FROM radius_authentications_week") == "radius_authentications_week"
 
 
 def test_client_warns_when_authentication_policy_dimensions_are_absent(caplog):
@@ -79,8 +138,8 @@ def test_client_warns_when_authentication_policy_dimensions_are_absent(caplog):
         "radius_authentications": {"authentication_method": "varchar2"},
     })
 
-    assert "no optional authorization-policy column" in caplog.text
-    assert "using 'none'" in caplog.text
+    assert "RADIUS_AUTHENTICATIONS_WEEK with AUTHORIZATION_POLICY is unavailable" in caplog.text
+    assert "and 'none'" in caplog.text
 
 
 def test_connection_disables_parallel_query_before_reporting_sql(monkeypatch):
@@ -1114,7 +1173,8 @@ def test_query_refuses_to_materialize_more_than_hard_result_ceiling(monkeypatch)
     before = counter._value.get()
     metrics.ise_dataconnect_query_rows.labels(view="endpoints_data").set(7)
 
-    with pytest.raises(RuntimeError, match="5000-row safety ceiling"):
+    with pytest.raises(
+            RuntimeError, match=rf"{dataconnect.MAX_RESULT_ROWS}-row safety ceiling"):
         client.query("SELECT fields FROM endpoints_data")
 
     assert connection.closed is True

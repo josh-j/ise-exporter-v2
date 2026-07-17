@@ -56,10 +56,39 @@ def hourly_rollup_window_hours(cfg, interval_seconds):
     return event_window_hours(cfg, max(21600, interval_seconds))
 
 
-def recent_event_predicate(column, hours):
+def recent_event_predicate(column, hours, *, timezone_aware=False):
     """Build an index-friendly Oracle timestamp lower bound from a safe integer."""
     hours = max(1, min(6, int(hours)))
-    return f"{column} >= SYSTIMESTAMP - NUMTODSINTERVAL({hours}, 'HOUR')"
+    lower_bound = f"SYSTIMESTAMP - NUMTODSINTERVAL({hours}, 'HOUR')"
+    if not timezone_aware:
+        lower_bound = f"CAST({lower_bound} AS TIMESTAMP)"
+    return f"{column} >= {lower_bound}"
+
+
+def schema_columns(schema, view):
+    """Return discovered uppercase columns, or ``None`` for legacy callers."""
+    if schema is None:
+        return None
+    if not isinstance(schema, dict):
+        raise TypeError("Data Connect schema must be a table mapping")
+    return set(schema.get(str(view).upper(), {}))
+
+
+def schema_has(schema, view, column):
+    columns = schema_columns(schema, view)
+    return columns is None or str(column).upper() in columns
+
+
+def schema_expression(schema, view, column, fallback="NULL"):
+    """Use a discovered column or a caller-owned safe SQL literal/expression."""
+    name = str(column).lower()
+    return name if schema_has(schema, view, column) else str(fallback)
+
+
+def schema_projection(schema, view, column, fallback="NULL"):
+    expression = schema_expression(schema, view, column, fallback)
+    name = str(column).lower()
+    return name if expression == name else f"{expression} AS {name}"
 
 
 def query_set(dataconnect, statements, parameters=None):

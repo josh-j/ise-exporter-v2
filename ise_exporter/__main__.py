@@ -31,6 +31,7 @@ from .compatibility import (
 )
 from .dataconnect_schema import (
     metadata_rows,
+    optional_schema_gaps,
     validate_dataconnect_schema,
 )
 from .scheduler import PollScheduler
@@ -85,7 +86,16 @@ def dataconnect_check(cfg):
         client = DataConnectClient(cfg)
         schema = validate_dataconnect_schema(
             client, include_tacacs=getattr(cfg, "collect_tacacs", True))
-        logger.info("Data Connect check passed: %d required reporting views", len(schema))
+        gaps = optional_schema_gaps(schema)
+        missing = sum(len(columns) for columns in gaps.values())
+        if missing:
+            logger.warning(
+                "Data Connect check passed with degraded optional capabilities: "
+                "%d columns absent across %d reporting views",
+                missing, len(gaps))
+        logger.info(
+            "Data Connect check passed: %d reporting views; "
+            "missing_optional_columns=%d", len(schema), missing)
         return 0
     except Exception as exc:
         logger.error("Data Connect check failed: %s", exc)

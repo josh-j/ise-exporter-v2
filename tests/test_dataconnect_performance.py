@@ -82,3 +82,35 @@ def test_fast_collection_retains_bounded_hourly_rollup_lookback():
     dataconnect_performance.collect(client, cfg)
 
     assert all("NUMTODSINTERVAL(6, 'HOUR')" in sql for sql in client.sql)
+
+
+def test_missing_optional_schema_column_preserves_available_psn_metrics():
+    client = DataConnect()
+    client.schema = {
+        "KEY_PERFORMANCE_METRICS": {
+            column.upper(): "NUMBER" for column in
+            ("ise_node", *dataconnect_performance._KPI_VALUES)
+            if column != "avg_tps"
+        },
+        "SYSTEM_SUMMARY": {
+            column.upper(): "NUMBER" for column in
+            ("ise_node", *dataconnect_performance._SYSTEM_VALUES)
+        },
+        "AAA_DIAGNOSTICS_VIEW": {
+            column.upper(): "VARCHAR2" for column in
+            ("ise_node", *dataconnect_performance._DIAGNOSTIC_DIMENSIONS)
+        },
+        "SYSTEM_DIAGNOSTICS_VIEW": {
+            column.upper(): "VARCHAR2" for column in
+            ("ise_node", *dataconnect_performance._DIAGNOSTIC_DIMENSIONS)
+        },
+    }
+
+    dataconnect_performance.collect(
+        client, types.SimpleNamespace(dataconnect_max_groups=100))
+
+    kpi_sql = next(sql for sql in client.sql if "key_performance_metrics" in sql.lower())
+    assert "avg_tps" not in kpi_sql.lower()
+    assert _rows(metrics.ise_dataconnect_psn_radius_requests_per_hour, "node") == {
+        ("psn-1",): 2000}
+    assert not metrics.ise_dataconnect_psn_average_tps.collect()[0].samples

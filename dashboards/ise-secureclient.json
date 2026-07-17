@@ -892,6 +892,15 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           }
+        },
+        {
+          "expr": "sort_desc(sum by (enforcement_type, enforcement_status, posture_status) (ise_dataconnect_posture_enforcement_assessments)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{enforcement_type}} / {{enforcement_status}} / {{posture_status}}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "fieldConfig": {

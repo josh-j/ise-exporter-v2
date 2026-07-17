@@ -135,6 +135,15 @@ class FakeDataConnect:
         if "select distinct table_name" in lowered:
             return [{"value": "CUSTOM_REPORT_VIEW"}]
         if "from user_tab_columns" in lowered:
+            if "table_name in" in lowered:
+                return [{
+                    "table_name": "RADIUS_AUTHENTICATIONS",
+                    "column_name": name,
+                    "data_type": "TIMESTAMP" if name == "TIMESTAMP" else "VARCHAR2",
+                } for name in (
+                    "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "DEVICE_NAME",
+                    "ISE_NODE", "AUTHENTICATION_METHOD", "AUTHENTICATION_PROTOCOL",
+                    "POLICY_SET_NAME", "FAILED", "RESPONSE_TIME")]
             if (parameters or {}).get("table_name") == "ENDPOINTS_DATA":
                 return [{"column_name": name, "data_type": "VARCHAR2"}
                         for name in (
@@ -954,7 +963,7 @@ def test_endpoint_resolution_reports_busy_exporter_gate():
         cli._dataconnect_endpoint_candidates(BusyDataConnect(), "client", "hostname")
 
 
-def test_endpoint_resolution_uses_required_columns_without_catalog_round_trip():
+def test_endpoint_resolution_discovers_uncached_search_columns_from_catalog():
     class UncachedVariant:
         schema = {}
 
@@ -962,7 +971,13 @@ def test_endpoint_resolution_uses_required_columns_without_catalog_round_trip():
             self.calls = []
 
         def query(self, sql, parameters=None):
-            self.calls.append(("report", sql, parameters))
+            kind = "catalog" if "user_tab_columns" in sql.lower() else "report"
+            self.calls.append((kind, sql, parameters))
+            if kind == "catalog":
+                return [
+                    {"column_name": "MAC_ADDRESS", "data_type": "VARCHAR2"},
+                    {"column_name": "HOSTNAME", "data_type": "VARCHAR2"},
+                ]
             return [{"mac_address": "AA:BB:CC:DD:EE:FF", "hostname": "client"}]
 
     dataconnect = UncachedVariant()
@@ -970,11 +985,23 @@ def test_endpoint_resolution_uses_required_columns_without_catalog_round_trip():
     rows = cli._dataconnect_endpoint_candidates(dataconnect, "client", "hostname")
 
     assert rows[0]["mac_address"] == "AA:BB:CC:DD:EE:FF"
-    assert [call[0] for call in dataconnect.calls] == ["report"]
-    sql = dataconnect.calls[0][1].upper()
-    assert "SELECT MAC_ADDRESS, ENDPOINT_IP, HOSTNAME" in sql
+    assert [call[0] for call in dataconnect.calls] == ["catalog", "report"]
+    sql = dataconnect.calls[1][1].upper()
+    assert "SELECT MAC_ADDRESS, HOSTNAME" in sql
+    assert "ENDPOINT_IP" not in sql
     assert "ID," not in sql
     assert "ORDER BY" not in sql
+
+
+def test_endpoint_resolution_reports_busy_catalog_instead_of_missing_column():
+    class BusyCatalog:
+        schema = {}
+
+        def query_catalog_if_ready(self, _sql, _parameters=None):
+            return None
+
+    with pytest.raises(cli.CLIError, match="catalog is busy"):
+        cli._dataconnect_endpoint_candidates(BusyCatalog(), "client", "hostname")
 
 
 def test_endpoint_resolution_rejects_missing_search_capability_before_row_query():
@@ -1048,6 +1075,57 @@ def test_dataconnect_report_is_bounded_and_filters_normalized_mac(capsys):
     assert "NUMTODSINTERVAL(6, 'HOUR')" in report_sql
     assert "CALLING_STATION_ID = :endpoint_identifier" in report_sql
     assert parameters["endpoint_identifier"] == "AA:BB:CC:DD:EE:FF"
+
+
+def test_radius_auth_report_prefers_week_view_with_real_authorization_policy(capsys):
+    class WeekDataConnect(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            if "from user_tab_columns" in sql.lower() and "table_name in" in sql.lower():
+                self.calls.append((sql, parameters or {}))
+                return [
+                    {"table_name": "RADIUS_AUTHENTICATIONS_WEEK",
+                     "column_name": "TIMESTAMP", "data_type": "TIMESTAMP"},
+                    {"table_name": "RADIUS_AUTHENTICATIONS_WEEK",
+                     "column_name": "AUTHORIZATION_POLICY", "data_type": "VARCHAR2"},
+                ]
+            if "from radius_authentications_week" in sql.lower():
+                self.calls.append((sql, parameters or {}))
+                return [{"authorization_policy": "Employee"}]
+            return super().query(sql, parameters)
+
+    dataconnect = WeekDataConnect()
+    assert cli.main(["radius-auth", "--limit", "5", "-o", "json"],
+                    client=FakeClient(), dataconnect=dataconnect) == 0
+
+    assert json.loads(capsys.readouterr().out) == [{"authorization_policy": "Employee"}]
+    assert "FROM RADIUS_AUTHENTICATIONS_WEEK" in dataconnect.calls[-1][0]
+
+
+def test_radius_auth_report_keeps_base_view_when_week_lacks_requested_filter(capsys):
+    class BothViews(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            if "from user_tab_columns" in sql.lower() and "table_name in" in sql.lower():
+                self.calls.append((sql, parameters or {}))
+                return [
+                    {"table_name": table, "column_name": column,
+                     "data_type": "TIMESTAMP" if column == "TIMESTAMP" else "VARCHAR2"}
+                    for table, columns in (
+                        ("RADIUS_AUTHENTICATIONS", ("TIMESTAMP", "USERNAME")),
+                        ("RADIUS_AUTHENTICATIONS_WEEK",
+                         ("TIMESTAMP", "AUTHORIZATION_POLICY")),
+                    )
+                    for column in columns
+                ]
+            return super().query(sql, parameters)
+
+    dataconnect = BothViews()
+    assert cli.main(["radius-auth", "--username", "alice", "-o", "json"],
+                    client=FakeClient(), dataconnect=dataconnect) == 0
+
+    sql, parameters = dataconnect.calls[-1]
+    assert "FROM RADIUS_AUTHENTICATIONS " in sql
+    assert "USERNAME = :filter_username" in sql
+    assert parameters["filter_username"] == "alice"
 
 
 def test_dataconnect_query_validates_identifiers_and_binds_operator_filters(capsys):

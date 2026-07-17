@@ -47,7 +47,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "refresh": "30s",
   "editable": true,
   "graphTooltip": 1,
@@ -165,8 +165,8 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Empty Recent Views",
-      "description": "Timestamped Data Connect views with no rows in the configured bounded recent window. This does not claim that the full historical view is empty; proving that would require an unsafe unbounded scan.",
+      "title": "Missing Expected View Updates",
+      "description": "Periodic Data Connect rollup views with no row in the bounded recent window. Quiet event-driven views remain informational and do not raise this health count.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -175,7 +175,7 @@
       },
       "targets": [
         {
-          "expr": "(count(ise_dataconnect_view_has_recent_rows == 0) and on() ((max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)))",
+          "expr": "(count((ise_dataconnect_view_has_recent_rows == 0) and on(view,domain) (ise_dataconnect_view_freshness_expected == 1)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -383,6 +383,16 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           }
+        },
+        {
+          "expr": "ise_dataconnect_view_freshness_expected and on() ((max(ise_dataset_up{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_freshness\",source=\"dataconnect\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "Health expectation",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
         }
       ],
       "fieldConfig": {
@@ -441,7 +451,7 @@
       "id": 11,
       "type": "stat",
       "title": "Unknown Endpoint Profiles",
-      "description": "Current endpoints whose profile is missing or unknown.",
+      "description": "Data Connect reporting-snapshot endpoints whose profile is missing or unknown; some inventory attributes can synchronize with delay.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -468,7 +478,7 @@
       "id": 12,
       "type": "stat",
       "title": "Endpoints Stale 90d",
-      "description": "Current endpoint inventory not updated during the last 90 days.",
+      "description": "Endpoint reporting-snapshot rows not updated during the last 90 days; this is not exact real-time endpoint state.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -738,14 +748,55 @@
       }
     },
     {
+      "id": 30,
+      "type": "table",
+      "title": "Missing Optional Schema Columns",
+      "description": "Known optional columns absent from available Data Connect reporting views. These gaps degrade only dependent metric families; mandatory gaps block their owning datasets and appear above.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 37
+      },
+      "targets": [
+        {
+          "expr": "ise_dataconnect_schema_view_available{requirement=\"dataset\"} == 0",
+          "format": "table",
+          "instant": true,
+          "refId": "Missing views",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_dataconnect_schema_column_available{requirement=\"optional\"} == 0",
+          "format": "table",
+          "instant": true,
+          "refId": "Missing",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
       "id": 17,
       "type": "table",
       "title": "Data Connect Collection Cadence",
       "description": "Scheduled domain cadence and bounded event scan windows. The client applies the per-statement duty-cycle cooldown shown below; the scheduler does not apply that delay a second time.",
       "gridPos": {
         "h": 9,
-        "w": 24,
-        "x": 0,
+        "w": 12,
+        "x": 12,
         "y": 37
       },
       "targets": [
@@ -1248,7 +1299,7 @@
       "id": 29,
       "type": "stat",
       "title": "Data Connect Enforced Safety Limits",
-      "description": "Effective hard client limits. Production should show a duty-cycle ceiling no higher than 0.1%, a query timeout no higher than 15 seconds, 5,000 rows, and 64 MiB retained bytes.",
+      "description": "Effective hard client limits. Production should show a duty-cycle ceiling no higher than 0.1%, a query timeout no higher than 15 seconds, 6,000 rows per statement, and 64 MiB retained bytes.",
       "gridPos": {
         "h": 5,
         "w": 24,

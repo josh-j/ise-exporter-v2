@@ -631,7 +631,7 @@
       "id": 12,
       "type": "bargauge",
       "title": "Endpoint Operational Field Coverage (Data Connect)",
-      "description": "Exact inventory coverage for operational endpoint fields. Hidden while the authoritative Data Connect endpoint dataset is unavailable.",
+      "description": "Coverage in the Data Connect reporting inventory snapshot. Some attributes can synchronize with up to 12 hours of delay; hidden while the dataset is unavailable.",
       "gridPos": {
         "h": 8,
         "w": 24,

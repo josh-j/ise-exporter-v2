@@ -19,6 +19,7 @@ from .dataconnect_common import (
     group_limit,
     integer,
     recent_event_predicate,
+    schema_expression,
 )
 
 
@@ -74,15 +75,18 @@ def collect(devices, dataconnect, cfg):
             "timestamp", event_window_hours(
                 cfg, getattr(cfg, "dataconnect_nad_health_interval", 86400)))
         limit = group_limit(cfg)
+        schema = getattr(dataconnect, "schema", None)
+        view = "RADIUS_AUTHENTICATION_SUMMARY"
+        device = schema_expression(schema, view, "device_name", "'unknown'")
         activity = dataconnect.query(f"""
             WITH grouped_activity AS (
-                SELECT NVL(device_name, 'unknown') AS nad,
+                SELECT NVL({device}, 'unknown') AS nad,
                        SUM(NVL(passed_count, 0)) AS passed_events,
                        SUM(NVL(failed_count, 0)) AS failed_events,
                        MAX(timestamp) AS last_event
                 FROM radius_authentication_summary
                 WHERE {recent}
-                GROUP BY NVL(device_name, 'unknown')
+                GROUP BY NVL({device}, 'unknown')
             ), ranked_activity AS (
                 SELECT grouped_activity.*, COUNT(*) OVER () AS total_groups,
                        ROW_NUMBER() OVER (

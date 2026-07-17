@@ -13,7 +13,7 @@
       "description": "Authoritative Data Connect dataset health. DOWN is not a valid zero.",
       "gridPos": {
         "h": 4,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 0
       },
@@ -76,8 +76,8 @@
       "description": "Seconds since the last successful PSN snapshot replacement. Yellow after one missed 15-minute cycle; red after two.",
       "gridPos": {
         "h": 4,
-        "w": 16,
-        "x": 8,
+        "w": 12,
+        "x": 6,
         "y": 0
       },
       "targets": [
@@ -114,6 +114,54 @@
           "links": [
             {
               "title": "Inspect PSN dataset health",
+              "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=dataconnect_performance&var-source=dataconnect",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 92,
+      "type": "stat",
+      "title": "Missing PSN Schema Columns",
+      "description": "Known optional PSN reporting columns absent from the production Data Connect schema. A non-zero value explains metric-specific gaps while the dataset remains available.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(1 - ise_dataconnect_schema_column_available{instance=~\"$deployment\",view=~\"KEY_PERFORMANCE_METRICS|SYSTEM_SUMMARY|AAA_DIAGNOSTICS_VIEW|SYSTEM_DIAGNOSTICS_VIEW\",column!=\"TIMESTAMP_TIMEZONE\",requirement=\"optional\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Inspect missing schema columns",
               "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=dataconnect_performance&var-source=dataconnect",
               "targetBlank": false
             }
@@ -812,7 +860,7 @@
   "timezone": "browser",
   "title": "ISE PSN Troubleshooting",
   "uid": "ise-psn-troubleshooting",
-  "version": 1,
+  "version": 2,
   "__inputs": [
     {
       "name": "DS_PROMETHEUS",

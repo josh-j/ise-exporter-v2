@@ -19,6 +19,7 @@ from .dataconnect_common import (
     group_limit,
     query_set,
     replace_snapshot,
+    schema_expression,
 )
 
 
@@ -224,7 +225,7 @@ _COMMAND_FAMILY_SQL = """CASE
     ELSE 'other' END"""
 
 
-def _activity_queries(limit, cutoff_epoch, internal_user_count=0):
+def _activity_queries(limit, cutoff_epoch, internal_user_count=0, schema=None):
     """Build TACACS aggregates only with an explicit bounded event cutoff."""
     if int(cutoff_epoch) < 0:
         raise ValueError("TACACS activity cutoff must be non-negative")
@@ -240,19 +241,52 @@ def _activity_queries(limit, cutoff_epoch, internal_user_count=0):
             if internal_filter else ""
         return f"SELECT * FROM {grouped} WHERE {detail}{internal}"
 
+    def dimensions(view, specifications):
+        return {
+            column: schema_expression(schema, view, column, fallback)
+            for column, fallback in specifications
+        }
+
+    authentication = dimensions("TACACS_AUTHENTICATION_LAST_TWO_DAYS", (
+        ("username", "'unknown'"), ("status", "'unknown'"),
+        ("device_name", "'unknown'"), ("authentication_policy", "'unknown'"),
+        ("identity_store", "'unknown'"), ("failure_reason", "NULL"),
+    ))
+    authorization = dimensions("TACACS_AUTHORIZATION_LAST_TWO_DAYS", (
+        ("username", "'unknown'"), ("status", "'unknown'"),
+        ("device_name", "'unknown'"), ("authorization_policy", "'unknown'"),
+        ("shell_profile", "'unknown'"), ("matched_command_set", "'unknown'"),
+    ))
+    accounting = dimensions("TACACS_ACCOUNTING_LAST_TWO_DAYS", (
+        ("username", "'unknown'"), ("status", "'unknown'"),
+        ("device_name", "'unknown'"), ("command", "NULL"),
+    ))
+    failure_class = _FAILURE_CLASS_SQL.replace(
+        "failure_reason", authentication["failure_reason"])
+    command_family = _COMMAND_FAMILY_SQL.replace("command", accounting["command"])
+
     return {
         "authentication": f"""
-            WITH grouped_auth AS (
+            WITH auth_source AS (
+                SELECT epoch_time,
+                       {authentication["username"]} AS username,
+                       {authentication["status"]} AS status,
+                       {authentication["device_name"]} AS device_name,
+                       {authentication["authentication_policy"]} AS authentication_policy,
+                       {authentication["identity_store"]} AS identity_store,
+                       {failure_class} AS failure_class
+                FROM tacacs_authentication_last_two_days
+                {recent}
+            ), grouped_auth AS (
                 SELECT CASE WHEN GROUPING(status) = 1
                             THEN 'internal_last_seen' ELSE 'detail' END AS breakdown,
                        username, status, device_name, authentication_policy,
-                       identity_store, {_FAILURE_CLASS_SQL} AS failure_class,
+                       identity_store, failure_class,
                        COUNT(*) AS hits, MAX(epoch_time) AS last_seen
-                FROM tacacs_authentication_last_two_days
-                {recent}
+                FROM auth_source
                 GROUP BY GROUPING SETS (
                     (username, status, device_name, authentication_policy,
-                     identity_store, {_FAILURE_CLASS_SQL}),
+                     identity_store, failure_class),
                     (username)
                 )
             ), ranked_auth AS (
@@ -268,14 +302,23 @@ def _activity_queries(limit, cutoff_epoch, internal_user_count=0):
             {selection("ranked_auth", "authentication")}
         """,
         "authorization": f"""
-            WITH grouped_authorization AS (
+            WITH authorization_source AS (
+                SELECT epoch_time,
+                       {authorization["username"]} AS username,
+                       {authorization["status"]} AS status,
+                       {authorization["device_name"]} AS device_name,
+                       {authorization["authorization_policy"]} AS authorization_policy,
+                       {authorization["shell_profile"]} AS shell_profile,
+                       {authorization["matched_command_set"]} AS matched_command_set
+                FROM tacacs_authorization_last_two_days
+                {recent}
+            ), grouped_authorization AS (
                 SELECT CASE WHEN GROUPING(status) = 1
                             THEN 'internal_last_seen' ELSE 'detail' END AS breakdown,
                        username, status, device_name, authorization_policy,
                        shell_profile, matched_command_set,
                        COUNT(*) AS hits, MAX(epoch_time) AS last_seen
-                FROM tacacs_authorization_last_two_days
-                {recent}
+                FROM authorization_source
                 GROUP BY GROUPING SETS (
                     (username, status, device_name, authorization_policy,
                      shell_profile, matched_command_set),
@@ -294,16 +337,22 @@ def _activity_queries(limit, cutoff_epoch, internal_user_count=0):
             {selection("ranked_authorization", "authorization")}
         """,
         "accounting": f"""
-            WITH grouped_accounting AS (
-                SELECT CASE WHEN GROUPING(status) = 1
-                            THEN 'internal_last_seen' ELSE 'detail' END AS breakdown,
-                       username, status, device_name,
-                       {_COMMAND_FAMILY_SQL} AS command_family,
-                       COUNT(*) AS hits, MAX(epoch_time) AS last_seen
+            WITH accounting_source AS (
+                SELECT epoch_time,
+                       {accounting["username"]} AS username,
+                       {accounting["status"]} AS status,
+                       {accounting["device_name"]} AS device_name,
+                       {command_family} AS command_family
                 FROM tacacs_accounting_last_two_days
                 {recent}
+            ), grouped_accounting AS (
+                SELECT CASE WHEN GROUPING(status) = 1
+                            THEN 'internal_last_seen' ELSE 'detail' END AS breakdown,
+                       username, status, device_name, command_family,
+                       COUNT(*) AS hits, MAX(epoch_time) AS last_seen
+                FROM accounting_source
                 GROUP BY GROUPING SETS (
-                    (username, status, device_name, {_COMMAND_FAMILY_SQL}),
+                    (username, status, device_name, command_family),
                     (username)
                 )
             ), ranked_accounting AS (
@@ -336,7 +385,8 @@ def _collect_dataconnect(dataconnect, cfg):
     parameters = {"minimum_epoch": cutoff}
     parameters.update({f"internal_user_{index}": raw
                        for index, (_label_name, raw) in enumerate(internal_accounts)})
-    queries = _activity_queries(limit, cutoff, len(internal_accounts))
+    queries = _activity_queries(
+        limit, cutoff, len(internal_accounts), getattr(dataconnect, "schema", None))
     combined = query_set(
         dataconnect, queries, {kind: parameters for kind in queries})
     rows = {kind: [row for row in values

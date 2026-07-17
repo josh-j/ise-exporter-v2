@@ -292,10 +292,11 @@ ise_dataconnect_radius_authentication_events_total = Gauge(
     "Exact RADIUS authentication event count in the Data Connect reporting window")
 ise_dataconnect_radius_distinct_endpoints_total = Gauge(
     "ise_dataconnect_radius_distinct_endpoints_total",
-    "Exact distinct calling-station identifiers in the RADIUS reporting window")
+    "Exact distinct calling-station identifiers in the RADIUS reporting window",
+    ["source_view"])
 ise_dataconnect_radius_distinct_users_total = Gauge(
     "ise_dataconnect_radius_distinct_users_total",
-    "Exact distinct usernames in the RADIUS reporting window")
+    "Exact distinct usernames in the RADIUS reporting window", ["source_view"])
 ise_dataconnect_radius_failure_events = Gauge(
     "ise_dataconnect_radius_failure_events",
     "Failed RADIUS authentications by bounded reason class, authorization profile, and location",
@@ -303,6 +304,10 @@ ise_dataconnect_radius_failure_events = Gauge(
 ise_dataconnect_radius_failure_events_total = Gauge(
     "ise_dataconnect_radius_failure_events_total",
     "Exact failed RADIUS authentication count in the Data Connect reporting window")
+ise_dataconnect_radius_authentication_summary_events = Gauge(
+    "ise_dataconnect_radius_authentication_summary_events",
+    "RADIUS authentication summary events by bounded documented reporting dimension",
+    ["dimension", "value", "status"])
 ise_dataconnect_radius_response_time_seconds = Gauge(
     "ise_dataconnect_radius_response_time_seconds",
     "RADIUS response-time aggregate from Data Connect",
@@ -378,16 +383,19 @@ ise_dataconnect_posture_assessed_endpoints_total = Gauge(
     "Exact distinct endpoints represented by their latest posture assessment")
 ise_dataconnect_posture_eligible_endpoints_total = Gauge(
     "ise_dataconnect_posture_eligible_endpoints_total",
-    "Current endpoints marked posture-applicable in endpoint inventory")
+    "Endpoint reporting-snapshot rows marked posture-applicable", ["source_view"])
 ise_dataconnect_posture_eligible_recently_assessed_total = Gauge(
     "ise_dataconnect_posture_eligible_recently_assessed_total",
-    "Posture-applicable endpoints with an assessment in the configured reporting window")
+    "Posture-applicable endpoints with an assessment in the configured reporting window",
+    ["source_view"])
 ise_dataconnect_posture_eligible_without_recent_assessment_total = Gauge(
     "ise_dataconnect_posture_eligible_without_recent_assessment_total",
-    "Posture-applicable endpoints without an assessment in the configured reporting window")
+    "Posture-applicable endpoints without an assessment in the configured reporting window",
+    ["source_view"])
 ise_dataconnect_posture_eligible_recent_assessment_ratio = Gauge(
     "ise_dataconnect_posture_eligible_recent_assessment_ratio",
-    "Fraction of posture-applicable endpoints assessed in the configured reporting window")
+    "Fraction of posture-applicable endpoints assessed in the configured reporting window",
+    ["source_view"])
 ise_dataconnect_posture_compliant_endpoints_total = Gauge(
     "ise_dataconnect_posture_compliant_endpoints_total",
     "Exact endpoints whose latest posture assessment is compliant")
@@ -401,6 +409,10 @@ ise_dataconnect_posture_condition_assessments = Gauge(
     "ise_dataconnect_posture_condition_assessments",
     "Distinct endpoints assessed by posture policy condition and result",
     ["policy", "policy_status", "condition", "condition_status", "enforcement"])
+ise_dataconnect_posture_enforcement_assessments = Gauge(
+    "ise_dataconnect_posture_enforcement_assessments",
+    "Distinct posture endpoints by enforcement result and ISE node",
+    ["enforcement", "enforcement_type", "enforcement_status", "posture_status", "psn"])
 ise_dataconnect_posture_failures = Gauge(
     "ise_dataconnect_posture_failures",
     "Distinct failed posture endpoints grouped by message code and policy",
@@ -419,31 +431,32 @@ ise_dataconnect_posture_topk_truncated = Gauge(
     ["breakdown"])
 
 ise_dataconnect_endpoints_total = Gauge(
-    "ise_dataconnect_endpoints_total", "Current endpoints exposed by Data Connect")
+    "ise_dataconnect_endpoints_total",
+    "Endpoints in the Data Connect reporting inventory snapshot")
 ise_dataconnect_endpoints_unknown_profile_total = Gauge(
     "ise_dataconnect_endpoints_unknown_profile_total",
-    "Exact current endpoint count with a missing or unknown endpoint policy")
+    "Endpoint snapshot count with a missing or unknown endpoint policy", ["source_view"])
 ise_dataconnect_endpoint_field_populated = Gauge(
     "ise_dataconnect_endpoint_field_populated",
-    "Current endpoints with a populated operational inventory field", ["field"])
+    "Endpoint snapshot rows with a populated operational inventory field", ["field"])
 ise_dataconnect_endpoint_field_coverage_ratio = Gauge(
     "ise_dataconnect_endpoint_field_coverage_ratio",
-    "Fraction of current endpoints with a populated operational inventory field", ["field"])
+    "Fraction of endpoint snapshot rows with a populated operational inventory field", ["field"])
 ise_dataconnect_endpoints_stale = Gauge(
     "ise_dataconnect_endpoints_stale",
-    "Current endpoints not updated within the configured age threshold", ["age_days"])
+    "Endpoint snapshot rows not updated within the configured age threshold", ["age_days"])
 ise_dataconnect_profiled_endpoint_group_memberships_total = Gauge(
     "ise_dataconnect_profiled_endpoint_group_memberships_total",
     "Exact sum of distinct endpoint memberships across profiling groups in the reporting window")
 ise_dataconnect_endpoints_by_profile = Gauge(
-    "ise_dataconnect_endpoints_by_profile", "Current endpoints by endpoint policy",
+    "ise_dataconnect_endpoints_by_profile", "Endpoint snapshot rows by endpoint policy",
     ["profile"])
 ise_dataconnect_endpoints_by_identity_group = Gauge(
-    "ise_dataconnect_endpoints_by_identity_group", "Current endpoints by identity-group ID",
+    "ise_dataconnect_endpoints_by_identity_group", "Endpoint snapshot rows by identity-group ID",
     ["identity_group"])
 ise_dataconnect_endpoints_by_posture_applicable = Gauge(
     "ise_dataconnect_endpoints_by_posture_applicable",
-    "Current endpoints by posture-applicable state", ["applicable"])
+    "Endpoint snapshot rows by posture-applicable state", ["applicable"])
 ise_dataconnect_profile_events = Gauge(
     "ise_dataconnect_profile_events",
     "Distinct profiled endpoints in the bounded Data Connect reporting window",
@@ -468,6 +481,10 @@ ise_dataconnect_view_has_recent_rows = Gauge(
 ise_dataconnect_view_newest_recent_event_timestamp = Gauge(
     "ise_dataconnect_view_newest_recent_event_timestamp",
     "Newest source-event timestamp inside each Data Connect view's bounded recent window",
+    ["view", "domain"])
+ise_dataconnect_view_freshness_expected = Gauge(
+    "ise_dataconnect_view_freshness_expected",
+    "Whether recent rows are expected for health evaluation rather than activity-only",
     ["view", "domain"])
 ise_dataconnect_psn_radius_requests_per_hour = Gauge(
     "ise_dataconnect_psn_radius_requests_per_hour", "RADIUS requests per hour by ISE node",
@@ -515,6 +532,17 @@ ise_dataconnect_diagnostic_topk_truncated = Gauge(
     ["source"])
 
 # --- exporter self-observability ---
+ise_dataconnect_schema_column_available = Gauge(
+    "ise_dataconnect_schema_column_available",
+    "Whether a known Data Connect reporting column is present in the discovered schema",
+    ["view", "column", "requirement"])
+ise_dataconnect_schema_optional_columns_missing = Gauge(
+    "ise_dataconnect_schema_optional_columns_missing",
+    "Known optional Data Connect columns absent from available reporting views")
+ise_dataconnect_schema_view_available = Gauge(
+    "ise_dataconnect_schema_view_available",
+    "Whether a known Data Connect reporting view is present in the discovered schema",
+    ["view", "requirement"])
 ise_dataset_up = Gauge(
     "ise_dataset_up", "Authoritative dataset collection status (1=successful)",
     ["dataset", "source"])

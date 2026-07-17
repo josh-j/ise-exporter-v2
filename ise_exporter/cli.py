@@ -40,7 +40,12 @@ from .collectors.dataconnect_common import recent_event_predicate
 from .collectors.nodes import valid_hostname, validated_node_rows
 from .compatibility import MAX_CERTIFICATES_PER_STORE, MAX_CERTIFICATE_ROWS
 from .config import Config
-from .dataconnect_schema import metadata_rows, schema_by_table, table_columns
+from .dataconnect_schema import (
+    preferred_radius_authentication_view,
+    metadata_rows,
+    schema_by_table,
+    table_columns,
+)
 from .exporter_data import ExporterDataError, load_exporter_snapshot
 from .util import (first_nonempty, is_mac, normalize_agent_version, normalize_mac,
                    normalize_posture,
@@ -367,7 +372,8 @@ DATACONNECT_REPORTS = {
     "radius-auth": {
         "table": "RADIUS_AUTHENTICATIONS",
         "columns": (
-            "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "FRAMED_IP_ADDRESS",
+            "TIMESTAMP_TIMEZONE", "TIMESTAMP", "USERNAME", "CALLING_STATION_ID",
+            "FRAMED_IP_ADDRESS",
             "DEVICE_NAME", "ISE_NODE", "AUTHENTICATION_METHOD",
             "AUTHENTICATION_PROTOCOL", "AUTHORIZATION_POLICY", "POLICY_SET_NAME",
             "FAILED", "RESPONSE_TIME"),
@@ -375,14 +381,16 @@ DATACONNECT_REPORTS = {
     "radius-errors": {
         "table": "RADIUS_ERRORS_VIEW",
         "columns": (
-            "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "FRAMED_IP_ADDRESS",
+            "TIMESTAMP_TIMEZONE", "TIMESTAMP", "USERNAME", "CALLING_STATION_ID",
+            "FRAMED_IP_ADDRESS",
             "NETWORK_DEVICE_NAME", "ISE_NODE", "AUTHENTICATION_METHOD",
             "MESSAGE_CODE", "FAILURE_REASON"),
     },
     "radius-accounting": {
         "table": "RADIUS_ACCOUNTING",
         "columns": (
-            "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "FRAMED_IP_ADDRESS",
+            "TIMESTAMP_TIMEZONE", "TIMESTAMP", "USERNAME", "CALLING_STATION_ID",
+            "FRAMED_IP_ADDRESS",
             "DEVICE_NAME", "ISE_NODE", "ACCT_STATUS_TYPE", "ACCT_SESSION_ID",
             "ACCT_SESSION_TIME", "AUTHORIZATION_POLICY"),
     },
@@ -390,7 +398,8 @@ DATACONNECT_REPORTS = {
         "table": "POSTURE_ASSESSMENT_BY_ENDPOINT",
         "condition_table": "POSTURE_ASSESSMENT_BY_CONDITION",
         "columns": (
-            "TIMESTAMP", "LOGGED_AT", "ENDPOINT_MAC_ADDRESS", "IP_ADDRESS",
+            "TIMESTAMP_TIMEZONE", "TIMESTAMP", "LOGGED_AT", "ENDPOINT_MAC_ADDRESS",
+            "IP_ADDRESS",
             "ENDPOINT_OPERATING_SYSTEM", "ENDPOINT_OS", "ISE_NODE",
             "POSTURE_AGENT_VERSION", "POSTURE_STATUS", "POSTURE_POLICY_MATCHED",
             "POLICY", "POLICY_STATUS", "CONDITION_NAME", "CONDITION_STATUS",
@@ -949,13 +958,10 @@ def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
     schema = getattr(dataconnect, "schema", {})
     columns = schema.get("ENDPOINTS_DATA", {}) if isinstance(schema, dict) else {}
     if not columns:
-        # These are required by the validated ISE 3.3 ENDPOINTS_DATA contract.
-        # Avoid a separate catalog connection/query in an interactive lookup;
-        # optional IDs are selected only when the runtime already cached them.
-        columns = {
-            "MAC_ADDRESS": "VARCHAR2", "ENDPOINT_IP": "VARCHAR2",
-            "HOSTNAME": "VARCHAR2",
-        }
+        # Endpoint search fields vary between ISE reporting schemas. Discover
+        # the bounded catalog contract instead of guessing optional columns.
+        columns = _dataconnect_table_columns(
+            dataconnect, "ENDPOINTS_DATA", interactive=True)
     if comparison_column not in columns:
         raise CLIError(
             f"ENDPOINTS_DATA cannot resolve endpoints by {kind}; "
@@ -1214,6 +1220,39 @@ def _dataconnect_table_columns(dataconnect, table, *, interactive=False):
             "Data Connect catalog is busy with another query; retry after the "
             "current exporter or CLI query finishes")
     return columns
+
+
+def _radius_authentication_report_schema(dataconnect, args, preferred_columns):
+    """Discover both auth alternatives in one paced catalog statement."""
+    schema = getattr(dataconnect, "schema", None)
+    if not (getattr(dataconnect, "schema_ready", False)
+            and isinstance(schema, dict)):
+        rows = metadata_rows(
+            dataconnect,
+            ("RADIUS_AUTHENTICATIONS", "RADIUS_AUTHENTICATIONS_WEEK"),
+            query=_interactive_catalog_query(dataconnect),
+        )
+        if rows is None:
+            raise CLIError(
+                "Data Connect catalog is busy with another query; retry after "
+                "the current exporter or CLI query finishes")
+        schema = schema_by_table(rows)
+
+    required = set()
+    identifier = getattr(args, "identifier", None)
+    if identifier:
+        kind = _identifier_kind(identifier)
+        required.add("FRAMED_IP_ADDRESS" if kind == "ip" else "CALLING_STATION_ID")
+    if getattr(args, "username", None) is not None:
+        required.add("USERNAME")
+    if getattr(args, "nad", None) is not None:
+        required.add("DEVICE_NAME")
+    if getattr(args, "status", None) is not None:
+        required.add("FAILED")
+
+    table = preferred_radius_authentication_view(
+        schema, required_columns=required, preferred_columns=preferred_columns)
+    return table, schema.get(table, {})
 
 
 def _first_column(columns, *candidates):
@@ -1569,7 +1608,12 @@ def _dataconnect_report(args, client, dataconnect, cfg):
         table = spec["tables"][args.event_type]
 
     try:
-        column_types = _dataconnect_table_columns(dataconnect, table)
+        column_types = None
+        if args.command == "radius-auth":
+            table, column_types = _radius_authentication_report_schema(
+                dataconnect, args, spec["columns"])
+        if column_types is None:
+            column_types = _dataconnect_table_columns(dataconnect, table)
     except Exception as error:
         raise CLIError(f"Data Connect schema lookup failed for {table}: {error}") from error
     if not column_types:
@@ -1643,11 +1687,13 @@ def _dataconnect_report(args, client, dataconnect, cfg):
         else:
             raise CLIError(f"{table} cannot filter by --status")
 
-    timestamp_column = _first_column(columns, "TIMESTAMP", "LOGGED_AT", "LOGGED_TIME")
+    timestamp_column = _first_column(
+        columns, "TIMESTAMP_TIMEZONE", "TIMESTAMP", "LOGGED_AT", "LOGGED_TIME")
     epoch_column = _first_column(columns, "EPOCH_TIME")
     if timestamp_column:
         predicates.append(recent_event_predicate(
-            timestamp_column, getattr(cfg, "dataconnect_event_window_hours", 6)))
+            timestamp_column, getattr(cfg, "dataconnect_event_window_hours", 6),
+            timezone_aware="TIME ZONE" in column_types[timestamp_column]))
     elif epoch_column:
         window = max(1, min(6, int(getattr(
             cfg, "dataconnect_event_window_hours", 6))))
@@ -1740,7 +1786,8 @@ def _dataconnect_query(args, dataconnect, cfg):
             f"LIKE :{parameter} ESCAPE '\\'")
         parameters[parameter] = _sql_pattern(pattern)
 
-    timestamp_column = _first_column(available, "TIMESTAMP", "LOGGED_AT", "LOGGED_TIME")
+    timestamp_column = _first_column(
+        available, "TIMESTAMP_TIMEZONE", "TIMESTAMP", "LOGGED_AT", "LOGGED_TIME")
     epoch_column = _first_column(available, "EPOCH_TIME")
     safe_window = max(1, min(6, int(getattr(
         cfg, "dataconnect_event_window_hours", 6))))
@@ -1753,9 +1800,11 @@ def _dataconnect_query(args, dataconnect, cfg):
         _require_expensive(
             args, cfg, f"event window above the production-safe maximum {safe_window} hours")
     if timestamp_column:
+        lower_bound = f"SYSTIMESTAMP - NUMTODSINTERVAL({window}, 'HOUR')"
+        if "TIME ZONE" not in column_types[timestamp_column]:
+            lower_bound = f"CAST({lower_bound} AS TIMESTAMP)"
         predicates.append(
-            f"q.{timestamp_column} >= SYSTIMESTAMP - "
-            f"NUMTODSINTERVAL({window}, 'HOUR')")
+            f"q.{timestamp_column} >= {lower_bound}")
     elif epoch_column:
         predicates.append(f"q.{epoch_column} >= :minimum_epoch")
         parameters["minimum_epoch"] = int(time.time()) - window * 3600

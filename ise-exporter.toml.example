@@ -144,6 +144,7 @@ auth_guard_file = "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
 schema_seconds = 86400 # 1 day
 # Historical RADIUS aggregates are intentionally slow; the active summary is fresher.
 radius_seconds = 86400 # 1 day
+# Values above 3600 are normalized to the hard one-hour stale window.
 radius_active_seconds = 1800 # 30 minutes
 # PSN CPU, memory, latency, diagnostics, and throughput troubleshooting.
 performance_seconds = 900 # 15 minutes

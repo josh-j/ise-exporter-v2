@@ -18,11 +18,13 @@ from ..snapshots import replace_metric_snapshot
 from ..util import parse_ise_date
 from . import observe
 from .dataconnect_common import event_window_hours, recent_event_predicate
+from .dataconnect_common import schema_columns
 
 
 _METRICS = (
     metrics.ise_dataconnect_view_has_recent_rows,
     metrics.ise_dataconnect_view_newest_recent_event_timestamp,
+    metrics.ise_dataconnect_view_freshness_expected,
 )
 
 
@@ -53,27 +55,59 @@ def _timestamp(value):
     return parsed.timestamp()
 
 
-def _timestamped_views(include_tacacs=True):
-    return tuple((name, contract) for name, contract in VIEW_CONTRACTS.items()
-                 if contract.time_column
-                 and (include_tacacs or contract.domain != "tacacs"))
+def _timestamped_views(include_tacacs=True, schema=None):
+    views = []
+    for name, contract in VIEW_CONTRACTS.items():
+        if not contract.time_column or not contract.freshness_probe:
+            continue
+        if not include_tacacs and contract.domain == "tacacs":
+            continue
+        columns = schema_columns(schema, name)
+        if columns is not None and contract.time_column not in columns and not (
+                contract.time_column != "EPOCH_TIME"
+                and "TIMESTAMP_TIMEZONE" in columns):
+            continue
+        views.append((name, contract))
+    return tuple(views)
 
 
-def _query(cfg, now=None):
+def _freshness_column(view, contract, schema):
+    columns = schema_columns(schema, view)
+    if (contract.time_column != "EPOCH_TIME" and columns is not None
+            and "TIMESTAMP_TIMEZONE" in columns):
+        return "TIMESTAMP_TIMEZONE", True
+    return contract.time_column, False
+
+
+def _query(cfg, now=None, schema=None):
     """Build one bounded statement for every source-view freshness marker."""
     window = event_window_hours(
         cfg, getattr(cfg, "dataconnect_freshness_interval", 86400))
     minimum_epoch = int(time.time() if now is None else now) - window * 3600
     branches = []
-    views = _timestamped_views(getattr(cfg, "collect_tacacs", True))
+    views = _timestamped_views(getattr(cfg, "collect_tacacs", True), schema)
+    if not views:
+        raise ValueError("no Data Connect reporting view has a freshness timestamp")
     for view, contract in views:
-        column = contract.time_column
+        column, timezone_aware = _freshness_column(view, contract, schema)
         if view.startswith("TACACS_"):
             predicate = f"{column} >= {minimum_epoch}"
             projection = f"TO_CHAR({column})"
         else:
-            predicate = recent_event_predicate(column, window)
-            projection = f"TO_CHAR({column}, 'YYYY-MM-DD\"T\"HH24:MI:SS.FF')"
+            predicate = recent_event_predicate(
+                column, window, timezone_aware=timezone_aware)
+            if timezone_aware:
+                projection = (
+                    f"TO_CHAR({column}, "
+                    "'YYYY-MM-DD\"T\"HH24:MI:SS.FFTZH:TZM')"
+                )
+            else:
+                projection = (
+                    "TO_CHAR(FROM_TZ(CAST("
+                    f"{column} AS TIMESTAMP), TO_CHAR(SYSTIMESTAMP, 'TZH:TZM')) "
+                    "AT TIME ZONE 'UTC', "
+                    "'YYYY-MM-DD\"T\"HH24:MI:SS.FFTZH:TZM')"
+                )
         branches.append(f"""
             SELECT '{view.lower()}' AS view_name,
                    '{contract.domain}' AS domain, newest_event
@@ -91,10 +125,12 @@ def _query(cfg, now=None):
 def collect(dataconnect, cfg):
     """Atomically replace low-pressure row-presence and newest-event probes."""
     with observe("dataconnect_freshness"):
-        result = dataconnect.query(_query(cfg))
+        schema = getattr(dataconnect, "schema", None)
+        views = _timestamped_views(getattr(cfg, "collect_tacacs", True), schema)
+        result = dataconnect.query(_query(cfg, schema=schema))
         by_view = {str(row.get("view_name") or "").lower(): row for row in result}
         rows = []
-        for view, contract in _timestamped_views(getattr(cfg, "collect_tacacs", True)):
+        for view, contract in views:
             name = view.lower()
             row = by_view.get(name, {})
             rows.append({
@@ -102,6 +138,7 @@ def collect(dataconnect, cfg):
                 "domain": contract.domain,
                 "has_rows": int(bool(row)),
                 "newest": _timestamp(row.get("newest_event")),
+                "expected": int(contract.freshness_expected),
             })
 
         writers = []
@@ -114,5 +151,8 @@ def collect(dataconnect, cfg):
                 lambda row=row, labels=labels:
                     metrics.ise_dataconnect_view_newest_recent_event_timestamp.labels(
                         **labels).set(row["newest"]),
+                lambda row=row, labels=labels:
+                    metrics.ise_dataconnect_view_freshness_expected.labels(
+                        **labels).set(row["expected"]),
             ))
         replace_metric_snapshot(_METRICS, writers)

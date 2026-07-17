@@ -96,17 +96,19 @@ and never inherits `ise.mnt_host`; this prevents an XML API routing choice from
 silently becoming the Oracle target. Production defaults for up to 100,000
 endpoints use one sequential connection, five-second statement pacing, a 0.1%
 adaptive query-duty-cycle ceiling, 15-second total Oracle-attempt timeouts, and independent
-two-hour to 24-hour domain cadences. Valid explicit pacing, duty-cycle, startup
-spacing, and cadence values are honored; values outside this production profile
-produce startup warnings instead of being silently replaced. The client retains
+hourly to 24-hour domain cadences. Valid explicit pacing, duty-cycle, startup
+spacing, and cadence values are honored except that the accounting-derived active
+session cadence is capped at its hard one-hour stale window. A larger legacy value
+produces a startup warning and is normalized safely. The client retains
 a hard 15-second Oracle-call timeout and refuses to
 run reporting SQL until the session accepts `ALTER SESSION DISABLE PARALLEL
 QUERY`; this prevents a small aggregate result from fanning out across parallel
-database workers. The client also refuses to materialize more than 5,000 rows
-from any individual statement or 10,000 rows across a complete fixed-size domain
-batch. The separate batch ceiling accommodates the valid 6,001-row worst-case
+database workers. The client also refuses to materialize more than 6,000 rows
+from any individual statement or 12,000 rows across a complete fixed-size domain
+batch. The separate batch ceiling accommodates the valid 10,001-row worst-case
 RADIUS aggregate and 6,000-row TACACS aggregate at the supported 1,000-group
-profile without relaxing operator-query limits. Results are streamed in 100-row
+profile; operator commands retain their separate 5,000-row output limit. Results
+are streamed in 100-row
 fetches, with 1 MiB per-field and 64 MiB
 retained-payload ceilings per standalone statement or complete batch, even when
 a CLI caller or alternate
@@ -139,9 +141,13 @@ catalog-only path. Schema incompatibility is contained by an explicit
 dataset-to-view dependency map: the exporter starts its REST/OpenAPI and compatible
 reporting collectors, marks each affected dataset unavailable with a bounded reason,
 and never issues SQL for that dataset. Restart-persistent reporting snapshots are
-restored only after live discovery proves their dataset contract compatible. The
-operator-only `--dataconnect-check` remains strict and returns a failure if any
-enabled contract is inaccessible or incompatible.
+restored only after live discovery proves their dataset contract compatible.
+Known optional-column capability is exported per view and column so dashboards
+can distinguish a supported but degraded metric family from an unavailable
+dataset. The operator-only `--dataconnect-check` uses these same dataset-specific
+requirements: it fails for an inaccessible view or mandatory collector column,
+and reports absent optional columns as degraded capability without rejecting the
+connection.
 Multi-view domains execute as atomic batches of at most five statements under one
 shared lease. Statements remain sequential and retain the fixed five-second gap;
 the adaptive cooldown is calculated from their combined Oracle execution time and
@@ -149,8 +155,9 @@ begins after the complete snapshot is available. This preserves the long-run dut
 cycle without imposing a multi-hour cooldown between the statements required for
 one dashboard update. The crash-safe deadline rolls forward one statement at a
 time, so an early exporter failure cannot leave a pessimistic whole-batch lease.
-The 5,000-row and 64 MiB retained-result ceilings cover the whole batch rather
-than multiplying by its statement count.
+The 12,000-row and 64 MiB retained-result ceilings cover the whole batch rather
+than multiplying by its statement count. Each statement remains independently
+capped at 6,000 rows.
 Summary and top-group results share one Oracle aggregation wherever
 possible so completeness telemetry does not require a duplicate event scan. Exact
 RADIUS volume, failure totals, and distinct endpoint/user counts come from Cisco's
@@ -174,7 +181,7 @@ historical reporting. While schema discovery is in flight, its operational Data
 Connect work is retained in the serialized queue instead of waiting for the next
 scheduler cycle.
 Daily RADIUS reporting samples six hours, while a disjoint active-session query
-scans at most its hard 60-minute stale window every two hours. No historical windows
+scans at most its hard 60-minute stale window every hour by default. No historical windows
 are merged locally, so a reconciliation baseline cannot silently grow into a
 three-day reporting window.
 Other scheduled event scans match their cadence: six hours for PSN performance
@@ -215,7 +222,8 @@ invocations before adaptive cooldown is considered.
 The daily endpoint inventory uses one Oracle `GROUPING SETS` scan for current-row
 coverage, endpoint-policy, and identity-group dimensions; it does not scan
 `ENDPOINTS_DATA` separately for each breakdown. This keeps that
-work proportional to the current endpoint inventory (up to 100,000 rows), not
+work proportional to the Data Connect endpoint reporting snapshot (up to 100,000
+rows), not
 to an 80--200 GB MnT event-history database.
 Data Connect runs on one dedicated serialized worker lane, while the single MnT
 active-posture dataset runs on its own non-overlapping lane. Long adaptive cooldowns
@@ -295,7 +303,8 @@ are measured as UTF-8 bytes, not characters; a compact posture row is capped at
 RADIUS history is not accumulated in SQLite. The daily reporting collection
 recomputes an exact, bounded recent-window aggregate from Data Connect and persists only
 the resulting bounded Prometheus snapshot. Current active-session reconstruction
-is a separate, one-query dataset with its own two-hour cadence and snapshot.
+is a separate, one-query dataset with an hourly default cadence and snapshot,
+matching the reconstruction's hard one-hour stale ceiling.
 Neither path stores raw RADIUS identities, credentials, events, or session rows.
 
 Successful Data Connect domains store their complete bounded Prometheus

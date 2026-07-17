@@ -65,12 +65,17 @@ def test_failure_context_panels_expose_summary_reason_profile_and_location():
     dashboard = _dashboard("ise-access-troubleshooting.json")
 
     for title, label in (("Failure Classes", "failure_class"),
-                         ("Failed Authorization Profiles", "authorization_profile"),
+                         ("Failed Authorization and Identity Summary",
+                          "authorization_profile"),
                          ("Failure Locations", "location")):
         expression = _panel(dashboard, title)["targets"][0]["expr"]
         assert "ise_dataconnect_radius_failure_events" in expression
         assert label in expression
         assert 'ise_dataset_up{dataset="dataconnect_radius"' in expression
+    identity_targets = _panel(
+        dashboard, "Failed Authorization and Identity Summary")["targets"]
+    assert any("ise_dataconnect_radius_authentication_summary_events" in target["expr"]
+               for target in identity_targets)
 
 
 def test_radius_headline_stats_use_exact_totals_not_topk_breakdowns():
@@ -161,6 +166,16 @@ def test_safety_limits_render_all_values_without_a_table_frame_picker():
     assert panel["type"] == "stat"
     assert panel["options"]["orientation"] == "horizontal"
     assert {target["refId"] for target in panel["targets"]} == {"A", "B", "C", "D"}
+
+
+def test_schema_gap_table_does_not_treat_alternative_views_as_required():
+    dashboard = _dashboard("ise-exporter-health.json")
+    panel = _panel(dashboard, "Missing Optional Schema Columns")
+    missing_views = next(
+        target for target in panel["targets"] if target["refId"] == "Missing views")
+
+    assert 'requirement="dataset"' in missing_views["expr"]
+    assert 'requirement=~' not in missing_views["expr"]
 
 
 def test_exporter_health_owns_exporter_data_quality_and_freshness():
@@ -387,6 +402,9 @@ def test_secureclient_dashboard_separates_active_mnt_from_historical_dataconnect
         expressions = " ".join(target["expr"] for target in panels[title]["targets"])
         assert "ise_dataconnect_posture_" in expressions
         assert "ise_mnt_active_" not in expressions
+    assert "ise_dataconnect_posture_enforcement_assessments" in " ".join(
+        target["expr"] for target in panels[
+            "Historical Policy/Condition Results (Data Connect)"]["targets"])
 
 
 def test_secureclient_dashboard_exposes_mnt_sample_quality():
@@ -636,11 +654,12 @@ def test_exporter_health_summary_stats_are_gated_by_authoritative_datasets():
 
     unavailable = _panel(dashboard, "Unavailable")["targets"][0]["expr"]
     stale = _panel(dashboard, "Stale Datasets")["targets"][0]["expr"]
-    views = _panel(dashboard, "Empty Recent Views")["targets"][0]["expr"]
+    views = _panel(dashboard, "Missing Expected View Updates")["targets"][0]["expr"]
     for expression in (unavailable, stale):
         assert "0 * (count(ise_dataset_up" in expression
         assert 'dataset=~"$dataset",source=~"$source"' in expression
     assert 'dataset="dataconnect_freshness"' in views
+    assert "ise_dataconnect_view_freshness_expected" in views
     assert "or on() (0 *" in views
     assert "== 1" in views
     truncation = _panel(dashboard, "Truncation")["targets"][0]["expr"]
@@ -731,6 +750,23 @@ def test_psn_troubleshooting_refresh_matches_prometheus_scrape_cadence():
     dashboard = _dashboard("ise-psn-troubleshooting.json")
 
     assert dashboard["refresh"] == "1m"
+
+
+def test_schema_degradation_is_visible_on_health_and_psn_dashboards():
+    health = _dashboard("ise-exporter-health.json")
+    missing = _panel(health, "Missing Optional Schema Columns")
+    assert missing["type"] == "table"
+    expressions = " ".join(target["expr"] for target in missing["targets"])
+    assert "ise_dataconnect_schema_column_available" in expressions
+    assert "ise_dataconnect_schema_view_available" in expressions
+    assert 'requirement="optional"' in expressions
+
+    psn = _dashboard("ise-psn-troubleshooting.json")
+    warning = _panel(psn, "Missing PSN Schema Columns")
+    expression = warning["targets"][0]["expr"]
+    assert "ise_dataconnect_schema_column_available" in expression
+    assert "KEY_PERFORMANCE_METRICS" in expression
+    assert "SYSTEM_SUMMARY" in expression
 
 
 def test_exporter_health_domain_panels_do_not_publish_stale_values_during_outages():

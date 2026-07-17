@@ -15,6 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
 
 logger = logging.getLogger(__name__)
 DEFAULT_CONFIG_FILE = "/etc/ise-exporter/config.toml"
+MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL = 3600
 
 
 class ConfigError(ValueError):
@@ -84,7 +85,7 @@ class Config:
     dataconnect_event_window_hours: int = 6
     dataconnect_schema_interval: int = 86400
     dataconnect_radius_interval: int = 86400
-    dataconnect_radius_active_interval: int = 7200
+    dataconnect_radius_active_interval: int = MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL
     dataconnect_performance_interval: int = 21600
     dataconnect_posture_interval: int = 86400
     dataconnect_endpoints_interval: int = 86400
@@ -370,6 +371,16 @@ def _validate(config):
         if values[name] < 1:
             key = next(key for key, field in _TOML_FIELDS.items() if field == name)
             raise ConfigError(f"{key} must be at least 1")
+    if values["dataconnect_radius_active_interval"] > \
+            MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL:
+        logger.warning(
+            "dataconnect.intervals.radius_active_seconds=%d exceeds the hard "
+            "one-hour active-session stale window; using %d seconds",
+            values["dataconnect_radius_active_interval"],
+            MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL,
+        )
+        values["dataconnect_radius_active_interval"] = \
+            MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL
     for name in (
             "startup_rate_limit_seconds", "device_detail_request_interval_ms",
             "mnt_active_posture_request_interval_ms",

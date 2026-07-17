@@ -20,19 +20,25 @@ import oracledb
 from .. import metrics
 from ..auth_guard import PersistentAuthGuard
 from ..compatibility import valid_hostname
+from ..dataconnect_schema import (
+    DATASET_VIEW_ALTERNATIVES,
+    MANDATORY_COLUMNS_BY_VIEW,
+    VIEW_CONTRACTS,
+    optional_schema_gaps,
+)
+from ..snapshots import snapshot_lock
 
 logger = logging.getLogger(__name__)
 
-# This matches the operator CLI's absolute row limit and is five times larger
-# than any scheduled top-K result. Even if a SQL/view contract regresses, the
-# exporter will not materialize an unbounded slice of the MnT database.
-MAX_RESULT_ROWS = 5000
+# The operator CLI remains capped at 5,000 requested rows. Scheduled collectors
+# can return one exact summary row in addition to five independent 1,000-group
+# breakdowns, so retain bounded headroom without allowing an unbounded slice.
+MAX_RESULT_ROWS = 6000
 # Atomic scheduled domains intentionally contain several individually bounded
 # top-K statements. At the supported 1,000-group ceiling, RADIUS can return
-# 6,001 aggregate rows and TACACS 6,000; a 5,000-row whole-batch cap therefore
-# rejected valid maximum collection. Keep each statement at 5,000 while allowing
-# the complete fixed-size batch enough room without approaching snapshot limits.
-MAX_BATCH_RESULT_ROWS = 10000
+# 10,001 aggregate rows and TACACS 6,000. Keep enough fixed headroom for the
+# complete RADIUS batch without approaching the 20,000-sample snapshot ceiling.
+MAX_BATCH_RESULT_ROWS = 12000
 FETCH_BATCH_ROWS = 100
 MAX_FIELD_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 64 * 1024 * 1024
@@ -59,6 +65,7 @@ _QUERY_VIEWS = (
     "posture_assessment_by_endpoint",
     "profiled_endpoints_summary",
     "radius_authentication_summary",
+    "radius_authentications_week",
     "radius_authentications",
     "radius_accounting",
     "radius_errors_view",
@@ -188,6 +195,7 @@ class DataConnectClient:
         self.password = cfg.dataconnect_password
         self.ca_bundle = cfg.dataconnect_ca_bundle
         self.verify = cfg.dataconnect_ssl_verify
+        self.collect_tacacs = bool(getattr(cfg, "collect_tacacs", True))
         # ``call_timeout`` is the last server-work boundary after SQL predicates.
         # Keep it hard here as well as in the environment parser: CLI callers,
         # tests, and integrations can construct Config-like objects directly.
@@ -240,6 +248,11 @@ class DataConnectClient:
 
     def set_schema(self, schema, dataset_failures=None):
         """Retain startup-discovered view capabilities without another DB query."""
+        with snapshot_lock:
+            self._set_schema(schema, dataset_failures)
+
+    def _set_schema(self, schema, dataset_failures=None):
+        """Publish normalized schema state while the scrape lock is held."""
         if not isinstance(schema, dict):
             raise TypeError("Data Connect schema must be a table mapping")
         self.schema = {
@@ -252,17 +265,48 @@ class DataConnectClient:
         }
         self.dataset_schema_failures = dict(dataset_failures or {})
         self.schema_ready = True
-        radius_columns = self.schema.get("RADIUS_AUTHENTICATIONS", {})
-        if (radius_columns and "AUTHORIZATION_POLICY" not in radius_columns
-                and "POLICY_SET_NAME" in radius_columns):
+        gaps = optional_schema_gaps(self.schema)
+        metrics.ise_dataconnect_schema_column_available.clear()
+        metrics.ise_dataconnect_schema_view_available.clear()
+        alternative_views = {
+            view
+            for alternatives in DATASET_VIEW_ALTERNATIVES.values()
+            for choices in alternatives
+            for view in choices
+        }
+        for table, contract in VIEW_CONTRACTS.items():
+            view_requirement = "dataset"
+            if table in alternative_views:
+                view_requirement = "alternative"
+            elif contract.domain == "tacacs" and not self.collect_tacacs:
+                view_requirement = "optional"
+            metrics.ise_dataconnect_schema_view_available.labels(
+                view=table, requirement=view_requirement,
+            ).set(int(table in self.schema))
+            if table not in self.schema:
+                continue
+            available = set(self.schema[table])
+            for column in sorted(contract.required | contract.optional):
+                requirement = (
+                    "mandatory"
+                    if column in MANDATORY_COLUMNS_BY_VIEW[table]
+                    else "optional"
+                )
+                metrics.ise_dataconnect_schema_column_available.labels(
+                    view=table, column=column, requirement=requirement,
+                ).set(int(column in available))
+        metrics.ise_dataconnect_schema_optional_columns_missing.set(
+            sum(len(columns) for columns in gaps.values()))
+        for table, columns in gaps.items():
             logger.warning(
-                "RADIUS_AUTHENTICATIONS has no optional AUTHORIZATION_POLICY column; "
-                "using POLICY_SET_NAME for the authorization-policy metric dimension")
-        elif (radius_columns and "AUTHORIZATION_POLICY" not in radius_columns
-              and "POLICY_SET_NAME" not in radius_columns):
+                "%s omits optional Data Connect columns: %s; dependent metrics "
+                "will degrade without blocking other columns or datasets",
+                table, ", ".join(columns))
+        week_columns = self.schema.get("RADIUS_AUTHENTICATIONS_WEEK", {})
+        if "AUTHORIZATION_POLICY" not in week_columns:
             logger.warning(
-                "RADIUS_AUTHENTICATIONS has no optional authorization-policy column; "
-                "using 'none' for the authorization-policy metric dimension")
+                "RADIUS_AUTHENTICATIONS_WEEK with AUTHORIZATION_POLICY is unavailable; "
+                "using the base authentication view and 'none' for that metric dimension")
         accounting_columns = self.schema.get("RADIUS_ACCOUNTING", {})
         if accounting_columns and "AUTHORIZATION_POLICY" not in accounting_columns:
             logger.warning(

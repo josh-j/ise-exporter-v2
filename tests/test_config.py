@@ -146,3 +146,14 @@ def test_defaults_still_support_direct_test_construction():
     assert len(fields(config)) > 60
     assert config.state_db_path == "/var/lib/ise-exporter/state.sqlite3"
     assert config.dataconnect_ready is False
+
+
+def test_active_radius_interval_above_stale_window_is_safely_capped(
+        tmp_path, caplog):
+    config = Config.load(_write(tmp_path, """
+[dataconnect.intervals]
+radius_active_seconds = 7200
+"""))
+
+    assert config.dataconnect_radius_active_interval == 3600
+    assert "exceeds the hard one-hour active-session stale window" in caplog.text

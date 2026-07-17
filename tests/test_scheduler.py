@@ -5,7 +5,7 @@ import pytest
 from prometheus_client import CollectorRegistry, Gauge
 
 from ise_exporter import collectors, metrics
-from ise_exporter.dataconnect_schema import VIEW_CONTRACTS
+from ise_exporter.dataconnect_schema import MANDATORY_COLUMNS_BY_VIEW, VIEW_CONTRACTS
 import ise_exporter.scheduler as scheduler_module
 from ise_exporter.scheduler import PollScheduler, _next_deadline
 
@@ -189,7 +189,7 @@ def _schema_rows(include_tacacs=False):
         }
         for table, contract in VIEW_CONTRACTS.items()
         if include_tacacs or contract.domain != "tacacs"
-        for column in contract.required
+        for column in contract.required | MANDATORY_COLUMNS_BY_VIEW[table]
     ]
 
 
@@ -1093,7 +1093,7 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     assert metrics.ise_dataset_interval_seconds.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 86400
     assert metrics.ise_dataset_interval_seconds.labels(
-        dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 7200
+        dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 3600
     assert metrics.ise_dataset_enabled.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     assert {source for source, _interval, _enabled in scheduler.dataset_plan.values()} == {
@@ -1106,6 +1106,13 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     scheduler._update_freshness(172901.0)
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 0
+
+
+def test_plan_caps_direct_active_radius_interval_at_stale_window():
+    scheduler = PollScheduler(_cfg(
+        dataconnect_radius_active_interval=7200), object(), object())
+
+    assert scheduler.dataset_plan["dataconnect_radius_active"][1] == 3600
 
 
 def test_future_success_after_large_backward_clock_correction_is_not_fresh():

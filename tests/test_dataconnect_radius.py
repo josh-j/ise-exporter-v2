@@ -42,6 +42,9 @@ class DataConnect:
                 {"breakdown": "failure_context", "failure_class": "credentials",
                  "authorization_profiles": "PermitAccess", "location": "Campus",
                  "events": 9, "total_groups": 2},
+                {"breakdown": "identity_store", "dimension_value": "Internal Users",
+                 "passed_events": 90, "failure_events": 4, "total_events": 94,
+                 "events": 94, "total_groups": 1},
             ]
         if "grouped_auth" in lowered:
             return [
@@ -103,11 +106,18 @@ def test_collects_bounded_aggregated_radius_metrics():
                  "message_code", "nad") == {("5440", "nad-1"): 3}
     assert metrics.ise_dataconnect_radius_authentication_events_total._value.get() == 107
     assert metrics.ise_dataconnect_radius_failure_events_total._value.get() == 11
-    assert metrics.ise_dataconnect_radius_distinct_endpoints_total._value.get() == 81
-    assert metrics.ise_dataconnect_radius_distinct_users_total._value.get() == 54
+    assert _rows(metrics.ise_dataconnect_radius_distinct_endpoints_total,
+                 "source_view") == {("radius_authentication_summary",): 81}
+    assert _rows(metrics.ise_dataconnect_radius_distinct_users_total,
+                 "source_view") == {("radius_authentication_summary",): 54}
     assert _rows(metrics.ise_dataconnect_radius_failure_events,
                  "failure_class", "authorization_profile", "location") == {
         ("credentials", "PermitAccess", "Campus"): 9}
+    assert _rows(metrics.ise_dataconnect_radius_authentication_summary_events,
+                 "dimension", "value", "status") == {
+        ("identity_store", "Internal Users", "passed"): 90,
+        ("identity_store", "Internal Users", "failed"): 4,
+    }
     assert metrics.ise_dataconnect_radius_accounting_events_total._value.get() == 200
     assert _rows(metrics.ise_dataconnect_radius_accounting_event_type_total,
                  "event_type") == {("start",): 120, ("stop",): 80}
@@ -163,12 +173,36 @@ def test_authentication_and_latency_share_one_bounded_view_scan():
     assert "policy_set_name" not in queries["authentication"]
 
 
-def test_authentication_query_falls_back_to_policy_set_for_mnt_schema_variant():
+def test_authentication_query_accepts_discovered_base_policy_set():
     query = dataconnect_radius._queries(
         25, authentication_policy_column="policy_set_name")["authentication"]
 
     assert "policy_set_name AS authorization_policy" in query
-    assert "authentication_protocol, device_name,\n                     policy_set_name" in query
+
+
+def test_authentication_query_uses_week_view_for_real_authorization_policy():
+    query = dataconnect_radius._queries(
+        25, authentication_view="RADIUS_AUTHENTICATIONS_WEEK")["authentication"]
+
+    assert "FROM radius_authentications_week" in query
+    assert "authorization_policy AS authorization_policy" in query
+    assert "device_name, authorization_policy, ise_node" in query
+    assert "GROUPING(authentication_method)" in query
+
+
+def test_discovered_base_policy_is_retained_without_losing_detail_columns():
+    client = DataConnect()
+    client.schema = {
+        "RADIUS_AUTHENTICATIONS": {"TIMESTAMP": "TIMESTAMP", "POLICY_SET_NAME": "VARCHAR2"},
+        "RADIUS_AUTHENTICATIONS_WEEK": {
+            "TIMESTAMP": "TIMESTAMP", "AUTHORIZATION_POLICY": "VARCHAR2"},
+    }
+    assert dataconnect_radius._authentication_source(client) == (
+        "RADIUS_AUTHENTICATIONS", "policy_set_name")
+
+    del client.schema["RADIUS_AUTHENTICATIONS_WEEK"]
+    assert dataconnect_radius._authentication_source(client) == (
+        "RADIUS_AUTHENTICATIONS", "policy_set_name")
 
 
 def test_authentication_query_uses_stable_label_without_policy_columns():
@@ -183,7 +217,8 @@ def test_authentication_query_uses_stable_label_without_policy_columns():
 
     query = next(sql for sql in client.sql if "grouped_auth" in sql.lower())
     assert "'none' AS authorization_policy" in query
-    assert "device_name,\n                     'none', ise_node" in query
+    assert "'unknown' AS device_name" in query
+    assert "'unknown' AS ise_node" in query
 
 
 def test_exact_volume_uses_patch11_aggregate_view_not_raw_authentication_rows():
@@ -199,6 +234,47 @@ def test_exact_volume_uses_patch11_aggregate_view_not_raw_authentication_rows():
     assert "authorization_profiles" in queries["volume_summary"]
     assert "SUM(NVL(failed_count, 0))" in queries["volume_summary"]
     assert "policy_set_name" not in queries["authentication"]
+
+
+def test_volume_summary_omits_unavailable_dimensions_and_empty_failure_groups():
+    schema = {
+        "RADIUS_AUTHENTICATION_SUMMARY": {
+            "TIMESTAMP": "TIMESTAMP", "PASSED_COUNT": "NUMBER",
+            "FAILED_COUNT": "NUMBER", "IDENTITY_STORE": "VARCHAR2",
+        },
+    }
+
+    query = dataconnect_radius._queries(25, schema=schema)["volume_summary"]
+
+    assert "(identity_store)" in query
+    assert "GROUPING(identity_group)" not in query
+    assert "GROUPING(device_type)" not in query
+    assert "GROUPING(security_group)" not in query
+    assert "breakdown = 'failure_context' AND events > 0" in query
+
+
+def test_unsupported_distinct_metrics_are_absent_instead_of_zero():
+    cfg = types.SimpleNamespace(dataconnect_max_groups=25)
+    dataconnect_radius.collect_reporting(DataConnect(), cfg)
+    assert _rows(metrics.ise_dataconnect_radius_distinct_users_total,
+                 "source_view")
+
+    client = DataConnect()
+    client.schema = {
+        "RADIUS_AUTHENTICATIONS": {"TIMESTAMP": "TIMESTAMP"},
+        "RADIUS_AUTHENTICATION_SUMMARY": {
+            "TIMESTAMP": "TIMESTAMP", "PASSED_COUNT": "NUMBER",
+            "FAILED_COUNT": "NUMBER",
+        },
+        "RADIUS_ACCOUNTING": {"TIMESTAMP": "TIMESTAMP"},
+        "RADIUS_ERRORS_VIEW": {"TIMESTAMP": "TIMESTAMP"},
+    }
+    dataconnect_radius.collect_reporting(client, cfg)
+
+    assert _rows(metrics.ise_dataconnect_radius_distinct_endpoints_total,
+                 "source_view") == {}
+    assert _rows(metrics.ise_dataconnect_radius_distinct_users_total,
+                 "source_view") == {}
 
 
 def test_accounting_breakdowns_share_one_bounded_view_scan():
@@ -221,8 +297,10 @@ def test_accounting_query_uses_stable_label_when_policy_column_is_absent():
 
     query = next(sql for sql in client.sql if "grouped_accounting" in sql.lower())
     assert "'none' AS authorization_policy" in query
-    assert "device_name,\n                     'none', ise_node" in query
-    assert "device_name, authorization_policy" not in query
+    assert "'unknown' AS device_name" in query
+    assert "'unknown' AS ise_node" in query
+    assert "GROUPING(acct_status_type)" in query
+    assert "GROUPING('unknown')" not in query
 
 
 def test_accounting_query_rejects_untrusted_policy_expression():

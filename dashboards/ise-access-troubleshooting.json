@@ -1228,8 +1228,8 @@
     {
       "id": 25,
       "type": "bargauge",
-      "title": "Failed Authorization Profiles",
-      "description": "Authorization profiles associated with failed authentications in the bounded aggregate reporting window.",
+      "title": "Failed Authorization and Identity Summary",
+      "description": "Authorization profiles plus documented identity-store, identity-group, device-type, and security-group dimensions from the bounded aggregate reporting window.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1242,6 +1242,16 @@
           "instant": true,
           "legendFormat": "{{authorization_profile}}",
           "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "topk(20, ise_dataconnect_radius_authentication_summary_events{status=\"failed\",dimension=~\"identity_store|identity_group|device_type|security_group\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{dimension}} / {{value}}",
+          "refId": "B",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"

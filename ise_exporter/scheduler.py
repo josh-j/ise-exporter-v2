@@ -13,6 +13,7 @@ import threading
 import time
 
 from . import collectors, metrics
+from .config import MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL
 from .state import StateStore
 from .snapshots import (
     restore_metric_snapshot,
@@ -273,8 +274,12 @@ class PollScheduler:
                     cfg, "dataconnect_schema_interval", 86400), 86400),
                 self._schema_managed),
             "dataconnect_radius_active": (
-                "dataconnect", _configured_interval(getattr(
-                    cfg, "dataconnect_radius_active_interval", 7200), 7200), True),
+                "dataconnect", min(
+                    MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL,
+                    _configured_interval(getattr(
+                        cfg, "dataconnect_radius_active_interval",
+                        MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL),
+                        MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL)), True),
             "dataconnect_performance": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_performance_interval", 21600), 21600), True),

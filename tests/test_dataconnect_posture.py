@@ -33,10 +33,14 @@ class DataConnect:
         self.sql.append(sql)
         lowered = sql.lower()
         if "grouped_conditions" in lowered:
-            return [{"policy": "Firewall", "policy_status": "Failed",
+            return [{"breakdown": "conditions", "policy": "Firewall", "policy_status": "Failed",
                      "condition_name": "Firewall enabled", "condition_status": "Failed",
                      "enforcement_name": "Optional", "endpoints": 2,
-                     "total_groups": 4}]
+                     "total_groups": 4},
+                    {"breakdown": "enforcement", "enforcement_name": "Remediate",
+                     "enforcement_type": "Mandatory", "enforcement_status": "Applied",
+                     "posture_status": "NonCompliant", "ise_node": "psn-1",
+                     "endpoints": 2, "total_groups": 1}]
         return [
             {"breakdown": "endpoints", "posture_status": "Compliant",
              "endpoint_operating_system": "Windows",
@@ -79,19 +83,27 @@ def test_collects_posture_without_endpoint_identity_labels():
     assert _rows(metrics.ise_dataconnect_posture_condition_assessments,
                  "policy", "condition", "condition_status") == {
         ("Firewall", "Firewall enabled", "Failed"): 2}
+    assert _rows(metrics.ise_dataconnect_posture_enforcement_assessments,
+                 "enforcement_type", "enforcement_status", "psn") == {
+        ("Mandatory", "Applied", "psn-1"): 2}
     assert _rows(metrics.ise_dataconnect_posture_failures,
                  "message_code", "status") == {("8701", "NonCompliant"): 2}
     assert metrics.ise_dataconnect_posture_assessed_endpoints_total._value.get() == 12
-    assert metrics.ise_dataconnect_posture_eligible_endpoints_total._value.get() == 10
-    assert metrics.ise_dataconnect_posture_eligible_recently_assessed_total._value.get() == 8
-    assert metrics.ise_dataconnect_posture_eligible_without_recent_assessment_total._value.get() == 2
-    assert metrics.ise_dataconnect_posture_eligible_recent_assessment_ratio._value.get() == .8
+    assert _rows(metrics.ise_dataconnect_posture_eligible_endpoints_total,
+                 "source_view") == {("endpoints_data",): 10}
+    assert _rows(metrics.ise_dataconnect_posture_eligible_recently_assessed_total,
+                 "source_view") == {("endpoints_data",): 8}
+    assert _rows(metrics.ise_dataconnect_posture_eligible_without_recent_assessment_total,
+                 "source_view") == {("endpoints_data",): 2}
+    assert _rows(metrics.ise_dataconnect_posture_eligible_recent_assessment_ratio,
+                 "source_view") == {("endpoints_data",): .8}
     assert metrics.ise_dataconnect_posture_compliant_endpoints_total._value.get() == 8
     assert metrics.ise_dataconnect_posture_failed_endpoints_total._value.get() == 2
     assert metrics.ise_dataconnect_posture_compliance_ratio._value.get() == .8
     assert _rows(metrics.ise_dataconnect_posture_topk_truncated,
                  "breakdown") == {
-        ("endpoints",): 0, ("conditions",): 1, ("failures",): 1}
+        ("endpoints",): 0, ("conditions",): 1, ("enforcement",): 0,
+        ("failures",): 1}
     for metric in dataconnect_posture._METRICS:
         assert "endpoint" not in metric._labelnames
         assert "username" not in metric._labelnames
@@ -111,3 +123,36 @@ def test_posture_uses_latest_endpoint_state_and_explicit_failure_statuses():
     assert queries["snapshot"].count("UPPER(REPLACE(REPLACE(REPLACE(") >= 3
     assert "failure_reason" not in queries["snapshot"].lower()
     assert "('noncompliant', 'failed', 'error')" in queries["snapshot"]
+
+
+def test_posture_falls_back_to_row_identity_when_optional_ids_are_absent():
+    schema = {
+        "POSTURE_ASSESSMENT_BY_ENDPOINT": {
+            "ID": "NUMBER", "TIMESTAMP": "TIMESTAMP",
+        },
+    }
+
+    query = dataconnect_posture._queries(20, schema=schema)["snapshot"]
+
+    assert "PARTITION BY 'row:' || TO_CHAR(id)" in query
+    assert "PARTITION BY CASE" not in query
+    assert "CASE\n                           ELSE" not in query
+
+
+def test_unavailable_eligibility_metrics_are_absent_instead_of_zero():
+    cfg = types.SimpleNamespace(dataconnect_max_groups=20)
+    dataconnect_posture.collect(DataConnect(), cfg)
+    assert _rows(metrics.ise_dataconnect_posture_eligible_endpoints_total,
+                 "source_view")
+
+    class NoEligibility(DataConnect):
+        def query(self, sql):
+            return [row for row in super().query(sql)
+                    if row.get("breakdown") != "coverage"]
+
+    dataconnect_posture.collect(NoEligibility(), cfg)
+
+    assert _rows(metrics.ise_dataconnect_posture_eligible_endpoints_total,
+                 "source_view") == {}
+    assert _rows(metrics.ise_dataconnect_posture_eligible_recent_assessment_ratio,
+                 "source_view") == {}

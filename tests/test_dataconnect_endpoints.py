@@ -47,7 +47,8 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     dataconnect_endpoints.collect(client, types.SimpleNamespace(dataconnect_max_groups=50))
 
     assert metrics.ise_dataconnect_endpoints_total._value.get() == 80000
-    assert metrics.ise_dataconnect_endpoints_unknown_profile_total._value.get() == 50
+    assert _rows(metrics.ise_dataconnect_endpoints_unknown_profile_total,
+                 "source_view") == {("endpoints_data",): 50}
     assert _rows(metrics.ise_dataconnect_endpoints_by_profile, "profile") == {
         ("Windows10-Workstation",): 40000}
     assert _rows(metrics.ise_dataconnect_endpoints_by_identity_group,
@@ -78,6 +79,23 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     assert "AS unknown_profile" in coverage_sql
     inventory_sql = next(sql for sql in client.sql if "inventory_groups" in sql)
     assert "GROUP BY GROUPING SETS" in inventory_sql
-    assert "GROUPING SETS ((), (endpoint_policy), (identity_group_id))" in inventory_sql
+    assert "GROUPING SETS ((), (metric_profile), (metric_identity_group))" in inventory_sql
     assert inventory_sql.count("FROM endpoints_data") == 1
     assert len(client.sql) == 2
+
+
+def test_unsupported_unknown_profile_metric_is_absent_instead_of_zero():
+    cfg = types.SimpleNamespace(dataconnect_max_groups=50)
+    dataconnect_endpoints.collect(DataConnect(), cfg)
+    assert _rows(metrics.ise_dataconnect_endpoints_unknown_profile_total,
+                 "source_view")
+
+    client = DataConnect()
+    client.schema = {
+        "ENDPOINTS_DATA": {},
+        "PROFILED_ENDPOINTS_SUMMARY": {"TIMESTAMP": "TIMESTAMP"},
+    }
+    dataconnect_endpoints.collect(client, cfg)
+
+    assert _rows(metrics.ise_dataconnect_endpoints_unknown_profile_total,
+                 "source_view") == {}

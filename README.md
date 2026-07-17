@@ -288,6 +288,10 @@ ise-exporter --mnt-check
 ise-exporter --pxgrid-check
 ```
 
+`--dataconnect-check` validates the same mandatory per-dataset capabilities used
+by the scheduled collectors. Schema columns that only enrich individual metrics
+are reported as degraded optional capabilities and do not block startup.
+
 ```powershell
 Test-IseHealth
 Test-IseErs
@@ -324,23 +328,32 @@ without recreating the old environment-variable configuration surface. The TOML
 sample is production-oriented for up to 100,000 endpoints:
 database-side aggregation, collapsed summary/top-group scans, serialized five-second
 query pacing, cadence-aligned event scans capped at six hours, daily RADIUS reporting,
-two-hour bounded active-session reconstruction, six-hour performance reporting,
+hourly bounded active-session reconstruction, six-hour performance reporting,
 daily posture/TACACS/NAD reporting, daily source-freshness checks, and daily
 inventory state. A private
 SQLite cache survives restarts. MnT fetches at most 250 new or rotating endpoint
 details per 15-minute cycle, while cached active details retain dashboard coverage.
 RADIUS exact volume, failure, and distinct-identity totals use Cisco's Patch 11
-`RADIUS_AUTHENTICATION_SUMMARY` aggregate view. Only method, protocol,
-authorization-policy and status-specific latency breakdowns read the bounded raw
-authentication view; failure class, authorization profile, and location remain on
-the aggregate view. Configured-NAD activity health also sums passed and failed
+`RADIUS_AUTHENTICATION_SUMMARY` aggregate view. Method, protocol, and
+status-specific latency breakdowns read one bounded authentication event view. The
+collector prefers `RADIUS_AUTHENTICATIONS_WEEK` when it exposes the documented
+`AUTHORIZATION_POLICY`; it never relabels base-view `POLICY_SET_NAME` as an
+authorization policy. Failure class, authorization profile, location, identity
+store/group, device type, and security group remain on the aggregate view.
+Configured-NAD activity health also sums passed and failed
 counts from that aggregate view rather than grouping raw events again. RADIUS
 historical gauges come from one exact
 configured-window snapshot per day. The
 separate active-session dataset scans only the configured stale window every
-two hours; no locally merged historical event windows can grow without bound.
+hour by default, matching its hard one-hour stale ceiling; no locally merged
+historical event windows can grow without bound.
+Legacy `radius_active_seconds` values above one hour are normalized to one hour
+with a startup warning so the cadence cannot exceed the reconstruction window.
 TACACS applies a six-hour bound inside Cisco's two-day views, and endpoint totals,
-field coverage, and posture applicability share one inventory scan. CLI reports,
+field coverage, and posture applicability share one reporting-inventory scan.
+Cisco documents that some `ENDPOINTS_DATA` attributes can synchronize with up to
+12 hours of delay, so these gauges are inventory snapshots rather than exact
+real-time endpoint state. CLI reports,
 context searches, and live completion obey the same event-window ceiling.
 
 Before starting the service, verify the reporting connection:
