@@ -1186,6 +1186,44 @@ def test_pan_mnt_dashboard_uses_deployment_roles_and_node_filters():
     assert 'node=~"$mnt"' in _panel(
         dashboard, "MnT Node Status")["targets"][0]["expr"]
 
+    performance_panels = {
+        "Node Load": "ise_dataconnect_psn_load_percent",
+        "CPU Utilization": "ise_dataconnect_node_cpu_utilization_percent",
+        "Memory Utilization": "ise_dataconnect_node_memory_utilization_percent",
+        "Highest Disk Utilization per PAN/MnT":
+            "ise_dataconnect_node_disk_utilization_percent",
+        "Reporting Logs, Noise, and Suppression":
+            "ise_dataconnect_psn_mnt_logs_per_hour",
+        "PAN and MnT Diagnostic Work Queue":
+            "ise_dataconnect_diagnostic_events",
+    }
+    for title, metric in performance_panels.items():
+        expressions = " ".join(
+            target["expr"] for target in _panel(
+                dashboard, title)["targets"])
+        assert metric in expressions
+        assert 'node=~"$pan|$mnt"' in expressions
+        assert 'dataset="dataconnect_performance",source="dataconnect"' \
+            in expressions
+
+    mnt_latency_panels = {
+        "Total Authentication Latency":
+            "ise_mnt_active_total_authentication_latency_seconds",
+        "Authentication Step Latency":
+            "ise_mnt_active_step_latency_seconds",
+        "Authentication Step Samples":
+            "ise_mnt_active_step_latency_samples",
+    }
+    for title, metric in mnt_latency_panels.items():
+        expression = _panel(dashboard, title)["targets"][0]["expr"]
+        assert metric in expression
+        assert 'dataset="mnt_active_posture",source="mnt"' in expression
+
+    assert "ise_dataset_up" in _panel(
+        dashboard, "Node Performance Dataset")["targets"][0]["expr"]
+    assert "ise_dataset_last_success_timestamp" in _panel(
+        dashboard, "Node Performance Age")["targets"][0]["expr"]
+
 
 def test_dataset_failures_route_to_responsible_dashboard():
     health = _dashboard("ise-exporter-health.json")

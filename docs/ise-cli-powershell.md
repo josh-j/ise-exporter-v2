@@ -12,6 +12,10 @@ Data Connect serialization/pacing, schema discovery, query windows, and hard row
 limits in one audited implementation rather than recreating them with a second
 Oracle or HTTP client.
 
+Native installations resolve the backend from
+`/opt/ise-exporter/.venv/bin/ise-cli-backend` by default. `ISE_CLI_BACKEND` remains
+the explicit override for Nix wrappers, tests, and development checkouts.
+
 ## Start PowerShell
 
 The native installer copies the module into PowerShell's system module path and
@@ -65,8 +69,9 @@ Find-IseEndpoint '*LAPTOP*' -AllowExpensive |
     Select-Object mac_address, hostname, endpoint_policy, matched_context |
     Format-Table
 
-Get-IseRadiusAuthentication -Status failed -Limit 100 |
-    Group-Object nad |
+Get-IseRadiusAuthentication -Psn laba-ise-001 -Failed `
+    -PolicySet Wired -Protocol EAP-TLS -Hours 1 -Limit 200 |
+    Group-Object PolicySet |
     Sort-Object Count -Descending
 
 Get-IseTacacsActivity -EventType accounting -Username netadmin |
@@ -113,7 +118,9 @@ ActiveList, and the hard 5,000-row Data Connect ceiling.
 | `Get-IseNetworkPolicySet`, `Get-IseAuthorizationProfile` | Network Access policy objects |
 | `Get-IseDeviceAdminPolicySet`, `Get-IseTacacsCommandSet`, `Get-IseTacacsShellProfile` | Device Administration objects |
 | `Get-IseCertificate` | System and trusted certificates |
-| `Get-IseRadiusAuthentication`, `Get-IseRadiusError`, `Get-IseRadiusAccounting` | Bounded RADIUS reports |
+| `Get-IseRadiusAuthentication` | Friendly filtered RADIUS authentication view |
+| `Watch-IseRadiusAuthentication` | Deduplicated paced RADIUS authentication watch |
+| `Get-IseRadiusError`, `Get-IseRadiusAccounting` | Bounded RADIUS error and accounting reports |
 | `Get-IseEndpointReport` | Data Connect endpoint inventory |
 | `Get-IsePostureAssessment` | Endpoint- or condition-level posture reports |
 | `Get-IsePsnMetric` | PSN key-performance metrics |
@@ -136,6 +143,43 @@ Get-IseCertificate -Node laba-ise-001
 Get-IsePostureAssessment -Conditions -Identifier AA:BB:CC:DD:EE:FF
 Invoke-IseReadOnlyRequest -Family ers -Path /config/identitygroup -Parameter @{size=25}
 ```
+
+## RADIUS authentication view
+
+The focused command replaces the verbose generic Data Connect query for normal
+authentication troubleshooting:
+
+```powershell
+Get-IseRadiusAuthentication -Psn laba-ise-001 -Failed `
+  -PolicySetLike 'host*-*-*' -AuthorizationPolicyLike 'Deny*' `
+  -Hours 1 -Limit 200
+```
+
+It performs the filtering in Data Connect and returns typed objects with a compact
+default view: `Time`, `Result`, `Endpoint`, `Nad`, `Psn`, `Method`, `Protocol`,
+`PolicySet`, `AuthorizationPolicy`, and `ResponseTime`. The common operational
+filters are `-Endpoint` (also `-MacAddress` or `-IpAddress`), `-Nad`, `-Psn`,
+`-Result`, `-Failed`, `-PolicySet`, `-AuthorizationPolicy`, `-Method`, and
+`-Protocol`. `-NadLike`, `-PsnLike`, `-PolicySetLike`, and
+`-AuthorizationPolicyLike` perform case-insensitive server-side wildcard matching
+with `*` and `?`. Both `'host*-*-*'` and `'host\*-*-*'` are accepted; quoting the
+first form is recommended in PowerShell. The original Data Connect fields remain available for
+`Select-Object`, export, and scripts. Exact and wildcard username filters remain
+available as secondary `-Username` and `-UsernameLike` parameters.
+
+To keep watching for new matching rows:
+
+```powershell
+Watch-IseRadiusAuthentication -Psn laba-ise-001 -Failed `
+  -PolicySetLike 'host*-*-*' -Protocol EAP-TLS -Hours 1
+```
+
+The watcher emits normal PowerShell objects in chronological order, suppresses
+duplicates with a bounded 10,000-record key cache, and polls every 30 seconds by
+default. Every poll uses the same shared Data Connect gate as the exporter, so an
+active query or adaptive cooldown queues the watch instead of bypassing database
+protection. Use `-IntervalSeconds` to request a slower interval and Ctrl-C to stop.
+`-Once` performs one watcher iteration for scripts and validation.
 
 ## Cached data and live fallbacks
 

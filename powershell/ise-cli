@@ -13,9 +13,13 @@ run_backend() {
     if [[ -n "${ISE_CLI_BACKEND:-}" && -x "${ISE_CLI_BACKEND}" ]]; then
         exec "${ISE_CLI_BACKEND}" "$@"
     fi
-    INSTALLED_BACKEND="${SCRIPT_DIR}/../.venv/bin/ise-cli-backend"
+    INSTALLED_BACKEND="/opt/ise-exporter/.venv/bin/ise-cli-backend"
     if [[ -x "$INSTALLED_BACKEND" ]]; then
         exec "$INSTALLED_BACKEND" "$@"
+    fi
+    SOURCE_BACKEND="${SCRIPT_DIR}/../.venv/bin/ise-cli-backend"
+    if [[ -x "$SOURCE_BACKEND" ]]; then
+        exec "$SOURCE_BACKEND" "$@"
     fi
     if command -v ise-cli-backend >/dev/null 2>&1; then
         exec ise-cli-backend "$@"

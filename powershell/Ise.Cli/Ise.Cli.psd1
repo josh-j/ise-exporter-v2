@@ -64,6 +64,7 @@
         'Get-IseTacacsShellProfile',
         'Get-IseCertificate',
         'Get-IseRadiusAuthentication',
+        'Watch-IseRadiusAuthentication',
         'Get-IseEndpointReport',
         'Get-IseRadiusError',
         'Get-IseRadiusAccounting',

@@ -10,7 +10,8 @@ Import-Module (Join-Path $PSScriptRoot 'Ise.Cli/Ise.Cli.psd1') -Force
 if ($CommandArgument.Count -eq 0) {
     Write-Host 'ISE PowerShell commands are loaded. Examples:'
     Write-Host '  Find-IseEndpoint LAB-*'
-    Write-Host '  Get-IseRadiusAuthentication -Status failed | Format-Table'
+    Write-Host "  Get-IseRadiusAuthentication -Psn laba-ise-001 -Failed -Hours 1"
+    Write-Host '  Watch-IseRadiusAuthentication -Psn laba-ise-001 -Failed -PolicySet Wired'
     Write-Host '  Get-Command -Module Ise.Cli'
     return
 }

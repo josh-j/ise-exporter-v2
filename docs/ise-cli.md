@@ -149,7 +149,7 @@ section remains visible even when there is no current session or recent event.
 | `device-admin-policy-sets`, `tacacs-command-sets`, `tacacs-shell-profiles` | Inspect Device Administration configuration |
 | `certificates` | List system and trusted certificates, optionally by node/store |
 | `endpoint-report` | Query bounded endpoint inventory directly from Data Connect |
-| `radius-auth`, `radius-errors`, `radius-accounting` | Query the configured bounded RADIUS window from Data Connect |
+| `radius-auth`, `radius-errors`, `radius-accounting` | Query the configured bounded RADIUS window from Data Connect; `radius-auth` supports PSN, policy, wildcard username, status, and hour filters |
 | `posture`, `psn-metrics`, `tacacs-activity` | Query bounded posture, PSN, and TACACS reports from Data Connect |
 | `dataconnect-query TABLE` | Safely search any discovered reporting view with validated columns and bound filters |
 | `dataconnect-health` | Diagnose the authenticated Oracle session and accessible Data Connect catalog |
@@ -307,6 +307,7 @@ ise-cli auth-status 192.0.2.25 --seconds 3600 --limit 50
 ise-cli secure-client client-25.example.test --include-all --output json
 ise-cli endpoint-report --profile Windows10-Workstation --limit 25
 ise-cli radius-auth --identifier aabbccddeeff --status failed --limit 50
+ise-cli radius-auth --psn-like 'laba-ise-*' --policy-set-like 'host*-*-*' --status failed --hours 1
 ise-cli radius-errors --nad access-switch-01 --output csv
 ise-cli posture --identifier client-25.example.test --conditions
 ise-cli psn-metrics --psn laba-ise-001
@@ -339,6 +340,9 @@ PowerShell callers use `Format-Table`, `ConvertTo-Json`, `Export-Csv`, and
   must pass `--allow-active-list-scan` when that fallback is genuinely required.
 - Exporter and CLI Data Connect queries share a file-locked pacing deadline, so
   concurrent CLI processes cannot bypass the configured duty-cycle cooldown.
+  Operator-issued queries queue behind the current exporter or CLI owner and
+  wait for its cooldown instead of failing with a busy-gate error. Ctrl-C still
+  cancels a waiting CLI process without changing the shared deadline.
   Setting the pacing-file environment value to an empty string does not disable
   the gate; it restores the protected service-state default.
 - Tab completion uses only bounded inventory/metadata Data Connect views and REST
@@ -361,11 +365,9 @@ responses with the normalized CLI output.
 `health` uses a one-row ERS request and MnT `Session/ActiveCount`, not an
 unauthenticated landing page or the expensive session list. Its `reachable` field
 distinguishes network routing from `authenticated`; `http_status` exposes rejected
-REST credentials without printing them. The Data Connect probe acquires the shared
-pacing gate non-blockingly. During a cooldown it reports `probe_status=deferred`
-and leaves reachability/authentication unknown instead of waiting or reporting a
-false outage. Data Connect-only installations can run `health` without configuring
-REST/MnT.
+REST credentials without printing them. The Data Connect probe queues behind the
+shared pacing gate and reports a completed result when its turn arrives. Data
+Connect-only installations can run `health` without configuring REST/MnT.
 
 ## System-wide installation
 

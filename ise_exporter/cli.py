@@ -15,7 +15,6 @@ import fnmatch
 import io
 import ipaddress
 import json
-import math
 import os
 from pathlib import Path
 import re
@@ -734,8 +733,21 @@ def build_parser(*, require_command=False):
     sub = report("radius-auth", "query recent RADIUS authentications from Data Connect")
     sub.add_argument("--identifier", help="endpoint MAC, IP, hostname, or ERS id")
     sub.add_argument("--username")
+    sub.add_argument("--username-like", help="case-insensitive username wildcard")
     sub.add_argument("--nad")
+    sub.add_argument("--nad-like", help="case-insensitive NAD wildcard")
+    sub.add_argument("--psn")
+    sub.add_argument("--psn-like", help="case-insensitive PSN wildcard")
+    sub.add_argument("--policy-set")
+    sub.add_argument("--policy-set-like", help="case-insensitive policy-set wildcard")
+    sub.add_argument("--authorization-policy")
+    sub.add_argument("--authorization-policy-like",
+                     help="case-insensitive authorization-policy wildcard")
+    sub.add_argument("--authentication-method")
+    sub.add_argument("--authentication-protocol")
     sub.add_argument("--status")
+    sub.add_argument("--hours", type=int,
+                     help="recent event window in hours (default: configured window, max: 48)")
 
     sub = report("endpoint-report", "query endpoint inventory from Data Connect")
     sub.add_argument("--identifier", help="endpoint MAC, IP, hostname, or ERS id")
@@ -994,8 +1006,8 @@ def _dataconnect_endpoint_candidates(dataconnect, identifier, kind):
     """, parameters)
     if rows is None and point_lookup is not None:
         raise CLIError(
-            "Data Connect is busy with an exporter collection; retry shortly "
-            "or use the endpoint MAC address")
+            "Data Connect endpoint lookup returned no result after waiting for "
+            "the shared pacing gate")
     return rows
 
 
@@ -1208,47 +1220,22 @@ def _secure_client(client, mac, include_all=False):
 
 
 def _interactive_catalog_query(dataconnect):
-    return (getattr(dataconnect, "query_catalog_if_ready", None)
-            or getattr(dataconnect, "query_catalog", None)
+    return (getattr(dataconnect, "query_catalog", None)
             or dataconnect.query)
 
 
-def _dataconnect_catalog_busy_error(dataconnect):
-    """Explain the pacing state that prevented an interactive schema lookup."""
-    status_getter = getattr(dataconnect, "pacing_blocker", None)
-    status = status_getter() if callable(status_getter) else None
-    reason = (status or {}).get("reason")
-    if reason == "shared_query_in_progress":
-        blocker = (
-            "the shared pacing gate is held by an active exporter or ise-cli query"
-        )
-        retry = "retry after that query finishes"
-    elif reason in {
-            "local_query_cooldown", "shared_database_protection_cooldown"}:
-        remaining = max(0.0, float((status or {}).get("remaining_seconds", 0)))
-        blocker = (
-            "the Data Connect database-protection cooldown has "
-            f"{remaining:.1f}s remaining"
-        )
-        retry = f"retry in {max(1, math.ceil(remaining))}s"
-    else:
-        blocker = (
-            "another exporter or ise-cli query currently holds the shared pacing "
-            "gate, or the database-protection cooldown is still active"
-        )
-        retry = "retry after the active query or cooldown finishes"
+def _dataconnect_catalog_missing_result():
+    """Report an impossible empty blocking result without calling it pacing."""
     return CLIError(
-        "Data Connect catalog lookup deferred: "
-        f"{blocker}. The requested ise-cli query was not started because catalog "
-        "metadata is required to validate accessible tables and columns; "
-        f"{retry}.")
+        "Data Connect catalog lookup returned no result after waiting for the "
+        "shared pacing gate")
 
 
 def _dataconnect_table_columns(dataconnect, table, *, interactive=False):
     query = _interactive_catalog_query(dataconnect) if interactive else None
     columns = table_columns(dataconnect, table, query=query)
     if columns is None:
-        raise _dataconnect_catalog_busy_error(dataconnect)
+        raise _dataconnect_catalog_missing_result()
     return columns
 
 
@@ -1263,7 +1250,7 @@ def _radius_authentication_report_schema(dataconnect, args, preferred_columns):
             query=_interactive_catalog_query(dataconnect),
         )
         if rows is None:
-            raise _dataconnect_catalog_busy_error(dataconnect)
+            raise _dataconnect_catalog_missing_result()
         schema = schema_by_table(rows)
 
     required = set()
@@ -1271,10 +1258,25 @@ def _radius_authentication_report_schema(dataconnect, args, preferred_columns):
     if identifier:
         kind = _identifier_kind(identifier)
         required.add("FRAMED_IP_ADDRESS" if kind == "ip" else "CALLING_STATION_ID")
-    if getattr(args, "username", None) is not None:
+    if (getattr(args, "username", None) is not None
+            or getattr(args, "username_like", None) is not None):
         required.add("USERNAME")
-    if getattr(args, "nad", None) is not None:
+    if (getattr(args, "nad", None) is not None
+            or getattr(args, "nad_like", None) is not None):
         required.add("DEVICE_NAME")
+    if (getattr(args, "psn", None) is not None
+            or getattr(args, "psn_like", None) is not None):
+        required.add("ISE_NODE")
+    if (getattr(args, "policy_set", None) is not None
+            or getattr(args, "policy_set_like", None) is not None):
+        required.add("POLICY_SET_NAME")
+    if (getattr(args, "authorization_policy", None) is not None
+            or getattr(args, "authorization_policy_like", None) is not None):
+        required.add("AUTHORIZATION_POLICY")
+    if getattr(args, "authentication_method", None) is not None:
+        required.add("AUTHENTICATION_METHOD")
+    if getattr(args, "authentication_protocol", None) is not None:
+        required.add("AUTHENTICATION_PROTOCOL")
     if getattr(args, "status", None) is not None:
         required.add("FAILED")
 
@@ -1310,7 +1312,7 @@ def _endpoint_field_bindings(dataconnect, *, query=None):
         # would multiply adaptive cooldown without providing fresher metadata.
         metadata = metadata_rows(dataconnect, tables, query=query)
         if metadata is None:
-            raise _dataconnect_catalog_busy_error(dataconnect)
+            raise _dataconnect_catalog_missing_result()
         schemas_by_table = schema_by_table(metadata)
     except CLIError:
         raise
@@ -1413,7 +1415,8 @@ def _parse_endpoint_criteria(items):
 
 
 def _sql_pattern(pattern):
-    escaped = (str(pattern).replace("\\", "\\\\").replace("%", "\\%")
+    normalized = re.sub(r"\\([*?])", r"\1", str(pattern))
+    escaped = (normalized.replace("\\", "\\\\").replace("%", "\\%")
                .replace("_", "\\_").replace("*", "%").replace("?", "_"))
     return escaped.upper()
 
@@ -1692,6 +1695,10 @@ def _dataconnect_report(args, client, dataconnect, cfg):
         ("nad", ("DEVICE_NAME", "NETWORK_DEVICE_NAME", "NAS_IP_ADDRESS")),
         ("message_code", ("MESSAGE_CODE",)),
         ("psn", ("ISE_NODE",)),
+        ("policy_set", ("POLICY_SET_NAME",)),
+        ("authorization_policy", ("AUTHORIZATION_POLICY",)),
+        ("authentication_method", ("AUTHENTICATION_METHOD",)),
+        ("authentication_protocol", ("AUTHENTICATION_PROTOCOL",)),
         ("device", ("DEVICE_NAME",)),
         ("profile", ("ENDPOINT_POLICY",)),
     )
@@ -1706,13 +1713,39 @@ def _dataconnect_report(args, client, dataconnect, cfg):
         predicates.append(f"{column} = :{parameter}")
         parameters[parameter] = value
 
+    username_like = getattr(args, "username_like", None)
+    if username_like is not None:
+        column = _first_column(columns, "USERNAME", "USER_NAME", "IDENTITY")
+        if not column:
+            raise CLIError(f"{table} cannot filter by --username-like")
+        predicates.append(f"UPPER({column}) LIKE :filter_username_like ESCAPE '\\'")
+        parameters["filter_username_like"] = _sql_pattern(username_like)
+
+    wildcard_filters = (
+        ("nad_like", ("DEVICE_NAME", "NETWORK_DEVICE_NAME", "NAS_IP_ADDRESS")),
+        ("psn_like", ("ISE_NODE",)),
+        ("policy_set_like", ("POLICY_SET_NAME",)),
+        ("authorization_policy_like", ("AUTHORIZATION_POLICY",)),
+    )
+    for argument, candidates in wildcard_filters:
+        value = getattr(args, argument, None)
+        if value is None:
+            continue
+        column = _first_column(columns, *candidates)
+        option = argument.replace("_", "-")
+        if not column:
+            raise CLIError(f"{table} cannot filter by --{option}")
+        parameter = f"filter_{argument}"
+        predicates.append(f"UPPER({column}) LIKE :{parameter} ESCAPE '\\'")
+        parameters[parameter] = _sql_pattern(value)
+
     status = getattr(args, "status", None)
     if status is not None:
         status_column = _first_column(columns, "STATUS", "POSTURE_STATUS", "POLICY_STATUS")
         if status_column:
             predicates.append(f"LOWER({status_column}) = LOWER(:filter_status)")
             parameters["filter_status"] = status
-        elif "FAILED" in columns and status.casefold() in ("failed", "passed"):
+        elif "FAILED" in columns and status.casefold() in ("failed", "passed", "success"):
             predicates.append("NVL(FAILED, 0) " + ("> 0" if status.casefold() == "failed" else "= 0"))
         else:
             raise CLIError(f"{table} cannot filter by --status")
@@ -1720,13 +1753,23 @@ def _dataconnect_report(args, client, dataconnect, cfg):
     timestamp_column = _first_column(
         columns, "TIMESTAMP_TIMEZONE", "TIMESTAMP", "LOGGED_AT", "LOGGED_TIME")
     epoch_column = _first_column(columns, "EPOCH_TIME")
+    safe_window = max(1, min(6, int(getattr(
+        cfg, "dataconnect_event_window_hours", 6))))
+    requested_window = getattr(args, "hours", None)
+    window = requested_window if requested_window is not None else safe_window
+    if window < 1 or window > 48:
+        raise CLIError("--hours must be between 1 and 48")
+    if requested_window is not None and not (timestamp_column or epoch_column):
+        raise CLIError(f"{table} has no recognized event time column")
+    if window > safe_window:
+        _require_expensive(
+            args, cfg, f"event window above the production-safe maximum {safe_window} hours")
     if timestamp_column:
-        predicates.append(recent_event_predicate(
-            timestamp_column, getattr(cfg, "dataconnect_event_window_hours", 6),
-            timezone_aware="TIME ZONE" in column_types[timestamp_column]))
+        lower_bound = f"SYSTIMESTAMP - NUMTODSINTERVAL({window}, 'HOUR')"
+        if "TIME ZONE" not in column_types[timestamp_column]:
+            lower_bound = f"CAST({lower_bound} AS TIMESTAMP)"
+        predicates.append(f"{timestamp_column} >= {lower_bound}")
     elif epoch_column:
-        window = max(1, min(6, int(getattr(
-            cfg, "dataconnect_event_window_hours", 6))))
         predicates.append(f"{epoch_column} >= :minimum_epoch")
         parameters["minimum_epoch"] = int(time.time()) - window * 3600
     order_column = timestamp_column or epoch_column
@@ -1863,8 +1906,8 @@ def _dataconnect_query(args, dataconnect, cfg):
         rows = query(sql, parameters)
         if rows is None:
             raise CLIError(
-                "Data Connect reporting gate is busy or cooling down after another "
-                "exporter or CLI query; retry when the current lease finishes")
+                "Data Connect reporting query returned no result after waiting for "
+                "the shared pacing gate")
         return rows
     except Exception as error:
         if isinstance(error, CLIError):
@@ -1928,7 +1971,7 @@ def _dataconnect_catalog(dataconnect, pattern=None):
         query = _interactive_catalog_query(dataconnect)
         rows = query(sql, parameters)
         if rows is None:
-            raise _dataconnect_catalog_busy_error(dataconnect)
+            raise _dataconnect_catalog_missing_result()
         return rows
     except CLIError:
         raise
@@ -1942,18 +1985,9 @@ def _dataconnect_health(dataconnect):
     try:
         # Authentication/access proof only: do not count the complete catalog
         # when a single bounded metadata row proves the same thing.
-        query_if_ready = getattr(dataconnect, "query_catalog_if_ready", None)
-        if query_if_ready is None:
-            query_if_ready = getattr(dataconnect, "query_if_ready", None)
-        query = query_if_ready if query_if_ready is not None else dataconnect.query
+        query = (getattr(dataconnect, "query_catalog", None)
+                 or dataconnect.query)
         rows = query("SELECT 1 AS available FROM user_views FETCH FIRST 1 ROWS ONLY")
-        if rows is None:
-            return {
-                "reachable": None,
-                "authenticated": None,
-                "http_status": 0,
-                "probe_status": "deferred",
-            }
         healthy = bool(rows)
         return {
             "reachable": healthy,
@@ -1980,7 +2014,7 @@ def _dataconnect_schema(dataconnect, table=None):
             rows = metadata_rows(
                 dataconnect, query=_interactive_catalog_query(dataconnect))
             if rows is None:
-                raise _dataconnect_catalog_busy_error(dataconnect)
+                raise _dataconnect_catalog_missing_result()
             return rows
         except CLIError:
             raise
@@ -2000,7 +2034,7 @@ def _dataconnect_schema(dataconnect, table=None):
             ORDER BY table_name, column_id
         """, parameters)
         if rows is None:
-            raise _dataconnect_catalog_busy_error(dataconnect)
+            raise _dataconnect_catalog_missing_result()
         return rows
     except CLIError:
         raise

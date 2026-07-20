@@ -765,17 +765,8 @@ class DataConnectClient:
         return self.query(sql, parameters, wait_for_pacing=False)
 
     def query_interactive(self, sql, parameters=None):
-        """Run an operator query without queueing behind an adaptive cooldown.
-
-        A generic CLI search first reads catalog metadata so identifiers can be
-        validated safely.  Honor the short local gap created by that catalog
-        read, then probe the shared reporting gate without waiting.  ``None``
-        means an exporter or earlier CLI query still owns an adaptive lease.
-        """
-        remaining = self._next_query_at - time.monotonic()
-        if remaining > 0:
-            self._wait(remaining)
-        return self.query(sql, parameters, wait_for_pacing=False)
+        """Queue an operator query behind the shared production pacing gate."""
+        return self.query(sql, parameters, wait_for_pacing=True)
 
     def query(self, sql, parameters=None, *, wait_for_pacing=True):
         """Execute a reporting query under adaptive production duty pacing."""
@@ -803,15 +794,16 @@ class DataConnectClient:
                 "endpoint lookup must be a bounded indexed SELECT from ENDPOINTS_DATA")
 
     def query_endpoint_lookup(self, sql, parameters=None):
-        """Run one exact operator lookup without waiting through aggregate duty pacing.
+        """Queue one exact lookup without charging aggregate duty pacing.
 
         The strict query shape, ten-row ceiling, normal global lock, hard Oracle
         timeout, and existing cooldown preservation keep this materially cheaper
-        than the scheduled aggregate scans that create the adaptive delay.
+        than scheduled aggregate scans. It waits for the active gate owner but
+        does not wait through or shorten an existing reporting cooldown.
         """
         self._validate_endpoint_lookup_query(sql)
         return self._query(
-            sql, parameters, wait_for_pacing=False, adaptive_duty=False)
+            sql, parameters, wait_for_pacing=True, adaptive_duty=False)
 
     @staticmethod
     def _validate_catalog_query(sql):

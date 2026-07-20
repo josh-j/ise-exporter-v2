@@ -453,24 +453,24 @@ def test_health_works_with_only_dataconnect_configuration(capsys):
         "reachable": True, "service": "Data Connect"}]
 
 
-def test_health_defers_dataconnect_probe_instead_of_waiting_for_pacing(capsys):
+def test_health_queues_dataconnect_probe_behind_pacing(capsys):
     cfg = types.SimpleNamespace(
         ise_host="", ise_mnt_host="", ise_user="", ise_pass="",
         dataconnect_host="mnt.example.com", dataconnect_ready=True)
 
     class PacedDataConnect(FakeDataConnect):
-        def query(self, sql, parameters=None):
-            raise AssertionError("health must not use the blocking query path")
+        def query_catalog_if_ready(self, sql, parameters=None):
+            raise AssertionError("health used completion's non-blocking path")
 
-        def query_if_ready(self, sql, parameters=None):
+        def query_catalog(self, sql, parameters=None):
             self.calls.append((sql, parameters or {}))
-            return None
+            return [{"available": 1}]
 
     dataconnect = PacedDataConnect()
     assert cli.main(["health", "-o", "json"], cfg=cfg, dataconnect=dataconnect) == 0
     assert json.loads(capsys.readouterr().out) == [{
-        "authenticated": None, "host": "mnt.example.com", "http_status": 0,
-        "probe_status": "deferred", "reachable": None,
+        "authenticated": True, "host": "mnt.example.com", "http_status": 0,
+        "probe_status": "completed", "reachable": True,
         "service": "Data Connect"}]
     assert len(dataconnect.calls) == 1
 
@@ -950,7 +950,7 @@ def test_endpoint_resolution_uses_interactive_point_lookup_path():
     assert "HOSTNAME IN" in dataconnect.calls[0][0]
 
 
-def test_endpoint_resolution_reports_busy_exporter_gate():
+def test_endpoint_resolution_reports_missing_blocking_result():
     class BusyDataConnect(FakeDataConnect):
         schema = {"ENDPOINTS_DATA": {
             "MAC_ADDRESS": "VARCHAR2", "HOSTNAME": "VARCHAR2",
@@ -959,7 +959,7 @@ def test_endpoint_resolution_reports_busy_exporter_gate():
         def query_endpoint_lookup(self, _sql, parameters=None):
             return None
 
-    with pytest.raises(cli.CLIError, match="busy with an exporter collection"):
+    with pytest.raises(cli.CLIError, match="returned no result after waiting"):
         cli._dataconnect_endpoint_candidates(BusyDataConnect(), "client", "hostname")
 
 
@@ -993,34 +993,20 @@ def test_endpoint_resolution_discovers_uncached_search_columns_from_catalog():
     assert "ORDER BY" not in sql
 
 
-def test_endpoint_resolution_reports_busy_catalog_instead_of_missing_column():
-    class BusyCatalog:
+def test_endpoint_resolution_queues_catalog_lookup():
+    class QueuedCatalog(FakeDataConnect):
         schema = {}
 
         def query_catalog_if_ready(self, _sql, _parameters=None):
-            return None
+            raise AssertionError("operator command used completion's non-blocking path")
 
-    with pytest.raises(cli.CLIError, match="catalog lookup deferred"):
-        cli._dataconnect_endpoint_candidates(BusyCatalog(), "client", "hostname")
+        def query_catalog(self, sql, parameters=None):
+            return self.query(sql, parameters)
 
+    rows = cli._dataconnect_endpoint_candidates(
+        QueuedCatalog(), "client-25.example.test", "hostname")
 
-def test_busy_catalog_explains_why_ise_cli_query_was_prevented():
-    class BusyCatalog:
-        schema = {}
-
-        def query_catalog_if_ready(self, _sql, _parameters=None):
-            return None
-
-        def pacing_blocker(self):
-            return {"reason": "shared_query_in_progress", "view": "schema_metadata"}
-
-    with pytest.raises(cli.CLIError) as error:
-        cli._dataconnect_endpoint_candidates(BusyCatalog(), "client", "hostname")
-
-    message = str(error.value)
-    assert "shared pacing gate is held by an active exporter or ise-cli query" in message
-    assert "requested ise-cli query was not started" in message
-    assert "catalog metadata is required" in message
+    assert rows[0]["mac_address"] == "AA:BB:CC:DD:EE:FF"
 
 
 def test_endpoint_resolution_rejects_missing_search_capability_before_row_query():
@@ -1094,6 +1080,59 @@ def test_dataconnect_report_is_bounded_and_filters_normalized_mac(capsys):
     assert "NUMTODSINTERVAL(6, 'HOUR')" in report_sql
     assert "CALLING_STATION_ID = :endpoint_identifier" in report_sql
     assert parameters["endpoint_identifier"] == "AA:BB:CC:DD:EE:FF"
+
+
+def test_radius_auth_report_supports_friendly_live_log_filters(capsys):
+    class RadiusLogDataConnect(FakeDataConnect):
+        def query(self, sql, parameters=None):
+            if "from user_tab_columns" in sql.lower() and "table_name in" in sql.lower():
+                self.calls.append((sql, parameters or {}))
+                return [
+                    {"table_name": "RADIUS_AUTHENTICATIONS_WEEK",
+                     "column_name": column,
+                     "data_type": "TIMESTAMP" if column == "TIMESTAMP" else "VARCHAR2"}
+                    for column in (
+                        "TIMESTAMP", "USERNAME", "CALLING_STATION_ID", "DEVICE_NAME",
+                        "ISE_NODE", "POLICY_SET_NAME", "AUTHORIZATION_POLICY",
+                        "AUTHENTICATION_METHOD", "AUTHENTICATION_PROTOCOL", "FAILED",
+                    )
+                ]
+            if "from radius_authentications_week" in sql.lower():
+                self.calls.append((sql, parameters or {}))
+                return [{"username": "svc-radius", "failed": 1}]
+            return super().query(sql, parameters)
+
+    dataconnect = RadiusLogDataConnect()
+    assert cli.main([
+        "radius-auth", "--username-like", "svc-*", "--nad-like", "laba-sw-*",
+        "--psn-like", "laba-ise-*", "--policy-set-like", r"host\*-*-*",
+        "--authorization-policy-like", "Deny*", "--status", "failed",
+        "--authentication-method", "Certificate",
+        "--authentication-protocol", "EAP-TLS",
+        "--hours", "1", "--limit", "200", "-o", "json",
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+
+    assert json.loads(capsys.readouterr().out) == [{"failed": 1, "username": "svc-radius"}]
+    sql, parameters = dataconnect.calls[-1]
+    assert "FROM RADIUS_AUTHENTICATIONS_WEEK" in sql
+    assert "UPPER(USERNAME) LIKE :filter_username_like ESCAPE '\\'" in sql
+    assert "UPPER(DEVICE_NAME) LIKE :filter_nad_like ESCAPE '\\'" in sql
+    assert "UPPER(ISE_NODE) LIKE :filter_psn_like ESCAPE '\\'" in sql
+    assert "UPPER(POLICY_SET_NAME) LIKE :filter_policy_set_like ESCAPE '\\'" in sql
+    assert "UPPER(AUTHORIZATION_POLICY) LIKE :filter_authorization_policy_like" in sql
+    assert "AUTHENTICATION_METHOD = :filter_authentication_method" in sql
+    assert "AUTHENTICATION_PROTOCOL = :filter_authentication_protocol" in sql
+    assert "NVL(FAILED, 0) > 0" in sql
+    assert "NUMTODSINTERVAL(1, 'HOUR')" in sql
+    assert parameters == {
+        "filter_username_like": "SVC-%",
+        "filter_nad_like": "LABA-SW-%",
+        "filter_psn_like": "LABA-ISE-%",
+        "filter_policy_set_like": "HOST%-%-%",
+        "filter_authorization_policy_like": "DENY%",
+        "filter_authentication_method": "Certificate",
+        "filter_authentication_protocol": "EAP-TLS",
+    }
 
 
 def test_radius_auth_report_prefers_week_view_with_real_authorization_policy(capsys):
@@ -1201,19 +1240,20 @@ def test_dataconnect_query_requires_acknowledgement_for_wider_event_window(capsy
     assert "NUMTODSINTERVAL(48, 'HOUR')" in dataconnect.calls[-1][0]
 
 
-def test_dataconnect_query_does_not_wait_for_busy_reporting_gate(capsys):
-    class BusyReporting(FakeDataConnect):
+def test_dataconnect_query_uses_queued_reporting_path(capsys):
+    class QueuedReporting(FakeDataConnect):
         def query_interactive(self, sql, parameters=None):
             self.calls.append((sql, parameters or {}))
-            return None
+            return [{"timestamp": "2026-07-17T12:00:00Z"}]
 
-    dataconnect = BusyReporting()
+    dataconnect = QueuedReporting()
 
     assert cli.main([
         "dataconnect-query", "RADIUS_AUTHENTICATIONS",
         "--column", "TIMESTAMP", "--limit", "5", "-o", "json",
-    ], client=FakeClient(), dataconnect=dataconnect) == 2
-    assert "reporting gate is busy or cooling down" in capsys.readouterr().err
+    ], client=FakeClient(), dataconnect=dataconnect) == 0
+    assert json.loads(capsys.readouterr().out) == [
+        {"timestamp": "2026-07-17T12:00:00Z"}]
     assert len(dataconnect.calls) == 2
 
 
@@ -1232,23 +1272,22 @@ def test_dataconnect_catalog_walks_all_accessible_objects_with_bound_pattern(cap
     assert parameters == {"pattern": "%TACACS%"}
 
 
-def test_interactive_dataconnect_metadata_returns_busy_instead_of_waiting(capsys):
-    class BusyCatalog(FakeDataConnect):
+def test_interactive_dataconnect_metadata_uses_queued_catalog_path(capsys):
+    class QueuedCatalog(FakeDataConnect):
         def query_catalog_if_ready(self, sql, parameters=None):
-            self.calls.append((sql, parameters or {}))
-            return None
+            raise AssertionError("operator command used completion's non-blocking path")
+
+        def query_catalog(self, sql, parameters=None):
+            return self.query(sql, parameters)
 
     for arguments in (
         ["dataconnect-schema", "UPSPOLICY", "-o", "json"],
         ["dataconnect-catalog", "UPS*", "-o", "json"],
-        ["dataconnect-query", "UPSPOLICY", "--limit", "5", "-o", "json"],
     ):
-        dataconnect = BusyCatalog()
+        dataconnect = QueuedCatalog()
         assert cli.main(
-            arguments, client=FakeClient(), dataconnect=dataconnect) == 2
-        error = capsys.readouterr().err
-        assert "catalog lookup deferred" in error
-        assert "requested ise-cli query was not started" in error
+            arguments, client=FakeClient(), dataconnect=dataconnect) == 0
+        capsys.readouterr()
         assert len(dataconnect.calls) == 1
 
 

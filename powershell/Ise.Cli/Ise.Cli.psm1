@@ -33,6 +33,11 @@ function Get-IseBackendCommand {
         return [pscustomobject]@{ FilePath = $path; Prefix = @() }
     }
 
+    $nativeBackend = '/opt/ise-exporter/.venv/bin/ise-cli-backend'
+    if (Test-Path -LiteralPath $nativeBackend -PathType Leaf) {
+        return [pscustomobject]@{ FilePath = $nativeBackend; Prefix = @() }
+    }
+
     $installed = Get-Command -Name 'ise-cli-backend' -CommandType Application -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if ($installed) {
@@ -96,11 +101,11 @@ function Invoke-IseBackendProcess {
 
 function ConvertFrom-IseBackendJson {
     [CmdletBinding()]
-    param([AllowEmptyString()][string]$Json)
+    param([AllowEmptyString()][string]$Json, [switch]$QuietEmpty)
 
     if ([string]::IsNullOrWhiteSpace($Json)) { return }
     if ($Json.Trim() -eq '[]') {
-        Write-Host 'No results.' -ForegroundColor DarkGray
+        if (-not $QuietEmpty) { Write-Host 'No results.' -ForegroundColor DarkGray }
         return
     }
     try {
@@ -137,7 +142,8 @@ function Invoke-IseBackend {
             'dataconnect-health', 'dataconnect-catalog', 'schema', 'get')]
         [string]$Command,
         [AllowEmptyCollection()][AllowEmptyString()][string[]]$ArgumentList = @(),
-        [string]$ConfigFile
+        [string]$ConfigFile,
+        [switch]$QuietEmpty
     )
 
     $backendArguments = @()
@@ -148,7 +154,9 @@ function Invoke-IseBackend {
         return Invoke-IseBackendProcess -ArgumentList $backendArguments
     }
     $backendArguments += @('--output', 'json')
-    ConvertFrom-IseBackendJson -Json (Invoke-IseBackendProcess -ArgumentList $backendArguments)
+    ConvertFrom-IseBackendJson `
+        -Json (Invoke-IseBackendProcess -ArgumentList $backendArguments) `
+        -QuietEmpty:$QuietEmpty
 }
 
 function Invoke-IseCommand {
@@ -660,12 +668,181 @@ function Add-IseValueArgument {
     }
 }
 
-function Get-IseRadiusAuthentication {
-    [CmdletBinding()]
-    param([string]$Identifier,[string]$Username,[string]$Nad,[ValidateSet('failed','passed','success')][string]$Status,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
-    $a=New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive; Add-IseValueArgument -Arguments $a -Name '--identifier' -Value $Identifier; Add-IseValueArgument -Arguments $a -Name '--username' -Value $Username; Add-IseValueArgument -Arguments $a -Name '--nad' -Value $Nad; Add-IseValueArgument -Arguments $a -Name '--status' -Value $Status
-    Invoke-IseBackend -Command radius-auth -ArgumentList $a.ToArray() -ConfigFile $ConfigFile
+function Get-IseObjectValue {
+    param([Parameter(Mandatory)]$InputObject, [Parameter(Mandatory)][string[]]$Name)
+    foreach ($candidate in $Name) {
+        $property = $InputObject.PSObject.Properties[$candidate]
+        if ($null -ne $property -and $null -ne $property.Value -and [string]$property.Value -ne '') {
+            return $property.Value
+        }
+    }
 }
+
+function ConvertTo-IseRadiusAuthentication {
+    param([Parameter(Mandatory)]$Row)
+    $failed = Get-IseObjectValue -InputObject $Row -Name FAILED
+    $numericFailed = 0.0
+    $isFailed = (($null -ne $failed -and [double]::TryParse(
+        [string]$failed, [ref]$numericFailed) -and $numericFailed -gt 0) -or
+        [string]$failed -match '^(?i:true|failed|failure)$')
+    $result = if ($null -eq $failed) { 'Unknown' } elseif ($isFailed) { 'Failed' } else { 'Passed' }
+    $friendly = [ordered]@{
+        Time = Get-IseObjectValue -InputObject $Row -Name TIMESTAMP_TIMEZONE,TIMESTAMP
+        Result = $result
+        Endpoint = Get-IseObjectValue -InputObject $Row -Name CALLING_STATION_ID,FRAMED_IP_ADDRESS
+        Nad = Get-IseObjectValue -InputObject $Row -Name DEVICE_NAME,NETWORK_DEVICE_NAME
+        Psn = Get-IseObjectValue -InputObject $Row -Name ISE_NODE
+        Method = Get-IseObjectValue -InputObject $Row -Name AUTHENTICATION_METHOD
+        Protocol = Get-IseObjectValue -InputObject $Row -Name AUTHENTICATION_PROTOCOL
+        PolicySet = Get-IseObjectValue -InputObject $Row -Name POLICY_SET_NAME
+        AuthorizationPolicy = Get-IseObjectValue -InputObject $Row -Name AUTHORIZATION_POLICY
+        ResponseTime = Get-IseObjectValue -InputObject $Row -Name RESPONSE_TIME
+    }
+    foreach ($name in $friendly.Keys) {
+        $Row | Add-Member -NotePropertyName $name -NotePropertyValue $friendly[$name] -Force
+    }
+    $Row.PSObject.TypeNames.Insert(0, 'Ise.Cli.RadiusAuthentication')
+    Write-Output $Row
+}
+
+function Invoke-IseRadiusAuthenticationQuery {
+    param(
+        [string]$Identifier, [string]$Username, [string]$UsernameLike,
+        [string]$Nad, [string]$NadLike, [string]$Psn, [string]$PsnLike,
+        [string]$PolicySet, [string]$PolicySetLike,
+        [string]$AuthorizationPolicy, [string]$AuthorizationPolicyLike,
+        [string]$AuthenticationMethod,
+        [string]$AuthenticationProtocol,
+        [ValidateSet('failed','passed','success')][string]$Status,
+        [switch]$Failed,
+        [ValidateRange(1,48)][int]$Hours,
+        [ValidateRange(1,5000)][int]$Limit = 100,
+        [switch]$AllowExpensive, [string]$ConfigFile,
+        [switch]$QuietEmpty
+    )
+    if ($Failed -and $Status -and $Status -ne 'failed') {
+        throw '-Failed cannot be combined with a non-failed -Status value.'
+    }
+    $effectiveStatus = if ($Failed) { 'failed' } else { $Status }
+    $arguments = New-IseReportArguments -Limit $Limit -AllowExpensive:$AllowExpensive
+    foreach ($item in @(
+        @('--identifier', $Identifier), @('--username', $Username),
+        @('--username-like', $UsernameLike), @('--nad', $Nad),
+        @('--nad-like', $NadLike), @('--psn', $Psn), @('--psn-like', $PsnLike),
+        @('--policy-set', $PolicySet), @('--policy-set-like', $PolicySetLike),
+        @('--authorization-policy', $AuthorizationPolicy),
+        @('--authorization-policy-like', $AuthorizationPolicyLike),
+        @('--authentication-method', $AuthenticationMethod),
+        @('--authentication-protocol', $AuthenticationProtocol),
+        @('--status', $effectiveStatus)
+    )) {
+        Add-IseValueArgument -Arguments $arguments -Name $item[0] -Value $item[1]
+    }
+    if ($PSBoundParameters.ContainsKey('Hours')) {
+        [void]$arguments.Add('--hours'); [void]$arguments.Add([string]$Hours)
+    }
+    foreach ($row in @(Invoke-IseBackend -Command radius-auth `
+        -ArgumentList $arguments.ToArray() -ConfigFile $ConfigFile -QuietEmpty:$QuietEmpty)) {
+        if ($null -ne $row) { ConvertTo-IseRadiusAuthentication $row }
+    }
+}
+
+function Get-IseRadiusAuthentication {
+    <#
+    .SYNOPSIS
+    Gets recent RADIUS authentications with friendly server-side filters.
+    .EXAMPLE
+    Get-IseRadiusAuthentication -Psn laba-ise-001 -Failed -PolicySet Wired -Hours 1
+    #>
+    [CmdletBinding()]
+    param(
+        [Alias('Endpoint','MacAddress','IpAddress')][string]$Identifier,
+        [string]$Username, [string]$UsernameLike,
+        [string]$Nad, [string]$NadLike, [string]$Psn, [string]$PsnLike,
+        [string]$PolicySet, [string]$PolicySetLike,
+        [string]$AuthorizationPolicy, [string]$AuthorizationPolicyLike,
+        [Alias('Method')][string]$AuthenticationMethod,
+        [Alias('Protocol')][string]$AuthenticationProtocol,
+        [Alias('Result')][ValidateSet('failed','passed','success')][string]$Status,
+        [switch]$Failed,
+        [ValidateRange(1,48)][int]$Hours,
+        [ValidateRange(1,5000)][int]$Limit = 100,
+        [switch]$AllowExpensive, [string]$ConfigFile
+    )
+    Invoke-IseRadiusAuthenticationQuery @PSBoundParameters
+}
+
+function Watch-IseRadiusAuthentication {
+    <#
+    .SYNOPSIS
+    Watches for new RADIUS authentications through the shared paced Data Connect gate.
+    .DESCRIPTION
+    Repeats the same bounded query, emits each authentication once in chronological
+    order, and keeps at most 10,000 deduplication keys. Press Ctrl-C to stop.
+    .EXAMPLE
+    Watch-IseRadiusAuthentication -Psn laba-ise-001 -Failed -PolicySet Wired
+    #>
+    [CmdletBinding()]
+    param(
+        [Alias('Endpoint','MacAddress','IpAddress')][string]$Identifier,
+        [string]$Username, [string]$UsernameLike,
+        [string]$Nad, [string]$NadLike, [string]$Psn, [string]$PsnLike,
+        [string]$PolicySet, [string]$PolicySetLike,
+        [string]$AuthorizationPolicy, [string]$AuthorizationPolicyLike,
+        [Alias('Method')][string]$AuthenticationMethod,
+        [Alias('Protocol')][string]$AuthenticationProtocol,
+        [Alias('Result')][ValidateSet('failed','passed','success')][string]$Status,
+        [switch]$Failed,
+        [ValidateRange(1,48)][int]$Hours = 1,
+        [ValidateRange(1,5000)][int]$Limit = 200,
+        [ValidateRange(10,3600)][int]$IntervalSeconds = 30,
+        [switch]$Once, [switch]$AllowExpensive, [string]$ConfigFile
+    )
+    $seen = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal)
+    $order = [System.Collections.Generic.Queue[string]]::new()
+    $queryParameters = @{
+        Hours = $Hours
+        Limit = $Limit
+        AllowExpensive = $AllowExpensive
+        ConfigFile = $ConfigFile
+        QuietEmpty = $true
+    }
+    foreach ($item in @(
+        @('Identifier', $Identifier), @('Username', $Username),
+        @('UsernameLike', $UsernameLike), @('Nad', $Nad), @('NadLike', $NadLike),
+        @('Psn', $Psn), @('PsnLike', $PsnLike),
+        @('PolicySet', $PolicySet), @('PolicySetLike', $PolicySetLike),
+        @('AuthorizationPolicy', $AuthorizationPolicy),
+        @('AuthorizationPolicyLike', $AuthorizationPolicyLike),
+        @('AuthenticationMethod', $AuthenticationMethod),
+        @('AuthenticationProtocol', $AuthenticationProtocol),
+        @('Status', $Status)
+    )) {
+        if ($null -ne $item[1] -and [string]$item[1] -ne '') {
+            $queryParameters[$item[0]] = $item[1]
+        }
+    }
+    if ($Failed) { $queryParameters.Failed = $true }
+    while ($true) {
+        $rows = @(Invoke-IseRadiusAuthenticationQuery @queryParameters)
+        foreach ($row in @($rows | Sort-Object Time)) {
+            $key = ConvertTo-Json -Depth 5 -Compress -InputObject $row
+            if ($seen.Contains($key)) { continue }
+            [void]$seen.Add($key)
+            $order.Enqueue($key)
+            if ($order.Count -gt 10000) {
+                [void]$seen.Remove($order.Dequeue())
+            }
+            Write-Output $row
+        }
+        if ($Once) { break }
+        Start-Sleep -Seconds $IntervalSeconds
+    }
+}
+
+Update-TypeData -TypeName Ise.Cli.RadiusAuthentication `
+    -DefaultDisplayPropertySet Time,Result,Endpoint,Nad,Psn,Method,Protocol,PolicySet,AuthorizationPolicy,ResponseTime -Force
 function Get-IseEndpointReport {
     [CmdletBinding()]
     param([string]$Identifier,[string]$Profile,[ValidateRange(1,5000)][int]$Limit=100,[switch]$AllowExpensive,[string]$ConfigFile)
@@ -1024,6 +1201,8 @@ $identifierCompleter = {
         'Get-IseSecureClient' { 'secure-client' }
         'Get-IseEndpointSummary' { 'endpoint-summary' }
         'Debug-IseAuthentication' { 'troubleshoot-auth' }
+        'Get-IseRadiusAuthentication' { 'radius-auth --identifier' }
+        'Watch-IseRadiusAuthentication' { 'radius-auth --identifier' }
         default { 'endpoint' }
     }
     foreach ($candidate in (Get-IseLegacyCompletion "$legacy $wordToComplete")) {
@@ -1034,7 +1213,8 @@ $identifierCompleter = {
 Register-ArgumentCompleter -CommandName @(
     'Get-IseEndpoint','Resolve-IseEndpoint','Get-IseSession',
     'Get-IseAuthenticationStatus','Get-IseSecureClient','Get-IseEndpointSummary',
-    'Debug-IseAuthentication') -ParameterName Identifier -ScriptBlock $identifierCompleter
+    'Debug-IseAuthentication','Get-IseRadiusAuthentication',
+    'Watch-IseRadiusAuthentication') -ParameterName Identifier -ScriptBlock $identifierCompleter
 
 $criteriaCompleter = {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -1055,7 +1235,9 @@ function New-IseCompletionResult {
 
 $nodeCompleter = {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
-    $legacy = if ($commandName -in @('Get-IsePsnMetric','Debug-IsePsn')) {
+    $legacy = if ($commandName -in @(
+        'Get-IsePsnMetric','Debug-IsePsn','Get-IseRadiusAuthentication',
+        'Watch-IseRadiusAuthentication')) {
         'psn-metrics --psn'
     } else { 'certificates --node' }
     New-IseCompletionResult (Get-IseLegacyCompletion "$legacy $wordToComplete")
@@ -1063,6 +1245,8 @@ $nodeCompleter = {
 Register-ArgumentCompleter -CommandName Get-IseCertificate -ParameterName Node -ScriptBlock $nodeCompleter
 Register-ArgumentCompleter -CommandName Get-IsePsnMetric -ParameterName Psn -ScriptBlock $nodeCompleter
 Register-ArgumentCompleter -CommandName Debug-IsePsn -ParameterName Psn -ScriptBlock $nodeCompleter
+Register-ArgumentCompleter -CommandName Get-IseRadiusAuthentication,Watch-IseRadiusAuthentication `
+    -ParameterName Psn -ScriptBlock $nodeCompleter
 
 $nadCompleter = {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
@@ -1074,7 +1258,8 @@ $nadCompleter = {
     New-IseCompletionResult (Get-IseLegacyCompletion "$legacy $wordToComplete")
 }
 Register-ArgumentCompleter -CommandName @(
-    'Get-IseRadiusAuthentication','Get-IseRadiusError','Get-IseRadiusAccounting',
+    'Get-IseRadiusAuthentication','Watch-IseRadiusAuthentication',
+    'Get-IseRadiusError','Get-IseRadiusAccounting',
     'Get-IseNadSummary'
 ) -ParameterName Nad -ScriptBlock $nadCompleter
 
@@ -1088,7 +1273,8 @@ $usernameCompleter = {
     New-IseCompletionResult (Get-IseLegacyCompletion "$legacy $wordToComplete")
 }
 Register-ArgumentCompleter -CommandName @(
-    'Get-IseRadiusAuthentication','Get-IseRadiusAccounting','Get-IseTacacsActivity'
+    'Get-IseRadiusAuthentication','Watch-IseRadiusAuthentication',
+    'Get-IseRadiusAccounting','Get-IseTacacsActivity'
 ) -ParameterName Username -ScriptBlock $usernameCompleter
 
 $profileCompleter = {
@@ -1160,6 +1346,7 @@ Export-ModuleMember -Function @(
     'Get-IseBackupStatus','Get-IseRepository','Get-IseNetworkPolicySet',
     'Get-IseDeviceAdminPolicySet','Get-IseAuthorizationProfile','Get-IseTacacsCommandSet',
     'Get-IseTacacsShellProfile','Get-IseCertificate','Get-IseRadiusAuthentication',
+    'Watch-IseRadiusAuthentication',
     'Get-IseEndpointReport','Get-IseRadiusError','Get-IseRadiusAccounting',
     'Get-IsePostureAssessment','Get-IsePsnMetric','Get-IseTacacsActivity',
     'Get-IseDataConnectTable','Get-IseDataConnectColumn','Get-IseDataConnectRow',

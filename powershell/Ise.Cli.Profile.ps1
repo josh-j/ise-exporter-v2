@@ -37,7 +37,8 @@ function global:Show-IseCliHelp {
             'Get-IseAuthenticationStatus ID        Recent MnT authentication records',
             'Get-IseSecureClient ID                Secure Client and posture detail')
         'reporting' = @(
-            'Get-IseRadiusAuthentication           Bounded RADIUS authentications',
+            'Get-IseRadiusAuthentication           Filtered RADIUS authentications',
+            'Watch-IseRadiusAuthentication         Live deduplicated RADIUS view',
             'Get-IseRadiusError                    Bounded RADIUS failures',
             'Get-IseRadiusAccounting               Bounded accounting records',
             'Get-IsePostureAssessment              Posture endpoint/condition reports',

@@ -25,7 +25,8 @@ def test_powershell_cli_is_a_pwsh_module_over_private_bounded_backend():
         "Test-IseOpenApi", "Test-IseMnt", "Get-IsePxGridSession",
         "Get-IsePxGridEndpoint", "Get-IsePxGridRadiusFailure",
         "Find-IseEndpoint", "Get-IseEndpoint", "Get-IseSecureClient",
-        "Get-IseRadiusAuthentication", "Get-IseTacacsActivity",
+        "Get-IseRadiusAuthentication", "Watch-IseRadiusAuthentication",
+        "Get-IseTacacsActivity",
         "Get-IseDataConnectTable", "Get-IseDataConnectColumn",
         "Get-IseDataConnectRow", "Search-IseDataConnect", "Get-IseAlert",
         "Get-IseSystemDiagnostic", "Get-IseAaaDiagnostic", "Test-IseDataConnect",
@@ -34,6 +35,7 @@ def test_powershell_cli_is_a_pwsh_module_over_private_bounded_backend():
         assert f"'{command}'" in manifest
         assert f"function {command}" in implementation
     assert "ise-cli-backend" in implementation
+    assert "'/opt/ise-exporter/.venv/bin/ise-cli-backend'" in implementation
     assert "ConvertFrom-Json" in implementation
     assert "System.Diagnostics.ProcessStartInfo" in implementation
     assert "Register-ArgumentCompleter" in implementation
@@ -52,6 +54,8 @@ def test_powershell_cli_launcher_is_shell_safe():
     assert "exec pwsh -NoLogo -NoProfile -NoExit" in LAUNCHER.read_text()
     assert 'export PSModulePath="${SCRIPT_DIR}' in LAUNCHER.read_text()
     assert 'Ise.Cli.Profile.ps1' in LAUNCHER.read_text()
+    assert 'INSTALLED_BACKEND="/opt/ise-exporter/.venv/bin/ise-cli-backend"' \
+        in LAUNCHER.read_text()
 
 
 def test_powershell_cli_profile_has_operator_focused_ux():
@@ -74,7 +78,7 @@ def test_powershell_module_imports_and_exports_native_commands():
         Import-Module '{MODULE}' -Force
         $commands = @(Get-Command -Module Ise.Cli | Select-Object -ExpandProperty Name)
         if ($commands.Count -lt 46) {{ throw "only $($commands.Count) commands exported" }}
-        foreach ($required in @('Find-IseEndpoint','Find-Endpoint','Get-IseEndpoint','Get-IseCliVersion','Get-IseOverview','Debug-IseAuthentication','Debug-IsePsn','Get-IseNadSummary','Get-IsePxGridStatus','Test-IsePxGrid','Test-IseErs','Test-IseOpenApi','Test-IseMnt','Get-IsePxGridSession','Get-IsePxGridEndpoint','Get-IseDataConnectColumn','Get-IseDataConnectRow')) {{
+        foreach ($required in @('Find-IseEndpoint','Find-Endpoint','Get-IseEndpoint','Get-IseCliVersion','Get-IseOverview','Debug-IseAuthentication','Debug-IsePsn','Get-IseNadSummary','Get-IsePxGridStatus','Test-IsePxGrid','Test-IseErs','Test-IseOpenApi','Test-IseMnt','Get-IsePxGridSession','Get-IsePxGridEndpoint','Get-IseDataConnectColumn','Get-IseDataConnectRow','Get-IseRadiusAuthentication','Watch-IseRadiusAuthentication')) {{
             if ($required -notin $commands) {{ throw "missing $required" }}
         }}
     """
@@ -120,6 +124,71 @@ def test_powershell_cmdlet_returns_only_backend_objects(tmp_path):
     """
     subprocess.run(
         ["pwsh", "-NoLogo", "-NoProfile", "-Command", script], check=True)
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")
+def test_powershell_radius_log_get_and_watch_have_friendly_ux(tmp_path):
+    calls = tmp_path / "calls"
+    backend = tmp_path / "ise-cli-backend"
+    backend.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> {calls}\n"
+        "printf '%s\\n' "
+        "'[{\"timestamp\":\"2026-07-17T12:00:00Z\",\"username\":\"svc-radius\","
+        "\"calling_station_id\":\"AA:BB:CC:DD:EE:FF\",\"device_name\":\"laba-sw-001\","
+        "\"ise_node\":\"laba-ise-001\",\"policy_set_name\":\"Wired\","
+        "\"authorization_policy\":\"DenyAccess\",\"authentication_method\":\"Certificate\","
+        "\"authentication_protocol\":\"EAP-TLS\",\"failed\":1,\"response_time\":42}]'\n")
+    backend.chmod(0o755)
+    script = f"""
+        $ErrorActionPreference = 'Stop'
+        $env:ISE_CLI_BACKEND = '{backend}'
+        Import-Module '{MODULE}' -Force
+        $rows = @(Get-IseRadiusAuthentication -PsnLike 'laba-ise-*' -Failed `
+            -PolicySetLike 'host\\*-*-*' -AuthorizationPolicyLike 'Deny*' `
+            -Method Certificate -Protocol EAP-TLS `
+            -Hours 1 -Limit 200)
+        if ($rows.Count -ne 1) {{ throw "expected one row, got $($rows.Count)" }}
+        if ($rows[0].PSObject.TypeNames[0] -ne 'Ise.Cli.RadiusAuthentication') {{
+            throw 'friendly RADIUS type missing'
+        }}
+        if ($rows[0].Time -isnot [datetime] -or $rows[0].Result -ne 'Failed') {{
+            throw 'friendly time/result fields missing'
+        }}
+        if ($rows[0].Psn -ne 'laba-ise-001' -or $rows[0].PolicySet -ne 'Wired') {{
+            throw 'friendly PSN/policy fields missing'
+        }}
+        if ($rows[0].Method -ne 'Certificate' -or $rows[0].Protocol -ne 'EAP-TLS') {{
+            throw 'friendly authentication method/protocol fields missing'
+        }}
+        $display = (Get-TypeData Ise.Cli.RadiusAuthentication).DefaultDisplayPropertySet.ReferencedProperties
+        if ('Time' -notin $display -or 'Result' -notin $display -or
+            'Endpoint' -notin $display -or 'Psn' -notin $display -or
+            'Method' -notin $display -or 'Protocol' -notin $display -or
+            'Username' -in $display) {{
+            throw 'compact default display missing'
+        }}
+        $watched = @(Watch-IseRadiusAuthentication -NadLike 'laba-sw-*' -Failed `
+            -PolicySetLike 'host*-*-*' -Protocol EAP-TLS -Hours 1 -Once)
+        if ($watched.Count -ne 1 -or $watched[0].Username -ne 'svc-radius') {{
+            throw 'watch did not emit the new authentication'
+        }}
+    """
+    subprocess.run(
+        ["pwsh", "-NoLogo", "-NoProfile", "-Command", script], check=True)
+
+    logged = calls.read_text().splitlines()
+    assert len(logged) == 2
+    assert all("radius-auth" in call and "--policy-set-like" in call
+               and "--hours 1" in call
+               for call in logged)
+    assert "--psn-like laba-ise-*" in logged[0]
+    assert "--authorization-policy-like Deny*" in logged[0]
+    assert "--policy-set-like host\\*-*-*" in logged[0]
+    assert "--nad-like laba-sw-*" in logged[1]
+    assert "--authentication-method Certificate" in logged[0]
+    assert all("--authentication-protocol EAP-TLS" in call for call in logged)
+    assert "--status failed" in logged[0]
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell 7 is not installed")

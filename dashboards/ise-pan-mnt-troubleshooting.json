@@ -4,14 +4,14 @@
   },
   "editable": true,
   "graphTooltip": 1,
-  "description": "Deployment-aware PAN and MnT node health, control-plane state, certificates, backup, bounded active-session collection, and collector diagnostics.",
+  "description": "Deployment-aware PAN and MnT node health, capacity, load, resource utilization, diagnostics, certificates, backup, and bounded active-session latency.",
   "panels": [
     {
       "id": 90,
       "type": "stat",
       "title": "Deployment Dataset",
       "description": "Authoritative PAN deployment and node-role snapshot availability.",
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
       "targets": [
         {
           "expr": "max(ise_dataset_up{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"})",
@@ -36,7 +36,7 @@
       "id": 91,
       "type": "stat",
       "title": "Deployment Snapshot Age",
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
       "targets": [
         {
           "expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"deployment\",source=\"rest\"})",
@@ -58,7 +58,7 @@
       "type": "stat",
       "title": "MnT Active Dataset",
       "description": "Availability of the bounded current active-session posture snapshot from MnT XML.",
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
       "targets": [
         {
           "expr": "max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"})",
@@ -83,7 +83,7 @@
       "id": 93,
       "type": "stat",
       "title": "MnT Snapshot Age",
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
       "targets": [
         {
           "expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"})",
@@ -96,6 +96,53 @@
         "defaults": {
           "unit": "s",
           "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1350}, {"color": "red", "value": 1800}]}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 94,
+      "type": "stat",
+      "title": "Node Performance Dataset",
+      "description": "Data Connect node capacity, reporting, and diagnostic snapshot availability.",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "targets": [
+        {
+          "expr": "max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}
+          ],
+          "links": [
+            {"title": "Inspect performance dataset", "url": "/d/ise-exporter-health/ise-exporter-health?${__url_time_range}&var-dataset=dataconnect_performance&var-source=dataconnect", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 95,
+      "type": "stat",
+      "title": "Node Performance Age",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "targets": [
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 450}, {"color": "red", "value": 600}]}
         },
         "overrides": []
       }
@@ -351,10 +398,198 @@
     },
     {
       "id": 16,
+      "type": "row",
+      "title": "PAN and MnT Node Performance",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 42},
+      "panels": []
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Node Load",
+      "description": "Average and maximum load reported by Data Connect for the selected PAN and MnT nodes.",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 43},
+      "targets": [
+        {
+          "expr": "ise_dataconnect_psn_load_percent{instance=~\"$deployment\",node=~\"$pan|$mnt\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{node}} / {{stat}}",
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent"}, "overrides": []}
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "CPU Utilization",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 43},
+      "targets": [
+        {
+          "expr": "ise_dataconnect_node_cpu_utilization_percent{instance=~\"$deployment\",node=~\"$pan|$mnt\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{node}}",
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []}
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Memory Utilization",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 43},
+      "targets": [
+        {
+          "expr": "ise_dataconnect_node_memory_utilization_percent{instance=~\"$deployment\",node=~\"$pan|$mnt\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "{{node}}",
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []}
+    },
+    {
+      "id": 21,
+      "type": "bargauge",
+      "title": "Highest Disk Utilization per PAN/MnT",
+      "description": "Highest reported partition utilization on each selected PAN or MnT, collapsed to one bar per node.",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 51},
+      "targets": [
+        {
+          "expr": "sort_desc(max by (node) (ise_dataconnect_node_disk_utilization_percent{instance=~\"$deployment\",node=~\"$pan|$mnt\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{node}}",
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}
+        },
+        "overrides": []
+      },
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Reporting Logs, Noise, and Suppression",
+      "description": "ISE reporting-pipeline counters for the selected PAN and MnT nodes.",
+      "gridPos": {"h": 8, "w": 16, "x": 8, "y": 51},
+      "targets": [
+        {
+          "expr": "ise_dataconnect_psn_mnt_logs_per_hour{instance=~\"$deployment\",node=~\"$pan|$mnt\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "logs / {{node}}",
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        },
+        {
+          "expr": "ise_dataconnect_psn_noise_per_hour{instance=~\"$deployment\",node=~\"$pan|$mnt\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "noise / {{node}}",
+          "refId": "B",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        },
+        {
+          "expr": "ise_dataconnect_psn_suppression_per_hour{instance=~\"$deployment\",node=~\"$pan|$mnt\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "legendFormat": "suppressed / {{node}}",
+          "refId": "C",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "table",
+      "title": "PAN and MnT Diagnostic Work Queue",
+      "description": "Highest-volume AAA and system diagnostics for the selected PAN and MnT nodes.",
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 59},
+      "targets": [
+        {
+          "expr": "sort_desc(ise_dataconnect_diagnostic_events{instance=~\"$deployment\",node=~\"$pan|$mnt\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "options": {"showHeader": true, "footer": {"show": true, "reducer": ["sum"]}},
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true}, "renameByName": {"Value": "events"}}}
+      ]
+    },
+    {
+      "id": 24,
+      "type": "row",
+      "title": "MnT Active Session Latency",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 71},
+      "panels": []
+    },
+    {
+      "id": 25,
+      "type": "bargauge",
+      "title": "Total Authentication Latency",
+      "description": "Average and maximum TotalAuthenLatency across the bounded active-session detail sample.",
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 72},
+      "targets": [
+        {
+          "expr": "sort_desc(ise_mnt_active_total_authentication_latency_seconds{instance=~\"$deployment\",stat=~\"avg|max\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{stat}}",
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 26,
+      "type": "bargauge",
+      "title": "Authentication Step Latency",
+      "description": "Average and maximum latency by numeric ISE authentication step code.",
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 72},
+      "targets": [
+        {
+          "expr": "sort_desc(ise_mnt_active_step_latency_seconds{instance=~\"$deployment\",stat=~\"avg|max\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "legendFormat": "step {{step}} / {{stat}}",
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 27,
+      "type": "bargauge",
+      "title": "Authentication Step Samples",
+      "description": "Number of valid latency samples behind each authentication step aggregate.",
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 72},
+      "targets": [
+        {
+          "expr": "sort_desc(ise_mnt_active_step_latency_samples{instance=~\"$deployment\"}) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "legendFormat": "step {{step}}",
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
+        }
+      ],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []},
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "values": false}, "showUnfilled": true}
+    },
+    {
+      "id": 28,
       "type": "stat",
       "title": "MnT ActiveList Safety",
       "description": "ActiveCount preflight, configured unpaged-list ceiling, and whether collection was refused.",
-      "gridPos": {"h": 5, "w": 12, "x": 0, "y": 42},
+      "gridPos": {"h": 5, "w": 12, "x": 0, "y": 79},
       "targets": [
         {"expr": "ise_mnt_session_list_preflight_count{instance=~\"$deployment\"}", "instant": true, "legendFormat": "active sessions", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
         {"expr": "ise_mnt_session_list_ceiling{instance=~\"$deployment\"}", "instant": true, "legendFormat": "download ceiling", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
@@ -367,10 +602,10 @@
       "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"}
     },
     {
-      "id": 17,
+      "id": 29,
       "type": "table",
       "title": "PAN and MnT Collector Health",
-      "gridPos": {"h": 5, "w": 12, "x": 12, "y": 42},
+      "gridPos": {"h": 5, "w": 12, "x": 12, "y": 79},
       "targets": [
         {"expr": "time() - ise_last_successful_scrape_timestamp{instance=~\"$deployment\",collector=~\"deployment|mnt_active_posture\"}", "format": "table", "instant": true, "legendFormat": "success age", "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
         {"expr": "ise_consecutive_failures{instance=~\"$deployment\",collector=~\"deployment|mnt_active_posture\"}", "format": "table", "instant": true, "legendFormat": "failures", "refId": "B", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}},
