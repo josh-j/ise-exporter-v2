@@ -95,8 +95,9 @@ node. `dataconnect.host` is therefore mandatory when Data Connect is enabled
 and never inherits `ise.mnt_host`; this prevents an XML API routing choice from
 silently becoming the Oracle target. Production defaults for up to 100,000
 endpoints use one sequential connection, five-second statement pacing, a 0.1%
-adaptive query-duty-cycle ceiling, 15-second total Oracle-attempt timeouts, and independent
-hourly to 24-hour domain cadences. Valid explicit pacing, duty-cycle, startup
+adaptive query-duty-cycle ceiling, 15-second total Oracle-attempt timeouts, and
+independent five-minute through daily domain cadences. Valid explicit pacing,
+duty-cycle, startup
 spacing, and cadence values are honored except that the accounting-derived active
 session cadence is capped at its hard one-hour stale window. A larger legacy value
 produces a startup warning and is normalized safely. The client retains
@@ -167,9 +168,9 @@ authentication view remains bounded and is used only for dimensions the summary
 does not expose: method, protocol, exact authorization policy, and status-specific
 latency. NAD activity health also uses a single per-device aggregation from the
 summary view, not an additional raw authentication scan.
-The three large daily RADIUS sources each use one `GROUPING SETS` statement for
+The three large 30-minute RADIUS sources each use one `GROUPING SETS` statement for
 their paired breakdowns (authentication/latency, volume/failure context, and
-accounting/session duration), rather than rescanning the same six-hour window.
+accounting/session duration), rather than rescanning the same one-hour window.
 Frequent PSN health batches stay bounded to four short statements, while the
 larger historical and inventory views retain their slower cadences. Measured
 Oracle work, rather than statement count alone, drives the shared adaptive
@@ -183,15 +184,19 @@ performance, and the bounded MnT posture snapshot before slow inventory and
 historical reporting. While schema discovery is in flight, its operational Data
 Connect work is retained in the serialized queue instead of waiting for the next
 scheduler cycle.
-Daily RADIUS reporting samples six hours, while a disjoint active-session query
-scans at most its hard 60-minute stale window every 30 minutes in the production
-example. No historical windows are merged locally, so a reconciliation baseline
-cannot silently grow into a three-day reporting window.
+Thirty-minute RADIUS reporting samples one hour, while a disjoint active-session
+query scans at most its hard 60-minute stale window every five minutes in the
+production example. That one materialized scan also computes starts minus stops
+over the latest five-minute interval, so the session-delta graph does not require
+another statement.
+No historical windows are merged locally, so a reconciliation baseline cannot
+silently grow into a three-day reporting window.
 PSN performance and diagnostics run every five minutes over bounded current or
-six-hour source windows. Historical posture and NAD health run every six hours;
-endpoint profiling remains daily.
-`dataconnect.event_window_hours` is an absolute six-hour-or-lower ceiling;
-daily domains intentionally sample rather than aggregating a full day.
+six-hour source windows. Current MnT posture also refreshes every five minutes.
+Historical posture, NAD health, TACACS, and endpoint profiling run every six hours.
+`dataconnect.event_window_hours` is an absolute six-hour-or-lower ceiling; slower
+domains intentionally sample their bounded windows rather than aggregating the
+entire interval between collections.
 The posture snapshot materializes its bounded latest-assessment set once and uses
 one `GROUPING SETS` pass for status/version and failure breakdowns plus eligible
 endpoint coverage; it does not rebuild the same assessment window per dashboard.
@@ -222,7 +227,7 @@ service starts an independent guard identity.
 The former shared-tier design issued 1,437
 statements per hour, so the 100k profile removes more than 95% of scheduled query
 invocations before adaptive cooldown is considered.
-The daily endpoint inventory uses one Oracle `GROUPING SETS` scan for current-row
+The six-hour endpoint inventory uses one Oracle `GROUPING SETS` scan for current-row
 coverage, endpoint-policy, and identity-group dimensions; it does not scan
 `ENDPOINTS_DATA` separately for each breakdown. This keeps that
 work proportional to the Data Connect endpoint reporting snapshot (up to 100,000
@@ -234,7 +239,7 @@ and paced endpoint-detail cycles therefore cannot delay REST/OpenAPI health or e
 other. Service shutdown interrupts pending query and detail pacing waits instead of
 waiting for their full deadlines. Cold starts prioritize the bounded active-session,
 performance, and NAD-health datasets before historical reporting. The queue keeps
-that priority after startup as domains become due again, so daily endpoint inventory
+that priority after startup as domains become due again, so six-hour endpoint inventory
 and the multi-view freshness probe cannot strand current operational data behind a
 long low-duty-cycle backlog. Duplicate due events are coalesced while a domain is
 queued or running; priority never introduces concurrent database statements.
@@ -293,8 +298,9 @@ MACs and tracks no more than
 `mnt_active_posture.max_sessions` endpoints. Details are stored in the private
 `exporter.state_db`; departed sessions are removed immediately, new or changed
 sessions are prioritized, and unchanged sessions are refreshed in oldest-first
-rotation. Production defaults allow 250 requests per 15-minute cycle, two workers,
-500ms request pacing, and a one-hour refresh target. A restart reuses valid cached
+rotation. Production defaults allow 80 requests per five-minute cycle, two workers,
+500ms request pacing, and a one-hour refresh target. This preserves approximately
+the former hourly request ceiling. A restart reuses valid cached
 details rather than creating a cold-start burst. Coverage, cache age, deferred
 refreshes, candidate count, and truncation qualify every sample.
 Persisted rows contain only bounded posture, agent, PSN, and latency inputs needed
@@ -303,11 +309,11 @@ rest of the MnT session-detail response are discarded before storage. Text limit
 are measured as UTF-8 bytes, not characters; a compact posture row is capped at
 128 KiB and an internal-user detail row at 64 KiB before SQLite accepts it.
 
-RADIUS history is not accumulated in SQLite. The daily reporting collection
-recomputes an exact, bounded recent-window aggregate from Data Connect and persists only
+RADIUS history is not accumulated in SQLite. The 30-minute reporting collection
+recomputes an exact, bounded one-hour aggregate from Data Connect and persists only
 the resulting bounded Prometheus snapshot. Current active-session reconstruction
-is a separate, one-query dataset with an hourly default cadence and snapshot,
-matching the reconstruction's hard one-hour stale ceiling.
+is a separate, one-query dataset with a five-minute default cadence and a hard
+one-hour stale ceiling.
 Neither path stores raw RADIUS identities, credentials, events, or session rows.
 
 Successful Data Connect domains store their complete bounded Prometheus
@@ -402,11 +408,12 @@ slower intervals while retaining the same ownership boundaries and safety gates.
 | Licensing | Platform | PAN OpenAPI | 6 hours |
 | Backup status | Platform | PAN OpenAPI | 6 hours |
 | Device Admin policy configuration | Configuration | ERS/OpenAPI | 6 hours |
-| RADIUS authentication, failures, and latency | Reporting | Data Connect | 24 hours |
-| RADIUS accounting and session duration | Reporting | Data Connect | 24 hours |
-| Endpoint inventory and profiling | Reporting | Data Connect | 24 hours |
+| RADIUS authentication, failures, and latency | Reporting | Data Connect | 30 minutes |
+| RADIUS accounting and session duration | Reporting | Data Connect | 30 minutes |
+| Active RADIUS sessions and five-minute session delta | Current state | Data Connect | 5 minutes |
+| Endpoint inventory and profiling | Reporting | Data Connect | 6 hours |
 | Historical posture and Secure Client | Reporting | Data Connect | 6 hours |
-| Current active-session posture and latency sample | Current state | MnT XML | 15 minutes |
+| Current active-session posture and latency sample | Current state | MnT XML | 5 minutes |
 | PSN performance and diagnostics | Reporting | Data Connect | 5 minutes |
 | TACACS account and command activity | Reporting | Data Connect | 6 hours |
 
@@ -443,8 +450,8 @@ they emit distinct metric families and never substitute for one another.
 - The exporter retries the same authoritative source and never switches between
   Data Connect, MnT XML, pxGrid, or per-endpoint ERS. An early Data Connect failure
   retries no faster than five minutes and normally at the one-hour slow interval,
-  so one transient startup failure cannot leave a daily dashboard empty for 24
-  hours. Five consecutive Data Connect failures return to the full protected
+  so one transient startup failure cannot leave a slow dashboard empty for its
+  full cadence. Five consecutive Data Connect failures return to the full protected
   domain cadence. REST and MnT datasets instead retry at the slower of their own
   cadence and the persistent authentication-guard backoff, so a fast health
   dataset does not inherit the unrelated six-hour configuration tier.

@@ -18,12 +18,12 @@ There is no live-event or dynamic source fallback layer. A missing dataset remai
 | Dashboard | Purpose | Source | Auto-refresh |
 |---|---|---|---|
 | `ise-overview.json` | Deployment, certificates, licensing, backups, and patches | REST/OpenAPI | 5 minutes |
-| `ise-access-troubleshooting.json` | RADIUS authentication, accounting-derived sessions, latency, and failure triage | Data Connect | 30 minutes |
+| `ise-access-troubleshooting.json` | RADIUS authentication, accounting-derived sessions, latency, and failure triage | Data Connect | 5 minutes |
 | `ise-endpoints-devices.json` | Endpoint/profile summary and authoritative NAD inventory | Data Connect and REST/OpenAPI | 6 hours |
-| `ise-secureclient.json` | Posture status, policies, conditions, agent versions, OS, and failures | Data Connect | 15 minutes |
+| `ise-secureclient.json` | Posture status, policies, conditions, agent versions, OS, and failures | Data Connect | 5 minutes |
 | `ise-pan-mnt-troubleshooting.json` | PAN HA, node status, certificates, backup, and bounded MnT collection health | REST/OpenAPI and MnT XML | 5 minutes |
 | `ise-psn-troubleshooting.json` | RADIUS workload, latency, TPS, resource utilization, and diagnostics by node | Data Connect plus REST deployment health | 5 minutes |
-| `templates/ise-ops-owner-site.json.tmpl` | Source template for one generated, owner-fixed site troubleshooting dashboard per Ops Owner NDG | REST network-device inventory plus Data Connect | 30 minutes |
+| `templates/ise-ops-owner-site.json.tmpl` | Source template for one generated, owner-fixed site troubleshooting dashboard per Ops Owner NDG | REST network-device inventory plus Data Connect | 5 minutes |
 | `ise-tacacs.json` | Device Administration configuration, account hygiene, and attributed TACACS activity | REST/OpenAPI and Data Connect | 6 hours |
 | `ise-exporter-health.json` | Dataset availability, collection and source freshness, coverage, worker queues, query safety, and build identity | Exporter telemetry and Data Connect | 30 seconds |
 
@@ -53,7 +53,9 @@ row in an ISE reporting view is old or the bounded view is empty.
 
 Import each JSON file in Grafana and select the Prometheus data source when prompted or use Grafana's default Prometheus source. The dashboards use stable `ise_dataconnect_*`, REST control-plane, TACACS, and exporter self-observability metric families.
 
-Set Grafana's dashboard refresh no faster than the corresponding collector interval. Faster browser refreshes do not make bounded Data Connect views real-time and only add Prometheus query load.
+Set Grafana's dashboard refresh to its fastest operational source. Mixed dashboards
+may also contain slower inventory or historical panels; their visible collection-age
+headers must use that source's actual cadence rather than implying real-time data.
 
 ## Troubleshooting workflow
 

@@ -120,7 +120,7 @@ def collect(dataconnect, cfg):
             dataconnect,
             _queries(
                 group_limit(cfg), hourly_rollup_window_hours(
-                    cfg, getattr(cfg, "dataconnect_performance_interval", 21600)),
+                    cfg, getattr(cfg, "dataconnect_performance_interval", 300)),
                 getattr(dataconnect, "schema", None)),
         )
         schema = getattr(dataconnect, "schema", None)

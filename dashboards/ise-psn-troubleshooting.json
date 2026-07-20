@@ -21,7 +21,16 @@
         {
           "expr": "max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"})",
           "instant": true,
-          "refId": "A",
+          "refId": "Performance",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "Sessions",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -84,7 +93,16 @@
         {
           "expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"dataconnect_performance\",source=\"dataconnect\"})",
           "instant": true,
-          "refId": "A",
+          "refId": "Performance",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"})",
+          "instant": true,
+          "refId": "Sessions",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -260,9 +278,9 @@
     },
     {
       "id": 16,
-      "type": "bargauge",
+      "type": "timeseries",
       "title": "Active Sessions per PSN",
-      "description": "Likely-active sessions reconstructed from each session ID's latest accounting record. Values depend on NAD accounting quality and the bounded active-session group export.",
+      "description": "Likely-active sessions refreshed every five minutes and reconstructed from each session ID's latest accounting record in the bounded one-hour stale window. Values depend on NAD accounting quality and bounded group coverage.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -272,7 +290,7 @@
       "targets": [
         {
           "expr": "sort_desc(sum by (psn) (ise_dataconnect_radius_active_sessions{instance=~\"$deployment\",psn=~\"$psn\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1))",
-          "instant": true,
+          "instant": false,
           "legendFormat": "{{psn}}",
           "refId": "A",
           "datasource": {
@@ -284,16 +302,16 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false
           },
           "links": [
             {
@@ -306,22 +324,27 @@
         "overrides": []
       },
       "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "reduceOptions": {
+        "legend": {
           "calcs": [
             "lastNotNull"
           ],
-          "values": false
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
         },
-        "showUnfilled": true
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       }
     },
     {
       "id": 17,
-      "type": "bargauge",
+      "type": "timeseries",
       "title": "Session Delta per PSN",
-      "description": "Accounting starts minus stops per PSN in the bounded Data Connect reporting window. Positive values mean more starts than stops; values depend on NAD accounting quality and bounded group coverage.",
+      "description": "Accounting starts minus stops per PSN during the latest five-minute active-session collection window. Positive values mean more starts than stops; the delta shares the active-session query so it adds no second Data Connect statement.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -330,8 +353,8 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn) (ise_dataconnect_radius_accounting_events{instance=~\"$deployment\",psn=~\"$psn\",event_type=~\"(?i).*start.*\"} or (ise_dataconnect_radius_accounting_events{instance=~\"$deployment\",psn=~\"$psn\",event_type=~\"(?i).*stop.*\"} * -1))) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
-          "instant": true,
+          "expr": "sort_desc(sum by (psn) (ise_dataconnect_radius_active_session_delta{instance=~\"$deployment\",psn=~\"$psn\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1))",
+          "instant": false,
           "legendFormat": "{{psn}}",
           "refId": "A",
           "datasource": {
@@ -343,16 +366,16 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false
           },
           "links": [
             {
@@ -365,15 +388,20 @@
         "overrides": []
       },
       "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "reduceOptions": {
+        "legend": {
           "calcs": [
             "lastNotNull"
           ],
-          "values": false
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
         },
-        "showUnfilled": true
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       }
     },
     {

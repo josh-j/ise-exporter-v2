@@ -13,7 +13,10 @@ import threading
 import time
 
 from . import collectors, metrics
-from .config import MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL
+from .config import (
+    DEFAULT_DATACONNECT_RADIUS_ACTIVE_INTERVAL,
+    MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL,
+)
 from .state import StateStore
 from .snapshots import (
     restore_metric_snapshot,
@@ -67,7 +70,7 @@ def _configured_interval(value, default):
     return interval if interval > 0 else default
 
 # Lower values run first whenever more than one due domain is waiting. This does
-# not add query concurrency or preempt an atomic collector; it prevents daily
+# not add query concurrency or preempt an atomic collector; it prevents slow
 # inventory/freshness work from keeping current operational health behind a cold-
 # start backlog under a deliberately low Data Connect duty-cycle ceiling.
 _DATACONNECT_PRIORITY = {
@@ -141,11 +144,11 @@ class PollScheduler:
     def __init__(self, cfg, client, dataconnect=None, mnt=None):
         self.cfg = cfg
         self.scrape_interval = _configured_interval(
-            getattr(cfg, "scrape_interval", 120), 120)
+            getattr(cfg, "scrape_interval", 60), 60)
         self.medium_interval = _configured_interval(
             getattr(cfg, "medium_interval", 300), 300)
         self.slow_interval = _configured_interval(
-            getattr(cfg, "slow_interval", 3600), 3600)
+            getattr(cfg, "slow_interval", 21600), 21600)
         self.auth_failure_backoff = _minimum_interval(
             getattr(cfg, "auth_failure_backoff", 900), 900, 300)
         try:
@@ -268,7 +271,7 @@ class PollScheduler:
             "patches": ("rest", self.slow_interval, cfg.collect_patches),
             "dataconnect_radius": (
                 "dataconnect", _configured_interval(
-                    getattr(cfg, "dataconnect_radius_interval", 86400), 86400), True),
+                    getattr(cfg, "dataconnect_radius_interval", 1800), 1800), True),
             "dataconnect_schema": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_schema_interval", 86400), 86400),
@@ -278,31 +281,31 @@ class PollScheduler:
                     MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL,
                     _configured_interval(getattr(
                         cfg, "dataconnect_radius_active_interval",
-                        MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL),
-                        MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL)), True),
+                        DEFAULT_DATACONNECT_RADIUS_ACTIVE_INTERVAL),
+                        DEFAULT_DATACONNECT_RADIUS_ACTIVE_INTERVAL)), True),
             "dataconnect_performance": (
                 "dataconnect", _configured_interval(getattr(
-                    cfg, "dataconnect_performance_interval", 21600), 21600), True),
+                    cfg, "dataconnect_performance_interval", 300), 300), True),
             "dataconnect_posture": (
                 "dataconnect", _configured_interval(getattr(
-                    cfg, "dataconnect_posture_interval", 86400), 86400), True),
+                    cfg, "dataconnect_posture_interval", 21600), 21600), True),
             "dataconnect_endpoints": (
                 "dataconnect", _configured_interval(getattr(
-                    cfg, "dataconnect_endpoints_interval", 86400), 86400), True),
+                    cfg, "dataconnect_endpoints_interval", 21600), 21600), True),
             "dataconnect_freshness": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_freshness_interval", 86400), 86400), True),
             "dataconnect_nad_health": (
                 "dataconnect", _configured_interval(getattr(
-                    cfg, "dataconnect_nad_health_interval", 86400), 86400), True),
+                    cfg, "dataconnect_nad_health_interval", 21600), 21600), True),
             "mnt_active_posture": (
                 "mnt", _configured_interval(getattr(
-                    cfg, "mnt_active_posture_interval", self.medium_interval), 900),
+                    cfg, "mnt_active_posture_interval", self.medium_interval), 300),
                 getattr(cfg, "collect_mnt_active_posture", True)),
             "tacacs_config": ("rest", self.slow_interval, cfg.collect_tacacs),
             "tacacs_activity": (
                 "dataconnect", _configured_interval(getattr(
-                    cfg, "dataconnect_tacacs_interval", 86400), 86400),
+                    cfg, "dataconnect_tacacs_interval", 21600), 21600),
                 cfg.collect_tacacs),
         }
 
@@ -333,17 +336,17 @@ class PollScheduler:
         # than implying that a full cadence interval is queried.
         scan_intervals = {
             "dataconnect_radius": getattr(
-                self.cfg, "dataconnect_radius_interval", 86400),
+                self.cfg, "dataconnect_radius_interval", 1800),
             "dataconnect_performance": getattr(
-                self.cfg, "dataconnect_performance_interval", 21600),
+                self.cfg, "dataconnect_performance_interval", 300),
             "dataconnect_posture": getattr(
-                self.cfg, "dataconnect_posture_interval", 86400),
+                self.cfg, "dataconnect_posture_interval", 21600),
             "dataconnect_endpoints": getattr(
-                self.cfg, "dataconnect_endpoints_interval", 86400),
+                self.cfg, "dataconnect_endpoints_interval", 21600),
             "dataconnect_nad_health": getattr(
-                self.cfg, "dataconnect_nad_health_interval", 86400),
+                self.cfg, "dataconnect_nad_health_interval", 21600),
             "tacacs_activity": getattr(
-                self.cfg, "dataconnect_tacacs_interval", 86400),
+                self.cfg, "dataconnect_tacacs_interval", 21600),
         }
         for dataset, interval in scan_intervals.items():
             window_hours = (hourly_rollup_window_hours(self.cfg, interval)

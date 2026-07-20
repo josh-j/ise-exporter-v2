@@ -127,11 +127,11 @@
               },
               {
                 "color": "yellow",
-                "value": 129600
+                "value": 2700
               },
               {
                 "color": "red",
-                "value": 172800
+                "value": 3600
               }
             ]
           }
@@ -154,11 +154,11 @@
                     },
                     {
                       "color": "yellow",
-                      "value": 2700
+                      "value": 450
                     },
                     {
                       "color": "red",
-                      "value": 3600
+                      "value": 600
                     }
                   ]
                 }
@@ -1392,7 +1392,7 @@
       }
     }
   ],
-  "refresh": "30m",
+  "refresh": "5m",
   "schemaVersion": 39,
   "tags": [
     "ise",

@@ -113,11 +113,11 @@ ca_bundle = "/etc/ise-exporter/certs/ise-mnt-ca.pem"
 mnt_active_posture = true
 
 [mnt_active_posture]
-interval_seconds = 900
+interval_seconds = 300
 max_active_list_sessions = 10000
 max_sessions = 1000
 workers = 2
-max_requests_per_cycle = 250
+max_requests_per_cycle = 80
 refresh_ttl_seconds = 3600
 request_interval_ms = 500
 
@@ -155,8 +155,8 @@ MnT ActiveList has no pagination. The collector first calls the small ActiveCoun
 endpoint and refuses ActiveList above 10,000 sessions by default, marking the
 dataset unavailable while retaining its last snapshot. At the production defaults,
 the MnT collector deduplicates ActiveList MACs and
-tracks at most 1,000 currently active endpoints and performs no more than 250
-new/changed/rotating detail requests every 15 minutes with two paced workers.
+tracks at most 1,000 currently active endpoints and performs no more than 80
+new/changed/rotating detail requests every five minutes with two paced workers.
 The systemd `StateDirectory` preserves cached active-posture details and compatible
 Data Connect metric snapshots across restarts. It does not store RADIUS event rows
 or locally merged historical windows. Each reporting-domain snapshot is limited

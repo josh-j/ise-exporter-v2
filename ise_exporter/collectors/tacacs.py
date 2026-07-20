@@ -373,7 +373,7 @@ def _activity_queries(limit, cutoff_epoch, internal_user_count=0, schema=None):
 def _collect_dataconnect(dataconnect, cfg):
     limit = group_limit(cfg)
     window = event_window_hours(
-        cfg, getattr(cfg, "dataconnect_tacacs_interval", 86400))
+        cfg, getattr(cfg, "dataconnect_tacacs_interval", 21600))
     cutoff = max(0, int(time.time()) - window * 3600)
     internal_accounts = _internal_accounts(cfg)
     internal_label_by_raw = {raw: label_name for label_name, raw in internal_accounts}

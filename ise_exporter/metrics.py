@@ -342,6 +342,13 @@ ise_dataconnect_radius_active_sessions = Gauge(
 ise_dataconnect_radius_active_sessions_total = Gauge(
     "ise_dataconnect_radius_active_sessions_total",
     "Exact accounting-derived likely-active session count before top-K breakdown limiting")
+ise_dataconnect_radius_active_session_delta = Gauge(
+    "ise_dataconnect_radius_active_session_delta",
+    "RADIUS accounting starts minus stops during the latest active-session collection window",
+    ["psn"])
+ise_dataconnect_radius_active_session_delta_window_seconds = Gauge(
+    "ise_dataconnect_radius_active_session_delta_window_seconds",
+    "Lookback window used for the active-session start-minus-stop delta")
 ise_dataconnect_radius_active_session_stale_cutoff_seconds = Gauge(
     "ise_dataconnect_radius_active_session_stale_cutoff_seconds",
     "Maximum age of the latest non-stop accounting record counted as likely active")

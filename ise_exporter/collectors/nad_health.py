@@ -73,7 +73,7 @@ def collect(devices, dataconnect, cfg):
 
         recent = recent_event_predicate(
             "timestamp", event_window_hours(
-                cfg, getattr(cfg, "dataconnect_nad_health_interval", 86400)))
+                cfg, getattr(cfg, "dataconnect_nad_health_interval", 21600)))
         limit = group_limit(cfg)
         schema = getattr(dataconnect, "schema", None)
         view = "RADIUS_AUTHENTICATION_SUMMARY"

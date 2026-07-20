@@ -25,6 +25,14 @@ def integer(value):
     return int(result)
 
 
+def signed_integer(value):
+    """Normalize an integer-valued Data Connect balance that may be negative."""
+    result = number(value)
+    if not result.is_integer():
+        raise ValueError("Data Connect balance must be an integer")
+    return int(result)
+
+
 def group_limit(cfg):
     return max(1, min(1000, int(getattr(cfg, "dataconnect_max_groups", 1000))))
 

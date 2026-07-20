@@ -429,7 +429,7 @@ def collect(client, cfg):
             cfg, "mnt_active_posture_max_requests_per_cycle", len(selected) or 1))))
         refresh_ttl = max(1, int(getattr(
             cfg, "mnt_active_posture_refresh_ttl", 3600)))
-        interval = max(1, int(getattr(cfg, "mnt_active_posture_interval", 900)))
+        interval = max(1, int(getattr(cfg, "mnt_active_posture_interval", 300)))
         request_interval = max(0, int(getattr(
             cfg, "mnt_active_posture_request_interval_ms", 500))) / 1000.0
         now = time.time()

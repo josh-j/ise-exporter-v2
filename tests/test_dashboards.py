@@ -86,6 +86,13 @@ ise_network_devices_by_ops_owner{ops_owner="unknown"} 2
     )
     assert 'ops_owner="Branch \\"A\\""' in expressions
     assert "on(instance,nad) group_left(location,ops_owner)" in expressions
+    assert branch["refresh"] == "5m"
+    assert [step["value"] for step in _panel(
+        branch, "Device Inventory Age")["fieldConfig"]["defaults"]
+        ["thresholds"]["steps"]] == [None, 32400, 43200]
+    assert [step["value"] for step in _panel(
+        branch, "RADIUS Collection Age")["fieldConfig"]["defaults"]
+        ["thresholds"]["steps"]] == [None, 2700, 3600]
 
 
 def test_generator_prunes_only_previously_generated_owner_dashboards(tmp_path):
@@ -355,7 +362,6 @@ def test_domain_dashboards_expose_authoritative_dataset_availability():
         },
         "ise-psn-troubleshooting.json": {
             ("dataconnect_performance", "dataconnect"),
-            ("dataconnect_radius", "dataconnect"),
             ("dataconnect_radius_active", "dataconnect"),
             ("deployment", "rest"),
         },
@@ -826,11 +832,11 @@ def test_access_dashboard_collection_age_thresholds_match_domain_cadences():
     panel = _panel(dashboard, "Collection Age")
 
     defaults = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
-    assert [step["value"] for step in defaults] == [None, 129600, 172800]
+    assert [step["value"] for step in defaults] == [None, 2700, 3600]
     active = panel["fieldConfig"]["overrides"][0]
     assert active["matcher"] == {"id": "byFrameRefID", "options": "Active sessions"}
     steps = active["properties"][0]["value"]["steps"]
-    assert [step["value"] for step in steps] == [None, 2700, 3600]
+    assert [step["value"] for step in steps] == [None, 450, 600]
 
 
 def test_dashboard_age_thresholds_match_production_collection_cadences():
@@ -838,11 +844,11 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
     slow_interval = config.slow_interval
     expected = {
         ("ise-access-troubleshooting.json", "Collection Age"):
-            (129600, 172800),
+            (2700, 3600),
         ("ise-endpoints-devices.json", "Dataset Collection Age"):
-            (129600, 172800),
+            (32400, 43200),
         ("ise-psn-troubleshooting.json", "Dataset Collection Age"): (450, 600),
-        ("ise-secureclient.json", "Active Snapshot Age (MnT)"): (1350, 1800),
+        ("ise-secureclient.json", "Active Snapshot Age (MnT)"): (450, 600),
         ("ise-secureclient.json", "Historical Snapshot Age (Data Connect)"):
             (32400, 43200),
         ("ise-tacacs.json", "Configuration Collection Age"): (
@@ -858,13 +864,13 @@ def test_dashboard_age_thresholds_match_production_collection_cadences():
 
 def test_dashboard_refreshes_match_their_fastest_owned_collection_cadence():
     expected = {
-        "ise-access-troubleshooting.json": "30m",
+        "ise-access-troubleshooting.json": "5m",
         "ise-endpoints-devices.json": "6h",
         "ise-exporter-health.json": "30s",
         "ise-overview.json": "5m",
         "ise-pan-mnt-troubleshooting.json": "5m",
         "ise-psn-troubleshooting.json": "5m",
-        "ise-secureclient.json": "15m",
+        "ise-secureclient.json": "5m",
         "ise-tacacs.json": "6h",
     }
 
@@ -987,9 +993,21 @@ def test_psn_diagnostic_headline_respects_node_filter():
 def test_psn_dashboard_exposes_active_sessions_and_session_delta_per_psn():
     dashboard = _dashboard("ise-psn-troubleshooting.json")
 
+    availability = _panel(dashboard, "Dataset Availability")
+    collection_age = _panel(dashboard, "Dataset Collection Age")
+    assert {target["refId"] for target in availability["targets"]} == {
+        "Performance", "Sessions"}
+    assert {target["refId"] for target in collection_age["targets"]} == {
+        "Performance", "Sessions"}
+    assert any('dataset="dataconnect_radius_active"' in target["expr"]
+               for target in collection_age["targets"])
+
     active = _panel(dashboard, "Active Sessions per PSN")
     active_expression = active["targets"][0]["expr"]
-    assert active["type"] == "bargauge"
+    assert active["type"] == "timeseries"
+    assert active["targets"][0]["instant"] is False
+    assert active["fieldConfig"]["defaults"]["custom"]["drawStyle"] == "line"
+    assert active["options"]["legend"]["sortDesc"] is True
     assert "sum by (psn) (ise_dataconnect_radius_active_sessions" in \
         active_expression
     assert 'instance=~"$deployment",psn=~"$psn"' in active_expression
@@ -998,13 +1016,14 @@ def test_psn_dashboard_exposes_active_sessions_and_session_delta_per_psn():
 
     delta = _panel(dashboard, "Session Delta per PSN")
     delta_expression = delta["targets"][0]["expr"]
-    assert delta["type"] == "bargauge"
-    assert "sum by (psn)" in delta_expression
-    assert 'event_type=~"(?i).*start.*"' in delta_expression
-    assert 'event_type=~"(?i).*stop.*"' in delta_expression
-    assert "* -1" in delta_expression
+    assert delta["type"] == "timeseries"
+    assert delta["targets"][0]["instant"] is False
+    assert delta["fieldConfig"]["defaults"]["custom"]["drawStyle"] == "line"
+    assert delta["options"]["legend"]["sortDesc"] is True
+    assert "sum by (psn) (ise_dataconnect_radius_active_session_delta" in \
+        delta_expression
     assert 'instance=~"$deployment",psn=~"$psn"' in delta_expression
-    assert 'dataset="dataconnect_radius",source="dataconnect"' in \
+    assert 'dataset="dataconnect_radius_active",source="dataconnect"' in \
         delta_expression
 
 

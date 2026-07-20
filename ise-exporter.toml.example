@@ -77,15 +77,16 @@ detail_request_interval_ms = 250
 
 [mnt_active_posture]
 # Current active-session posture is a bounded MnT snapshot, not historical data.
-interval_seconds = 900 # 15 minutes
+interval_seconds = 300 # 5 minutes
 # Refuse ActiveList responses above this size rather than parsing an unsafe payload.
 max_active_list_sessions = 10000
 # Retain at most this many sessions from a valid ActiveList response.
 max_sessions = 1000
 # Parallel detail lookups. Increasing this raises load on the MnT node.
 workers = 2
-# Hard ceiling and pacing for per-session detail requests in one collection.
-max_requests_per_cycle = 250
+# Keep the hourly request ceiling near the former 15-minute profile while
+# refreshing the aggregate snapshot every five minutes.
+max_requests_per_cycle = 80
 # Reuse unchanged session details for up to one hour.
 refresh_ttl_seconds = 3600 # 1 hour
 request_interval_ms = 500
@@ -142,16 +143,18 @@ auth_guard_file = "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
 # Schema validation runs first and gates all reporting datasets. Cached snapshots
 # are restored after validation so restarts become useful without re-querying all data.
 schema_seconds = 86400 # 1 day
-# Historical RADIUS aggregates are intentionally slow; the active summary is fresher.
-radius_seconds = 86400 # 1 day
+# RADIUS troubleshooting aggregates refresh every 30 minutes. The single
+# active-session statement also emits start-minus-stop delta every five minutes.
+radius_seconds = 1800 # 30 minutes
 # Values above 3600 are normalized to the hard one-hour stale window.
-radius_active_seconds = 1800 # 30 minutes
+radius_active_seconds = 300 # 5 minutes
 # PSN CPU, memory, latency, diagnostics, and throughput troubleshooting.
 performance_seconds = 300 # 5 minutes
 # Historical posture assessments.
 posture_seconds = 21600 # 6 hours
-# Endpoint inventory and source-view freshness checks are large, slow datasets.
-endpoints_seconds = 86400 # 1 day
+# Endpoint inventory follows its six-hour dashboard cadence. The cross-view
+# source-freshness diagnostic remains daily.
+endpoints_seconds = 21600 # 6 hours
 freshness_seconds = 86400 # 1 day
 # NAD health and TACACS activity/configuration correlations.
 nad_health_seconds = 21600 # 6 hours

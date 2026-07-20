@@ -15,6 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
 
 logger = logging.getLogger(__name__)
 DEFAULT_CONFIG_FILE = "/etc/ise-exporter/config.toml"
+DEFAULT_DATACONNECT_RADIUS_ACTIVE_INTERVAL = 300
 MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL = 3600
 
 
@@ -38,9 +39,9 @@ class Config:
     mnt_ssl_verify: bool = True
     exporter_port: int = 9618
     state_db_path: str = "/var/lib/ise-exporter/state.sqlite3"
-    scrape_interval: int = 120
+    scrape_interval: int = 60
     medium_interval: int = 300
-    slow_interval: int = 3600
+    slow_interval: int = 21600
     startup_rate_limit_seconds: int = 5
     auth_failure_backoff: int = 900
     auth_failure_threshold: int = 3
@@ -55,11 +56,11 @@ class Config:
     collect_patches: bool = True
     collect_tacacs: bool = True
     collect_mnt_active_posture: bool = True
-    mnt_active_posture_interval: int = 900
+    mnt_active_posture_interval: int = 300
     mnt_active_posture_max_active_list_sessions: int = 10000
     mnt_active_posture_max_sessions: int = 1000
     mnt_active_posture_workers: int = 2
-    mnt_active_posture_max_requests_per_cycle: int = 250
+    mnt_active_posture_max_requests_per_cycle: int = 80
     mnt_active_posture_refresh_ttl: int = 3600
     mnt_active_posture_request_interval_ms: int = 500
     tacacs_internal_user_max: int = 1000
@@ -84,14 +85,15 @@ class Config:
     dataconnect_max_duty_cycle_percent: float = 0.1
     dataconnect_event_window_hours: int = 6
     dataconnect_schema_interval: int = 86400
-    dataconnect_radius_interval: int = 86400
-    dataconnect_radius_active_interval: int = MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL
-    dataconnect_performance_interval: int = 21600
-    dataconnect_posture_interval: int = 86400
-    dataconnect_endpoints_interval: int = 86400
+    dataconnect_radius_interval: int = 1800
+    dataconnect_radius_active_interval: int = \
+        DEFAULT_DATACONNECT_RADIUS_ACTIVE_INTERVAL
+    dataconnect_performance_interval: int = 300
+    dataconnect_posture_interval: int = 21600
+    dataconnect_endpoints_interval: int = 21600
     dataconnect_freshness_interval: int = 86400
-    dataconnect_nad_health_interval: int = 86400
-    dataconnect_tacacs_interval: int = 86400
+    dataconnect_nad_health_interval: int = 21600
+    dataconnect_tacacs_interval: int = 21600
     dataconnect_shared_pacing_file: str = "/var/lib/ise-exporter/shared/dataconnect.pacing"
     dataconnect_auth_guard_file: str = "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
     pxgrid_host: str = ""

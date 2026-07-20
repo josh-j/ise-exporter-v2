@@ -1,7 +1,7 @@
 """Exact RADIUS reporting and bounded current-session collection from Data Connect.
 
 Historical event queries are explicitly bounded to a short configured window and run on
-a slow reporting cadence. A separate query reconstructs only current likely-active
+a 30-minute reporting cadence. A separate query reconstructs only current likely-active
 sessions on a shorter cadence. Usernames, MAC addresses, session IDs, free-form
 failure text, and other unbounded values never become Prometheus labels.
 """
@@ -23,6 +23,7 @@ from .dataconnect_common import (
     schema_expression,
     schema_has,
     schema_projection,
+    signed_integer,
 )
 
 
@@ -51,6 +52,8 @@ _REPORTING_METRICS = (
 _ACTIVE_METRICS = (
     metrics.ise_dataconnect_radius_active_sessions,
     metrics.ise_dataconnect_radius_active_sessions_total,
+    metrics.ise_dataconnect_radius_active_session_delta,
+    metrics.ise_dataconnect_radius_active_session_delta_window_seconds,
     metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds,
     metrics.ise_dataconnect_radius_active_groups_returned,
     metrics.ise_dataconnect_radius_active_groups_total,
@@ -83,33 +86,36 @@ def _failure_class_sql(column="failure_reason"):
 _FAILURE_CLASS_SQL = _failure_class_sql()
 
 
-def _active_cte(stale_minutes, schema=None):
+def _active_cte(stale_minutes, delta_minutes=5, schema=None):
     view = "RADIUS_ACCOUNTING"
-    audit_session = schema_expression(schema, view, "audit_session_id")
-    session = schema_expression(schema, view, "session_id")
-    device = schema_expression(schema, view, "device_name", "'unknown'")
-    nas_ip = schema_expression(schema, view, "nas_ip_address", "'unknown'")
-    node = schema_projection(schema, view, "ise_node", "'unknown'")
     return f"""
-        WITH keyed_accounting AS (
-            SELECT CASE
-                       WHEN TRIM({audit_session}) IS NOT NULL
-                           THEN 'audit:' || TRIM({audit_session})
-                       WHEN TRIM({session}) IS NOT NULL
-                           THEN 'session:' || TRIM({session})
-                       ELSE 'acct:' ||
-                            NVL(TRIM({device}), NVL(TRIM({nas_ip}), 'unknown')) ||
-                            ':' || TRIM(acct_session_id)
-                   END AS session_key,
-                   id, timestamp AS event_time,
+        WITH recent_accounting AS (
+            SELECT /*+ MATERIALIZE */
+                   {schema_projection(schema, view, "audit_session_id")},
+                   {schema_projection(schema, view, "session_id")},
+                   acct_session_id, id, timestamp AS event_time,
                    {schema_projection(schema, view, "device_name", "'unknown'")},
-                   {node}, acct_status_type
+                   {schema_projection(schema, view, "nas_ip_address", "'unknown'")},
+                   {schema_projection(schema, view, "ise_node", "'unknown'")},
+                   acct_status_type
             FROM radius_accounting
             WHERE timestamp >= CAST(
                       SYSTIMESTAMP - NUMTODSINTERVAL({stale_minutes}, 'MINUTE')
                       AS TIMESTAMP)
-              AND (TRIM({audit_session}) IS NOT NULL
-                   OR TRIM({session}) IS NOT NULL
+        ), keyed_accounting AS (
+            SELECT CASE
+                       WHEN TRIM(audit_session_id) IS NOT NULL
+                           THEN 'audit:' || TRIM(audit_session_id)
+                       WHEN TRIM(session_id) IS NOT NULL
+                           THEN 'session:' || TRIM(session_id)
+                       ELSE 'acct:' ||
+                            NVL(TRIM(device_name), NVL(TRIM(nas_ip_address), 'unknown')) ||
+                            ':' || TRIM(acct_session_id)
+                   END AS session_key,
+                   id, event_time, device_name, ise_node, acct_status_type
+            FROM recent_accounting
+            WHERE (TRIM(audit_session_id) IS NOT NULL
+                   OR TRIM(session_id) IS NOT NULL
                    OR TRIM(acct_session_id) IS NOT NULL)
         ), latest_accounting AS (
             SELECT keyed_accounting.*,
@@ -124,11 +130,40 @@ def _active_cte(stale_minutes, schema=None):
               AND LOWER(TRIM(acct_status_type)) IN (
                   'start', 'interim', 'interim-update', 'interim update', 'update'
               )
+        ), grouped_active AS (
+            SELECT device_name, ise_node, COUNT(*) AS sessions
+            FROM active_accounting
+            GROUP BY device_name, ise_node
+        ), ranked_active AS (
+            SELECT grouped_active.*,
+                   SUM(sessions) OVER () AS total_sessions,
+                   COUNT(*) OVER () AS total_groups,
+                   ROW_NUMBER() OVER (ORDER BY sessions DESC) AS group_rank
+            FROM grouped_active
+        ), grouped_delta AS (
+            SELECT ise_node,
+                   SUM(CASE
+                       WHEN LOWER(TRIM(acct_status_type)) LIKE '%start%' THEN 1
+                       WHEN LOWER(TRIM(acct_status_type)) LIKE '%stop%' THEN -1
+                       ELSE 0
+                   END) AS session_delta
+            FROM recent_accounting
+            WHERE event_time >= CAST(
+                      SYSTIMESTAMP - NUMTODSINTERVAL({delta_minutes}, 'MINUTE')
+                      AS TIMESTAMP)
+              AND (LOWER(TRIM(acct_status_type)) LIKE '%start%'
+                   OR LOWER(TRIM(acct_status_type)) LIKE '%stop%')
+            GROUP BY ise_node
+        ), ranked_delta AS (
+            SELECT grouped_delta.*,
+                   ROW_NUMBER() OVER (
+                       ORDER BY ABS(session_delta) DESC) AS group_rank
+            FROM grouped_delta
         )
     """
 
 
-def _queries(limit, stale_minutes=60, window_hours=6,
+def _queries(limit, stale_minutes=60, window_hours=6, delta_minutes=5,
              authentication_policy_column="authorization_policy",
              accounting_policy_expression="authorization_policy", schema=None,
              authentication_view="RADIUS_AUTHENTICATIONS"):
@@ -143,7 +178,7 @@ def _queries(limit, stale_minutes=60, window_hours=6,
     accounting_policy_expression = str(accounting_policy_expression).lower()
     if accounting_policy_expression not in {"authorization_policy", "'none'"}:
         raise ValueError("unsupported RADIUS accounting policy expression")
-    active_cte = _active_cte(stale_minutes, schema)
+    active_cte = _active_cte(stale_minutes, delta_minutes, schema)
     auth_recent = recent_event_predicate("timestamp", window_hours)
     auth_summary_recent = recent_event_predicate("timestamp", window_hours)
     accounting_recent = recent_event_predicate("timestamp", window_hours)
@@ -343,15 +378,16 @@ def _queries(limit, stale_minutes=60, window_hours=6,
             SELECT * FROM ranked_accounting WHERE group_rank <= {limit}
         """,
         "active_sessions": active_cte + f"""
-            SELECT grouped_active.*,
-                   SUM(sessions) OVER () AS total_sessions,
-                   COUNT(*) OVER () AS total_groups
-            FROM (
-                SELECT device_name, ise_node, COUNT(*) AS sessions
-                FROM active_accounting
-                GROUP BY device_name, ise_node
-            ) grouped_active
-            ORDER BY sessions DESC FETCH FIRST {limit} ROWS ONLY
+            SELECT 'active' AS breakdown, device_name, ise_node, sessions,
+                   NULL AS session_delta, total_sessions, total_groups
+            FROM ranked_active
+            WHERE group_rank <= {limit}
+            UNION ALL
+            SELECT 'delta' AS breakdown, NULL AS device_name, ise_node,
+                   NULL AS sessions, session_delta,
+                   NULL AS total_sessions, NULL AS total_groups
+            FROM ranked_delta
+            WHERE group_rank <= {limit}
         """,
         "errors": f"""
             SELECT grouped_errors.*,
@@ -423,7 +459,7 @@ def collect_reporting(dataconnect, cfg):
             dataconnect,
             _reporting_queries(
                 limit, event_window_hours(
-                    cfg, getattr(cfg, "dataconnect_radius_interval", 86400)),
+                    cfg, getattr(cfg, "dataconnect_radius_interval", 1800)),
                 authentication_policy_column=authentication_policy,
                 accounting_policy_expression=_accounting_policy_expression(dataconnect),
                 schema=getattr(dataconnect, "schema", None),
@@ -611,7 +647,7 @@ def collect_reporting(dataconnect, cfg):
 
 
 def collect_active(dataconnect, cfg):
-    """Atomically replace the current bounded active-session reconstruction."""
+    """Replace active sessions and the short-window delta from one bounded scan."""
     with observe("dataconnect_radius_active"):
         limit = group_limit(cfg)
         # This query runs repeatedly and reads the large accounting event view.
@@ -620,26 +656,44 @@ def collect_active(dataconnect, cfg):
         # and a hard execution-boundary ceiling.
         stale_minutes = max(5, min(60, int(getattr(
             cfg, "dataconnect_active_session_stale_minutes", 60))))
+        interval_seconds = max(60, int(getattr(
+            cfg, "dataconnect_radius_active_interval", 300)))
+        delta_minutes = max(1, min(stale_minutes, (interval_seconds + 59) // 60))
         values = dataconnect.query(_queries(
-            limit, stale_minutes, schema=getattr(dataconnect, "schema", None)
+            limit, stale_minutes, delta_minutes=delta_minutes,
+            schema=getattr(dataconnect, "schema", None)
         )["active_sessions"])
-        summary = values[0] if values else {}
+        active_values = [row for row in values
+                         if row.get("breakdown", "active") == "active"]
+        delta_values = [row for row in values if row.get("breakdown") == "delta"]
+        summary = active_values[0] if active_values else {}
         active_sessions = [{
             "nad": label(row.get("device_name")),
             "psn": label(row.get("ise_node")),
             "sessions": integer(row.get("sessions")),
-        } for row in values]
+        } for row in active_values]
+        session_deltas = [{
+            "psn": label(row.get("ise_node")),
+            "delta": signed_integer(row.get("session_delta")),
+        } for row in delta_values]
         total_groups = integer(summary.get("total_groups"))
         writers = [
             lambda row=row: metrics.ise_dataconnect_radius_active_sessions.labels(
                 nad=row["nad"], psn=row["psn"]).set(row["sessions"])
             for row in active_sessions
         ]
+        writers.extend(
+            lambda row=row: metrics.ise_dataconnect_radius_active_session_delta.labels(
+                psn=row["psn"]).set(row["delta"])
+            for row in session_deltas
+        )
         writers.extend((
             lambda: metrics.ise_dataconnect_radius_active_sessions_total.set(
                 integer(summary.get("total_sessions"))),
             lambda: metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds.set(
                 stale_minutes * 60),
+            lambda: metrics.ise_dataconnect_radius_active_session_delta_window_seconds.set(
+                delta_minutes * 60),
             lambda: metrics.ise_dataconnect_radius_active_groups_returned.set(
                 len(active_sessions)),
             lambda: metrics.ise_dataconnect_radius_active_groups_total.set(total_groups),

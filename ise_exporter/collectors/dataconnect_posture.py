@@ -224,7 +224,7 @@ def collect(dataconnect, cfg):
             dataconnect,
             _queries(
                 group_limit(cfg), event_window_hours(
-                    cfg, getattr(cfg, "dataconnect_posture_interval", 86400)),
+                    cfg, getattr(cfg, "dataconnect_posture_interval", 21600)),
                 getattr(dataconnect, "schema", None)),
         )
         snapshot = rows["snapshot"]

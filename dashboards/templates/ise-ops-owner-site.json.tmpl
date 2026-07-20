@@ -18,7 +18,7 @@
       "title": "Device Inventory Age",
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
       "targets": [{"expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
-      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 129600}, {"color": "red", "value": 172800}]}}, "overrides": []}
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 32400}, {"color": "red", "value": 43200}]}}, "overrides": []}
     },
     {
       "id": 92,
@@ -34,7 +34,7 @@
       "title": "RADIUS Collection Age",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
       "targets": [{"expr": "time() - max(ise_dataset_last_success_timestamp{instance=~\"$deployment\",dataset=\"dataconnect_radius\",source=\"dataconnect\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
-      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 129600}, {"color": "red", "value": 172800}]}}, "overrides": []}
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 2700}, {"color": "red", "value": 3600}]}}, "overrides": []}
     },
     {
       "id": 1,
@@ -157,7 +157,7 @@
       "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}}}]
     }
   ],
-  "refresh": "30m",
+  "refresh": "5m",
   "schemaVersion": 39,
   "tags": ["ise", "ops-owner", "site", "generated", "__OPS_OWNER__"],
   "templating": {

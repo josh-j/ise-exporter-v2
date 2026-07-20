@@ -92,11 +92,11 @@
               },
               {
                 "color": "yellow",
-                "value": 1350
+                "value": 450
               },
               {
                 "color": "red",
-                "value": 1800
+                "value": 600
               }
             ]
           }
@@ -1142,7 +1142,7 @@
       }
     }
   ],
-  "refresh": "15m",
+  "refresh": "5m",
   "schemaVersion": 39,
   "tags": [
     "ise",

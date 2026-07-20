@@ -69,7 +69,7 @@ max_groups = 1000
 event_window_hours = 6
 
 [dataconnect.intervals]
-tacacs_seconds = 86400
+tacacs_seconds = 21600
 
 [tacacs.policies]
 max_sets = 100
@@ -78,7 +78,7 @@ rule_ttl_seconds = 604800
 rule_request_interval_ms = 250
 ```
 
-With the defaults, TACACS runs daily and scans six hours rather than
+With the defaults, TACACS runs every six hours and scans six hours rather than
 regrouping the complete two-day view. Lowering the event-window ceiling below the
 collector cadence deliberately changes this to sampling.
 

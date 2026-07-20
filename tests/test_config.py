@@ -28,9 +28,17 @@ def test_example_is_complete_and_parseable(monkeypatch):
     assert config.pxgrid_password == "pxgrid-secret"
     assert config.pxgrid_ready
     assert config.medium_interval == 300
+    assert config.slow_interval == 21600
+    assert config.dataconnect_radius_interval == 1800
+    assert config.dataconnect_radius_active_interval == 300
     assert config.dataconnect_performance_interval == 300
+    assert config.dataconnect_posture_interval == 21600
+    assert config.dataconnect_endpoints_interval == 21600
+    assert config.dataconnect_nad_health_interval == 21600
+    assert config.dataconnect_tacacs_interval == 21600
     assert config.dataconnect_max_duty_cycle_percent == 0.1
-    assert config.mnt_active_posture_interval == 900
+    assert config.mnt_active_posture_interval == 300
+    assert config.mnt_active_posture_max_requests_per_cycle == 80
 
 
 def test_example_explains_units_safety_and_operational_tradeoffs():
@@ -147,6 +155,16 @@ def test_defaults_still_support_direct_test_construction():
     assert len(fields(config)) > 60
     assert config.state_db_path == "/var/lib/ise-exporter/state.sqlite3"
     assert config.dataconnect_ready is False
+    assert config.scrape_interval == 60
+    assert config.slow_interval == 21600
+    assert config.mnt_active_posture_interval == 300
+    assert config.mnt_active_posture_max_requests_per_cycle == 80
+    assert config.dataconnect_radius_interval == 1800
+    assert config.dataconnect_performance_interval == 300
+    assert config.dataconnect_posture_interval == 21600
+    assert config.dataconnect_endpoints_interval == 21600
+    assert config.dataconnect_nad_health_interval == 21600
+    assert config.dataconnect_tacacs_interval == 21600
 
 
 def test_active_radius_interval_above_stale_window_is_safely_capped(

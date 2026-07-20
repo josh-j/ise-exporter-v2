@@ -94,7 +94,7 @@ def test_scheduler_publishes_cadence_aligned_scan_windows():
         sample.labels["dataset"]: sample.value
         for sample in metrics.ise_dataconnect_scan_window_hours.collect()[0].samples
     }
-    assert samples["dataconnect_radius"] == 6
+    assert samples["dataconnect_radius"] == 1
     assert samples["dataconnect_performance"] == 6
     assert samples["dataconnect_posture"] == 6
     assert samples["dataconnect_endpoints"] == 6
@@ -1106,19 +1106,19 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     assert metrics.ise_collector_enabled.labels(collector="certificates")._value.get() == 0
     assert metrics.ise_dataset_up.labels(dataset="certificates", source="rest")._value.get() == 0
     assert metrics.ise_dataset_interval_seconds.labels(
-        dataset="dataconnect_radius", source="dataconnect")._value.get() == 86400
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 1800
     assert metrics.ise_dataset_interval_seconds.labels(
-        dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 3600
+        dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 300
     assert metrics.ise_dataset_enabled.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     assert {source for source, _interval, _enabled in scheduler.dataset_plan.values()} == {
         "rest", "dataconnect", "mnt"}
 
     scheduler.last_success["dataconnect_radius"] = 100.0
-    scheduler._update_freshness(172899.0)
+    scheduler._update_freshness(3699.0)
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
-    scheduler._update_freshness(172901.0)
+    scheduler._update_freshness(3701.0)
     assert metrics.ise_dataset_fresh.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 0
 
@@ -1158,7 +1158,7 @@ def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
         with collectors.observe("dataconnect_radius"):
             persisted.labels(key="restored").set(42)
 
-    first._run("dataconnect_radius", 100.0, 86400, succeed)
+    first._run("dataconnect_radius", 100.0, 1800, succeed)
     persisted._metrics.clear()
     clock[0] = 401.0
     restarted = PollScheduler(cfg, object(), object())
@@ -1167,7 +1167,7 @@ def test_fresh_dataconnect_snapshot_survives_restart_without_requery(
                for sample in persisted.collect()[0].samples}
     assert samples == {("restored", 42)}
     assert restarted.last_success["dataconnect_radius"] == 400.0
-    assert restarted.next_run["dataconnect_radius"] == 86800.0
+    assert restarted.next_run["dataconnect_radius"] == 2200.0
     assert metrics.ise_dataset_up.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     assert metrics.ise_dataset_fresh.labels(
@@ -1286,9 +1286,9 @@ def test_stale_dataconnect_snapshot_is_not_restored(monkeypatch, tmp_path):
         with collectors.observe("dataconnect_radius"):
             persisted.set(42)
 
-    first._run("dataconnect_radius", 100.0, 86400, succeed)
+    first._run("dataconnect_radius", 100.0, 1800, succeed)
     persisted.set(0)
-    clock[0] = 172901.0
+    clock[0] = 3701.0
     restarted = PollScheduler(cfg, object(), object())
 
     assert persisted._value.get() == 0
