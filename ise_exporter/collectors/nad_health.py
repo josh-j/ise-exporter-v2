@@ -9,9 +9,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
+import logging
+import time
 
 from .. import metrics
 from ..snapshots import replace_metric_snapshot
+from ..state import StateStore
 from ..util import metric_label, parse_ise_date
 from . import CollectorFailed, observe
 from .dataconnect_common import (
@@ -22,6 +25,11 @@ from .dataconnect_common import (
     schema_expression,
 )
 
+
+logger = logging.getLogger(__name__)
+
+# Silence thresholds for the accumulated full-inventory "dead switch" signal.
+_SILENT_DAYS = (7, 30)
 
 _METRICS = (
     metrics.ise_nad_authentication_events,
@@ -34,6 +42,11 @@ _METRICS = (
     metrics.ise_nad_activity_groups_returned,
     metrics.ise_nad_activity_groups_total,
     metrics.ise_nad_activity_groups_truncated,
+    metrics.ise_nad_activity_last_authentication_timestamp,
+    metrics.ise_nad_activity_tracked_total,
+    metrics.ise_nad_activity_never_authenticated_total,
+    metrics.ise_nad_activity_silent,
+    metrics.ise_nad_activity_cache_entries,
 )
 
 
@@ -126,6 +139,32 @@ def collect(devices, dataconnect, cfg):
             name for name in sorted(configured, key=str.casefold)
             if name not in selected and len(selected) < limit)
 
+        # Accumulate the high-water last-authentication timestamp for every
+        # configured NAD across cycles. The top-K activity query only ranks the
+        # busiest NADs each window, so without this the per-device last-seen
+        # signal above covers at most `limit` of the fleet. The persistent cache
+        # lets the "which switch went silent" signal reach the whole inventory.
+        now = time.time()
+        store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
+        try:
+            for name, seen_at in last_seen.items():
+                if seen_at > 0:
+                    store.put_nad_activity(name, seen_at, now=now)
+            store.commit()
+            store.finish_nad_activity_cycle(list(configured), now=now)
+            cached_activity = store.nad_activity_all()
+            activity_cache_entries = store.nad_activity_count()
+        finally:
+            store.close()
+
+        tracked = len(cached_activity)
+        never_authenticated = max(0, len(configured) - tracked)
+        silent = {
+            days: sum(1 for seen_at in cached_activity.values()
+                      if 0 < seen_at < now - days * 86400)
+            for days in _SILENT_DAYS
+        }
+
         writers = [
             lambda: metrics.ise_nad_unconfigured_authentication_events_topk.set(
                 unconfigured),
@@ -150,5 +189,25 @@ def collect(devices, dataconnect, cfg):
                 metrics.ise_nad_authentication_events.labels(
                     nad=name, status=status).set(count)
             for (name, status), count in counts.items()
+        )
+        # Full-inventory accumulated dead-switch coverage. One timestamp series
+        # per configured NAD (0 = never observed); dashboards threshold on age.
+        writers.extend(
+            lambda name=name, seen_at=cached_activity.get(name, 0.0):
+                metrics.ise_nad_activity_last_authentication_timestamp.labels(
+                    nad=name).set(seen_at)
+            for name in configured
+        )
+        writers.extend((
+            lambda: metrics.ise_nad_activity_tracked_total.set(tracked),
+            lambda: metrics.ise_nad_activity_never_authenticated_total.set(
+                never_authenticated),
+            lambda: metrics.ise_nad_activity_cache_entries.set(
+                activity_cache_entries),
+        ))
+        writers.extend(
+            lambda days=days, count=count: metrics.ise_nad_activity_silent.labels(
+                threshold_days=str(days)).set(count)
+            for days, count in silent.items()
         )
         replace_metric_snapshot(_METRICS, writers)

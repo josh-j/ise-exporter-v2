@@ -33,6 +33,7 @@ from .collectors import (
     dataconnect_radius,
     deployment,
     devices,
+    endpoint_fleet,
     licensing,
     mnt_active_posture,
     nad_health,
@@ -76,6 +77,7 @@ def _configured_interval(value, default):
 _DATACONNECT_PRIORITY = {
     "dataconnect_schema": -1,
     "dataconnect_radius_active": 0,
+    "dataconnect_accounting_counters": 1,
     "dataconnect_performance": 1,
     "dataconnect_nad_health": 2,
     "dataconnect_radius": 3,
@@ -83,6 +85,7 @@ _DATACONNECT_PRIORITY = {
     "dataconnect_posture": 5,
     "dataconnect_endpoints": 6,
     "dataconnect_freshness": 7,
+    "endpoint_fleet": 8,
 }
 
 _PERSISTED_DATACONNECT_METRICS = {
@@ -94,6 +97,7 @@ _PERSISTED_DATACONNECT_METRICS = {
     "dataconnect_freshness": dataconnect_freshness._METRICS,
     "dataconnect_nad_health": nad_health._METRICS,
     "tacacs_activity": tacacs._ACTIVITY_METRICS,
+    "endpoint_fleet": endpoint_fleet._METRICS,
 }
 
 
@@ -183,6 +187,10 @@ class PollScheduler:
         self._mnt_worker = None
         self._shutdown = None
         self._nad_inventory = None
+        self._devices_async = False
+        self._devices_inflight = False
+        self._devices_lock = threading.RLock()
+        self._devices_worker = None
         self._schema_managed = hasattr(dataconnect, "schema_ready")
         self._dataconnect_schema_ready = bool(getattr(
             dataconnect, "schema_ready", True))
@@ -286,6 +294,10 @@ class PollScheduler:
             "dataconnect_performance": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_performance_interval", 300), 300), True),
+            "dataconnect_accounting_counters": (
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_accounting_counters_interval", 300), 300),
+                bool(getattr(cfg, "dataconnect_accounting_event_counters", False))),
             "dataconnect_posture": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_posture_interval", 21600), 21600), True),
@@ -295,6 +307,10 @@ class PollScheduler:
             "dataconnect_freshness": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_freshness_interval", 86400), 86400), True),
+            "endpoint_fleet": (
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "endpoint_fleet_interval", 900), 900),
+                bool(getattr(cfg, "endpoint_fleet_enabled", False))),
             "dataconnect_nad_health": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_nad_health_interval", 21600), 21600), True),
@@ -1000,6 +1016,64 @@ class PollScheduler:
                     self._mnt_async = False
                     self._mnt_stopping = False
 
+    def _run_devices(self, now):
+        """Run the ERS device collector off the synchronous REST lane.
+
+        The per-NAD detail refresh can be a long paced ERS walk on a large
+        inventory. Running it on its own daemon thread keeps it from blocking
+        certificates, licensing, backup, and patches behind it. It stays
+        synchronous (deterministic) until loop() activates the worker.
+        """
+        name = "devices"
+        tier = self.dataset_plan[name][1]
+
+        def collect_devices():
+            # A failed current REST attempt invalidates the join input; retaining
+            # an older list would make NAD health look authoritative while ERS is down.
+            self._nad_inventory = devices.collect(self.client, self.cfg)
+
+        with self._devices_lock:
+            asynchronous = self._devices_async
+            if asynchronous:
+                if (self._shutdown is not None and self._shutdown.is_set()
+                        or self._devices_inflight
+                        or not self._due(name, now, tier)):
+                    return
+                self._devices_inflight = True
+        if not asynchronous:
+            self._run(name, now, tier, collect_devices)
+            return
+
+        def run():
+            try:
+                self._run(name, time.time(), tier, collect_devices)
+            except Exception:
+                logger.exception("devices worker crashed")
+            finally:
+                with self._devices_lock:
+                    self._devices_inflight = False
+
+        self._devices_worker = threading.Thread(
+            target=run, name="ise-devices-worker", daemon=True)
+        self._devices_worker.start()
+
+    def _start_devices_worker(self, shutdown):
+        with self._devices_lock:
+            self._shutdown = shutdown
+            self._devices_async = True
+
+    def _stop_devices_worker(self):
+        with self._devices_lock:
+            worker = self._devices_worker
+            self._devices_async = False
+        if worker is None:
+            return
+        try:
+            configured = int(getattr(self.cfg, "request_timeout", 30))
+        except (TypeError, ValueError):
+            configured = 30
+        worker.join(timeout=max(2, configured + 2))
+
     def run_cycle(self):
         cfg, now = self.cfg, time.time()
 
@@ -1023,6 +1097,15 @@ class PollScheduler:
             self.dataset_plan["dataconnect_performance"][1],
             lambda: dataconnect_performance.collect(self.dataconnect, cfg))
 
+        # Opt-in incremental accounting-event counters. Operational cadence, but
+        # dark unless enabled; it tails only new rows so Prometheus owns the windowing.
+        if getattr(cfg, "dataconnect_accounting_event_counters", False):
+            self._run_dataconnect(
+                "dataconnect_accounting_counters",
+                self.dataset_plan["dataconnect_accounting_counters"][1],
+                lambda: dataconnect_radius.collect_accounting_counters(
+                    self.dataconnect, cfg))
+
         # MnT owns only a bounded current active-endpoint posture snapshot. Run
         # it before cold-start inventory so the overview becomes useful early.
         if getattr(cfg, "collect_mnt_active_posture", True):
@@ -1031,13 +1114,10 @@ class PollScheduler:
                 "mnt_active_posture", interval,
                 lambda: mnt_active_posture.collect(self.mnt, cfg))
 
-        # REST/OpenAPI control plane: always authoritative in every profile.
-        def collect_devices():
-            # A failed current REST attempt invalidates the join input; retaining
-            # an older list would make NAD health look authoritative while ERS is down.
-            self._nad_inventory = devices.collect(self.client, cfg)
-
-        self._run("devices", now, self.dataset_plan["devices"][1], collect_devices)
+        # REST/OpenAPI control plane: always authoritative in every profile. The
+        # ERS device collector runs on its own lane so a long per-NAD detail walk
+        # never blocks the certificates/licensing/backup/patches collectors below.
+        self._run_devices(now)
         if cfg.collect_certificates:
             self._run("certificates", now, self.dataset_plan["certificates"][1],
                       lambda: certificates.collect(self.client, cfg))
@@ -1072,6 +1152,13 @@ class PollScheduler:
             "dataconnect_freshness", self.dataset_plan["dataconnect_freshness"][1],
             lambda: dataconnect_freshness.collect(self.dataconnect, cfg))
 
+        # Opt-in accumulated fleet posture runs last so its steady paging never
+        # delays current operational datasets; it is dark unless enabled.
+        if getattr(cfg, "endpoint_fleet_enabled", False):
+            self._run_dataconnect(
+                "endpoint_fleet", self.dataset_plan["endpoint_fleet"][1],
+                lambda: endpoint_fleet.collect(self.dataconnect, cfg))
+
         # TACACS configuration is REST-owned; activity is Data Connect-owned in
         # standard mode. The collector exposes distinct metric families for each.
         if cfg.collect_tacacs:
@@ -1086,6 +1173,7 @@ class PollScheduler:
     def loop(self, shutdown):
         self._start_dataconnect_worker(shutdown)
         self._start_mnt_worker(shutdown)
+        self._start_devices_worker(shutdown)
         try:
             nxt = time.time()
             while not shutdown.is_set():
@@ -1100,3 +1188,4 @@ class PollScheduler:
             shutdown.set()
             self._stop_dataconnect_worker()
             self._stop_mnt_worker()
+            self._stop_devices_worker()

@@ -44,8 +44,13 @@ MAX_FIELD_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 64 * 1024 * 1024
 MAX_FIELD_NESTING_DEPTH = 16
 MAX_BATCH_QUERIES = 5
-RECOMMENDED_MIN_DUTY_CYCLE_PERCENT = 0.01
-RECOMMENDED_MAX_DUTY_CYCLE_PERCENT = 0.1
+# Recommended operating band for the reporting-query duty cycle. Below the floor,
+# the global cooldown (duration * (100/duty - 1)) throttles even fast operational
+# datasets far below their configured cadence on a large deployment; above the
+# ceiling, sustained reporting load on the ISE database becomes significant. The
+# default (1.0%) sits inside this band; large fleets tune toward the ceiling.
+RECOMMENDED_MIN_DUTY_CYCLE_PERCENT = 0.1
+RECOMMENDED_MAX_DUTY_CYCLE_PERCENT = 2.0
 # One statement may spend one timeout connecting and one executing, then repeat
 # both after the single permitted disconnect retry. Crash leases must reserve
 # all four periods because the flock disappears when the process dies.
@@ -246,6 +251,42 @@ class DataConnectClient:
         metrics.ise_dataconnect_query_timeout_seconds.set(self.timeout)
         metrics.ise_dataconnect_result_row_ceiling.set(MAX_RESULT_ROWS)
         metrics.ise_dataconnect_result_byte_ceiling.set(MAX_RESULT_BYTES)
+        self._publish_duty_cycle_advisory()
+
+    def _publish_duty_cycle_advisory(self):
+        """Surface a configured duty cycle that sits outside the recommended band.
+
+        The band constants were previously defined but never consulted, so an
+        operator who left the duty cycle at a value that starves operational
+        freshness (or one that hammers the database) was never told. Publish the
+        band and an advisory state, and log once at construction.
+        """
+        metrics.ise_dataconnect_duty_cycle_recommended_min_percent.set(
+            RECOMMENDED_MIN_DUTY_CYCLE_PERCENT)
+        metrics.ise_dataconnect_duty_cycle_recommended_max_percent.set(
+            RECOMMENDED_MAX_DUTY_CYCLE_PERCENT)
+        if self.max_duty_cycle < RECOMMENDED_MIN_DUTY_CYCLE_PERCENT:
+            metrics.ise_dataconnect_duty_cycle_advisory.set(-1)
+            logger.warning(
+                "Data Connect duty cycle %.3f%% is below the recommended floor "
+                "%.3f%%; the global cooldown is duration*(100/duty-1), so a single "
+                "%ds statement pauses ALL reporting datasets for up to %.0f min, "
+                "throttling operational panels far below their configured cadence. "
+                "Raise dataconnect.max_duty_cycle_percent (default %.1f) if the "
+                "database can absorb it.",
+                self.max_duty_cycle, RECOMMENDED_MIN_DUTY_CYCLE_PERCENT,
+                self.timeout,
+                self.timeout * (100 / self.max_duty_cycle - 1) / 60.0,
+                RECOMMENDED_MAX_DUTY_CYCLE_PERCENT)
+        elif self.max_duty_cycle > RECOMMENDED_MAX_DUTY_CYCLE_PERCENT:
+            metrics.ise_dataconnect_duty_cycle_advisory.set(1)
+            logger.warning(
+                "Data Connect duty cycle %.3f%% is above the recommended ceiling "
+                "%.3f%%; sustained reporting load on the ISE database may be "
+                "significant. Confirm the deployment can absorb it.",
+                self.max_duty_cycle, RECOMMENDED_MAX_DUTY_CYCLE_PERCENT)
+        else:
+            metrics.ise_dataconnect_duty_cycle_advisory.set(0)
 
     def pacing_blocker(self):
         """Describe why the latest non-blocking query was not started."""

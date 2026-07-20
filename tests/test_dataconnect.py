@@ -252,6 +252,47 @@ def test_client_hard_caps_oracle_call_timeout(monkeypatch):
         dataconnect.MAX_RESULT_BYTES)
 
 
+def _duty_cfg(duty):
+    return types.SimpleNamespace(
+        dataconnect_host="mnt.example.com", dataconnect_port=2484,
+        dataconnect_service="cpm10", dataconnect_user="dataconnect",
+        dataconnect_password="secret", dataconnect_ca_bundle="",
+        dataconnect_ssl_verify=False, dataconnect_query_timeout=15,
+        auth_failure_threshold=3, auth_failure_backoff=900,
+        dataconnect_max_duty_cycle_percent=duty,
+    )
+
+
+def test_duty_cycle_within_recommended_band_publishes_zero_advisory_and_no_warning(
+        caplog):
+    with caplog.at_level("WARNING"):
+        dataconnect.DataConnectClient(_duty_cfg(1.0))
+
+    assert metrics.ise_dataconnect_duty_cycle_advisory._value.get() == 0
+    assert (metrics.ise_dataconnect_duty_cycle_recommended_min_percent._value.get()
+            == dataconnect.RECOMMENDED_MIN_DUTY_CYCLE_PERCENT)
+    assert (metrics.ise_dataconnect_duty_cycle_recommended_max_percent._value.get()
+            == dataconnect.RECOMMENDED_MAX_DUTY_CYCLE_PERCENT)
+    assert "duty cycle" not in caplog.text
+
+
+def test_duty_cycle_below_recommended_floor_warns_with_throttling_advisory(caplog):
+    with caplog.at_level("WARNING"):
+        dataconnect.DataConnectClient(_duty_cfg(0.01))
+
+    assert metrics.ise_dataconnect_duty_cycle_advisory._value.get() == -1
+    assert "below the recommended floor" in caplog.text
+    assert "throttling operational panels" in caplog.text
+
+
+def test_duty_cycle_above_recommended_ceiling_warns_about_database_load(caplog):
+    with caplog.at_level("WARNING"):
+        dataconnect.DataConnectClient(_duty_cfg(5.0))
+
+    assert metrics.ise_dataconnect_duty_cycle_advisory._value.get() == 1
+    assert "above the recommended ceiling" in caplog.text
+
+
 def test_queries_are_paced_and_publish_bounded_view_telemetry(monkeypatch):
     connection = Connection()
     monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)

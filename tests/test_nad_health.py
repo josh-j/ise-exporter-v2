@@ -61,6 +61,82 @@ def test_joins_configured_nads_to_activity_without_exporting_unconfigured_names(
     assert metrics.ise_nad_activity_groups_truncated._value.get() == 0
 
 
+class SettableActivity:
+    """Fake Data Connect returning a settable top-K activity batch per cycle."""
+
+    def __init__(self):
+        self.rows = []
+
+    def query(self, _sql):
+        return list(self.rows)
+
+
+def _activity_row(nad, last_event, passed=1, failed=0, total_groups=1):
+    return {"nad": nad, "passed_events": passed, "failed_events": failed,
+            "last_event": last_event, "total_groups": total_groups}
+
+
+def test_accumulator_gives_full_inventory_dead_switch_coverage_across_cycles(tmp_path):
+    devices = [{"name": "switch-a"}, {"name": "switch-b"}, {"name": "switch-c"}]
+    cfg = types.SimpleNamespace(state_db_path=str(tmp_path / "state.sqlite3"))
+    client = SettableActivity()
+    now = datetime.now(timezone.utc).timestamp()
+
+    def at(days_ago):
+        return datetime.fromtimestamp(now - days_ago * 86400, tz=timezone.utc)
+
+    # Cycle 1: only switch-a authenticates, 10 days ago.
+    client.rows = [_activity_row("SWITCH-A", at(10))]
+    nad_health.collect(devices, client, cfg)
+
+    activity = _rows(metrics.ise_nad_activity_last_authentication_timestamp, "nad")
+    assert activity[("switch-a",)] == pytest.approx(now - 10 * 86400, abs=5)
+    assert activity[("switch-b",)] == 0
+    assert activity[("switch-c",)] == 0
+    assert metrics.ise_nad_activity_tracked_total._value.get() == 1
+    assert metrics.ise_nad_activity_never_authenticated_total._value.get() == 2
+
+    # Cycle 2: only switch-b authenticates (1 day ago). switch-a has dropped out of
+    # the top-K window, but its accumulated last-auth must persist — that is the
+    # whole point of the cache versus the bounded per-cycle top-K signal.
+    client.rows = [_activity_row("SWITCH-B", at(1))]
+    nad_health.collect(devices, client, cfg)
+
+    activity = _rows(metrics.ise_nad_activity_last_authentication_timestamp, "nad")
+    assert activity[("switch-a",)] == pytest.approx(now - 10 * 86400, abs=5)
+    assert activity[("switch-b",)] == pytest.approx(now - 1 * 86400, abs=5)
+    assert activity[("switch-c",)] == 0
+    assert metrics.ise_nad_activity_tracked_total._value.get() == 2
+    assert metrics.ise_nad_activity_never_authenticated_total._value.get() == 1
+    assert _rows(metrics.ise_nad_activity_silent, "threshold_days") == {
+        ("7",): 1,   # switch-a (10d) is silent past 7d; switch-b (1d) is not
+        ("30",): 0,
+    }
+
+    # Cycle 3: switch-a reappears with an OLDER timestamp; the high-water wins.
+    client.rows = [_activity_row("SWITCH-A", at(40))]
+    nad_health.collect(devices, client, cfg)
+    activity = _rows(metrics.ise_nad_activity_last_authentication_timestamp, "nad")
+    assert activity[("switch-a",)] == pytest.approx(now - 10 * 86400, abs=5)
+
+
+def test_accumulator_prunes_decommissioned_nads(tmp_path):
+    cfg = types.SimpleNamespace(state_db_path=str(tmp_path / "state.sqlite3"))
+    client = SettableActivity()
+    event = datetime(2026, 7, 14, tzinfo=timezone.utc)
+
+    client.rows = [_activity_row("OLD-SWITCH", event)]
+    nad_health.collect([{"name": "old-switch"}], client, cfg)
+    assert metrics.ise_nad_activity_cache_entries._value.get() == 1
+
+    # old-switch leaves the inventory; the accumulator row is pruned with it.
+    client.rows = [_activity_row("NEW-SWITCH", event)]
+    nad_health.collect([{"name": "new-switch"}], client, cfg)
+    assert metrics.ise_nad_activity_cache_entries._value.get() == 1
+    activity = _rows(metrics.ise_nad_activity_last_authentication_timestamp, "nad")
+    assert set(activity) == {("new-switch",)}
+
+
 def test_inventory_failure_does_not_publish_plausible_empty_health():
     nad_health.collect(None, DataConnect(), types.SimpleNamespace())
     assert not _rows(metrics.ise_nad_seen_recently, "nad")

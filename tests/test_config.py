@@ -36,7 +36,7 @@ def test_example_is_complete_and_parseable(monkeypatch):
     assert config.dataconnect_endpoints_interval == 21600
     assert config.dataconnect_nad_health_interval == 21600
     assert config.dataconnect_tacacs_interval == 21600
-    assert config.dataconnect_max_duty_cycle_percent == 0.1
+    assert config.dataconnect_max_duty_cycle_percent == 1.0
     assert config.mnt_active_posture_interval == 300
     assert config.mnt_active_posture_max_requests_per_cycle == 80
 
@@ -50,7 +50,7 @@ def test_example_explains_units_safety_and_operational_tradeoffs():
         "dashboards useful soon after a restart",
         "preventing account lockout",
         "Increasing this raises load on the MnT node",
-        "one tenth of one percent, not ten percent",
+        "one percent of database time, not ten percent",
         "PSN CPU, memory, latency, diagnostics, and throughput",
         "Require explicit --allow-expensive",
     ):

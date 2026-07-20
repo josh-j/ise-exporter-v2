@@ -61,6 +61,31 @@ _REQUIRED_SCHEMA = {
         ("updated_at", "REAL", 0),
         ("last_seen", "REAL", 0),
     ),
+    "endpoint_posture_cache": (
+        ("mac", "TEXT", 1),
+        ("status", "TEXT", 0),
+        ("os", "TEXT", 0),
+        ("agent_version", "TEXT", 0),
+        ("policy", "TEXT", 0),
+        ("psn", "TEXT", 0),
+        ("assessed_at", "REAL", 0),
+        ("updated_at", "REAL", 0),
+        ("last_seen", "REAL", 0),
+    ),
+    "nad_activity_cache": (
+        ("nad", "TEXT", 1),
+        ("last_authentication", "REAL", 0),
+        ("updated_at", "REAL", 0),
+        ("last_seen", "REAL", 0),
+    ),
+    "dataconnect_tail_cursor": (
+        ("view", "TEXT", 1),
+        ("scope", "TEXT", 2),
+        ("cursor_kind", "TEXT", 0),
+        ("cursor_value", "REAL", 0),
+        ("anchor_value", "REAL", 0),
+        ("updated_at", "REAL", 0),
+    ),
 }
 _RECOVERABLE_CORRUPTION_MESSAGES = (
     "file is not a database",
@@ -291,6 +316,38 @@ class StateStore:
                 last_seen REAL NOT NULL
             )
         """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS endpoint_posture_cache (
+                mac TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                os TEXT NOT NULL,
+                agent_version TEXT NOT NULL,
+                policy TEXT NOT NULL,
+                psn TEXT NOT NULL,
+                assessed_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                last_seen REAL NOT NULL
+            )
+        """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS nad_activity_cache (
+                nad TEXT PRIMARY KEY,
+                last_authentication REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                last_seen REAL NOT NULL
+            )
+        """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS dataconnect_tail_cursor (
+                view TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                cursor_kind TEXT NOT NULL,
+                cursor_value REAL NOT NULL,
+                anchor_value REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                PRIMARY KEY (view, scope)
+            )
+        """)
         try:
             self._validate_schema()
         except Exception:
@@ -450,6 +507,7 @@ class StateStore:
             ("tacacs_internal_user_cache", "user_id"),
             ("tacacs_policy_rule_cache", "policy_id"),
             ("network_device_group_cache", "device_id"),
+            ("nad_activity_cache", "nad"),
         }
         if (table, key_column) not in allowed:
             raise ValueError("invalid cache table")
@@ -590,6 +648,7 @@ class StateStore:
             ("tacacs_internal_user_cache", "user_id"),
             ("tacacs_policy_rule_cache", "policy_id"),
             ("network_device_group_cache", "device_id"),
+            ("nad_activity_cache", "nad"),
         }
         if (table, key_column) not in allowed:
             raise ValueError("invalid cache table")
@@ -758,6 +817,166 @@ class StateStore:
     def network_device_count(self):
         return int(self.db.execute(
             "SELECT COUNT(*) FROM network_device_group_cache").fetchone()[0])
+
+    def put_endpoint_posture(self, mac, status, os_name, agent_version, policy,
+                             psn, assessed_at, now=None):
+        """Record an endpoint's latest posture, keeping the newest assessment."""
+        now = self._valid_timestamp(now)
+        assessed_at = self._valid_timestamp(assessed_at)
+        mac = self._state_key(mac)
+        status, os_name, agent_version, policy, psn = (
+            str(value)[:MAX_STATE_KEY_BYTES]
+            for value in (status, os_name, agent_version, policy, psn))
+        self.db.execute("""
+            INSERT INTO endpoint_posture_cache
+                (mac, status, os, agent_version, policy, psn,
+                 assessed_at, updated_at, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(mac) DO UPDATE SET
+                status=excluded.status, os=excluded.os,
+                agent_version=excluded.agent_version, policy=excluded.policy,
+                psn=excluded.psn, assessed_at=excluded.assessed_at,
+                updated_at=excluded.updated_at, last_seen=excluded.last_seen
+            WHERE excluded.assessed_at >= endpoint_posture_cache.assessed_at
+        """, (mac, status, os_name, agent_version, policy, psn,
+              assessed_at, now, now))
+
+    def prune_endpoint_posture(self, cutoff):
+        """Drop endpoints whose latest posture assessment is older than a cutoff."""
+        cutoff = float(cutoff)
+        self.db.execute(
+            "DELETE FROM endpoint_posture_cache WHERE assessed_at < ?", (cutoff,))
+        self.commit()
+
+    def endpoint_posture_count(self):
+        return int(self.db.execute(
+            "SELECT COUNT(*) FROM endpoint_posture_cache").fetchone()[0])
+
+    def endpoint_posture_aggregate(self, now=None, stale_days=(30, 90)):
+        """Compute fleet posture aggregates entirely in SQL over the whole cache."""
+        now = self._valid_timestamp(now)
+        dimensions = {}
+        # Column names come from a fixed internal tuple, never caller input.
+        for column in ("status", "os", "agent_version", "policy", "psn"):
+            dimensions[column] = {
+                str(row["value"]): int(row["n"])
+                for row in self.db.execute(
+                    f"SELECT {column} AS value, COUNT(*) AS n "
+                    f"FROM endpoint_posture_cache GROUP BY {column}")}
+        oldest = self.db.execute(
+            "SELECT MIN(assessed_at) FROM endpoint_posture_cache").fetchone()[0]
+        stale = {}
+        for days in stale_days:
+            stale[int(days)] = int(self.db.execute(
+                "SELECT COUNT(*) FROM endpoint_posture_cache WHERE assessed_at < ?",
+                (now - int(days) * 86400,)).fetchone()[0])
+        return {
+            "total": int(self.db.execute(
+                "SELECT COUNT(*) FROM endpoint_posture_cache").fetchone()[0]),
+            "dimensions": dimensions,
+            "oldest_assessed_at": None if oldest is None else float(oldest),
+            "stale": stale,
+        }
+
+    def put_nad_activity(self, nad, last_authentication, now=None):
+        """Record a configured NAD's high-water last-authentication timestamp.
+
+        The bounded top-K activity query only returns the busiest NADs each
+        cycle. Persisting the newest observed timestamp per NAD lets the "dead
+        switch" signal reach every configured device over successive cycles
+        instead of resetting to whichever NADs happened to rank in one window.
+        """
+        now = self._valid_timestamp(now)
+        last_authentication = self._valid_timestamp(last_authentication)
+        nad = self._state_key(nad)
+        self.db.execute("""
+            INSERT INTO nad_activity_cache
+                (nad, last_authentication, updated_at, last_seen)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(nad) DO UPDATE SET
+                last_authentication=MAX(
+                    excluded.last_authentication,
+                    nad_activity_cache.last_authentication),
+                updated_at=excluded.updated_at,
+                last_seen=excluded.last_seen
+        """, (nad, last_authentication, now, now))
+
+    def nad_activity_all(self):
+        """Return {nad: last_authentication} for every retained configured NAD."""
+        rows = {}
+        for row in self.db.execute(
+                "SELECT nad, last_authentication FROM nad_activity_cache"):
+            try:
+                last_authentication = float(row["last_authentication"])
+                if not math.isfinite(last_authentication) or last_authentication < 0:
+                    raise ValueError("invalid NAD activity row")
+            except (TypeError, ValueError):
+                continue
+            rows[row["nad"]] = last_authentication
+        return rows
+
+    def finish_nad_activity_cycle(self, active_ids, now=None):
+        """Mark configured NAD rows and prune devices removed from inventory."""
+        now = self._valid_timestamp(now)
+        active_ids = self._cache_keys(active_ids, "network device inventory")
+        self._finish_cache_cycle("nad_activity_cache", "nad", active_ids, now)
+
+    def nad_activity_count(self):
+        return int(self.db.execute(
+            "SELECT COUNT(*) FROM nad_activity_cache").fetchone()[0])
+
+    @staticmethod
+    def _scope_key(value):
+        """Validate an optional per-node cursor scope ('' = single global sequence)."""
+        value = str(value or "")
+        if len(value.encode("utf-8")) > MAX_STATE_KEY_BYTES:
+            raise ValueError("tail cursor scope exceeds the persisted size limit")
+        return value
+
+    def tail_cursor(self, view, scope=""):
+        """Return the persisted incremental-tail cursor, or None before cold start.
+
+        ``anchor`` carries a companion low-water fingerprint (the smallest id seen)
+        so the collector can detect a source-side sequence reset: purge only ever
+        raises the minimum id, so a *drop* in it means the id space was rebuilt.
+        """
+        row = self.db.execute(
+            "SELECT cursor_kind, cursor_value, anchor_value "
+            "FROM dataconnect_tail_cursor WHERE view=? AND scope=?",
+            (self._state_key(view), self._scope_key(scope))).fetchone()
+        if row is None:
+            return None
+        try:
+            value = float(row["cursor_value"])
+            anchor = float(row["anchor_value"])
+            if (not math.isfinite(value) or value < 0
+                    or not math.isfinite(anchor) or anchor < 0):
+                raise ValueError("invalid tail cursor value")
+        except (TypeError, ValueError):
+            return None
+        return {"kind": str(row["cursor_kind"]), "value": value, "anchor": anchor}
+
+    def set_tail_cursor(self, view, kind, value, now=None, scope="", anchor=0.0):
+        """Persist the incremental-tail high-water mark + anchor; caller commits."""
+        now = self._valid_timestamp(now)
+        value = float(value)
+        anchor = float(anchor)
+        if (not math.isfinite(value) or value < 0
+                or not math.isfinite(anchor) or anchor < 0):
+            raise ValueError("tail cursor value must be finite and non-negative")
+        if kind not in ("id", "timestamp"):
+            raise ValueError("tail cursor kind must be 'id' or 'timestamp'")
+        self.db.execute("""
+            INSERT INTO dataconnect_tail_cursor
+                (view, scope, cursor_kind, cursor_value, anchor_value, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(view, scope) DO UPDATE SET
+                cursor_kind=excluded.cursor_kind,
+                cursor_value=excluded.cursor_value,
+                anchor_value=excluded.anchor_value,
+                updated_at=excluded.updated_at
+        """, (self._state_key(view), self._scope_key(scope), kind, value,
+              anchor, now))
 
     @staticmethod
     def _valid_timestamp(value):

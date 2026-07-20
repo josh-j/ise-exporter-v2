@@ -11,6 +11,9 @@ from . import observe, CollectorFailed
 
 logger = logging.getLogger(__name__)
 MAX_CLASSIFICATION_GROUPS = 1000
+# Hard per-pass ERS detail-request ceiling. A larger inventory converges over
+# successive background passes rather than issuing an unbounded ERS burst.
+DETAIL_REQUEST_CEILING = 10000
 
 _METRICS = (
     metrics.ise_network_devices_total,
@@ -113,8 +116,10 @@ def collect(client, cfg):
 
         now = time.time()
         ttl = max(1, int(getattr(cfg, "device_cache_ttl", 2592000)))
-        max_requests = max(1, min(100, int(getattr(
-            cfg, "device_detail_max_requests", 25))))
+        # 0 (the default) auto-sizes to the inventory that still needs a refresh;
+        # a positive value is an explicit per-pass cap. Resolved against
+        # refresh_ids below so auto never issues more requests than there is work.
+        detail_budget = int(getattr(cfg, "device_detail_max_requests", 0))
         request_interval = max(0, int(getattr(
             cfg, "device_detail_request_interval_ms", 250))) / 1000.0
         store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
@@ -144,6 +149,10 @@ def collect(client, cfg):
                     device_id,
                 ),
             )
+            if detail_budget <= 0:
+                max_requests = min(DETAIL_REQUEST_CEILING, len(refresh_ids))
+            else:
+                max_requests = max(1, min(DETAIL_REQUEST_CEILING, detail_budget))
             attempted = 0
             failures = 0
             failure_streak = 0
@@ -163,6 +172,13 @@ def collect(client, cfg):
                         break
                     continue
                 store.put_network_device(dev_id, detail, now=now)
+                # Commit immediately so the SQLite write lock is held only for the
+                # write itself, never across the paced REST wait before the next
+                # detail request. A large auto-sized pass can span many minutes; a
+                # transaction left open across those network waits would block the
+                # MnT, NAD-activity, fleet, and tail-cursor writers that share this
+                # database until they hit the busy timeout and fail their cycle.
+                store.commit()
                 cached[dev_id] = {"detail": detail, "updated_at": now}
                 failure_streak = 0
 

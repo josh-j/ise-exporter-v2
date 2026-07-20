@@ -75,6 +75,30 @@ ise_nad_activity_groups_truncated = Gauge(
     "ise_nad_activity_groups_truncated",
     "Whether NAD activity groups were truncated by the Data Connect top-K ceiling")
 
+# --- per-NAD accumulated last-authentication (full-inventory "dead switch") ---
+# The bounded top-K activity query only ranks the busiest NADs each cycle, so the
+# per-device last-seen signal above covers at most dataconnect.max_groups NADs.
+# These accumulate the high-water last-authentication timestamp for every
+# configured NAD across cycles in the restart-persistent cache, giving the
+# "which switch went silent" signal full inventory coverage.
+ise_nad_activity_last_authentication_timestamp = Gauge(
+    "ise_nad_activity_last_authentication_timestamp",
+    "Accumulated most recent RADIUS authentication timestamp for each configured "
+    "NAD; 0 means no authentication has ever been observed", ["nad"])
+ise_nad_activity_tracked_total = Gauge(
+    "ise_nad_activity_tracked_total",
+    "Configured NADs with an accumulated last-authentication timestamp in the cache")
+ise_nad_activity_never_authenticated_total = Gauge(
+    "ise_nad_activity_never_authenticated_total",
+    "Configured NADs with no RADIUS authentication ever observed by the accumulator")
+ise_nad_activity_silent = Gauge(
+    "ise_nad_activity_silent",
+    "Configured NADs whose last observed authentication is older than the threshold",
+    ["threshold_days"])
+ise_nad_activity_cache_entries = Gauge(
+    "ise_nad_activity_cache_entries",
+    "Rows retained in the restart-persistent per-NAD activity cache")
+
 # --- certs / license / backup / patch (slow tier) ---
 ise_certificate_expiry_days = Gauge("ise_certificate_expiry_days", "Days until cert expires", ["hostname", "cert_name", "cert_type", "usage"])
 ise_certificates_expiring_soon = Gauge("ise_certificates_expiring_soon", "Certs expiring within threshold", ["threshold_days"])
@@ -335,6 +359,27 @@ ise_dataconnect_radius_accounting_session_seconds = Gauge(
     "ise_dataconnect_radius_accounting_session_seconds",
     "RADIUS accounting session-time aggregate from Data Connect",
     ["stat", "nad", "psn"])
+
+# --- incremental accounting-event counters (opt-in; incremental tailing Slice 1) ---
+# Monotonic counters accumulated by tailing only new RADIUS_ACCOUNTING rows since a
+# persisted id cursor, so Prometheus owns the windowing (rate()/increase()) instead
+# of the exporter re-summing a fixed server-side window each cycle. Low-cardinality
+# by design (event_type x psn); per-NAD breakdowns stay on the windowed top-K gauges.
+# Off unless dataconnect.accounting_event_counters is enabled.
+ise_dataconnect_radius_accounting_tail_total = Counter(
+    "ise_dataconnect_radius_accounting_tail_total",
+    "RADIUS accounting events observed by incremental id-tailing since exporter start",
+    ["event_type", "psn"])
+ise_dataconnect_tail_cursor_id = Gauge(
+    "ise_dataconnect_tail_cursor_id",
+    "Last incremental-tail high-water id committed for a Data Connect view", ["view"])
+ise_dataconnect_tail_events_last_cycle = Gauge(
+    "ise_dataconnect_tail_events_last_cycle",
+    "Rows folded into counters by the last incremental-tail cycle for a view", ["view"])
+ise_dataconnect_tail_resets_total = Counter(
+    "ise_dataconnect_tail_resets_total",
+    "Times an incremental-tail cursor was re-seeded after a backward id jump (sequence reset)",
+    ["view"])
 ise_dataconnect_radius_active_sessions = Gauge(
     "ise_dataconnect_radius_active_sessions",
     "Likely active sessions whose latest accounting record is non-stop and within the stale cutoff",
@@ -364,7 +409,7 @@ ise_dataconnect_radius_active_groups_truncated = Gauge(
 ise_dataconnect_radius_errors = Gauge(
     "ise_dataconnect_radius_errors",
     "RADIUS errors grouped by stable troubleshooting dimensions",
-    ["message_code", "nad", "authentication_method", "psn"])
+    ["message_code", "message_text", "nad", "authentication_method", "psn"])
 ise_dataconnect_radius_errors_total = Gauge(
     "ise_dataconnect_radius_errors_total",
     "Exact RADIUS error count in the Data Connect reporting window")
@@ -440,6 +485,53 @@ ise_dataconnect_posture_topk_truncated = Gauge(
     "ise_dataconnect_posture_topk_truncated",
     "Whether a posture dimensional breakdown was truncated by its top-K limit",
     ["breakdown"])
+
+# --- endpoint fleet: accumulated per-endpoint latest posture (opt-in) ---
+# Aggregates over a restart-persistent cache that keeps each endpoint's latest
+# posture assessment across cycles. Coverage accumulates toward the full
+# posture-applicable population over days instead of resetting to one bounded
+# reporting window. Disabled by default; enabled with endpoint_fleet.enabled.
+ise_endpoint_fleet_assessed_total = Gauge(
+    "ise_endpoint_fleet_assessed_total",
+    "Distinct endpoints with an accumulated latest posture assessment in the fleet cache")
+ise_endpoint_fleet_eligible_total = Gauge(
+    "ise_endpoint_fleet_eligible_total",
+    "Posture-applicable endpoints in the reporting inventory used as the coverage denominator")
+ise_endpoint_fleet_coverage_ratio = Gauge(
+    "ise_endpoint_fleet_coverage_ratio",
+    "Accumulated assessed endpoints divided by posture-applicable endpoints")
+ise_endpoint_fleet_compliance_ratio = Gauge(
+    "ise_endpoint_fleet_compliance_ratio",
+    "Compliant fraction of accumulated endpoints in an explicit compliant-or-failed state")
+ise_endpoint_fleet_posture = Gauge(
+    "ise_endpoint_fleet_posture",
+    "Accumulated endpoints by latest posture status", ["status"])
+ise_endpoint_fleet_by_os = Gauge(
+    "ise_endpoint_fleet_by_os",
+    "Accumulated endpoints by latest reported operating system", ["os"])
+ise_endpoint_fleet_by_agent_version = Gauge(
+    "ise_endpoint_fleet_by_agent_version",
+    "Accumulated endpoints by latest Secure Client posture-agent version", ["agent_version"])
+ise_endpoint_fleet_by_policy = Gauge(
+    "ise_endpoint_fleet_by_policy",
+    "Accumulated endpoints by latest matched posture policy", ["policy"])
+ise_endpoint_fleet_by_psn = Gauge(
+    "ise_endpoint_fleet_by_psn",
+    "Accumulated endpoints by latest assessing ISE node", ["psn"])
+ise_endpoint_fleet_cache_entries = Gauge(
+    "ise_endpoint_fleet_cache_entries",
+    "Rows retained in the restart-persistent endpoint fleet cache")
+ise_endpoint_fleet_oldest_assessment_age_seconds = Gauge(
+    "ise_endpoint_fleet_oldest_assessment_age_seconds",
+    "Age of the oldest accumulated posture assessment still retained in the fleet cache")
+ise_endpoint_fleet_stale = Gauge(
+    "ise_endpoint_fleet_stale",
+    "Accumulated endpoints whose latest posture assessment is older than the age threshold",
+    ["age_days"])
+ise_endpoint_fleet_scan_truncated = Gauge(
+    "ise_endpoint_fleet_scan_truncated",
+    "Whether one accumulation scan hit its row cap and may have dropped re-postures "
+    "(raise endpoint_fleet.max_rows if this stays 1)")
 
 ise_dataconnect_endpoints_total = Gauge(
     "ise_dataconnect_endpoints_total",
@@ -610,6 +702,17 @@ ise_dataconnect_query_pacing_seconds = Gauge(
 ise_dataconnect_max_duty_cycle_percent = Gauge(
     "ise_dataconnect_max_duty_cycle_percent",
     "Configured hard maximum Data Connect reporting-query duty cycle in percent")
+ise_dataconnect_duty_cycle_recommended_min_percent = Gauge(
+    "ise_dataconnect_duty_cycle_recommended_min_percent",
+    "Lower bound of the recommended Data Connect duty-cycle band; below this the "
+    "global cooldown throttles operational datasets far below their configured cadence")
+ise_dataconnect_duty_cycle_recommended_max_percent = Gauge(
+    "ise_dataconnect_duty_cycle_recommended_max_percent",
+    "Upper bound of the recommended Data Connect duty-cycle band; above this the "
+    "sustained reporting load on the ISE database becomes significant")
+ise_dataconnect_duty_cycle_advisory = Gauge(
+    "ise_dataconnect_duty_cycle_advisory",
+    "Configured duty cycle vs the recommended band: -1 below, 0 within, 1 above")
 ise_dataconnect_query_timeout_seconds = Gauge(
     "ise_dataconnect_query_timeout_seconds",
     "Hard total timeout for one Data Connect query attempt")

@@ -326,7 +326,8 @@ def test_accounting_query_rejects_untrusted_policy_expression():
 
 def test_query_failure_preserves_previous_snapshot():
     metrics.ise_dataconnect_radius_errors.labels(
-        message_code="old", nad="old", authentication_method="old", psn="old").set(9)
+        message_code="old", message_text="old", nad="old",
+        authentication_method="old", psn="old").set(9)
 
     class Broken(DataConnect):
         def query(self, sql):

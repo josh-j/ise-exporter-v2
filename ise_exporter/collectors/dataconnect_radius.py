@@ -5,11 +5,15 @@ a 30-minute reporting cadence. A separate query reconstructs only current likely
 sessions on a shorter cadence. Usernames, MAC addresses, session IDs, free-form
 failure text, and other unbounded values never become Prometheus labels.
 """
+import logging
+import time
+
 from .. import metrics
 from ..dataconnect_schema import (
     RADIUS_AUTHENTICATION_DETAIL_COLUMNS,
     preferred_radius_authentication_view,
 )
+from ..state import StateStore
 from . import observe
 from .dataconnect_common import (
     event_window_hours,
@@ -25,6 +29,45 @@ from .dataconnect_common import (
     schema_projection,
     signed_integer,
 )
+
+
+logger = logging.getLogger(__name__)
+
+_ACCOUNTING_TAIL_VIEW = "radius_accounting"
+
+
+# Curated, extensible translation of the most common Cisco ISE RADIUS message
+# codes to a short human-readable summary. The MESSAGE_CODE column is a bounded
+# numeric code and the RADIUS errors view carries no accompanying description
+# column, so translation is a static lookup. Codes not listed here render as the
+# bare number (empty text); extend this map as new codes are triaged.
+_RADIUS_MESSAGE_CODE_TEXT = {
+    "5400": "Authentication failed",
+    "5411": "Supplicant stopped responding to ISE",
+    "5434": "Endpoint restarted a new EAP session",
+    "5440": "Endpoint abandoned the EAP session and started a new one",
+    "5449": "Endpoint failed the RADIUS authentication",
+    "11007": "Could not locate Network Device or AAA Client",
+    "11013": "RADIUS packet contains an invalid Message-Authenticator",
+    "11036": "The Message-Authenticator RADIUS attribute is invalid",
+    "11038": "RADIUS Accounting-Request contains an invalid Authenticator",
+    "12508": "EAP-TLS handshake failed",
+    "12509": "EAP-TLS handshake failed on an unsupported certificate",
+    "12511": "EAP-TLS handshake failed on an unknown CA certificate",
+    "12514": "EAP-TLS handshake failed on an untrusted client certificate",
+    "15039": "Rejected per authorization policy",
+    "22040": "Wrong password or invalid shared secret",
+    "22056": "Subject not found in the applicable identity store(s)",
+    "24408": "Wrong user password against Active Directory",
+    "24491": "Active Directory contains multiple identical accounts",
+}
+
+
+def _radius_message_text(code):
+    """Return a bounded human summary for a RADIUS message code, or empty."""
+    if code is None:
+        return ""
+    return _RADIUS_MESSAGE_CODE_TEXT.get(str(code).strip(), "")
 
 
 _REPORTING_METRICS = (
@@ -519,6 +562,7 @@ def collect_reporting(dataconnect, cfg):
         } for row in rows["accounting_sessions"]]
         errors = [{
             "code": label(row.get("message_code")),
+            "text": _radius_message_text(row.get("message_code")),
             "nad": label(row.get("network_device_name")),
             "method": label(row.get("authentication_method"), "none"),
             "psn": label(row.get("ise_node")),
@@ -568,7 +612,7 @@ def collect_reporting(dataconnect, cfg):
                         stat=stat, nad=row["nad"], psn=row["psn"]).set(row[stat]))
         for row in errors:
             writers.append(lambda row=row: metrics.ise_dataconnect_radius_errors.labels(
-                message_code=row["code"], nad=row["nad"],
+                message_code=row["code"], message_text=row["text"], nad=row["nad"],
                 authentication_method=row["method"], psn=row["psn"]).set(row["events"]))
         for row in failure_context:
             writers.append(lambda row=row: metrics.ise_dataconnect_radius_failure_events.labels(
@@ -701,3 +745,174 @@ def collect_active(dataconnect, cfg):
                 int(len(active_sessions) < total_groups)),
         ))
         replace_snapshot(_ACTIVE_METRICS, writers)
+
+
+def _accounting_meta_query():
+    """Cheap absolute id bounds for cold-start seeding and reset detection."""
+    return "SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM radius_accounting"
+
+
+def _accounting_tail_query(schema=None):
+    """Count new, settled accounting rows in the contiguous id prefix above the cursor.
+
+    ``id > :hwm`` limits to rows added since the last cycle. A row is ``settled``
+    once older than :settle_seconds. The cursor advances only through the
+    *contiguous settled prefix*: rows are counted only up to the first
+    still-unsettled id (``boundary.first_unsettled``), so a settled high id can
+    never advance the cursor past a not-yet-settled lower id and drop it. The
+    backfill floor bounds cold-start / long-downtime cost; rows older than it are
+    dropped, and ``floor_skipped`` reports that drop so it is visible, not silent.
+    """
+    view = "RADIUS_ACCOUNTING"
+    status = schema_expression(schema, view, "acct_status_type", "'unknown'")
+    psn = schema_expression(schema, view, "ise_node", "'unknown'")
+    settled = ("CASE WHEN timestamp < CAST(SYSTIMESTAMP"
+               " - NUMTODSINTERVAL(:settle_seconds, 'SECOND') AS TIMESTAMP)"
+               " THEN 1 ELSE 0 END")
+    floor_cut = ("CAST(SYSTIMESTAMP - NUMTODSINTERVAL(:floor_hours, 'HOUR')"
+                 " AS TIMESTAMP)")
+    return f"""
+        WITH new_rows AS (
+            SELECT id,
+                   NVL({status}, 'unknown') AS event_type,
+                   NVL({psn}, 'unknown') AS psn,
+                   {settled} AS settled
+            FROM radius_accounting
+            WHERE id > :hwm AND timestamp >= {floor_cut}
+        ), boundary AS (
+            SELECT NVL(MIN(CASE WHEN settled = 0 THEN id END),
+                       MAX(id) + 1) AS first_unsettled
+            FROM new_rows
+        )
+        SELECT nr.event_type AS event_type, nr.psn AS psn,
+               COUNT(*) AS events, MAX(nr.id) AS max_id,
+               (SELECT COUNT(*) FROM radius_accounting
+                WHERE id > :hwm AND timestamp < {floor_cut}) AS floor_skipped
+        FROM new_rows nr CROSS JOIN boundary b
+        WHERE nr.settled = 1 AND nr.id < b.first_unsettled
+        GROUP BY nr.event_type, nr.psn
+    """
+
+
+def _accounting_id_bounds(meta_rows):
+    """Extract (min_id, max_id) from the metadata query, each None if the view is empty."""
+    row = meta_rows[0] if meta_rows else {}
+    min_id = row.get("min_id")
+    max_id = row.get("max_id")
+    return (number(min_id) if min_id is not None else None,
+            number(max_id) if max_id is not None else None)
+
+
+def collect_accounting_counters(dataconnect, cfg):
+    """Tail new RADIUS accounting rows into monotonic counters (opt-in).
+
+    Publishes cumulative ``event_type x psn`` counters so Prometheus computes the
+    rate/increase over any window, instead of the exporter re-summing a fixed
+    server-side window each cycle. See docs/incremental-tailing-plan.md. Semantics
+    are effectively-once for a rate metric, not a ledger: the cursor is committed
+    before the counters are incremented, so a failed/retry cycle re-scans rather
+    than double-counts (the likely failure). The narrow inverse window -- a crash
+    after the commit but before the in-memory .inc() -- costs at most one cycle,
+    and the counter resets to zero on that restart anyway, so Prometheus rate()
+    (reset-aware) absorbs it.
+    """
+    view = _ACCOUNTING_TAIL_VIEW
+    with observe("dataconnect_accounting_counters"):
+        settle = max(0, int(getattr(cfg, "dataconnect_tail_settle_seconds", 30)))
+        floor_hours = max(1, min(24, int(getattr(
+            cfg, "dataconnect_tail_max_backfill_hours", 6))))
+        schema = getattr(dataconnect, "schema", None)
+        now = time.time()
+        store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
+        try:
+            cursor = store.tail_cursor(view)
+            if cursor is None:
+                # Cold start: seed at the current tip and count strictly forward.
+                min_id, max_id = _accounting_id_bounds(
+                    dataconnect.query(_accounting_meta_query()))
+                seed = max_id or 0.0
+                store.set_tail_cursor(view, "id", seed, now=now,
+                                      anchor=(min_id or 0.0))
+                store.commit()
+                metrics.ise_dataconnect_tail_cursor_id.labels(view=view).set(seed)
+                metrics.ise_dataconnect_tail_events_last_cycle.labels(view=view).set(0)
+                logger.info(
+                    "collector detail dataset=dataconnect_accounting_counters "
+                    "source=dataconnect outcome=cold_start seed_id=%d action=count_forward",
+                    int(seed))
+                return
+
+            hwm = cursor["value"]
+            prev_anchor = cursor["anchor"]
+            combined = query_set(dataconnect, {
+                "meta": _accounting_meta_query(),
+                "tail": _accounting_tail_query(schema),
+            }, {"tail": {
+                "hwm": hwm, "settle_seconds": settle, "floor_hours": floor_hours}})
+            min_id, max_id = _accounting_id_bounds(combined["meta"])
+            rows = combined["tail"]
+
+            # Sequence reset: purge only ever raises the minimum id, so a drop below
+            # the anchor means the id space was rebuilt. Also cover the
+            # reset-then-quiet case (absolute max now below the cursor). Re-seed to
+            # the new bottom and re-scan; do not trust this cycle's rows.
+            reset = (min_id is not None and prev_anchor > 0 and min_id < prev_anchor)
+            if not reset and not rows and max_id is not None and max_id < hwm:
+                reset = True
+            if reset:
+                reseed = max(0.0, (min_id if min_id is not None else 0.0) - 1.0)
+                store.set_tail_cursor(view, "id", reseed, now=now,
+                                      anchor=(min_id if min_id is not None else 0.0))
+                store.commit()
+                metrics.ise_dataconnect_tail_resets_total.labels(view=view).inc()
+                metrics.ise_dataconnect_tail_cursor_id.labels(view=view).set(reseed)
+                metrics.ise_dataconnect_tail_events_last_cycle.labels(view=view).set(0)
+                logger.warning(
+                    "collector detail dataset=dataconnect_accounting_counters "
+                    "source=dataconnect outcome=cursor_reset previous_id=%d "
+                    "reseed_id=%d action=rescan_new_sequence", int(hwm), int(reseed))
+                return
+
+            if not rows:
+                # Nothing settled to advance through yet (quiet, or the lowest new
+                # row has not settled). Keep the cursor; refresh the reset anchor.
+                if min_id is not None:
+                    store.set_tail_cursor(view, "id", hwm, now=now, anchor=min_id)
+                    store.commit()
+                metrics.ise_dataconnect_tail_events_last_cycle.labels(view=view).set(0)
+                return
+
+            increments = []
+            new_hwm = hwm
+            total = 0
+            floor_skipped = 0
+            for row in rows:
+                events = integer(row.get("events"))
+                increments.append((
+                    label(row.get("event_type"), "unknown"),
+                    label(row.get("psn"), "unknown"),
+                    events))
+                total += events
+                new_hwm = max(new_hwm, number(row.get("max_id")))
+                floor_skipped = max(floor_skipped, integer(row.get("floor_skipped") or 0))
+
+            # Commit the cursor advance (and refreshed anchor) BEFORE incrementing
+            # counters so a failed/retry cycle re-scans rather than double-counts.
+            new_anchor = min_id if min_id is not None else prev_anchor
+            store.set_tail_cursor(view, "id", new_hwm, now=now, anchor=new_anchor)
+            store.commit()
+        finally:
+            store.close()
+
+        if floor_skipped:
+            logger.warning(
+                "collector detail dataset=dataconnect_accounting_counters "
+                "source=dataconnect outcome=floor_backfill_gap skipped_rows=%d "
+                "floor_hours=%d action=raise_tail_max_backfill_hours_or_accept_gap",
+                floor_skipped, floor_hours)
+        for event_type, psn, events in increments:
+            if events:
+                metrics.ise_dataconnect_radius_accounting_tail_total.labels(
+                    event_type=event_type, psn=psn).inc(events)
+        metrics.ise_dataconnect_tail_cursor_id.labels(view=view).set(new_hwm)
+        metrics.ise_dataconnect_tail_events_last_cycle.labels(view=view).set(total)

@@ -87,6 +87,36 @@ def test_collection_plan_has_one_writer_per_reporting_domain(monkeypatch):
     assert len(ran) == len(set(ran))
 
 
+def test_devices_detail_pass_runs_off_the_calling_thread(monkeypatch):
+    caller = threading.current_thread()
+    started = threading.Event()
+    release = threading.Event()
+    executed_on = []
+
+    def blocking_collect(client, cfg):
+        executed_on.append(threading.current_thread())
+        started.set()
+        release.wait(2)
+        return [{"id": "nad-1", "name": "sw-1"}]
+
+    monkeypatch.setattr(scheduler_module.devices, "collect", blocking_collect)
+    scheduler = PollScheduler(
+        _cfg(startup_rate_limit_seconds=0), client=object(),
+        dataconnect=object(), mnt=object())
+
+    # Synchronous until the worker is activated.
+    assert scheduler._devices_async is False
+    scheduler._start_devices_worker(threading.Event())
+
+    # A long detail pass must not block the caller (the REST lane).
+    scheduler._run_devices(1_000_000_000.0)
+    assert started.wait(2), "detail collect never started on a worker thread"
+    assert executed_on and executed_on[-1] is not caller
+    release.set()
+    scheduler._stop_devices_worker()
+    assert scheduler._nad_inventory == [{"id": "nad-1", "name": "sw-1"}]
+
+
 def test_scheduler_publishes_cadence_aligned_scan_windows():
     PollScheduler(_cfg(), client=object(), dataconnect=object(), mnt=object())
 
@@ -413,9 +443,11 @@ def test_scheduler_respects_valid_explicit_cadences_but_preserves_auth_backoff()
         "dataconnect_schema": 1,
         "dataconnect_radius_active": 1,
         "dataconnect_performance": 1,
+        "dataconnect_accounting_counters": 300,
         "dataconnect_posture": 1,
         "dataconnect_endpoints": 1,
         "dataconnect_freshness": 1,
+        "endpoint_fleet": 900,
         "dataconnect_nad_health": 1,
         "mnt_active_posture": 1,
         "tacacs_config": 1,

@@ -79,14 +79,14 @@ def test_programmatic_config_keeps_count_ceiling_but_honors_request_pacing(
     cfg = _cfg(
         tmp_path,
         device_cache_ttl=0,
-        device_detail_max_requests=999999,
+        device_detail_max_requests=50,
         device_detail_request_interval_ms=0,
     )
 
     assert devices.collect(Client(), cfg) == inventory
-    assert len(detail_calls) == 100
+    assert len(detail_calls) == 50
     assert sleeps == []
-    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 1
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 51
 
 
 def test_device_detail_cache_prunes_removed_inventory_entries(tmp_path, monkeypatch):
@@ -256,6 +256,58 @@ def test_device_detail_refresh_is_bounded_and_converges_across_restarts(
     assert metrics.ise_network_device_detail_coverage._value.get() == 1
     assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 0
     assert b"do-not-persist" not in (tmp_path / "state.sqlite3").read_bytes()
+
+
+def test_zero_detail_budget_auto_sizes_to_inventory_in_one_pass(
+        tmp_path, monkeypatch):
+    inventory = [{"id": f"nad-{index}", "name": f"switch-{index}"}
+                 for index in range(7)]
+    detail_calls = []
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return inventory
+            device_id = path.rsplit("/", 1)[-1]
+            detail_calls.append(device_id)
+            return {"NetworkDevice": {
+                "id": device_id,
+                "NetworkDeviceGroupList": ["Location#All Locations#Lab"],
+            }}
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    cfg = _cfg(tmp_path, device_detail_max_requests=0)
+
+    assert devices.collect(Client(), cfg) == inventory
+    # Auto (0) sizes the pass to the whole inventory rather than the old cap.
+    assert len(detail_calls) == 7
+    assert metrics.ise_network_device_detail_coverage._value.get() == 1
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 0
+
+
+def test_auto_detail_budget_is_bounded_by_the_hard_ceiling(tmp_path, monkeypatch):
+    monkeypatch.setattr(devices, "DETAIL_REQUEST_CEILING", 4)
+    inventory = [{"id": f"nad-{index}", "name": f"switch-{index}"}
+                 for index in range(10)]
+    detail_calls = []
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return inventory
+            detail_calls.append(path)
+            return {"NetworkDevice": {
+                "id": path.rsplit("/", 1)[-1],
+                "NetworkDeviceGroupList": ["Location#All Locations#Lab"],
+            }}
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    devices.collect(Client(), _cfg(tmp_path, device_detail_max_requests=0))
+
+    # Auto never exceeds the hard per-pass ceiling even when inventory is larger;
+    # the 6 devices left unrefreshed this pass are deferred to the next one.
+    assert len(detail_calls) == 4
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 6
 
 
 def test_device_detail_refresh_stops_after_three_consecutive_failures(
