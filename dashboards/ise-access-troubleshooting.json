@@ -1633,6 +1633,124 @@
         },
         "showUnfilled": true
       }
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Authentication Rate per PSN",
+      "description": "Passed/failed RADIUS authentication rate per PSN from the incremental authentication id-tail counter over $__rate_interval. Requires dataconnect.authentication_event_counters.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 99
+      },
+      "targets": [
+        {
+          "expr": "sum by (psn, result) (rate(ise_dataconnect_radius_authentication_tail_total{psn=~\"$psn\"}[$__rate_interval])) and on() ((max(ise_dataset_up{dataset=\"dataconnect_authentication_counters\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_authentication_counters\",source=\"dataconnect\"}) == 1))",
+          "instant": false,
+          "legendFormat": "{{psn}} {{result}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "cps",
+          "links": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Accounting Event Rate per PSN",
+      "description": "RADIUS accounting event rate (Start/Stop/Interim) per PSN from the incremental accounting id-tail counter over $__rate_interval. Requires dataconnect.accounting_event_counters.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 99
+      },
+      "targets": [
+        {
+          "expr": "sum by (psn, event_type) (rate(ise_dataconnect_radius_accounting_tail_total{psn=~\"$psn\"}[$__rate_interval])) and on() ((max(ise_dataset_up{dataset=\"dataconnect_accounting_counters\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_accounting_counters\",source=\"dataconnect\"}) == 1))",
+          "instant": false,
+          "legendFormat": "{{psn}} {{event_type}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "cps",
+          "links": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ],
   "refresh": "5m",

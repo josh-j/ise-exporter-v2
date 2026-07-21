@@ -912,6 +912,65 @@
           }
         }
       ]
+    },
+    {
+      "id": 93,
+      "type": "timeseries",
+      "title": "RADIUS Error Rate by Message Code",
+      "description": "RADIUS error rate by ISE message code from the incremental error id-tail counter over $__rate_interval. Requires dataconnect.error_event_counters.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 61
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (message_code) (rate(ise_dataconnect_radius_error_tail_total{instance=~\"$deployment\",psn=~\"$psn\"}[$__rate_interval]))) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_error_counters\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_error_counters\",source=\"dataconnect\"}) == 1))",
+          "instant": false,
+          "legendFormat": "{{message_code}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "cps",
+          "links": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ],
   "refresh": "5m",

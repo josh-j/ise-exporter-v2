@@ -1924,6 +1924,65 @@
         "textMode": "value_and_name",
         "wideLayout": true
       }
+    },
+    {
+      "id": 94,
+      "type": "timeseries",
+      "title": "Posture Assessment Rate per PSN",
+      "description": "Posture assessment throughput per PSN and status from the incremental posture id-tail counter over $__rate_interval. This is the assessment event rate, distinct from the endpoint coverage/compliance panels. Requires dataconnect.posture_event_counters.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 98
+      },
+      "targets": [
+        {
+          "expr": "sum by (psn, status) (rate(ise_dataconnect_posture_assessment_tail_total[$__rate_interval])) and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture_counters\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture_counters\",source=\"dataconnect\"}) == 1))",
+          "instant": false,
+          "legendFormat": "{{psn}} {{status}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "cps",
+          "links": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ],
   "refresh": "5m",
