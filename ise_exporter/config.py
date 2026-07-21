@@ -97,6 +97,8 @@ class Config:
     dataconnect_posture_counters_interval: int = 300
     dataconnect_authentication_event_counters: bool = False
     dataconnect_authentication_counters_interval: int = 300
+    dataconnect_error_event_counters: bool = False
+    dataconnect_error_counters_interval: int = 300
     dataconnect_tail_settle_seconds: int = 30
     dataconnect_tail_max_backfill_hours: int = 6
     dataconnect_schema_interval: int = 86400
@@ -283,6 +285,7 @@ _TOML_FIELDS = {
     "dataconnect.posture_event_counters": "dataconnect_posture_event_counters",
     "dataconnect.authentication_event_counters":
         "dataconnect_authentication_event_counters",
+    "dataconnect.error_event_counters": "dataconnect_error_event_counters",
     "dataconnect.tail_settle_seconds": "dataconnect_tail_settle_seconds",
     "dataconnect.tail_max_backfill_hours": "dataconnect_tail_max_backfill_hours",
     "dataconnect.shared_pacing_file": "dataconnect_shared_pacing_file",
@@ -302,6 +305,8 @@ _TOML_FIELDS = {
         "dataconnect_posture_counters_interval",
     "dataconnect.intervals.authentication_counters_seconds":
         "dataconnect_authentication_counters_interval",
+    "dataconnect.intervals.error_counters_seconds":
+        "dataconnect_error_counters_interval",
     "endpoint_fleet.enabled": "endpoint_fleet_enabled",
     "endpoint_fleet.interval_seconds": "endpoint_fleet_interval",
     "endpoint_fleet.retention_seconds": "endpoint_fleet_retention_seconds",
@@ -360,6 +365,7 @@ _POSITIVE_FIELDS = {
     "dataconnect_tacacs_interval", "dataconnect_accounting_counters_interval",
     "dataconnect_posture_counters_interval",
     "dataconnect_authentication_counters_interval",
+    "dataconnect_error_counters_interval",
     "endpoint_fleet_interval", "endpoint_fleet_retention_seconds",
 }
 

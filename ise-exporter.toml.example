@@ -166,6 +166,13 @@ posture_event_counters = false
 # tail_settle_seconds / tail_max_backfill_hours below. Off by default; the collector
 # self-skips if the live schema shows the view has no ID column.
 authentication_event_counters = false
+# Opt-in: the same incremental id-tail applied to RADIUS errors. Accumulates monotonic
+# message_code x psn counters (ise_dataconnect_radius_error_tail_total) so Prometheus
+# derives the RADIUS error rate over any window. Complements the windowed top-K
+# ise_dataconnect_radius_errors gauge. RADIUS_ERRORS_VIEW carries the same global ID.
+# Shares tail_settle_seconds / tail_max_backfill_hours below. Off by default; the
+# collector self-skips if the live schema shows the view has no ID column.
+error_event_counters = false
 # Do not advance the tail cursor past rows added within this many seconds, so rows
 # whose (lower) id is still committing are not skipped. A few multiples of MnT
 # ingestion lag. Effectively-once for a rate metric, not a ledger guarantee.
@@ -199,6 +206,9 @@ posture_counters_seconds = 300 # 5 minutes
 # Incremental authentication-counter tail cadence (only used when
 # dataconnect.authentication_event_counters is enabled). Cheap tail; short for fresh rates.
 authentication_counters_seconds = 300 # 5 minutes
+# Incremental error-counter tail cadence (only used when
+# dataconnect.error_event_counters is enabled). Cheap tail; short for fresh rates.
+error_counters_seconds = 300 # 5 minutes
 # Historical posture assessments.
 posture_seconds = 21600 # 6 hours
 # Endpoint inventory follows its six-hour dashboard cadence. The cross-view

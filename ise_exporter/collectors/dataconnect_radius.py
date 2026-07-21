@@ -780,3 +780,25 @@ def collect_authentication_counters(dataconnect, cfg):
                 ("psn", "ise_node", "'unknown'"),
             ),
             counter=metrics.ise_dataconnect_radius_authentication_tail_total)
+
+
+def collect_error_counters(dataconnect, cfg):
+    """Tail new RADIUS error rows into monotonic counters (opt-in, Slice 4).
+
+    Publishes cumulative ``message_code x psn`` counters so Prometheus computes the
+    RADIUS error rate over any window instead of the exporter re-summing a fixed
+    server-side window each cycle. RADIUS_ERRORS_VIEW carries the same global monotonic
+    ``ID``; ``message_code`` is a bounded troubleshooting dimension. This is the error
+    *rate* signal, complementing the existing windowed ise_dataconnect_radius_errors
+    top-K gauge. See ``dataconnect_tail`` and docs/incremental-tailing-plan.md.
+    """
+    with observe("dataconnect_error_counters"):
+        dataconnect_tail.tail_counters(
+            dataconnect, cfg,
+            dataset="dataconnect_error_counters",
+            view="radius_errors_view",
+            label_columns=(
+                ("message_code", "message_code", "'unknown'"),
+                ("psn", "ise_node", "'unknown'"),
+            ),
+            counter=metrics.ise_dataconnect_radius_error_tail_total)

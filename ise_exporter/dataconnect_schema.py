@@ -69,7 +69,7 @@ VIEW_CONTRACTS = {
        time_column="TIMESTAMP", domain="radius_accounting"),
     "RADIUS_ERRORS_VIEW": _view({
         "TIMESTAMP",
-    }, optional={"MESSAGE_CODE", "NETWORK_DEVICE_NAME", "AUTHENTICATION_METHOD",
+    }, optional={"ID", "MESSAGE_CODE", "NETWORK_DEVICE_NAME", "AUTHENTICATION_METHOD",
                  "ISE_NODE", "TIMESTAMP_TIMEZONE"},
        time_column="TIMESTAMP", domain="radius_errors"),
     "ENDPOINTS_DATA": _view({

@@ -258,7 +258,12 @@ Cisco's data dictionary (developer.cisco.com/docs/dataconnect/database-views) co
   no `ID`. `RADIUS_AUTHENTICATION_SUMMARY` remains an alternative pre-aggregated source
   if per-event tailing is ever undesirable. **Not enabled** — flip on after confirming
   `RADIUS_AUTHENTICATIONS.ID` on the live schema (the guard makes this safe by default).
-- **Errors — deferred** unless a usable id is confirmed.
+- **Slice 4 — RADIUS error id-tail counters.** **Done (code, default-off)** — confirmed
+  `RADIUS_ERRORS_VIEW` carries `ID` on the live schema, so it tails with the shared engine
+  into `ise_dataconnect_radius_error_tail_total{message_code,psn}` behind
+  `dataconnect.error_event_counters`. Complements (does not replace) the windowed top-K
+  `ise_dataconnect_radius_errors` gauge. The ID-presence guard keeps it safe if a view
+  ever lacks `ID`.
 
 ## Appendix A — Slice 0 probe queries (read-only, bounded)
 
