@@ -318,13 +318,14 @@
     },
     {
       "id": 12,
-      "type": "stat",
+      "type": "timeseries",
       "title": "MnT Detail Coverage",
+      "description": "Successful MnT session-detail lookups divided by selected active endpoints, over time. Budget-bound: each 5-minute cycle fetches up to mnt_active_posture.max_requests_per_cycle (default 80) details, so under heavy session churn or when active sessions exceed the 1000 selection ceiling the ratio plateaus below 100%. Raise max_requests_per_cycle (max 250) and/or refresh_ttl to lift it.",
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 29},
       "targets": [
         {
           "expr": "ise_mnt_active_posture_detail_coverage_ratio{instance=~\"$deployment\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
-          "instant": true,
+          "instant": false,
           "refId": "A",
           "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
         }
@@ -335,6 +336,7 @@
       "id": 13,
       "type": "stat",
       "title": "MnT Detail Truncated",
+      "description": "TRUNCATED means the number of currently active sessions exceeded the configured selection ceiling (mnt_active_posture.max_sessions, capped at 1000), so posture detail was collected for only the first 1000 active endpoints and coverage reflects that subset. COMPLETE means every active session was in scope.",
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 29},
       "targets": [
         {
@@ -525,7 +527,7 @@
     {
       "id": 24,
       "type": "row",
-      "title": "MnT Active Session Latency",
+      "title": "MnT Active Session Latency (PSN-measured, read from MnT)",
       "collapsed": false,
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 71},
       "panels": []
@@ -534,7 +536,7 @@
       "id": 25,
       "type": "bargauge",
       "title": "Total Authentication Latency",
-      "description": "Average and maximum TotalAuthenLatency across the bounded active-session detail sample.",
+      "description": "Average and maximum TotalAuthenLatency across the bounded active-session detail sample. These latencies are measured on the PSN that authenticated each session — MnT is only the reporting store the exporter reads them from. MnT nodes do not perform authentication.",
       "gridPos": {"h": 7, "w": 8, "x": 0, "y": 72},
       "targets": [
         {
@@ -552,7 +554,7 @@
       "id": 26,
       "type": "bargauge",
       "title": "Authentication Step Latency",
-      "description": "Average and maximum latency by numeric ISE authentication step code.",
+      "description": "Average and maximum latency by numeric ISE authentication step code, measured on the authenticating PSN and read from MnT session detail.",
       "gridPos": {"h": 7, "w": 8, "x": 8, "y": 72},
       "targets": [
         {

@@ -359,6 +359,7 @@ def test_domain_dashboards_expose_authoritative_dataset_availability():
         "ise-secureclient.json": {
             ("mnt_active_posture", "mnt"),
             ("dataconnect_posture", "dataconnect"),
+            ("endpoint_fleet", "dataconnect"),
         },
         "ise-psn-troubleshooting.json": {
             ("dataconnect_performance", "dataconnect"),
@@ -507,7 +508,7 @@ def test_secureclient_dashboard_separates_active_mnt_from_historical_dataconnect
         assert "ise_dataconnect_" not in expressions
 
     historical = (
-        "Historical Policy/Condition Results (Data Connect)",
+        "Historical Assessed Endpoints by Policy (Data Connect)",
         "Historical Failed Conditions (Data Connect)",
         "Historical Posture Failure Work Queue (Data Connect)",
         "Historical Assessments by Agent Version (Data Connect)",
@@ -520,7 +521,27 @@ def test_secureclient_dashboard_separates_active_mnt_from_historical_dataconnect
         assert "ise_mnt_active_" not in expressions
     assert "ise_dataconnect_posture_enforcement_assessments" in " ".join(
         target["expr"] for target in panels[
-            "Historical Policy/Condition Results (Data Connect)"]["targets"])
+            "Historical Assessed Endpoints by Policy (Data Connect)"]["targets"])
+
+
+def test_secureclient_exposes_gated_accumulated_fleet_posture():
+    dashboard = _dashboard("ise-secureclient.json")
+    panels = {panel["title"]: panel for panel in _panels(dashboard["panels"])}
+    for title, metric in (
+        ("Fleet Posture Coverage (accumulated)", "ise_endpoint_fleet_coverage_ratio"),
+        ("Fleet Compliance (accumulated)", "ise_endpoint_fleet_compliance_ratio"),
+        ("Fleet Assessed vs Eligible", "ise_endpoint_fleet_assessed_total"),
+        ("Fleet Posture by Status", "ise_endpoint_fleet_posture"),
+        ("Fleet Assessments by OS", "ise_endpoint_fleet_by_os"),
+        ("Fleet Secure Client Agent Versions", "ise_endpoint_fleet_by_agent_version"),
+        ("Fleet Assessments by Policy", "ise_endpoint_fleet_by_policy"),
+        ("Fleet Assessments by PSN", "ise_endpoint_fleet_by_psn"),
+    ):
+        expression = " ".join(target["expr"] for target in panels[title]["targets"])
+        assert metric in expression
+        assert 'dataset="endpoint_fleet",source="dataconnect"' in expression
+        assert "ise_dataset_up" in expression
+        assert "ise_dataset_fresh" in expression
 
 
 def test_secureclient_dashboard_exposes_mnt_sample_quality():
@@ -900,7 +921,7 @@ def test_schema_degradation_is_visible_on_health_and_psn_dashboards():
 def test_exporter_health_domain_panels_do_not_publish_stale_values_during_outages():
     dashboard = _dashboard("ise-exporter-health.json")
     ownership = {
-        "Posture Coverage": "dataconnect_posture",
+        "Posture Re-Assessment (6h): Assessed vs Backlog": "dataconnect_posture",
         "Unknown Endpoint Profiles": "dataconnect_endpoints",
         "Endpoints Stale 90d": "dataconnect_endpoints",
         "MnT Detail Coverage": "mnt_active_posture",

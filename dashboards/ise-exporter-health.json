@@ -418,9 +418,9 @@
     },
     {
       "id": 10,
-      "type": "stat",
-      "title": "Posture Coverage",
-      "description": "Fraction of posture-applicable endpoints with a recent assessment in the bounded reporting window.",
+      "type": "timeseries",
+      "title": "Posture Re-Assessment (6h): Assessed vs Backlog",
+      "description": "Posture-applicable endpoints assessed within the last 6h versus the backlog not assessed in that window (the two stack to the eligible total). Endpoints posture on connect or periodically, so a persistent backlog is normal — watch the backlog trend and drops in the assessed line, not a 100% target. For posture health use the compliance ratio and assessed-endpoint counts on the Secure Client dashboard.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -429,9 +429,20 @@
       },
       "targets": [
         {
-          "expr": "ise_dataconnect_posture_eligible_recent_assessment_ratio and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
-          "instant": true,
-          "refId": "A",
+          "expr": "ise_dataconnect_posture_eligible_recently_assessed_total{source_view=\"endpoints_data\"} and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
+          "instant": false,
+          "legendFormat": "assessed in 6h",
+          "refId": "Assessed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_dataconnect_posture_eligible_without_recent_assessment_total{source_view=\"endpoints_data\"} and on() ((max(ise_dataset_up{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_posture\",source=\"dataconnect\"}) == 1))",
+          "instant": false,
+          "legendFormat": "not assessed in 6h (backlog)",
+          "refId": "Backlog",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
@@ -440,11 +451,67 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "Backlog"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "Assessed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       }
     },
     {
@@ -503,9 +570,9 @@
     },
     {
       "id": 13,
-      "type": "stat",
+      "type": "timeseries",
       "title": "MnT Detail Coverage",
-      "description": "Successful detail lookups divided by selected active endpoints.",
+      "description": "Successful MnT session-detail lookups \u00f7 selected active endpoints. Budget-bound: each 5-minute cycle fetches up to mnt_active_posture.max_requests_per_cycle (default 80) details, so under heavy session churn \u2014 or when active sessions exceed the 1000 selection ceiling \u2014 the ratio plateaus below 100%. Raise max_requests_per_cycle (max 250) and/or refresh_ttl to lift it.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -515,7 +582,7 @@
       "targets": [
         {
           "expr": "ise_mnt_active_posture_detail_coverage_ratio and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
-          "instant": true,
+          "instant": false,
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -527,16 +594,40 @@
         "defaults": {
           "unit": "percentunit",
           "min": 0,
-          "max": 1
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
         },
         "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       }
     },
     {
       "id": 14,
       "type": "stat",
       "title": "MnT Detail Truncated",
-      "description": "1 means candidate active endpoints exceeded the configured detail-request bound.",
+      "description": "TRUNCATED means active-session candidates exceeded the configured selection ceiling (mnt_active_posture.max_sessions, capped at 1000), so posture detail was collected for only the first 1000 endpoints \u2014 coverage and compliance reflect that subset. COMPLETE means every active session was in scope.",
       "gridPos": {
         "h": 4,
         "w": 6,

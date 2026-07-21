@@ -170,7 +170,7 @@
     },
     {
       "id": 4,
-      "type": "stat",
+      "type": "timeseries",
       "title": "Pass Rate",
       "gridPos": {
         "h": 4,
@@ -194,25 +194,49 @@
               "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
               "targetBlank": false
             }
-          ]
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
         },
         "overrides": []
       },
       "targets": [
         {
           "expr": "((100 * (ise_dataconnect_radius_authentication_events_total - ise_dataconnect_radius_failure_events_total) / clamp_min(ise_dataconnect_radius_authentication_events_total, 1)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
-          "instant": true,
+          "instant": false,
           "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     },
     {
       "id": 5,
-      "type": "stat",
+      "type": "timeseries",
       "title": "Failed Auth",
       "gridPos": {
         "h": 4,
@@ -223,18 +247,47 @@
       "targets": [
         {
           "expr": "(ise_dataconnect_radius_failure_events_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
-          "instant": true,
+          "instant": false,
           "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     },
     {
       "id": 6,
-      "type": "stat",
+      "type": "timeseries",
       "title": "Active Sessions",
       "description": "Latest accounting record per session ID is Start or Interim, not Stop. Depends on NAD accounting quality.",
       "gridPos": {
@@ -246,7 +299,7 @@
       "targets": [
         {
           "expr": "(ise_dataconnect_radius_active_sessions_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1)))",
-          "instant": true,
+          "instant": false,
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -267,13 +320,38 @@
               "url": "/d/ise-access-troubleshooting/ise-access-troubleshooting?${__url_time_range}&var-psn=$psn&var-nad=${__field.labels.nad}&var-status=$status&var-authorization_policy=$authorization_policy",
               "targetBlank": false
             }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
           ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
       }
     },
     {
       "id": 7,
-      "type": "stat",
+      "type": "timeseries",
       "title": "Acct Starts",
       "gridPos": {
         "h": 4,
@@ -284,14 +362,43 @@
       "targets": [
         {
           "expr": "(ise_dataconnect_radius_accounting_event_type_total{event_type=\"start\"} and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1)))",
-          "instant": true,
+          "instant": false,
           "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     },
     {
       "id": 8,
@@ -906,9 +1013,9 @@
       },
       "targets": [
         {
-          "expr": "topk(20, sum by (message_code) (ise_dataconnect_radius_errors{psn=~\"$psn\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "topk(20, sum by (message_code, message_text) (ise_dataconnect_radius_errors{psn=~\"$psn\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
-          "legendFormat": "{{message_code}}",
+          "legendFormat": "{{message_code}} \u00b7 {{message_text}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -955,7 +1062,8 @@
           "values": false
         },
         "showUnfilled": true
-      }
+      },
+      "description": "Top RADIUS error message codes over the bounded reporting window. Common codes are translated to a short description; codes without a known translation show the bare number. Extend the exporter message-code map to name more."
     },
     {
       "id": 20,
@@ -1241,7 +1349,7 @@
       "id": 25,
       "type": "bargauge",
       "title": "Failed Authorization and Identity Summary",
-      "description": "Authorization profiles plus documented identity-store, identity-group, device-type, and security-group dimensions from the bounded aggregate reporting window.",
+      "description": "Authorization profiles for failed authentications (a genuine partition \u2014 each failure carries one profile), plus documented identity-store, identity-group, device-type, and security-group dimensions. Each identity dimension independently re-partitions the SAME failed-event total, so bars are comparable WITHIN a dimension but never additive ACROSS dimensions. Dimensions that collapse to a single value (unpopulated in this deployment) are hidden.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1260,7 +1368,7 @@
           }
         },
         {
-          "expr": "topk(20, ise_dataconnect_radius_authentication_summary_events{status=\"failed\",dimension=~\"identity_store|identity_group|device_type|security_group\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "topk(20, ise_dataconnect_radius_authentication_summary_events{status=\"failed\",dimension=~\"identity_store|identity_group|device_type|security_group\"} and on(dimension) (count by (dimension) (ise_dataconnect_radius_authentication_summary_events{status=\"failed\",dimension=~\"identity_store|identity_group|device_type|security_group\"}) > 1)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "legendFormat": "{{dimension}} / {{value}}",
           "refId": "B",
@@ -1355,7 +1463,7 @@
       "id": 27,
       "type": "table",
       "title": "RADIUS Failure Work Queue",
-      "description": "One row per failed-authentication combination of NAD, method, protocol, authorization policy, and PSN. Error-code panels above remain sourced from the separate RADIUS errors view.",
+      "description": "One row per failed-authentication combination of NAD, method, protocol, authorization policy, and PSN. The Ops Owner column is joined from the network-device group assignment; failures at NADs without a group assignment still appear with a blank owner. Error-code panels above remain sourced from the separate RADIUS errors view.",
       "gridPos": {
         "h": 12,
         "w": 24,
@@ -1364,7 +1472,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\",psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"}) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc((ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\",psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"} * on(instance,nad) group_left(ops_owner,location) ise_network_device_ndg_assignment) or (ise_dataconnect_radius_authentication_events{status=~\"(?i)fail(ed)?|reject(ed)?\",psn=~\"$psn\",nad=~\"$nad\",status=~\"$status\",authorization_policy=~\"$authorization_policy\"} unless on(instance,nad) ise_network_device_ndg_assignment)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
           "format": "table",
           "instant": true,
           "refId": "A",
@@ -1389,6 +1497,141 @@
             }
           ]
         }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "indexByName": {
+              "ops_owner": 0,
+              "location": 1,
+              "nad": 2,
+              "authorization_policy": 3,
+              "authentication_method": 4,
+              "authentication_protocol": 5,
+              "psn": 6
+            },
+            "renameByName": {
+              "ops_owner": "Ops Owner",
+              "location": "Location",
+              "nad": "NAD",
+              "authorization_policy": "Authz Policy",
+              "authentication_method": "Method",
+              "authentication_protocol": "Protocol",
+              "psn": "PSN",
+              "Value": "failures"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Repeat Auth Intensity (attempts per endpoint)",
+      "description": "Average RADIUS authentication attempts per distinct endpoint over the bounded window \u2014 a repeat-pressure indicator. A rising line means fewer endpoints generating more attempts (repeat offenders / flapping supplicants). Per-endpoint repeat-offender identity is intentionally not exported: the Data Connect contract exposes no bounded per-endpoint repeat counter, and MAC/username are never labels.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 91
+      },
+      "targets": [
+        {
+          "expr": "(ise_dataconnect_radius_authentication_events_total / on() clamp_min(sum(ise_dataconnect_radius_distinct_endpoints_total{source_view=\"radius_authentication_summary\"}), 1)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": false,
+          "legendFormat": "attempts per endpoint",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "type": "bargauge",
+      "title": "Errors by Ops Owner",
+      "description": "RADIUS errors attributed to each Ops Owner by joining each error's NAD to the network-device group assignment. Errors at NADs with no group assignment are omitted from this owner rollup.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 91
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (ops_owner) (ise_dataconnect_radius_errors{psn=~\"$psn\",nad=~\"$nad\"} * on(instance,nad) group_left(ops_owner) ise_network_device_ndg_assignment)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_radius\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{ops_owner}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "showUnfilled": true
       }
     }
   ],

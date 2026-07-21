@@ -186,7 +186,7 @@
       },
       "targets": [
         {
-          "expr": "(count(ise_dataconnect_endpoints_by_identity_group) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)))",
+          "expr": "(count(sum by (identity_group) (ise_dataconnect_profile_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))) or on() (0 * ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1)))",
           "instant": true,
           "refId": "A",
           "datasource": {
@@ -259,7 +259,7 @@
       },
       "targets": [
         {
-          "expr": "topk(20, ise_dataconnect_endpoints_by_identity_group) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
+          "expr": "topk(20, sum by (identity_group) (ise_dataconnect_profile_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_endpoints\",source=\"dataconnect\"}) == 1))",
           "instant": true,
           "legendFormat": "{{identity_group}}",
           "refId": "A",
@@ -296,7 +296,8 @@
           "values": false
         },
         "showUnfilled": true
-      }
+      },
+      "description": "Endpoints by named identity group from the profiling reporting view (bounded window). The raw endpoint-inventory identity group is an opaque ID that collapses to one value, so this uses the human-readable group name; an endpoint seen under multiple profiling actions can appear in more than one group."
     },
     {
       "id": 7,
@@ -350,7 +351,8 @@
         },
         "textMode": "value_and_name",
         "wideLayout": true
-      }
+      },
+      "description": "Posture-applicable endpoints (yes/no): whether an endpoint's profile and authorization make it subject to a posture policy. 'yes' means eligible for assessment \u2014 NOT that it was assessed or is compliant (see Posture Re-Assessment on Exporter Health). Derived from the ENDPOINTS_DATA.posture_applicable reporting column."
     },
     {
       "id": 8,
@@ -558,9 +560,9 @@
     },
     {
       "id": 13,
-      "type": "stat",
+      "type": "timeseries",
       "title": "NAD Group Detail Coverage",
-      "description": "Fraction of the authoritative ERS NAD inventory backed by restart-persistent group classification. Location, Ops Owner, and Device Type panels are partial until this reaches 100%.",
+      "description": "Fraction of the authoritative ERS NAD inventory backed by restart-persistent group classification. The per-NAD detail refresh runs on its own background worker (off the REST lane), so devices.detail_max_requests can be raised (up to 10000) to fill large inventories quickly \u2014 set it at or above your NAD count to fill in one background pass. It accumulates toward 100%; if it stays flat at a low value, details are not persisting \u2014 check that exporter.state_db is a writable, non-memory path \u2014 or ERS device IDs are unstable. Location, Ops Owner, and Type breakdowns stay partial until this reaches 100%.",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -570,7 +572,7 @@
       "targets": [
         {
           "expr": "ise_network_device_detail_coverage and on() ((max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
-          "instant": true,
+          "instant": false,
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -582,9 +584,33 @@
         "defaults": {
           "unit": "percentunit",
           "min": 0,
-          "max": 1
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
         },
         "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       }
     },
     {

@@ -36,6 +36,17 @@ healthy zero, but they do not duplicate exporter internals.
 
 Data Connect metrics are snapshots of Cisco's bounded reporting views. Dashboard values are event or distinct-endpoint counts over that view's retention window; they are not monotonically increasing Prometheus counters.
 
+Headline counts, ratios, and coverage are rendered as time-series trend graphs so
+behaviour over the selected range is visible (a flat line on a "stuck" coverage
+metric, a rising line on repeat-failure pressure). Each point is still a server-side
+bounded-window value; the Grafana time range shapes the trend, not the width of that
+window. Categorical top-K breakdowns stay as current-snapshot horizontal bars.
+
+RADIUS error message codes are translated to a short description where the exporter
+carries a mapping (`message_text` label); unmapped codes show the bare number.
+RADIUS errors and the failure work queue can be grouped by Ops Owner by joining each
+NAD to its network-device group assignment (`nad → ops_owner`).
+
 RADIUS accounting shows starts, updates, stops, and session-duration aggregates.
 The likely-active count uses each session ID's latest record and excludes Stop;
 it is an accounting reconstruction, not a guaranteed live-session directory,
@@ -44,6 +55,14 @@ and depends on NAD Start, Interim-Update, and Stop quality.
 Endpoint metrics expose the fields currently normalized by the exporter: profile, identity group, posture applicability, and profile-event source/action. Hardware manufacturer/model and a profiler category hierarchy are not displayed because the current Data Connect metric contract does not expose them.
 
 Posture policy and condition panels use the normalized Data Connect status labels. They preserve the policy, policy result, condition, condition result, enforcement, PSN, OS, and agent-version dimensions exported by the collector.
+
+The Secure Client dashboard also carries an opt-in "Fleet Posture — Accumulated"
+section (`ise_endpoint_fleet_*`, dataset `endpoint_fleet`). It is empty unless
+`endpoint_fleet.enabled` is set. When on, the exporter keeps each endpoint's latest
+posture assessment in the restart-persistent state cache, so fleet coverage and
+compliance accumulate toward the whole posture-applicable population over a day or
+two — the fleet view the bounded 6h window and the capped 1000-session MnT sample
+cannot provide. It needs a persistent, writable `exporter.state_db`.
 
 The data-quality dashboard deliberately separates collection freshness from
 source-event freshness. A successful query can remain green even when the newest
