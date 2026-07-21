@@ -31,6 +31,7 @@ from .dataconnect_common import (
     number,
     query_set,
     schema_expression,
+    schema_has,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,12 +42,27 @@ def meta_query(view):
     return f"SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM {view}"
 
 
+def _label_projection(schema, upper, entry):
+    """SQL for one grouped label.
+
+    ``entry`` is ``(label, column, fallback)`` or ``(label, column, fallback, expr)``.
+    With ``expr``, that derived SQL is used when ``column`` is present (e.g. mapping a
+    numeric ``FAILED`` flag to a ``'passed'``/``'failed'`` string), falling back to
+    ``fallback`` when the column is absent. Every fragment is a collector constant.
+    """
+    name, column, fallback = entry[0], entry[1], entry[2]
+    expr = entry[3] if len(entry) > 3 else None
+    base = (expr if expr is not None and schema_has(schema, upper, column)
+            else schema_expression(schema, upper, column, fallback))
+    return f"NVL({base}, 'unknown') AS {name}"
+
+
 def tail_query(view, label_columns, schema=None):
     """Count new, settled rows of ``view`` in the contiguous id prefix above the cursor.
 
-    ``label_columns`` is an ordered sequence of ``(label, column, fallback)`` that
-    becomes the grouped label set. ``view`` and every column/fallback are collector
-    constants, never caller input.
+    ``label_columns`` is an ordered sequence of ``(label, column, fallback[, expr])``
+    that becomes the grouped label set. ``view`` and every column/fallback/expr are
+    collector constants, never caller input.
     """
     settled = ("CASE WHEN timestamp < CAST(SYSTIMESTAMP"
                " - NUMTODSINTERVAL(:settle_seconds, 'SECOND') AS TIMESTAMP)"
@@ -54,10 +70,9 @@ def tail_query(view, label_columns, schema=None):
     floor_cut = ("CAST(SYSTIMESTAMP - NUMTODSINTERVAL(:floor_hours, 'HOUR')"
                  " AS TIMESTAMP)")
     upper = view.upper()
-    names = [name for name, _column, _fallback in label_columns]
+    names = [entry[0] for entry in label_columns]
     projections = ",\n                   ".join(
-        f"NVL({schema_expression(schema, upper, column, fallback)}, 'unknown') AS {name}"
-        for name, column, fallback in label_columns)
+        _label_projection(schema, upper, entry) for entry in label_columns)
     select_names = ", ".join(f"nr.{name} AS {name}" for name in names)
     group_names = ", ".join(f"nr.{name}" for name in names)
     return f"""
@@ -103,7 +118,16 @@ def tail_counters(dataconnect, cfg, *, dataset, view, label_columns, counter):
         cfg, "dataconnect_tail_max_backfill_hours", 6))))
     schema = getattr(dataconnect, "schema", None)
     now = time.time()
-    label_names = [name for name, _column, _fallback in label_columns]
+    label_names = [entry[0] for entry in label_columns]
+    # An id-tail is meaningless without the ID column. If the live schema is known and
+    # this view lacks ID, self-skip instead of failing every cycle on ORA-00904. When
+    # the schema is not yet discovered (None) the engine stays permissive as before.
+    if schema is not None and not schema_has(schema, view.upper(), "id"):
+        logger.warning(
+            "collector detail dataset=%s source=dataconnect outcome=skipped_no_id "
+            "view=%s action=id_tail_requires_id_column", dataset, view)
+        metrics.ise_dataconnect_tail_events_last_cycle.labels(view=view).set(0)
+        return
     store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
     try:
         cursor = store.tail_cursor(view)

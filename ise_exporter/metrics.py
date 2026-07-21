@@ -374,6 +374,10 @@ ise_dataconnect_posture_assessment_tail_total = Counter(
     "ise_dataconnect_posture_assessment_tail_total",
     "Posture assessment events observed by incremental id-tailing since exporter start",
     ["status", "psn"])
+ise_dataconnect_radius_authentication_tail_total = Counter(
+    "ise_dataconnect_radius_authentication_tail_total",
+    "RADIUS authentication events observed by incremental id-tailing since exporter start",
+    ["result", "psn"])
 ise_dataconnect_tail_cursor_id = Gauge(
     "ise_dataconnect_tail_cursor_id",
     "Last incremental-tail high-water id committed for a Data Connect view", ["view"])

@@ -247,7 +247,17 @@ Cisco's data dictionary (developer.cisco.com/docs/dataconnect/database-views) co
   `status x psn` counters (`ise_dataconnect_posture_assessment_tail_total`) behind
   `dataconnect.posture_event_counters` (default-off). This is the assessment
   *throughput* signal; `endpoint_fleet` still owns per-endpoint coverage/compliance.
-- **Slice 3 — auth via `RADIUS_AUTHENTICATION_SUMMARY`** newest-bucket tailing.
+- **Slice 3 — authentication id-tail counters.** **Done (code, default-off)** — tails
+  `RADIUS_AUTHENTICATIONS` (which carries the same global `ID`; added to the schema
+  contract) with the shared engine, mapping the numeric `FAILED` flag to a
+  `result=passed/failed` label in SQL and publishing
+  `ise_dataconnect_radius_authentication_tail_total{result,psn}` behind
+  `dataconnect.authentication_event_counters`. The tail engine gained an optional
+  derived-expression per label (for the FAILED→string mapping, also Oracle-type-safe)
+  and an ID-presence guard: an id-tail self-skips if the live schema shows the view has
+  no `ID`. `RADIUS_AUTHENTICATION_SUMMARY` remains an alternative pre-aggregated source
+  if per-event tailing is ever undesirable. **Not enabled** — flip on after confirming
+  `RADIUS_AUTHENTICATIONS.ID` on the live schema (the guard makes this safe by default).
 - **Errors — deferred** unless a usable id is confirmed.
 
 ## Appendix A — Slice 0 probe queries (read-only, bounded)

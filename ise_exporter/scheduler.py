@@ -79,6 +79,7 @@ _DATACONNECT_PRIORITY = {
     "dataconnect_radius_active": 0,
     "dataconnect_accounting_counters": 1,
     "dataconnect_posture_counters": 1,
+    "dataconnect_authentication_counters": 1,
     "dataconnect_performance": 1,
     "dataconnect_nad_health": 2,
     "dataconnect_radius": 3,
@@ -303,6 +304,10 @@ class PollScheduler:
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_posture_counters_interval", 300), 300),
                 bool(getattr(cfg, "dataconnect_posture_event_counters", False))),
+            "dataconnect_authentication_counters": (
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_authentication_counters_interval", 300), 300),
+                bool(getattr(cfg, "dataconnect_authentication_event_counters", False))),
             "dataconnect_posture": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_posture_interval", 21600), 21600), True),
@@ -1119,6 +1124,15 @@ class PollScheduler:
                 "dataconnect_posture_counters",
                 self.dataset_plan["dataconnect_posture_counters"][1],
                 lambda: dataconnect_posture.collect_posture_counters(
+                    self.dataconnect, cfg))
+
+        # Opt-in incremental authentication pass/fail counters. Same id-tail engine
+        # against RADIUS_AUTHENTICATIONS; dark unless enabled.
+        if getattr(cfg, "dataconnect_authentication_event_counters", False):
+            self._run_dataconnect(
+                "dataconnect_authentication_counters",
+                self.dataset_plan["dataconnect_authentication_counters"][1],
+                lambda: dataconnect_radius.collect_authentication_counters(
                     self.dataconnect, cfg))
 
         # MnT owns only a bounded current active-endpoint posture snapshot. Run

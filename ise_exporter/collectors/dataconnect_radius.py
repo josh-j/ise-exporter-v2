@@ -756,3 +756,27 @@ def collect_accounting_counters(dataconnect, cfg):
                 ("psn", "ise_node", "'unknown'"),
             ),
             counter=metrics.ise_dataconnect_radius_accounting_tail_total)
+
+
+def collect_authentication_counters(dataconnect, cfg):
+    """Tail new RADIUS authentication rows into monotonic counters (opt-in, Slice 3).
+
+    Publishes cumulative ``result x psn`` counters (passed/failed by PSN) so Prometheus
+    computes the auth pass/fail rate over any window instead of the exporter re-summing
+    a fixed server-side window each cycle. RADIUS_AUTHENTICATIONS carries the same global
+    monotonic ``ID`` as RADIUS_ACCOUNTING; the numeric ``FAILED`` flag is mapped to a
+    ``passed``/``failed`` string in SQL (so the label is stable and Oracle-type-safe).
+    See ``dataconnect_tail`` and docs/incremental-tailing-plan.md.
+    """
+    with observe("dataconnect_authentication_counters"):
+        dataconnect_tail.tail_counters(
+            dataconnect, cfg,
+            dataset="dataconnect_authentication_counters",
+            view="radius_authentications",
+            label_columns=(
+                ("result", "failed", "'unknown'",
+                 "CASE WHEN failed = 1 THEN 'failed'"
+                 " WHEN failed = 0 THEN 'passed' ELSE 'unknown' END"),
+                ("psn", "ise_node", "'unknown'"),
+            ),
+            counter=metrics.ise_dataconnect_radius_authentication_tail_total)

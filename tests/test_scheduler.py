@@ -445,6 +445,7 @@ def test_scheduler_respects_valid_explicit_cadences_but_preserves_auth_backoff()
         "dataconnect_performance": 1,
         "dataconnect_accounting_counters": 300,
         "dataconnect_posture_counters": 300,
+        "dataconnect_authentication_counters": 300,
         "dataconnect_posture": 1,
         "dataconnect_endpoints": 1,
         "dataconnect_freshness": 1,

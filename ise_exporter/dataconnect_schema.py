@@ -41,7 +41,7 @@ def _view(required, *, optional=(), time_column="", domain="",
 VIEW_CONTRACTS = {
     "RADIUS_AUTHENTICATIONS": _view({
         "TIMESTAMP",
-    }, optional={"FAILED", "AUTHENTICATION_METHOD", "AUTHENTICATION_PROTOCOL",
+    }, optional={"ID", "FAILED", "AUTHENTICATION_METHOD", "AUTHENTICATION_PROTOCOL",
                  "DEVICE_NAME", "ISE_NODE", "RESPONSE_TIME", "AUTHORIZATION_POLICY",
                  "POLICY_SET_NAME", "TIMESTAMP_TIMEZONE"},
        time_column="TIMESTAMP", domain="radius_auth"),
