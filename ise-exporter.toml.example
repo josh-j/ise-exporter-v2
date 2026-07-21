@@ -153,6 +153,12 @@ event_window_hours = 6
 # default until the id-sequence model is validated on a multi-PSN deployment; see
 # docs/incremental-tailing-plan.md. Publishes ise_dataconnect_radius_accounting_tail_total.
 accounting_event_counters = false
+# Opt-in: the same incremental id-tail applied to posture assessments. Accumulates
+# monotonic status x psn counters (ise_dataconnect_posture_assessment_tail_total) so
+# Prometheus derives the assessment throughput/rate over any window. This is the
+# assessment-event rate, distinct from endpoint_fleet (per-endpoint coverage/compliance).
+# Shares tail_settle_seconds / tail_max_backfill_hours below. Off by default.
+posture_event_counters = false
 # Do not advance the tail cursor past rows added within this many seconds, so rows
 # whose (lower) id is still committing are not skipped. A few multiples of MnT
 # ingestion lag. Effectively-once for a rate metric, not a ledger guarantee.
@@ -180,6 +186,9 @@ performance_seconds = 300 # 5 minutes
 # dataconnect.accounting_event_counters is enabled). The tail is cheap, so this can
 # be short for fresh rates without re-scanning a window.
 accounting_counters_seconds = 300 # 5 minutes
+# Incremental posture-counter tail cadence (only used when
+# dataconnect.posture_event_counters is enabled). Cheap tail; short for fresh rates.
+posture_counters_seconds = 300 # 5 minutes
 # Historical posture assessments.
 posture_seconds = 21600 # 6 hours
 # Endpoint inventory follows its six-hour dashboard cadence. The cross-view

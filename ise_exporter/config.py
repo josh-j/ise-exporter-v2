@@ -93,6 +93,8 @@ class Config:
     # deployment; see docs/incremental-tailing-plan.md.
     dataconnect_accounting_event_counters: bool = False
     dataconnect_accounting_counters_interval: int = 300
+    dataconnect_posture_event_counters: bool = False
+    dataconnect_posture_counters_interval: int = 300
     dataconnect_tail_settle_seconds: int = 30
     dataconnect_tail_max_backfill_hours: int = 6
     dataconnect_schema_interval: int = 86400
@@ -276,6 +278,7 @@ _TOML_FIELDS = {
     "dataconnect.max_duty_cycle_percent": "dataconnect_max_duty_cycle_percent",
     "dataconnect.event_window_hours": "dataconnect_event_window_hours",
     "dataconnect.accounting_event_counters": "dataconnect_accounting_event_counters",
+    "dataconnect.posture_event_counters": "dataconnect_posture_event_counters",
     "dataconnect.tail_settle_seconds": "dataconnect_tail_settle_seconds",
     "dataconnect.tail_max_backfill_hours": "dataconnect_tail_max_backfill_hours",
     "dataconnect.shared_pacing_file": "dataconnect_shared_pacing_file",
@@ -291,6 +294,8 @@ _TOML_FIELDS = {
     "dataconnect.intervals.tacacs_seconds": "dataconnect_tacacs_interval",
     "dataconnect.intervals.accounting_counters_seconds":
         "dataconnect_accounting_counters_interval",
+    "dataconnect.intervals.posture_counters_seconds":
+        "dataconnect_posture_counters_interval",
     "endpoint_fleet.enabled": "endpoint_fleet_enabled",
     "endpoint_fleet.interval_seconds": "endpoint_fleet_interval",
     "endpoint_fleet.retention_seconds": "endpoint_fleet_retention_seconds",
@@ -347,6 +352,7 @@ _POSITIVE_FIELDS = {
     "dataconnect_posture_interval", "dataconnect_endpoints_interval",
     "dataconnect_freshness_interval", "dataconnect_nad_health_interval",
     "dataconnect_tacacs_interval", "dataconnect_accounting_counters_interval",
+    "dataconnect_posture_counters_interval",
     "endpoint_fleet_interval", "endpoint_fleet_retention_seconds",
 }
 

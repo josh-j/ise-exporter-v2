@@ -78,6 +78,7 @@ _DATACONNECT_PRIORITY = {
     "dataconnect_schema": -1,
     "dataconnect_radius_active": 0,
     "dataconnect_accounting_counters": 1,
+    "dataconnect_posture_counters": 1,
     "dataconnect_performance": 1,
     "dataconnect_nad_health": 2,
     "dataconnect_radius": 3,
@@ -298,6 +299,10 @@ class PollScheduler:
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_accounting_counters_interval", 300), 300),
                 bool(getattr(cfg, "dataconnect_accounting_event_counters", False))),
+            "dataconnect_posture_counters": (
+                "dataconnect", _configured_interval(getattr(
+                    cfg, "dataconnect_posture_counters_interval", 300), 300),
+                bool(getattr(cfg, "dataconnect_posture_event_counters", False))),
             "dataconnect_posture": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "dataconnect_posture_interval", 21600), 21600), True),
@@ -1104,6 +1109,16 @@ class PollScheduler:
                 "dataconnect_accounting_counters",
                 self.dataset_plan["dataconnect_accounting_counters"][1],
                 lambda: dataconnect_radius.collect_accounting_counters(
+                    self.dataconnect, cfg))
+
+        # Opt-in incremental posture-assessment counters. Same id-tail engine as
+        # the accounting counters: only new rows are read and Prometheus owns the
+        # windowing. Dark unless enabled.
+        if getattr(cfg, "dataconnect_posture_event_counters", False):
+            self._run_dataconnect(
+                "dataconnect_posture_counters",
+                self.dataset_plan["dataconnect_posture_counters"][1],
+                lambda: dataconnect_posture.collect_posture_counters(
                     self.dataconnect, cfg))
 
         # MnT owns only a bounded current active-endpoint posture snapshot. Run

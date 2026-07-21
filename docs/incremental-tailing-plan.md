@@ -238,9 +238,15 @@ Cisco's data dictionary (developer.cisco.com/docs/dataconnect/database-views) co
     the §2.3 watermark + reset hedge make Slice 1 robust even if the answer is
     imperfect.
 - **Slice 1 — accounting id-tail counters** (additive, flagged) + retire
-  session-delta panel. Measure DB cost and rate correctness.
-- **Slice 2 — posture-by-endpoint** (already id-based; `endpoint_fleet` uses id).
-  Evaluate converting posture assessment *counts* to counters.
+  session-delta panel. Measure DB cost and rate correctness. **Done** — gate
+  passed (id sequence validated **GLOBAL** on the multi-PSN lab); shipped
+  default-off behind `dataconnect.accounting_event_counters`.
+- **Slice 2 — posture-assessment id-tail counters.** **Done** — the Slice 1 tail
+  engine was extracted into a shared `dataconnect_tail` module and applied to
+  `POSTURE_ASSESSMENT_BY_ENDPOINT` (already id-based), publishing cumulative
+  `status x psn` counters (`ise_dataconnect_posture_assessment_tail_total`) behind
+  `dataconnect.posture_event_counters` (default-off). This is the assessment
+  *throughput* signal; `endpoint_fleet` still owns per-endpoint coverage/compliance.
 - **Slice 3 — auth via `RADIUS_AUTHENTICATION_SUMMARY`** newest-bucket tailing.
 - **Errors — deferred** unless a usable id is confirmed.
 

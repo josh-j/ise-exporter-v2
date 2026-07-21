@@ -1,6 +1,6 @@
 """Posture and Secure Client reporting from Cisco ISE Data Connect."""
 from .. import metrics
-from . import observe
+from . import dataconnect_tail, observe
 from .dataconnect_common import (
     event_window_hours,
     group_limit,
@@ -356,3 +356,23 @@ def collect(dataconnect, cfg):
                         breakdown=breakdown).set(1 if returned < group_total else 0),
             ))
         replace_snapshot(_METRICS, writers)
+
+
+def collect_posture_counters(dataconnect, cfg):
+    """Tail new posture assessment rows into monotonic counters (opt-in, Slice 2).
+
+    Counts posture assessment events by ``status x psn`` via the shared incremental
+    id-tail engine, so Prometheus computes the assessment rate over any window. This
+    is the assessment *throughput* signal, distinct from the endpoint_fleet cache
+    which tracks per-endpoint coverage. See ``dataconnect_tail``.
+    """
+    with observe("dataconnect_posture_counters"):
+        dataconnect_tail.tail_counters(
+            dataconnect, cfg,
+            dataset="dataconnect_posture_counters",
+            view="posture_assessment_by_endpoint",
+            label_columns=(
+                ("status", "posture_status", "'unknown'"),
+                ("psn", "ise_node", "'unknown'"),
+            ),
+            counter=metrics.ise_dataconnect_posture_assessment_tail_total)
