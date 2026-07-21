@@ -23,7 +23,6 @@ from .dataconnect_common import (
     schema_expression,
     schema_has,
     schema_projection,
-    signed_integer,
 )
 
 
@@ -86,8 +85,6 @@ _REPORTING_METRICS = (
 _ACTIVE_METRICS = (
     metrics.ise_dataconnect_radius_active_sessions,
     metrics.ise_dataconnect_radius_active_sessions_total,
-    metrics.ise_dataconnect_radius_active_session_delta,
-    metrics.ise_dataconnect_radius_active_session_delta_window_seconds,
     metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds,
     metrics.ise_dataconnect_radius_active_groups_returned,
     metrics.ise_dataconnect_radius_active_groups_total,
@@ -120,7 +117,7 @@ def _failure_class_sql(column="failure_reason"):
 _FAILURE_CLASS_SQL = _failure_class_sql()
 
 
-def _active_cte(stale_minutes, delta_minutes=5, schema=None):
+def _active_cte(stale_minutes, schema=None):
     view = "RADIUS_ACCOUNTING"
     return f"""
         WITH recent_accounting AS (
@@ -174,30 +171,11 @@ def _active_cte(stale_minutes, delta_minutes=5, schema=None):
                    COUNT(*) OVER () AS total_groups,
                    ROW_NUMBER() OVER (ORDER BY sessions DESC) AS group_rank
             FROM grouped_active
-        ), grouped_delta AS (
-            SELECT ise_node,
-                   SUM(CASE
-                       WHEN LOWER(TRIM(acct_status_type)) LIKE '%start%' THEN 1
-                       WHEN LOWER(TRIM(acct_status_type)) LIKE '%stop%' THEN -1
-                       ELSE 0
-                   END) AS session_delta
-            FROM recent_accounting
-            WHERE event_time >= CAST(
-                      SYSTIMESTAMP - NUMTODSINTERVAL({delta_minutes}, 'MINUTE')
-                      AS TIMESTAMP)
-              AND (LOWER(TRIM(acct_status_type)) LIKE '%start%'
-                   OR LOWER(TRIM(acct_status_type)) LIKE '%stop%')
-            GROUP BY ise_node
-        ), ranked_delta AS (
-            SELECT grouped_delta.*,
-                   ROW_NUMBER() OVER (
-                       ORDER BY ABS(session_delta) DESC) AS group_rank
-            FROM grouped_delta
         )
     """
 
 
-def _queries(limit, stale_minutes=60, window_hours=6, delta_minutes=5,
+def _queries(limit, stale_minutes=60, window_hours=6,
              authentication_policy_column="authorization_policy",
              accounting_policy_expression="authorization_policy", schema=None,
              authentication_view="RADIUS_AUTHENTICATIONS"):
@@ -212,7 +190,7 @@ def _queries(limit, stale_minutes=60, window_hours=6, delta_minutes=5,
     accounting_policy_expression = str(accounting_policy_expression).lower()
     if accounting_policy_expression not in {"authorization_policy", "'none'"}:
         raise ValueError("unsupported RADIUS accounting policy expression")
-    active_cte = _active_cte(stale_minutes, delta_minutes, schema)
+    active_cte = _active_cte(stale_minutes, schema)
     auth_recent = recent_event_predicate("timestamp", window_hours)
     auth_summary_recent = recent_event_predicate("timestamp", window_hours)
     accounting_recent = recent_event_predicate("timestamp", window_hours)
@@ -413,14 +391,8 @@ def _queries(limit, stale_minutes=60, window_hours=6, delta_minutes=5,
         """,
         "active_sessions": active_cte + f"""
             SELECT 'active' AS breakdown, device_name, ise_node, sessions,
-                   NULL AS session_delta, total_sessions, total_groups
+                   total_sessions, total_groups
             FROM ranked_active
-            WHERE group_rank <= {limit}
-            UNION ALL
-            SELECT 'delta' AS breakdown, NULL AS device_name, ise_node,
-                   NULL AS sessions, session_delta,
-                   NULL AS total_sessions, NULL AS total_groups
-            FROM ranked_delta
             WHERE group_rank <= {limit}
         """,
         "errors": f"""
@@ -682,7 +654,13 @@ def collect_reporting(dataconnect, cfg):
 
 
 def collect_active(dataconnect, cfg):
-    """Replace active sessions and the short-window delta from one bounded scan."""
+    """Replace the accounting-derived active-session snapshot from one bounded scan.
+
+    The former start-minus-stop delta gauge is retired in favor of Prometheus
+    windowing over the accounting id-tail counter
+    (``rate(ise_dataconnect_radius_accounting_tail_total{event_type=~"(?i)start"})``
+    minus the equivalent for stop), which the dashboards now use.
+    """
     with observe("dataconnect_radius_active"):
         limit = group_limit(cfg)
         # This query runs repeatedly and reads the large accounting event view.
@@ -691,44 +669,29 @@ def collect_active(dataconnect, cfg):
         # and a hard execution-boundary ceiling.
         stale_minutes = max(5, min(60, int(getattr(
             cfg, "dataconnect_active_session_stale_minutes", 60))))
-        interval_seconds = max(60, int(getattr(
-            cfg, "dataconnect_radius_active_interval", 300)))
-        delta_minutes = max(1, min(stale_minutes, (interval_seconds + 59) // 60))
         values = dataconnect.query(_queries(
-            limit, stale_minutes, delta_minutes=delta_minutes,
+            limit, stale_minutes,
             schema=getattr(dataconnect, "schema", None)
         )["active_sessions"])
         active_values = [row for row in values
                          if row.get("breakdown", "active") == "active"]
-        delta_values = [row for row in values if row.get("breakdown") == "delta"]
         summary = active_values[0] if active_values else {}
         active_sessions = [{
             "nad": label(row.get("device_name")),
             "psn": label(row.get("ise_node")),
             "sessions": integer(row.get("sessions")),
         } for row in active_values]
-        session_deltas = [{
-            "psn": label(row.get("ise_node")),
-            "delta": signed_integer(row.get("session_delta")),
-        } for row in delta_values]
         total_groups = integer(summary.get("total_groups"))
         writers = [
             lambda row=row: metrics.ise_dataconnect_radius_active_sessions.labels(
                 nad=row["nad"], psn=row["psn"]).set(row["sessions"])
             for row in active_sessions
         ]
-        writers.extend(
-            lambda row=row: metrics.ise_dataconnect_radius_active_session_delta.labels(
-                psn=row["psn"]).set(row["delta"])
-            for row in session_deltas
-        )
         writers.extend((
             lambda: metrics.ise_dataconnect_radius_active_sessions_total.set(
                 integer(summary.get("total_sessions"))),
             lambda: metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds.set(
                 stale_minutes * 60),
-            lambda: metrics.ise_dataconnect_radius_active_session_delta_window_seconds.set(
-                delta_minutes * 60),
             lambda: metrics.ise_dataconnect_radius_active_groups_returned.set(
                 len(active_sessions)),
             lambda: metrics.ise_dataconnect_radius_active_groups_total.set(total_groups),

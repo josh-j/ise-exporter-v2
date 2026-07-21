@@ -344,7 +344,7 @@
       "id": 17,
       "type": "timeseries",
       "title": "Session Delta per PSN",
-      "description": "Accounting starts minus stops per PSN during the latest five-minute active-session collection window. Positive values mean more starts than stops; the delta shares the active-session query so it adds no second Data Connect statement.",
+      "description": "Accounting start rate minus stop rate per PSN, computed by Prometheus from the incremental accounting id-tail counter over $__rate_interval. Positive means more starts than stops. Requires dataconnect.accounting_event_counters.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -353,7 +353,7 @@
       },
       "targets": [
         {
-          "expr": "sort_desc(sum by (psn) (ise_dataconnect_radius_active_session_delta{instance=~\"$deployment\",psn=~\"$psn\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_radius_active\",source=\"dataconnect\"}) == 1))",
+          "expr": "sort_desc((sum by (psn) (rate(ise_dataconnect_radius_accounting_tail_total{instance=~\"$deployment\",psn=~\"$psn\",event_type=~\"(?i)start\"}[$__rate_interval])) or (sum by (psn) (rate(ise_dataconnect_radius_accounting_tail_total{instance=~\"$deployment\",psn=~\"$psn\",event_type=~\"(?i)stop\"}[$__rate_interval])) * 0)) - (sum by (psn) (rate(ise_dataconnect_radius_accounting_tail_total{instance=~\"$deployment\",psn=~\"$psn\",event_type=~\"(?i)stop\"}[$__rate_interval])) or (sum by (psn) (rate(ise_dataconnect_radius_accounting_tail_total{instance=~\"$deployment\",psn=~\"$psn\",event_type=~\"(?i)start\"}[$__rate_interval])) * 0))) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_accounting_counters\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_accounting_counters\",source=\"dataconnect\"}) == 1))",
           "instant": false,
           "legendFormat": "{{psn}}",
           "refId": "A",

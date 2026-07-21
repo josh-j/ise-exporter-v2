@@ -16,7 +16,6 @@ def _clear():
         metrics.ise_dataconnect_radius_failure_events_total,
         metrics.ise_dataconnect_radius_accounting_events_total,
         metrics.ise_dataconnect_radius_active_sessions_total,
-        metrics.ise_dataconnect_radius_active_session_delta_window_seconds,
         metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds,
         metrics.ise_dataconnect_radius_errors_total,
     ):
@@ -78,10 +77,6 @@ class DataConnect:
                 {"breakdown": "active", "device_name": "nad-1",
                  "ise_node": "psn-1", "sessions": 12,
                  "total_sessions": 37, "total_groups": 1},
-                {"breakdown": "delta", "ise_node": "psn-1",
-                 "session_delta": 4},
-                {"breakdown": "delta", "ise_node": "psn-2",
-                 "session_delta": -3},
             ]
         return [{"message_code": "5440", "network_device_name": "nad-1",
                  "authentication_method": "MSCHAPv2", "ise_node": "psn-1",
@@ -110,8 +105,6 @@ def test_collects_bounded_aggregated_radius_metrics():
                  "stat", "nad") == {("avg", "nad-1"): 60, ("max", "nad-1"): 300}
     assert _rows(metrics.ise_dataconnect_radius_active_sessions,
                  "nad", "psn") == {("nad-1", "psn-1"): 12}
-    assert _rows(metrics.ise_dataconnect_radius_active_session_delta,
-                 "psn") == {("psn-1",): 4, ("psn-2",): -3}
     assert _rows(metrics.ise_dataconnect_radius_errors,
                  "message_code", "nad") == {("5440", "nad-1"): 3}
     assert metrics.ise_dataconnect_radius_authentication_events_total._value.get() == 107
@@ -132,8 +125,6 @@ def test_collects_bounded_aggregated_radius_metrics():
     assert _rows(metrics.ise_dataconnect_radius_accounting_event_type_total,
                  "event_type") == {("start",): 120, ("stop",): 80}
     assert metrics.ise_dataconnect_radius_active_sessions_total._value.get() == 37
-    assert metrics.ise_dataconnect_radius_active_session_delta_window_seconds \
-        ._value.get() == 300
     assert metrics.ise_dataconnect_radius_active_session_stale_cutoff_seconds._value.get() == 3600
     assert metrics.ise_dataconnect_radius_errors_total._value.get() == 12
     assert _rows(metrics.ise_dataconnect_radius_topk_groups_returned,
@@ -154,7 +145,6 @@ def test_collects_bounded_aggregated_radius_metrics():
     assert "session_id" in active_sql
     assert "nas_ip_address" in active_sql
     assert "NUMTODSINTERVAL(60, 'MINUTE')" in active_sql
-    assert "NUMTODSINTERVAL(5, 'MINUTE')" in active_sql
     assert "NUMTODSINTERVAL(24, 'HOUR')" not in active_sql
     assert active_sql.lower().count("from radius_accounting") == 1
     assert "/*+ MATERIALIZE */" in active_sql

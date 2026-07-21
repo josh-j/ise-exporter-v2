@@ -453,7 +453,16 @@ def test_domain_queries_do_not_mask_outages_as_unconditional_zero():
 def test_every_domain_data_query_is_gated_by_its_authoritative_dataset():
     contracts = (
         (r"ise_dataconnect_radius_active_", "dataconnect_radius_active", "dataconnect"),
-        (r"ise_dataconnect_radius_(?!active_)", "dataconnect_radius", "dataconnect"),
+        # Incremental id-tail counters are their own opt-in datasets, distinct from
+        # the windowed dataconnect_radius reporting scan.
+        (r"ise_dataconnect_radius_accounting_tail_",
+         "dataconnect_accounting_counters", "dataconnect"),
+        (r"ise_dataconnect_radius_authentication_tail_",
+         "dataconnect_authentication_counters", "dataconnect"),
+        (r"ise_dataconnect_radius_error_tail_",
+         "dataconnect_error_counters", "dataconnect"),
+        (r"ise_dataconnect_radius_(?!active_)(?!\w+_tail_)",
+         "dataconnect_radius", "dataconnect"),
         (r"ise_dataconnect_(?:endpoint|profile)",
          "dataconnect_endpoints", "dataconnect"),
         (r"ise_dataconnect_posture_", "dataconnect_posture", "dataconnect"),
@@ -1041,11 +1050,15 @@ def test_psn_dashboard_exposes_active_sessions_and_session_delta_per_psn():
     assert delta["targets"][0]["instant"] is False
     assert delta["fieldConfig"]["defaults"]["custom"]["drawStyle"] == "line"
     assert delta["options"]["legend"]["sortDesc"] is True
-    assert "sum by (psn) (ise_dataconnect_radius_active_session_delta" in \
-        delta_expression
+    # The delta is retired as a gauge; it is now Prometheus windowing over the
+    # accounting id-tail counter (rate(start) - rate(stop)).
+    assert "rate(ise_dataconnect_radius_accounting_tail_total" in delta_expression
+    assert 'event_type=~"(?i)start"' in delta_expression
+    assert 'event_type=~"(?i)stop"' in delta_expression
     assert 'instance=~"$deployment",psn=~"$psn"' in delta_expression
-    assert 'dataset="dataconnect_radius_active",source="dataconnect"' in \
+    assert 'dataset="dataconnect_accounting_counters",source="dataconnect"' in \
         delta_expression
+    assert "ise_dataconnect_radius_active_session_delta" not in delta_expression
 
 
 def test_psn_comparison_panels_collapse_secondary_dimensions():
