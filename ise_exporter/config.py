@@ -15,7 +15,14 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
 
 logger = logging.getLogger(__name__)
 DEFAULT_CONFIG_FILE = "/etc/ise-exporter/config.toml"
-DEFAULT_DATACONNECT_RADIUS_ACTIVE_INTERVAL = 300
+# The 60-minute RADIUS_ACCOUNTING scan + ROW_NUMBER dedup behind this dataset is
+# the costliest recurring Data Connect query on a large MnT. Dashboards now treat
+# the accounting id-tail delta (rate(start) - rate(stop)) as the live active-session
+# signal, so this reconstruction is demoted to a periodic truth-check against that
+# derived value; its default cadence matches the 30-minute reporting tier.
+# Operators who want the old faster cadence set
+# dataconnect.intervals.radius_active_seconds = 300.
+DEFAULT_DATACONNECT_RADIUS_ACTIVE_INTERVAL = 1800
 MAX_DATACONNECT_RADIUS_ACTIVE_INTERVAL = 3600
 
 

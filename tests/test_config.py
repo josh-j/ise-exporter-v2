@@ -30,7 +30,7 @@ def test_example_is_complete_and_parseable(monkeypatch):
     assert config.medium_interval == 300
     assert config.slow_interval == 21600
     assert config.dataconnect_radius_interval == 1800
-    assert config.dataconnect_radius_active_interval == 300
+    assert config.dataconnect_radius_active_interval == 1800
     assert config.dataconnect_performance_interval == 300
     assert config.dataconnect_posture_interval == 21600
     assert config.dataconnect_endpoints_interval == 21600

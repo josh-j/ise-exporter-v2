@@ -1323,7 +1323,7 @@ def test_plan_initializes_enabled_disabled_cadence_and_freshness(monkeypatch):
     assert metrics.ise_dataset_interval_seconds.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1800
     assert metrics.ise_dataset_interval_seconds.labels(
-        dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 300
+        dataset="dataconnect_radius_active", source="dataconnect")._value.get() == 1800
     assert metrics.ise_dataset_enabled.labels(
         dataset="dataconnect_radius", source="dataconnect")._value.get() == 1
     assert {source for source, _interval, _enabled in scheduler.dataset_plan.values()} == {

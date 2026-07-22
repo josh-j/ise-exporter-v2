@@ -16,7 +16,7 @@ from ise_exporter.config import Config
 from ise_exporter.clients.dataconnect import MAX_BATCH_RESULT_ROWS, MAX_RESULT_ROWS
 
 
-def test_operational_cadence_profile_uses_fewer_than_twenty_seven_batches_per_hour():
+def test_operational_cadence_profile_uses_fewer_than_seventeen_batches_per_hour():
     cfg = Config()
     statements_per_run = {
         "radius": len(dataconnect_radius._reporting_queries(cfg.dataconnect_max_groups)),
@@ -60,10 +60,13 @@ def test_operational_cadence_profile_uses_fewer_than_twenty_seven_batches_per_ho
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(71.375)
-    assert statements_per_hour < 72
-    assert batches_per_hour == pytest.approx(26.708333333333332)
-    assert batches_per_hour < 27
+    # radius_active contributes 2/hour since its demotion to a 30-minute
+    # truth-check (the accounting id-tail delta and the MnT count are the live
+    # signals), dropping the hourly profile by 10 statements and 10 batches.
+    assert statements_per_hour == pytest.approx(61.375)
+    assert statements_per_hour < 62
+    assert batches_per_hour == pytest.approx(16.708333333333332)
+    assert batches_per_hour < 17
 
 
 def test_freshness_uses_one_statement_for_every_timestamped_view():
