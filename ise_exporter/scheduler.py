@@ -91,6 +91,95 @@ _DATACONNECT_PRIORITY = {
     "endpoint_fleet": 8,
 }
 
+# Static priority alone starves the low-priority datasets: the adaptive Data
+# Connect cooldown (duration * (100/duty - 1), x999 at the default 0.1% duty)
+# can make lane service time exceed the re-arrival period of the operational
+# P0/P1 datasets, so a lower-priority item can find a higher-priority item
+# waiting at *every* dequeue and never run. One priority level of aging per 15
+# minutes of queue wait guarantees every queued dataset eventually crosses
+# every static priority band ahead of it and runs, no matter how busy the lane is.
+_DATACONNECT_PRIORITY_AGING_SECONDS = 900
+
+
+class _AgingDataConnectQueue:
+    """queue.Queue-compatible lane queue with wait-time priority aging.
+
+    Selection at get() time uses effective_priority = static_priority -
+    (now - queued_at) / _DATACONNECT_PRIORITY_AGING_SECONDS; the pending item
+    with the lowest effective priority is returned. Ties break deterministically
+    on (static_priority, queued_at, sequence) so behavior stays reproducible in
+    tests. The shutdown sentinel (name is None) always wins immediately,
+    regardless of aging, so shutdown is never delayed behind starved work.
+
+    The public surface (put/get/get_nowait/task_done/join/empty/
+    unfinished_tasks) intentionally mirrors queue.Queue/queue.PriorityQueue so
+    the rest of the scheduler -- and existing tests -- can keep treating
+    _dataconnect_queue as a drop-in queue.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._not_empty = threading.Condition(self._lock)
+        self._items = []
+        self.unfinished_tasks = 0
+
+    def put(self, item):
+        priority, sequence, name, tier, callback = item
+        with self._not_empty:
+            self._items.append(
+                (priority, sequence, name, tier, callback, time.time()))
+            self.unfinished_tasks += 1
+            self._not_empty.notify_all()
+
+    def get(self):
+        with self._not_empty:
+            while not self._items:
+                self._not_empty.wait()
+            return self._pop_best_locked()
+
+    def get_nowait(self):
+        with self._lock:
+            if not self._items:
+                raise queue.Empty
+            return self._pop_best_locked()
+
+    def _pop_best_locked(self):
+        now = time.time()
+        best_index = 0
+        best_key = None
+        for index, entry in enumerate(self._items):
+            priority, sequence, name, _tier, _callback, queued_at = entry
+            if name is None:
+                # The shutdown sentinel takes precedence over any pending work,
+                # aged or not, so shutdown is never delayed behind a backlog.
+                best_index = index
+                break
+            effective_priority = (
+                priority - (now - queued_at) / _DATACONNECT_PRIORITY_AGING_SECONDS)
+            key = (effective_priority, priority, queued_at, sequence)
+            if best_key is None or key < best_key:
+                best_key = key
+                best_index = index
+        priority, sequence, name, tier, callback, _queued_at = (
+            self._items.pop(best_index))
+        return (priority, sequence, name, tier, callback)
+
+    def task_done(self):
+        with self._not_empty:
+            self.unfinished_tasks = max(0, self.unfinished_tasks - 1)
+            if self.unfinished_tasks == 0:
+                self._not_empty.notify_all()
+
+    def join(self):
+        with self._not_empty:
+            while self.unfinished_tasks > 0:
+                self._not_empty.wait()
+
+    def empty(self):
+        with self._lock:
+            return not self._items
+
+
 _PERSISTED_DATACONNECT_METRICS = {
     "dataconnect_radius": dataconnect_radius._REPORTING_METRICS,
     "dataconnect_radius_active": dataconnect_radius._ACTIVE_METRICS,
@@ -175,7 +264,7 @@ class PollScheduler:
         self._scheduled_delay = {}
         self.last_success = {}
         self._dataconnect_async = False
-        self._dataconnect_queue = queue.PriorityQueue()
+        self._dataconnect_queue = _AgingDataConnectQueue()
         self._dataconnect_sequence = itertools.count()
         self._dataconnect_inflight = set()
         self._dataconnect_queued_at = {}

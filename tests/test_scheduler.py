@@ -729,6 +729,95 @@ def test_dataconnect_shutdown_discards_abandoned_queued_callbacks():
     assert stale_runs == []
 
 
+def test_dataconnect_queue_ages_a_long_starved_item_ahead_of_a_fresh_one(
+        monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: clock[0])
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    q = scheduler._dataconnect_queue
+
+    # dataconnect_freshness (static priority 7) queued first and left waiting
+    # long enough (> 7 aging levels * 900s) to age past dataconnect_radius_active
+    # (static priority 0), which is enqueued fresh just before the dequeue.
+    q.put((7, 0, "dataconnect_freshness", 86400, lambda: None))
+    clock[0] = 6301.0
+    q.put((0, 1, "dataconnect_radius_active", 1800, lambda: None))
+
+    item = q.get()
+
+    assert item[2] == "dataconnect_freshness"
+
+
+def test_dataconnect_queue_follows_static_priority_when_freshly_queued(
+        monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: clock[0])
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    q = scheduler._dataconnect_queue
+
+    # Both items are queued at essentially the same time, so aging has not
+    # accrued and the lower static priority (dataconnect_performance) wins.
+    q.put((5, 0, "dataconnect_posture", 21600, lambda: None))
+    q.put((1, 1, "dataconnect_performance", 300, lambda: None))
+
+    first = q.get()
+    second = q.get()
+
+    assert first[2] == "dataconnect_performance"
+    assert second[2] == "dataconnect_posture"
+
+
+def test_shutdown_sentinel_wins_over_a_heavily_aged_pending_item(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: clock[0])
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    q = scheduler._dataconnect_queue
+
+    # A low-priority item aged far past every other dataset's static priority
+    # would normally win the aging race, but shutdown must still take
+    # precedence and stop the worker promptly.
+    q.put((8, 0, "endpoint_fleet", 900, lambda: None))
+    clock[0] = 100000.0
+    q.put((-1, 1, None, None, None))
+
+    item = q.get()
+
+    assert item[2] is None
+
+
+def test_dataconnect_shutdown_stops_worker_promptly_with_items_pending():
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    shutdown = threading.Event()
+    started = threading.Event()
+    release = threading.Event()
+    scheduler._start_dataconnect_worker(shutdown)
+
+    def current():
+        with collectors.observe("dataconnect_radius_active"):
+            started.set()
+            assert release.wait(1)
+
+    scheduler._run_dataconnect("dataconnect_radius_active", 1800, current)
+    assert started.wait(1)
+    # Queue additional work behind the running item before shutting down, so
+    # the worker must skip past pending work to honor the sentinel promptly.
+    scheduler._run_dataconnect(
+        "dataconnect_freshness", 86400, lambda: None)
+    scheduler._run_dataconnect(
+        "endpoint_fleet", 900, lambda: None)
+    shutdown.set()
+    release.set()
+
+    scheduler._stop_dataconnect_worker()
+
+    assert not scheduler.dataconnect_worker_alive
+    assert not scheduler._dataconnect_async
+
+
 def test_dataconnect_backlog_prioritizes_operational_domains():
     scheduler = PollScheduler(
         _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
