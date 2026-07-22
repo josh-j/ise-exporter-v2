@@ -1329,6 +1329,7 @@ def test_alert_rules_cover_requested_failures_and_link_real_panels():
         "authentication_backoff",
         "ise_dataconnect_node_cpu_utilization_percent",
         "ise_dataconnect_node_memory_utilization_percent",
+        "ise_nad_activity_silent",
     )
     assert all(metric in text for metric in required_metrics)
     contact_points = (alerting_dir / "contact-points.yml").read_text()
@@ -1342,7 +1343,7 @@ def test_alert_rules_cover_requested_failures_and_link_real_panels():
         for path in DASHBOARDS.glob("*.json")}
     linked = re.findall(
         r"__dashboardUid__: ([^\n]+)\n\s+__panelId__: \"(\d+)\"", text)
-    assert len(linked) == 8
+    assert len(linked) == 9
     for uid, panel_id in linked:
         assert uid in dashboard_uids
         assert any(str(item.get("id")) == panel_id

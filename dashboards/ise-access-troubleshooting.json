@@ -289,7 +289,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "Active Sessions",
-      "description": "Latest accounting record per session ID is Start or Interim, not Stop. Depends on NAD accounting quality.",
+      "description": "Latest accounting record per session ID is Start or Interim, not Stop. Depends on NAD accounting quality. Accounting-window reconstruction: refreshed on the dataconnect_radius_active collection cadence (default being raised to 30 minutes) — not a live counter. For a live operational signal, see Session Delta per PSN (start-minus-stop accounting id-tail rate, on PSN) and ise_mnt_active_sessions_total (MnT Active Sessions, on PAN & MnT).",
       "gridPos": {
         "h": 4,
         "w": 4,

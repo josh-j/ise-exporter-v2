@@ -19,7 +19,7 @@ There is no live-event or dynamic source fallback layer. A missing dataset remai
 |---|---|---|---|
 | `ise-overview.json` | Deployment, certificates, licensing, backups, and patches | REST/OpenAPI | 5 minutes |
 | `ise-access-troubleshooting.json` | RADIUS authentication, accounting-derived sessions, latency, and failure triage | Data Connect | 5 minutes |
-| `ise-endpoints-devices.json` | Endpoint/profile summary and authoritative NAD inventory | Data Connect and REST/OpenAPI | 6 hours |
+| `ise-endpoints-devices.json` | Endpoint/profile summary, authoritative NAD inventory, and full-inventory NAD activity/dead-switch detection | Data Connect and REST/OpenAPI | 6 hours |
 | `ise-secureclient.json` | Posture status, policies, conditions, agent versions, OS, and failures | Data Connect | 5 minutes |
 | `ise-pan-mnt-troubleshooting.json` | PAN HA, node status, certificates, backup, and bounded MnT collection health | REST/OpenAPI and MnT XML | 5 minutes |
 | `ise-psn-troubleshooting.json` | RADIUS workload, latency, TPS, resource utilization, and diagnostics by node | Data Connect plus REST deployment health | 5 minutes |
@@ -131,6 +131,28 @@ has a fixed owner identity and template variables for deployment, site/location,
 and NAD. Regeneration removes only owner dashboards recorded in the generator's
 manifest; unrelated dashboards are never pruned. `unknown` and overflow `Other`
 classifications are intentionally not treated as owners.
+
+## NAD activity and dead-switch detection
+
+`nad_health` accumulates a high-water last-authentication timestamp for every
+configured NAD in the restart-persistent state cache (`ise_nad_activity_last_authentication_timestamp`,
+0 meaning never observed), independent of the bounded top-K activity window that
+only ranks the busiest NADs each cycle. This gives full-inventory coverage of
+"which switch went silent," on `ise-endpoints-devices.json` and, scoped to a
+single owner's NADs, on each generated ops-owner site dashboard.
+
+- `ise_nad_activity_silent{threshold_days="7"|"30"}` counts configured NADs whose
+  last observed authentication is older than the threshold; `ise_nad_activity_never_authenticated_total`
+  counts NADs the accumulator has never seen authenticate at all.
+- The recency-ranked refresh that feeds the accumulator each cycle can itself be
+  truncated by its row ceiling; `ise_nad_activity_refresh_truncated` surfaces that
+  so a truncated refresh cycle is not silently mistaken for a fully up-to-date
+  silent-NAD count.
+- This repo's provisioned alerting (`deploy/test-monitoring/grafana/provisioning/alerting/alerting.yml`,
+  see below) includes `ise-nad-silent`, firing when any configured NAD has
+  produced no authentications for 7 days; it links to the dead-switch panels
+  here. Deployments with a churny inventory can raise the threshold_days
+  selector or the hold in their own provisioning copy.
 
 ## Alerting
 

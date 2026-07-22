@@ -207,6 +207,44 @@ groups:
         labels: {service: ise-exporter, severity: critical}
 
   - orgId: 1
+    name: ISE network access devices
+    folder: ISE
+    interval: 1m
+    rules:
+      - uid: ise-nad-silent
+        title: ISE NADs silent for 7 days
+        condition: Threshold
+        data:
+          - refId: Query
+            relativeTimeRange: {from: 1800, to: 0}
+            datasourceUid: prometheus
+            model:
+              <<: *prometheus_query
+              expr: max(ise_nad_activity_silent{threshold_days="7"})
+          - refId: Threshold
+            relativeTimeRange: {from: 0, to: 0}
+            datasourceUid: __expr__
+            model:
+              <<: *threshold_model
+              conditions:
+                - evaluator: {params: [0], type: gt}
+                  operator: {type: and}
+                  query: {params: [Query]}
+                  reducer: {params: [], type: last}
+                  type: query
+        # The accumulated last-seen cache updates on the six-hour NAD health
+        # cadence; a long hold keeps one collection hiccup from paging anyone.
+        for: 30m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: Configured NADs have produced no authentications for 7 days
+          description: Open the linked dead-switch tables for the silent devices, their ops owner, and time since last observed authentication.
+          __dashboardUid__: ise-endpoints-devices
+          __panelId__: "16"
+        labels: {service: ise-exporter, severity: warning}
+
+  - orgId: 1
     name: ISE PSN capacity
     folder: ISE
     interval: 1m

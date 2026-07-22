@@ -721,6 +721,296 @@
         },
         "showUnfilled": true
       }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Silent NADs (No Authentication Observed for N Days)",
+      "description": "Configured NADs whose accumulated high-water last-authentication timestamp is older than the threshold, full inventory coverage (not the bounded top-K window). \"never authenticated\" is a configured NAD the accumulator has never seen authenticate at all. Alert on ise_nad_activity_silent > 0 in Grafana/Prometheus alerting; there is no alert-rule provisioning in this repo.",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 45
+      },
+      "targets": [
+        {
+          "expr": "sum by (threshold_days) (ise_nad_activity_silent) and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": false,
+          "legendFormat": "silent ≥ {{threshold_days}}d",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "ise_nad_activity_never_authenticated_total and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "instant": false,
+          "legendFormat": "never authenticated",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "NAD Activity Refresh Truncated",
+      "description": "Whether the recency-ranked refresh that feeds the last-authentication accumulator was truncated by its row ceiling this cycle. TRUNCATED means some stale NADs did not get a fresh high-water check — the silent-NAD counts above may lag.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 45
+      },
+      "targets": [
+        {
+          "expr": "max(ise_nad_activity_refresh_truncated) and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1))",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "TRUNCATED",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "Stalest NADs (Time Since Last Authentication)",
+      "description": "Age since the accumulated high-water last-authentication timestamp, for configured NADs that have authenticated at least once (filtered to timestamp > 0), joined to ops_owner/location/device_type via the authoritative NAD inventory. Capped to the 20 stalest. NADs that have never authenticated at all are not aged here — see Never-Authenticated NADs below.",
+      "gridPos": {
+        "h": 10,
+        "w": 16,
+        "x": 0,
+        "y": 53
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(topk(20, (time() - (ise_nad_activity_last_authentication_timestamp > 0)) * on(nad) group_left(ops_owner, location, device_type) ise_network_device_ndg_assignment)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "age since last authentication"
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "age since last authentication",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "Value": "age since last authentication"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "table",
+      "title": "Never-Authenticated NADs (Zero Accumulated Activity)",
+      "description": "Configured NADs the accumulator has never observed authenticate (accumulated last-authentication timestamp == 0), joined to ops_owner/location/device_type. A new NAD reads as never-authenticated until its first accumulator refresh cycle picks it up.",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 53
+      },
+      "targets": [
+        {
+          "expr": "(ise_nad_activity_last_authentication_timestamp == 0) * on(nad) group_left(ops_owner, location, device_type) ise_network_device_ndg_assignment and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{dataset=\"devices\",source=\"rest\"}) == 1))",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Per-NAD Authentication Activity (Top 10)",
+      "description": "Bounded top-10 recent authentication activity per NAD and status, from the Data Connect top-K activity window (not the full-inventory accumulator above).",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 63
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (nad, status) (ise_nad_authentication_events)) and on() ((max(ise_dataset_up{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1))",
+          "instant": false,
+          "legendFormat": "{{nad}} / {{status}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ],
   "refresh": "6h",

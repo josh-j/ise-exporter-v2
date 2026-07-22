@@ -155,6 +155,17 @@
       "targets": [{"expr": "ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"} and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
       "options": {"showHeader": true},
       "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}}}]
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Dead-Switch Watch (Stalest Owner NADs)",
+      "description": "Age since the accumulated high-water last-authentication timestamp for this owner's NADs (full inventory, not the bounded top-K window); filtered to NADs that have authenticated at least once. Silent thresholds (7/30 days) and never-authenticated NADs are on the fleet-wide Endpoints & Devices dashboard. Alert on ise_nad_activity_silent > 0 in Grafana/Prometheus alerting; there is no alert-rule provisioning in this repo.",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 44},
+      "targets": [{"expr": "sort_desc(topk(20, (time() - (ise_nad_activity_last_authentication_timestamp{instance=~\"$deployment\"} > 0)) * on(instance,nad) group_left(location,ops_owner,device_type) ise_network_device_ndg_assignment{instance=~\"$deployment\",ops_owner=\"__OPS_OWNER_PROMQL__\",location=~\"$location\",nad=~\"$nad\"})) and on() ((max(ise_dataset_up{instance=~\"$deployment\",dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"dataconnect_nad_health\",source=\"dataconnect\"}) == 1) and (max(ise_dataset_up{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1) and (max(ise_dataset_fresh{instance=~\"$deployment\",dataset=\"devices\",source=\"rest\"}) == 1))", "format": "table", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": [{"matcher": {"id": "byName", "options": "Value"}, "properties": [{"id": "displayName", "value": "age since last authentication"}, {"id": "unit", "value": "s"}]}]},
+      "options": {"showHeader": true, "sortBy": [{"displayName": "age since last authentication", "desc": true}]},
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true}, "renameByName": {"Value": "age since last authentication"}}}]
     }
   ],
   "refresh": "5m",
