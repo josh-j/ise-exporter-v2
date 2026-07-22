@@ -34,8 +34,6 @@ class DataConnect:
                      "stale_30": 12000, "stale_90": 7000, "stale_180": 3000},
                 {"dimension": "profile", "dimension_value": "Windows10-Workstation",
                  "endpoints": 40000, "total_groups": 51},
-                {"dimension": "identity_group", "dimension_value": "group-1",
-                 "endpoints": 50000, "total_groups": 12},
             ]
         return [{"endpoint_profile": "Windows10-Workstation", "source": "RADIUS Probe",
                  "endpoint_action_name": "Profiled", "identity_group": "Workstations",
@@ -51,8 +49,6 @@ def test_collects_current_inventory_and_bounded_profile_activity():
                  "source_view") == {("endpoints_data",): 50}
     assert _rows(metrics.ise_dataconnect_endpoints_by_profile, "profile") == {
         ("Windows10-Workstation",): 40000}
-    assert _rows(metrics.ise_dataconnect_endpoints_by_identity_group,
-                 "identity_group") == {("group-1",): 50000}
     assert _rows(metrics.ise_dataconnect_endpoints_by_posture_applicable,
                  "applicable") == {("yes",): 60000, ("no",): 20000}
     assert _rows(metrics.ise_dataconnect_profile_events,
@@ -68,9 +64,9 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     assert _rows(metrics.ise_dataconnect_endpoints_stale, "age_days") == {
         ("30",): 12000.0, ("90",): 7000.0, ("180",): 3000.0}
     assert _rows(metrics.ise_dataconnect_endpoint_topk_groups_total, "breakdown") == {
-        ("profile",): 51.0, ("identity_group",): 12.0, ("profiling",): 75.0}
+        ("profile",): 51.0, ("profiling",): 75.0}
     assert _rows(metrics.ise_dataconnect_endpoint_topk_truncated, "breakdown") == {
-        ("profile",): 1.0, ("identity_group",): 1.0, ("profiling",): 1.0}
+        ("profile",): 1.0, ("profiling",): 1.0}
     profile_sql = next(sql for sql in client.sql if "profiled_endpoints_summary" in sql.lower())
     assert "NUMTODSINTERVAL(6, 'HOUR')" in profile_sql
     assert "FETCH FIRST 50" in profile_sql
@@ -79,7 +75,7 @@ def test_collects_current_inventory_and_bounded_profile_activity():
     assert "AS unknown_profile" in coverage_sql
     inventory_sql = next(sql for sql in client.sql if "inventory_groups" in sql)
     assert "GROUP BY GROUPING SETS" in inventory_sql
-    assert "GROUPING SETS ((), (metric_profile), (metric_identity_group))" in inventory_sql
+    assert "GROUPING SETS ((), (metric_profile))" in inventory_sql
     assert inventory_sql.count("FROM endpoints_data") == 1
     assert len(client.sql) == 2
 

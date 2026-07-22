@@ -107,14 +107,11 @@ def test_unknown_posture_statuses_are_bounded_at_the_metric_boundary():
         "posture_status": raw_status,
         "posture_assessment_status": raw_status,
     }])
-    statuses, _applicable, assessments, *_rest = aggregates
+    statuses, *_rest = aggregates
 
     status = next(iter(statuses))[0]
-    assessment = next(iter(assessments))
     assert status.startswith("unexpected-")
-    assert assessment.startswith("unexpected-")
     assert len(status.encode("utf-8")) <= 128
-    assert len(assessment.encode("utf-8")) <= 128
 
 
 def test_malformed_active_identity_and_detail_are_bounded_before_processing():
@@ -145,8 +142,6 @@ def test_collects_bounded_posture_and_latency_without_identity_labels():
         ("Compliant", "Windows", "laba-ise-001"): 1,
         ("Unknown", "Unknown", "Unknown"): 1,
     }
-    assert _rows(metrics.ise_mnt_active_posture_applicable_endpoints, "applicable") == {
-        ("true",): 1, ("false",): 1}
     assert _rows(metrics.ise_mnt_active_secure_client_endpoints, "agent_version") == {
         ("Windows 5.1.18.314",): 1, ("Unknown",): 1}
     assert _rows(metrics.ise_mnt_active_posture_policy_results, "policy", "result") == {
@@ -191,7 +186,7 @@ def test_unmapped_latency_accepts_real_five_digit_ise_step_codes():
 def test_latency_aggregate_caps_distinct_step_label_domain():
     details = [{"step_latency": f"{code}=1"} for code in range(1, 301)]
 
-    steps = mnt_active_posture._aggregate(details)[6]
+    steps = mnt_active_posture._aggregate(details)[4]
 
     assert len(steps) == mnt_active_posture.MAX_STEP_CODES
     assert set(steps) == {str(code) for code in range(1, 257)}
@@ -208,15 +203,13 @@ def test_active_posture_aggregates_cap_free_form_label_domains(monkeypatch):
         "posture_report": f"policy-{index}\\;Passed\\;(details)",
     } for index in range(5)]
 
-    statuses, _applicable, assessments, agents, policies, *_rest = (
+    statuses, agents, policies, *_rest = (
         mnt_active_posture._aggregate(details))
 
     assert sum(statuses.values()) == 5
-    assert sum(assessments.values()) == 5
     assert sum(agents.values()) == 5
     assert sum(policies.values()) == 5
     assert len(statuses) <= 3 and ("Other", "Unknown", "Unknown") in statuses
-    assert len(assessments) <= 3 and "Other" in assessments
     assert len(agents) <= 3 and "Other" in agents
     assert len(policies) <= 3 and ("Other", "Passed") in policies
 

@@ -4,7 +4,6 @@ certificates plus the shared trusted store, emitting days-to-expiry and
 received it from the deployment collector)."""
 import logging
 from datetime import datetime, timezone
-import re
 
 from .. import metrics
 from ..compatibility import MAX_CERTIFICATES_PER_STORE, MAX_CERTIFICATE_ROWS
@@ -14,61 +13,12 @@ from . import observe, CollectorFailed
 from .nodes import get_nodes
 
 logger = logging.getLogger(__name__)
-MAX_CERTIFICATE_DN_BYTES = 4096
 
 _METRICS = (
     metrics.ise_certificate_expiry_days,
     metrics.ise_certificates_expiring_soon,
     metrics.ise_certificate_expired,
-    metrics.ise_certificate_key_size_bits,
-    metrics.ise_certificate_weak_signature,
-    metrics.ise_certificate_self_signed,
-    metrics.ise_certificate_binding,
-    metrics.ise_certificate_issuer_present_in_trust_store,
 )
-
-_ROLE_TOKENS = {
-    "admin": ("admin",),
-    "eap": ("eap",),
-    "radius_dtls": ("radius", "dtls"),
-    "portal": ("portal",),
-    "saml": ("saml",),
-    "ise_auth": ("ise auth", "authentication within ise"),
-    "client_auth": ("client auth",),
-    "cisco_services": ("cisco services",),
-}
-
-
-def _roles(value):
-    text = str(value or "").casefold()
-    return [role for role, tokens in _ROLE_TOKENS.items()
-            if any(token in text for token in tokens)] or ["none"]
-
-
-def _bounded_text(value, max_bytes):
-    text = str(value or "").strip()
-    encoded = text.encode("utf-8")
-    if len(encoded) <= max_bytes:
-        return text
-    return encoded[:max_bytes].decode("utf-8", "ignore")
-
-
-def _subject_identities(subject):
-    """Index a bounded certificate DN by its full value and component values."""
-    normalized = _bounded_text(subject, MAX_CERTIFICATE_DN_BYTES).casefold()
-    if not normalized:
-        return set()
-    identities = {normalized}
-    for component in re.split(r"(?<!\\),", normalized):
-        _key, separator, value = component.partition("=")
-        if separator and value.strip():
-            identities.add(value.strip())
-    return identities
-
-
-def _issuer_matches(issuer, trusted_identities):
-    value = _bounded_text(issuer, MAX_CERTIFICATE_DN_BYTES).casefold()
-    return bool(value and value in trusted_identities)
 
 
 def collect(client, cfg):
@@ -89,6 +39,9 @@ def collect(client, cfg):
                 raise CollectorFailed(f"{cert_type} certificate has invalid expirationDate")
             if expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
+            # selfSigned/keySize are no longer published as metrics, but the response
+            # is still validated fail-closed: a malformed value here is a sign the
+            # whole cert payload is untrustworthy, not just these two fields.
             self_signed = cert.get("selfSigned", False)
             if not isinstance(self_signed, bool):
                 raise CollectorFailed(
@@ -119,15 +72,6 @@ def collect(client, cfg):
                 "usage": metric_label(
                     cert.get("usedBy", cert.get("trustedFor", "unknown"))),
                 "days": days,
-                "key_size": key_size,
-                "signature": _bounded_text(
-                    cert.get("signatureAlgorithm"), 256).casefold(),
-                "self_signed": self_signed,
-                "issuer": _bounded_text(
-                    cert.get("issuedBy"), MAX_CERTIFICATE_DN_BYTES),
-                "subject": _bounded_text(
-                    cert.get("subject", cert.get("issuedTo", "")),
-                    MAX_CERTIFICATE_DN_BYTES),
             })
             # cumulative thresholds: a cert expiring in 10 days counts in 30/60/90,
             # matching the "expiring within N days" reading of the metric
@@ -166,34 +110,11 @@ def collect(client, cfg):
         for cert in trusted:
             process(cert, "trust_store", "trusted")
 
-        trusted_identities = set()
-        for row in rows:
-            if row["type"] == "trusted" and row["subject"]:
-                trusted_identities.update(_subject_identities(row["subject"]))
-
         def publish():
             for row in rows:
                 metrics.ise_certificate_expiry_days.labels(
                     hostname=row["hostname"], cert_name=row["name"], cert_type=row["type"],
                     usage=str(row["usage"] or "unknown")).set(row["days"])
-                metrics.ise_certificate_key_size_bits.labels(
-                    hostname=row["hostname"], cert_name=row["name"],
-                    cert_type=row["type"]).set(row["key_size"])
-                metrics.ise_certificate_weak_signature.labels(
-                    hostname=row["hostname"], cert_name=row["name"],
-                    cert_type=row["type"]).set(
-                        int("sha1" in row["signature"] or "md5" in row["signature"]))
-                for role in _roles(row["usage"]):
-                    metrics.ise_certificate_binding.labels(
-                        hostname=row["hostname"], cert_name=row["name"],
-                        cert_type=row["type"], role=role).set(1)
-                if row["type"] == "system":
-                    metrics.ise_certificate_self_signed.labels(
-                        hostname=row["hostname"], cert_name=row["name"]).set(
-                            int(row["self_signed"]))
-                    metrics.ise_certificate_issuer_present_in_trust_store.labels(
-                        hostname=row["hostname"], cert_name=row["name"]).set(
-                            int(_issuer_matches(row["issuer"], trusted_identities)))
             for threshold in (30, 60, 90):
                 metrics.ise_certificates_expiring_soon.labels(
                     threshold_days=str(threshold)).set(counts[f"exp_{threshold}"])

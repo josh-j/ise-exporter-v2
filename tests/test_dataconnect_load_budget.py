@@ -93,7 +93,7 @@ def test_endpoint_inventory_uses_one_current_table_scan():
 
     assert list(queries) == ["inventory", "profiling"]
     assert queries["inventory"].lower().count("from endpoints_data") == 1
-    assert "GROUPING SETS ((), (metric_profile), (metric_identity_group))" in \
+    assert "GROUPING SETS ((), (metric_profile))" in \
         queries["inventory"]
 
 

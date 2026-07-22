@@ -113,22 +113,6 @@ ise_nad_activity_refresh_truncated = Gauge(
 ise_certificate_expiry_days = Gauge("ise_certificate_expiry_days", "Days until cert expires", ["hostname", "cert_name", "cert_type", "usage"])
 ise_certificates_expiring_soon = Gauge("ise_certificates_expiring_soon", "Certs expiring within threshold", ["threshold_days"])
 ise_certificate_expired = Gauge("ise_certificate_expired", "Expired certificates")
-ise_certificate_key_size_bits = Gauge(
-    "ise_certificate_key_size_bits", "Certificate public-key size",
-    ["hostname", "cert_name", "cert_type"])
-ise_certificate_weak_signature = Gauge(
-    "ise_certificate_weak_signature", "Certificate uses a deprecated signature algorithm",
-    ["hostname", "cert_name", "cert_type"])
-ise_certificate_self_signed = Gauge(
-    "ise_certificate_self_signed", "System certificate is self-signed",
-    ["hostname", "cert_name"])
-ise_certificate_binding = Gauge(
-    "ise_certificate_binding", "Certificate service/trust binding by canonical role",
-    ["hostname", "cert_name", "cert_type", "role"])
-ise_certificate_issuer_present_in_trust_store = Gauge(
-    "ise_certificate_issuer_present_in_trust_store",
-    "System certificate issuer matches a subject in the ISE trusted-certificate store",
-    ["hostname", "cert_name"])
 ise_license_consumption = Gauge("ise_license_consumption", "License consumption", ["tier"])
 ise_license_compliance = Gauge("ise_license_compliance", "License compliance", ["tier"])
 ise_license_enabled = Gauge("ise_license_enabled", "License tier enabled", ["tier"])
@@ -288,12 +272,6 @@ ise_mnt_active_posture_endpoints = Gauge(
     "ise_mnt_active_posture_endpoints",
     "Collected active endpoints grouped by current MnT posture status, agent OS, and PSN",
     ["status", "os", "psn"])
-ise_mnt_active_posture_applicable_endpoints = Gauge(
-    "ise_mnt_active_posture_applicable_endpoints",
-    "Collected active endpoints grouped by posture-applicable state", ["applicable"])
-ise_mnt_active_posture_assessment_endpoints = Gauge(
-    "ise_mnt_active_posture_assessment_endpoints",
-    "Collected active endpoints grouped by current posture assessment status", ["status"])
 ise_mnt_active_secure_client_endpoints = Gauge(
     "ise_mnt_active_secure_client_endpoints",
     "Collected active endpoints grouped by normalized Secure Client posture-agent version",
@@ -332,9 +310,6 @@ ise_dataconnect_radius_distinct_endpoints_total = Gauge(
     "ise_dataconnect_radius_distinct_endpoints_total",
     "Exact distinct calling-station identifiers in the RADIUS reporting window",
     ["source_view"])
-ise_dataconnect_radius_distinct_users_total = Gauge(
-    "ise_dataconnect_radius_distinct_users_total",
-    "Exact distinct usernames in the RADIUS reporting window", ["source_view"])
 ise_dataconnect_radius_failure_events = Gauge(
     "ise_dataconnect_radius_failure_events",
     "Failed RADIUS authentications by bounded reason class, authorization profile, and location",
@@ -569,9 +544,6 @@ ise_dataconnect_profiled_endpoint_group_memberships_total = Gauge(
 ise_dataconnect_endpoints_by_profile = Gauge(
     "ise_dataconnect_endpoints_by_profile", "Endpoint snapshot rows by endpoint policy",
     ["profile"])
-ise_dataconnect_endpoints_by_identity_group = Gauge(
-    "ise_dataconnect_endpoints_by_identity_group", "Endpoint snapshot rows by identity-group ID",
-    ["identity_group"])
 ise_dataconnect_endpoints_by_posture_applicable = Gauge(
     "ise_dataconnect_endpoints_by_posture_applicable",
     "Endpoint snapshot rows by posture-applicable state", ["applicable"])

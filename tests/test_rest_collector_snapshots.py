@@ -162,33 +162,12 @@ def test_certificate_valid_empty_stores_clear_stale_labels(monkeypatch):
                for child in metrics.ise_certificates_expiring_soon._metrics.values())
 
 
-def test_certificate_rejects_string_self_signed_without_replacing_snapshot(monkeypatch):
-    metrics.ise_certificate_self_signed.labels(hostname="old", cert_name="old").set(1)
-    old_keys = set(metrics.ise_certificate_self_signed._metrics)
-    monkeypatch.setattr(
-        certificates, "get_nodes", lambda *args, **kwargs: [{"hostname": "psn-1"}],
-    )
-
-    class Client:
-        def get_pan_api_all(self, path, **kwargs):
-            if "system-certificate" in path:
-                return [{
-                    "friendlyName": "EAP cert", "expirationDate": "2030-01-01",
-                    "selfSigned": "false",
-                }]
-            raise AssertionError("invalid system certificate must fail before trust store")
-
-    certificates.collect(Client(), _cfg())
-
-    assert set(metrics.ise_certificate_self_signed._metrics) == old_keys
-
-
 @pytest.mark.parametrize("key_size", (-1, 65_537, "not-a-number"))
 def test_certificate_rejects_invalid_key_size_without_replacing_snapshot(
         monkeypatch, key_size):
-    metrics.ise_certificate_key_size_bits.labels(
-        hostname="old", cert_name="old", cert_type="system").set(2048)
-    old_keys = set(metrics.ise_certificate_key_size_bits._metrics)
+    metrics.ise_certificate_expiry_days.labels(
+        hostname="old", cert_name="old", cert_type="system", usage="Admin").set(10)
+    old_keys = set(metrics.ise_certificate_expiry_days._metrics)
     monkeypatch.setattr(
         certificates, "get_nodes", lambda *args, **kwargs: [{"hostname": "psn-1"}],
     )
@@ -204,15 +183,15 @@ def test_certificate_rejects_invalid_key_size_without_replacing_snapshot(
 
     certificates.collect(Client(), _cfg())
 
-    assert set(metrics.ise_certificate_key_size_bits._metrics) == old_keys
+    assert set(metrics.ise_certificate_expiry_days._metrics) == old_keys
 
 
 @pytest.mark.parametrize("names", ((None, None), ("duplicate", "duplicate")))
 def test_certificate_rejects_ambiguous_identities_without_replacing_snapshot(
         monkeypatch, names):
-    metrics.ise_certificate_key_size_bits.labels(
-        hostname="old", cert_name="old", cert_type="system").set(2048)
-    old_keys = set(metrics.ise_certificate_key_size_bits._metrics)
+    metrics.ise_certificate_expiry_days.labels(
+        hostname="old", cert_name="old", cert_type="system", usage="Admin").set(10)
+    old_keys = set(metrics.ise_certificate_expiry_days._metrics)
     monkeypatch.setattr(
         certificates, "get_nodes", lambda *args, **kwargs: [{"hostname": "psn-1"}],
     )
@@ -228,51 +207,7 @@ def test_certificate_rejects_ambiguous_identities_without_replacing_snapshot(
 
     certificates.collect(Client(), _cfg())
 
-    assert set(metrics.ise_certificate_key_size_bits._metrics) == old_keys
-
-
-def test_certificate_security_binding_and_issuer_coverage(monkeypatch):
-    monkeypatch.setattr(
-        certificates, "get_nodes", lambda *args, **kwargs: [{"hostname": "psn-1"}],
-    )
-
-    class Client:
-        def get_pan_api_all(self, path, **kwargs):
-            if "system-certificate" in path:
-                return [{
-                    "friendlyName": "EAP cert", "expirationDate": "2030-01-01",
-                    "usedBy": "Admin, EAP Authentication", "keySize": 2048,
-                    "signatureAlgorithm": "SHA256withRSA", "selfSigned": False,
-                    "issuedBy": "Lab Issuing CA",
-                }]
-            return [{
-                "friendlyName": "Lab CA", "expirationDate": "2035-01-01",
-                "trustedFor": "Authentication within ISE", "keySize": 4096,
-                "signatureAlgorithm": "SHA256withRSA", "subject": "CN=Lab Issuing CA",
-            }]
-
-    certificates.collect(Client(), _cfg())
-
-    assert metrics.ise_certificate_binding.labels(
-        hostname="psn-1", cert_name="EAP cert", cert_type="system", role="eap"
-    )._value.get() == 1
-    assert metrics.ise_certificate_key_size_bits.labels(
-        hostname="psn-1", cert_name="EAP cert", cert_type="system")._value.get() == 2048
-    assert metrics.ise_certificate_weak_signature.labels(
-        hostname="psn-1", cert_name="EAP cert", cert_type="system")._value.get() == 0
-    assert metrics.ise_certificate_issuer_present_in_trust_store.labels(
-        hostname="psn-1", cert_name="EAP cert")._value.get() == 1
-
-
-def test_certificate_dn_matching_is_bounded_and_component_indexed():
-    identities = certificates._subject_identities(
-        "CN=Lab Issuing CA,O=Example," + "X" * 10_000)
-
-    assert certificates._issuer_matches("Lab Issuing CA", identities)
-    assert certificates._issuer_matches("Example", identities)
-    assert not certificates._issuer_matches("Issuing", identities)
-    assert all(len(value.encode("utf-8")) <= certificates.MAX_CERTIFICATE_DN_BYTES
-               for value in identities)
+    assert set(metrics.ise_certificate_expiry_days._metrics) == old_keys
 
 
 def test_certificate_metric_labels_are_byte_bounded(monkeypatch):

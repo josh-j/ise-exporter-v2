@@ -34,8 +34,8 @@ class DataConnect:
     def query(self, sql):
         self.sql.append(sql)
         lowered = sql.lower()
-        if "as distinct_endpoints" in lowered or "as distinct_users" in lowered:
-            return [{"distinct_endpoints": 81, "distinct_users": 54}]
+        if "as distinct_endpoints" in lowered:
+            return [{"distinct_endpoints": 81}]
         if "grouped_failure" in lowered:
             return [
                 {"breakdown": "volume_summary", "total_events": 107,
@@ -112,8 +112,6 @@ def test_collects_bounded_aggregated_radius_metrics():
     assert metrics.ise_dataconnect_radius_failure_events_total._value.get() == 11
     assert _rows(metrics.ise_dataconnect_radius_distinct_endpoints_total,
                  "source_view") == {("radius_authentication_summary",): 81}
-    assert _rows(metrics.ise_dataconnect_radius_distinct_users_total,
-                 "source_view") == {("radius_authentication_summary",): 54}
     assert _rows(metrics.ise_dataconnect_radius_failure_events,
                  "failure_class", "authorization_profile", "location") == {
         ("credentials", "PermitAccess", "Campus"): 9}
@@ -269,27 +267,15 @@ def test_volume_summary_no_longer_computes_distincts_per_grouping_set_row():
 
 
 def test_distinct_totals_statement_only_includes_available_columns():
-    schema_both = {
-        "RADIUS_AUTHENTICATION_SUMMARY": {
-            "TIMESTAMP": "TIMESTAMP", "CALLING_STATION_ID": "VARCHAR2",
-            "USERNAME": "VARCHAR2",
-        },
-    }
-    queries = dataconnect_radius._queries(25, schema=schema_both)
-    assert "COUNT(DISTINCT calling_station_id) AS distinct_endpoints" in \
-        queries["distinct_totals"]
-    assert "COUNT(DISTINCT username) AS distinct_users" in queries["distinct_totals"]
-    assert "FROM radius_authentication_summary" in queries["distinct_totals"]
-
-    schema_endpoints_only = {
+    schema_with_column = {
         "RADIUS_AUTHENTICATION_SUMMARY": {
             "TIMESTAMP": "TIMESTAMP", "CALLING_STATION_ID": "VARCHAR2",
         },
     }
     query = dataconnect_radius._queries(
-        25, schema=schema_endpoints_only)["distinct_totals"]
-    assert "distinct_endpoints" in query
-    assert "distinct_users" not in query
+        25, schema=schema_with_column)["distinct_totals"]
+    assert "COUNT(DISTINCT calling_station_id) AS distinct_endpoints" in query
+    assert "FROM radius_authentication_summary" in query
 
     schema_neither = {
         "RADIUS_AUTHENTICATION_SUMMARY": {"TIMESTAMP": "TIMESTAMP"},
@@ -314,8 +300,6 @@ def test_distinct_totals_metrics_publish_same_values_as_before():
 
     assert _rows(metrics.ise_dataconnect_radius_distinct_endpoints_total,
                  "source_view") == {("radius_authentication_summary",): 81}
-    assert _rows(metrics.ise_dataconnect_radius_distinct_users_total,
-                 "source_view") == {("radius_authentication_summary",): 54}
 
 
 def test_volume_summary_omits_unavailable_dimensions_and_empty_failure_groups():
@@ -338,7 +322,7 @@ def test_volume_summary_omits_unavailable_dimensions_and_empty_failure_groups():
 def test_unsupported_distinct_metrics_are_absent_instead_of_zero():
     cfg = types.SimpleNamespace(dataconnect_max_groups=25)
     dataconnect_radius.collect_reporting(DataConnect(), cfg)
-    assert _rows(metrics.ise_dataconnect_radius_distinct_users_total,
+    assert _rows(metrics.ise_dataconnect_radius_distinct_endpoints_total,
                  "source_view")
 
     client = DataConnect()
@@ -354,8 +338,6 @@ def test_unsupported_distinct_metrics_are_absent_instead_of_zero():
     dataconnect_radius.collect_reporting(client, cfg)
 
     assert _rows(metrics.ise_dataconnect_radius_distinct_endpoints_total,
-                 "source_view") == {}
-    assert _rows(metrics.ise_dataconnect_radius_distinct_users_total,
                  "source_view") == {}
 
 

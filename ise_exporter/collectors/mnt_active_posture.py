@@ -27,7 +27,6 @@ from ..util import (
     is_mac,
     metric_label,
     normalize_agent_version,
-    normalize_bool_label,
     normalize_mac,
     normalize_posture,
     parse_other_attr_string,
@@ -72,8 +71,6 @@ _METRICS = (
     metrics.ise_mnt_active_posture_cache_oldest_age_seconds,
     metrics.ise_mnt_active_posture_field_coverage_ratio,
     metrics.ise_mnt_active_posture_endpoints,
-    metrics.ise_mnt_active_posture_applicable_endpoints,
-    metrics.ise_mnt_active_posture_assessment_endpoints,
     metrics.ise_mnt_active_secure_client_endpoints,
     metrics.ise_mnt_active_posture_policy_results,
     metrics.ise_mnt_active_step_latency_seconds,
@@ -288,8 +285,6 @@ def _session_signature(row):
 
 def _aggregate(details):
     statuses = Counter()
-    applicable = Counter()
-    assessments = Counter()
     agents = Counter()
     policies = Counter()
     coverage = Counter()
@@ -340,11 +335,6 @@ def _aggregate(details):
         increment_bounded(
             statuses, (status, os_name, psn), MAX_STATUS_GROUPS,
             ("Other", "Unknown", "Unknown"))
-        applicable[normalize_bool_label(posture_applicable)] += 1
-        assessment_status = metric_label(
-            normalize_posture(assessment) if assessment else "Unknown", "Unknown", 128)
-        increment_bounded(
-            assessments, assessment_status, MAX_STATUS_GROUPS, "Other")
         increment_bounded(
             agents, metric_label(agent, "Unknown", 128), MAX_AGENT_GROUPS, "Other")
         for policy, result in set(parse_posture_report(report)):
@@ -373,7 +363,7 @@ def _aggregate(details):
     # ordering as a deterministic tie-breaker.
     steps = dict(sorted(
         steps.items(), key=lambda item: (-len(item[1]), int(item[0])))[:MAX_STEP_CODES])
-    return statuses, applicable, assessments, agents, policies, coverage, steps, total_latency
+    return statuses, agents, policies, coverage, steps, total_latency
 
 
 def collect(client, cfg):
@@ -495,7 +485,7 @@ def collect(client, cfg):
             default=0.0)
 
         aggregates = _aggregate(details)
-        (statuses, applicable, assessments, agents, policies, coverage,
+        (statuses, agents, policies, coverage,
          steps, total_latency) = aggregates
         writers = [
             lambda: metrics.ise_mnt_active_sessions_total.set(active_total),
@@ -523,18 +513,6 @@ def collect(client, cfg):
                 metrics.ise_mnt_active_posture_endpoints.labels(
                     status=status, os=os_name, psn=psn).set(count)
             for (status, os_name, psn), count in statuses.items()
-        )
-        writers.extend(
-            lambda value=value, count=count:
-                metrics.ise_mnt_active_posture_applicable_endpoints.labels(
-                    applicable=value).set(count)
-            for value, count in applicable.items()
-        )
-        writers.extend(
-            lambda status=status, count=count:
-                metrics.ise_mnt_active_posture_assessment_endpoints.labels(
-                    status=status).set(count)
-            for status, count in assessments.items()
         )
         writers.extend(
             lambda agent=agent, count=count:

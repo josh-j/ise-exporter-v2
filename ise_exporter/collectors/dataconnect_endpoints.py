@@ -22,7 +22,6 @@ _METRICS = (
     metrics.ise_dataconnect_endpoints_stale,
     metrics.ise_dataconnect_profiled_endpoint_group_memberships_total,
     metrics.ise_dataconnect_endpoints_by_profile,
-    metrics.ise_dataconnect_endpoints_by_identity_group,
     metrics.ise_dataconnect_endpoints_by_posture_applicable,
     metrics.ise_dataconnect_profile_events,
     metrics.ise_dataconnect_endpoint_topk_groups_returned,
@@ -35,8 +34,6 @@ def _queries(limit, window_hours=6, schema=None):
     profiling_recent = recent_event_predicate("timestamp", window_hours)
     inventory_view = "ENDPOINTS_DATA"
     profile = schema_expression(schema, inventory_view, "endpoint_policy", "'Unknown'")
-    identity_group = schema_expression(
-        schema, inventory_view, "identity_group_id", "'none'")
 
     def populated(column, alias):
         if not schema_has(schema, inventory_view, column):
@@ -74,18 +71,14 @@ def _queries(limit, window_hours=6, schema=None):
         "inventory": f"""
             WITH inventory_source AS (
                 SELECT endpoints_data.*,
-                       {profile} AS metric_profile,
-                       {identity_group} AS metric_identity_group
+                       {profile} AS metric_profile
                 FROM endpoints_data
             ), inventory_groups AS (
                 SELECT CASE
-                           WHEN GROUPING(metric_profile) = 1
-                            AND GROUPING(metric_identity_group) = 1 THEN 'coverage'
-                           WHEN GROUPING(metric_profile) = 0 THEN 'profile'
-                           ELSE 'identity_group'
+                           WHEN GROUPING(metric_profile) = 1 THEN 'coverage'
+                           ELSE 'profile'
                        END AS dimension,
-                       CASE WHEN GROUPING(metric_profile) = 0
-                            THEN metric_profile ELSE metric_identity_group END AS dimension_value,
+                       metric_profile AS dimension_value,
                        COUNT(*) AS endpoints,
                        {populated("hostname", "hostname")},
                        {populated("endpoint_ip", "ip")},
@@ -97,7 +90,7 @@ def _queries(limit, window_hours=6, schema=None):
                        {unknown_profile},
                        {stale(30)}, {stale(90)}, {stale(180)}
                 FROM inventory_source
-                GROUP BY GROUPING SETS ((), (metric_profile), (metric_identity_group))
+                GROUP BY GROUPING SETS ((), (metric_profile))
             ), ranked_inventory AS (
                 SELECT inventory_groups.*,
                        COUNT(*) OVER (PARTITION BY dimension) AS total_groups,
@@ -149,19 +142,13 @@ def collect(dataconnect, cfg):
         total = integer(coverage.get("endpoints"))
         profiles_rows = [row for row in rows["inventory"]
                          if row.get("dimension") == "profile"]
-        identity_rows = [row for row in rows["inventory"]
-                         if row.get("dimension") == "identity_group"]
         profile_summary = profiles_rows[0] if profiles_rows else {}
-        group_summary = identity_rows[0] if identity_rows else {}
         profiling_summary = rows["profiling"][0] if rows["profiling"] else {}
         profile_groups = integer(profile_summary.get("total_groups"))
-        identity_groups = integer(group_summary.get("total_groups"))
         profiling_groups = integer(profiling_summary.get("total_groups"))
         profiling_memberships = integer(profiling_summary.get("total_memberships"))
         profiles = [(label(row.get("dimension_value"), "Unknown"),
                      integer(row.get("endpoints"))) for row in profiles_rows]
-        groups = [(label(row.get("dimension_value"), "none"),
-                   integer(row.get("endpoints"))) for row in identity_rows]
         posture = [
             ("yes", integer(coverage.get("posture_yes"))),
             ("no", integer(coverage.get("posture_no"))),
@@ -212,9 +199,6 @@ def collect(dataconnect, cfg):
         writers.extend(lambda profile=profile, count=count:
                        metrics.ise_dataconnect_endpoints_by_profile.labels(
                            profile=profile).set(count) for profile, count in profiles)
-        writers.extend(lambda group=group, count=count:
-                       metrics.ise_dataconnect_endpoints_by_identity_group.labels(
-                           identity_group=group).set(count) for group, count in groups)
         if schema_has(schema, "ENDPOINTS_DATA", "posture_applicable"):
             writers.extend(lambda applicable=applicable, count=count:
                            metrics.ise_dataconnect_endpoints_by_posture_applicable.labels(
@@ -227,12 +211,10 @@ def collect(dataconnect, cfg):
         )
         returned = {
             "profile": len(profiles),
-            "identity_group": len(groups),
             "profiling": len(profiling),
         }
         available = {
             "profile": profile_groups,
-            "identity_group": identity_groups,
             "profiling": profiling_groups,
         }
         for breakdown in returned:

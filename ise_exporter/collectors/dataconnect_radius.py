@@ -64,7 +64,6 @@ _REPORTING_METRICS = (
     metrics.ise_dataconnect_radius_authentication_events,
     metrics.ise_dataconnect_radius_authentication_events_total,
     metrics.ise_dataconnect_radius_distinct_endpoints_total,
-    metrics.ise_dataconnect_radius_distinct_users_total,
     metrics.ise_dataconnect_radius_failure_events,
     metrics.ise_dataconnect_radius_failure_events_total,
     metrics.ise_dataconnect_radius_authentication_summary_events,
@@ -249,22 +248,16 @@ def _queries(limit, stale_minutes=60, window_hours=6,
         )
     }
     # The GROUPING SETS aggregation below used to also compute
-    # COUNT(DISTINCT calling_station_id)/COUNT(DISTINCT username) on every grouping-set
-    # row even though only the top-level () row's values are ever published; Oracle pays
-    # for the distinct aggregation on every row of the large 6h window regardless. Moved
-    # here into their own small plain-SELECT statement (schema_has-guarded, only the
-    # columns that actually exist on this ISE version) so the distinct cost is paid once.
-    distinct_totals_aggregates = []
-    if schema_has(schema, summary_view, "calling_station_id"):
-        distinct_totals_aggregates.append(
-            "COUNT(DISTINCT calling_station_id) AS distinct_endpoints")
-    if schema_has(schema, summary_view, "username"):
-        distinct_totals_aggregates.append(
-            "COUNT(DISTINCT username) AS distinct_users")
+    # COUNT(DISTINCT calling_station_id) on every grouping-set row even though only
+    # the top-level () row's value is ever published; Oracle pays for the distinct
+    # aggregation on every row of the large 6h window regardless. Moved here into its
+    # own small plain-SELECT statement (schema_has-guarded) so the distinct cost is
+    # paid once. (The distinct-users aggregate that used to ride alongside it was
+    # retired: unconsumed by any dashboard or alert.)
     queries = {}
-    if distinct_totals_aggregates:
+    if schema_has(schema, summary_view, "calling_station_id"):
         queries["distinct_totals"] = f"""
-            SELECT {', '.join(distinct_totals_aggregates)}
+            SELECT COUNT(DISTINCT calling_station_id) AS distinct_endpoints
             FROM radius_authentication_summary
             WHERE {auth_summary_recent}
         """
@@ -436,7 +429,7 @@ def _reporting_queries(limit, window_hours=6,
                        accounting_policy_expression="authorization_policy", schema=None,
                        authentication_view="RADIUS_AUTHENTICATIONS"):
     # Reporting batch: authentication, volume_summary, accounting, errors, and (when the
-    # schema has either column) distinct_totals -- five statements, exactly at the
+    # schema has the column) distinct_totals -- five statements, exactly at the
     # client's MAX_BATCH_QUERIES ceiling. Do not add a sixth without first removing one.
     return {name: sql for name, sql in _queries(
                 limit, window_hours=window_hours,
@@ -642,11 +635,6 @@ def collect_reporting(dataconnect, cfg):
                 lambda: metrics.ise_dataconnect_radius_distinct_endpoints_total.labels(
                     source_view="radius_authentication_summary").set(
                     integer(distinct_totals.get("distinct_endpoints"))))
-        if schema_has(schema, "RADIUS_AUTHENTICATION_SUMMARY", "username"):
-            writers.append(
-                lambda: metrics.ise_dataconnect_radius_distinct_users_total.labels(
-                    source_view="radius_authentication_summary").set(
-                    integer(distinct_totals.get("distinct_users"))))
         breakdowns = {
             "authentication": (len(auth), summaries["authentication"]),
             "latency": (len(latency), summaries["latency"]),
