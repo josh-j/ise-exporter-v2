@@ -98,6 +98,16 @@ ise_nad_activity_silent = Gauge(
 ise_nad_activity_cache_entries = Gauge(
     "ise_nad_activity_cache_entries",
     "Rows retained in the restart-persistent per-NAD activity cache")
+ise_nad_activity_refresh_groups_returned = Gauge(
+    "ise_nad_activity_refresh_groups_returned",
+    "Recency-ranked NAD groups returned this cycle to refresh the last-authentication "
+    "accumulator, bounded by the wider _LAST_SEEN_ROW_CAP ceiling")
+ise_nad_activity_refresh_groups_total = Gauge(
+    "ise_nad_activity_refresh_groups_total",
+    "Exact NAD activity group count before the recency-ranked refresh ceiling")
+ise_nad_activity_refresh_truncated = Gauge(
+    "ise_nad_activity_refresh_truncated",
+    "Whether the recency-ranked refresh surface was truncated by its row ceiling")
 
 # --- certs / license / backup / patch (slow tier) ---
 ise_certificate_expiry_days = Gauge("ise_certificate_expiry_days", "Days until cert expires", ["hostname", "cert_name", "cert_type", "usage"])

@@ -111,9 +111,14 @@ def test_alternate_config_cannot_export_more_than_production_group_ceiling():
 
 
 def test_nad_health_query_has_the_same_hard_group_ceiling():
+    # Capture the SQL and assert after collect() returns: observe() swallows
+    # collector exceptions, so an assertion inside the fake can never fail the
+    # test and would make this ceiling check vacuous.
+    captured = []
+
     class DataConnect:
         def query(self, sql):
-            assert "WHERE group_rank <= 1000" in sql
+            captured.append(sql)
             return []
 
     nad_health.collect(
@@ -123,6 +128,9 @@ def test_nad_health_query_has_the_same_hard_group_ceiling():
             dataconnect_nad_health_interval=86400,
             dataconnect_event_window_hours=6,
         ))
+
+    assert len(captured) == 1
+    assert "WHERE volume_rank <= 1000 OR recency_rank <= 5000" in captured[0]
 
 
 def test_tacacs_query_builder_refuses_an_unbounded_event_scan():

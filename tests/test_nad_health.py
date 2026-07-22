@@ -30,10 +30,10 @@ class DataConnect:
         return [
             {"nad": "CAMPUS-CORP-WIRED", "passed_events": 132, "failed_events": 29,
              "last_event": datetime(2026, 7, 14, 4, 30, tzinfo=timezone.utc),
-             "total_groups": 2},
+             "total_groups": 2, "volume_rank": 1, "recency_rank": 1},
             {"nad": "unknown-client", "passed_events": 2, "failed_events": 5,
              "last_event": datetime(2026, 7, 14, 4, 20, tzinfo=timezone.utc),
-             "total_groups": 2},
+             "total_groups": 2, "volume_rank": 2, "recency_rank": 2},
         ]
 
 
@@ -62,7 +62,13 @@ def test_joins_configured_nads_to_activity_without_exporting_unconfigured_names(
 
 
 class SettableActivity:
-    """Fake Data Connect returning a settable top-K activity batch per cycle."""
+    """Fake Data Connect returning a settable single-scan ranked batch per cycle.
+
+    One statement now ranks the grouped rows two ways (volume_rank for the
+    top-K activity surface, recency_rank for the wider last-seen refresh
+    surface). `rows` should carry both rank columns already set by the caller;
+    _activity_row defaults both ranks to 1 for the common single-row case.
+    """
 
     def __init__(self):
         self.rows = []
@@ -71,9 +77,11 @@ class SettableActivity:
         return list(self.rows)
 
 
-def _activity_row(nad, last_event, passed=1, failed=0, total_groups=1):
+def _activity_row(nad, last_event, passed=1, failed=0, total_groups=1,
+                   volume_rank=1, recency_rank=1):
     return {"nad": nad, "passed_events": passed, "failed_events": failed,
-            "last_event": last_event, "total_groups": total_groups}
+            "last_event": last_event, "total_groups": total_groups,
+            "volume_rank": volume_rank, "recency_rank": recency_rank}
 
 
 def test_accumulator_gives_full_inventory_dead_switch_coverage_across_cycles(tmp_path):
@@ -150,7 +158,7 @@ def test_raw_configured_nad_name_is_bounded_only_at_metric_boundary():
             return [{
                 "nad": raw_name.upper(), "passed_events": 1, "failed_events": 0,
                 "last_event": datetime(2026, 7, 14, tzinfo=timezone.utc),
-                "total_groups": 1,
+                "total_groups": 1, "volume_rank": 1, "recency_rank": 1,
             }]
 
     nad_health.collect(
@@ -170,14 +178,15 @@ def test_nad_health_bounds_query_and_per_device_series_to_group_ceiling():
     class BoundedActivity:
         def query(self, sql):
             assert "COUNT(*) OVER () AS total_groups" in sql
-            assert "WHERE group_rank <= 2" in sql
+            assert (f"WHERE volume_rank <= 2 OR "
+                    f"recency_rank <= {nad_health._LAST_SEEN_ROW_CAP}") in sql
             return [
                 {"nad": "switch-3", "passed_events": 10, "failed_events": 0,
                  "last_event": datetime(2026, 7, 14, tzinfo=timezone.utc),
-                 "total_groups": 3},
+                 "total_groups": 3, "volume_rank": 1, "recency_rank": 1},
                 {"nad": "unknown-client", "passed_events": 5, "failed_events": 1,
                  "last_event": datetime(2026, 7, 14, tzinfo=timezone.utc),
-                 "total_groups": 3},
+                 "total_groups": 3, "volume_rank": 2, "recency_rank": 2},
             ]
 
     nad_health.collect(
@@ -193,3 +202,72 @@ def test_nad_health_bounds_query_and_per_device_series_to_group_ceiling():
     assert metrics.ise_nad_activity_groups_total._value.get() == 3
     assert metrics.ise_nad_activity_groups_truncated._value.get() == 1
     assert metrics.ise_nad_unconfigured_authentication_events_topk._value.get() == 6
+
+
+def test_refresh_statement_updates_last_seen_for_nads_below_topk_cutoff(tmp_path):
+    """A NAD ranked out of the top-K activity subset by event volume still gets
+    its accumulated last-seen timestamp refreshed via the recency-ranked
+    subset of the SAME single-scan statement, and is therefore not wrongly
+    counted silent."""
+    devices = [{"name": "switch-a"}, {"name": "switch-b"}]
+    cfg = types.SimpleNamespace(state_db_path=str(tmp_path / "state.sqlite3"))
+    client = SettableActivity()
+    now = datetime.now(timezone.utc).timestamp()
+
+    def at(days_ago):
+        return datetime.fromtimestamp(now - days_ago * 86400, tz=timezone.utc)
+
+    # switch-a is busy enough to rank into the top-K activity subset
+    # (volume_rank 1, within the default 1000 limit). switch-b is quiet
+    # (volume_rank 1500 simulates falling below the top-K cutoff in a real
+    # deployment with >1000 active NADs) but authenticated recently -- only
+    # its recency_rank <= _LAST_SEEN_ROW_CAP admits it into the refresh subset.
+    client.rows = [
+        _activity_row("SWITCH-A", at(0), passed=1000, total_groups=2,
+                      volume_rank=1, recency_rank=2),
+        _activity_row("SWITCH-B", at(1), total_groups=2,
+                      volume_rank=1500, recency_rank=1),
+    ]
+    nad_health.collect(devices, client, cfg)
+
+    activity = _rows(metrics.ise_nad_activity_last_authentication_timestamp, "nad")
+    assert activity[("switch-b",)] == pytest.approx(now - 1 * 86400, abs=5)
+    assert metrics.ise_nad_activity_tracked_total._value.get() == 2
+    assert _rows(metrics.ise_nad_activity_silent, "threshold_days") == {
+        ("7",): 0,
+        ("30",): 0,
+    }
+
+
+def test_refresh_truncation_metrics_set_when_total_exceeds_returned(tmp_path):
+    devices = [{"name": "switch-a"}]
+    cfg = types.SimpleNamespace(state_db_path=str(tmp_path / "state.sqlite3"))
+    client = SettableActivity()
+    event = datetime(2026, 7, 14, tzinfo=timezone.utc)
+
+    client.rows = [_activity_row("SWITCH-A", event, total_groups=9000,
+                                  volume_rank=1, recency_rank=1)]
+    nad_health.collect(devices, client, cfg)
+
+    assert metrics.ise_nad_activity_refresh_groups_returned._value.get() == 1
+    assert metrics.ise_nad_activity_refresh_groups_total._value.get() == 9000
+    assert metrics.ise_nad_activity_refresh_truncated._value.get() == 1
+
+
+def test_single_statement_scans_the_view_once_with_both_rankings():
+    """LE-8: the merged statement must compute both the top-K volume ranking
+    and the wider recency ranking over ONE scan/aggregation of the 6h window,
+    not two separate statements each scanning radius_authentication_summary."""
+    captured = {}
+
+    class CapturingActivity:
+        def query(self, sql):
+            captured["sql"] = sql
+            return []
+
+    nad_health.collect(DEVICES, CapturingActivity(), types.SimpleNamespace())
+
+    sql = captured["sql"]
+    assert "volume_rank" in sql
+    assert "recency_rank" in sql
+    assert sql.lower().count("radius_authentication_summary") == 1

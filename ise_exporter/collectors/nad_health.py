@@ -31,6 +31,17 @@ logger = logging.getLogger(__name__)
 # Silence thresholds for the accumulated full-inventory "dead switch" signal.
 _SILENT_DAYS = (7, 30)
 
+# The volume ranking below (top-K by event count, capped at `group_limit`,
+# <=1000) alone would starve quiet-but-alive NADs below that cutoff of a
+# last-seen refresh. A second ranking of the SAME grouped rows by recency
+# (MAX(timestamp) DESC) gives the accumulator a wider refresh surface, unioned
+# into one result via `volume_rank <= limit OR recency_rank <= _LAST_SEEN_ROW_CAP`
+# so the window is scanned/aggregated only once. The union is bounded by
+# limit + _LAST_SEEN_ROW_CAP (<=1000 + 5000 = 6000), comfortably at the Data
+# Connect client's per-statement row ceiling; recency-ranked rows dropped past
+# the cap are the least-recently-active tail, the safest rows to leave stale.
+_LAST_SEEN_ROW_CAP = 5000
+
 _METRICS = (
     metrics.ise_nad_authentication_events,
     metrics.ise_nad_last_authentication_timestamp,
@@ -47,6 +58,9 @@ _METRICS = (
     metrics.ise_nad_activity_never_authenticated_total,
     metrics.ise_nad_activity_silent,
     metrics.ise_nad_activity_cache_entries,
+    metrics.ise_nad_activity_refresh_groups_returned,
+    metrics.ise_nad_activity_refresh_groups_total,
+    metrics.ise_nad_activity_refresh_truncated,
 )
 
 
@@ -91,28 +105,50 @@ def collect(devices, dataconnect, cfg):
         schema = getattr(dataconnect, "schema", None)
         view = "RADIUS_AUTHENTICATION_SUMMARY"
         device = schema_expression(schema, view, "device_name", "'unknown'")
-        activity = dataconnect.query(f"""
+        sql = f"""
             WITH grouped_activity AS (
                 SELECT NVL({device}, 'unknown') AS nad,
                        SUM(NVL(passed_count, 0)) AS passed_events,
                        SUM(NVL(failed_count, 0)) AS failed_events,
-                       MAX(timestamp) AS last_event
+                       MAX(timestamp) AS last_event,
+                       COUNT(*) OVER () AS total_groups
                 FROM radius_authentication_summary
                 WHERE {recent}
                 GROUP BY NVL({device}, 'unknown')
             ), ranked_activity AS (
-                SELECT grouped_activity.*, COUNT(*) OVER () AS total_groups,
+                SELECT grouped_activity.*,
                        ROW_NUMBER() OVER (
                            ORDER BY passed_events + failed_events DESC, nad
-                       ) AS group_rank
+                       ) AS volume_rank,
+                       ROW_NUMBER() OVER (
+                           ORDER BY last_event DESC, nad
+                       ) AS recency_rank
                 FROM grouped_activity
             )
-            SELECT * FROM ranked_activity WHERE group_rank <= {limit}
-        """)
+            SELECT * FROM ranked_activity
+            WHERE volume_rank <= {limit} OR recency_rank <= {_LAST_SEEN_ROW_CAP}
+        """
+        combined = dataconnect.query(sql)
 
-        total_groups = integer(activity[0].get("total_groups")) if activity else 0
+        # One scan of the 6h window, ranked two ways. `activity` is the top-K
+        # by event volume (feeds event counts / selection, exactly what the old
+        # standalone "activity" statement fed); `refresh` is the wider
+        # recency-ranked surface (feeds the last-seen accumulator, exactly what
+        # the old standalone "refresh" statement fed). A row can appear in both
+        # when it is both busy and recent.
+        activity = [row for row in combined if integer(row.get("volume_rank")) <= limit]
+        refresh = [row for row in combined
+                   if integer(row.get("recency_rank")) <= _LAST_SEEN_ROW_CAP]
+
+        total_groups = integer(combined[0].get("total_groups")) if combined else 0
         if total_groups < len(activity):
             raise CollectorFailed("NAD activity total was smaller than returned groups")
+
+        # Both rankings are computed over the same single grouped scan, so they
+        # share one total_groups value.
+        refresh_total_groups = total_groups
+        if refresh_total_groups < len(refresh):
+            raise CollectorFailed("NAD last-seen refresh total was smaller than returned groups")
 
         counts = defaultdict(int)
         last_seen = defaultdict(float)
@@ -139,15 +175,32 @@ def collect(devices, dataconnect, cfg):
             name for name in sorted(configured, key=str.casefold)
             if name not in selected and len(selected) < limit)
 
+        # Recency-ranked refresh rows for the accumulator (see _LAST_SEEN_ROW_CAP
+        # comment): a much wider surface than the top-K activity rows, which
+        # rank by event volume and starve quiet-but-alive NADs of a refresh.
+        refresh_last_seen = defaultdict(float)
+        for row in refresh:
+            reported = str(row.get("nad") or "unknown").strip()
+            name = canonical.get(reported.casefold())
+            if name is None:
+                continue
+            refresh_last_seen[name] = max(
+                refresh_last_seen[name], _timestamp(row.get("last_event")))
+
         # Accumulate the high-water last-authentication timestamp for every
-        # configured NAD across cycles. The top-K activity query only ranks the
-        # busiest NADs each window, so without this the per-device last-seen
-        # signal above covers at most `limit` of the fleet. The persistent cache
-        # lets the "which switch went silent" signal reach the whole inventory.
+        # configured NAD across cycles. Drive the accumulation primarily from the
+        # recency-ranked refresh rows (wide coverage); also fold in the
+        # top-K activity rows (a subset, harmless) so both surfaces agree.
+        accumulate = defaultdict(float)
+        for name, seen_at in refresh_last_seen.items():
+            accumulate[name] = max(accumulate[name], seen_at)
+        for name, seen_at in last_seen.items():
+            accumulate[name] = max(accumulate[name], seen_at)
+
         now = time.time()
         store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
         try:
-            for name, seen_at in last_seen.items():
+            for name, seen_at in accumulate.items():
                 if seen_at > 0:
                     store.put_nad_activity(name, seen_at, now=now)
             store.commit()
@@ -176,6 +229,11 @@ def collect(devices, dataconnect, cfg):
             lambda: metrics.ise_nad_activity_groups_total.set(total_groups),
             lambda: metrics.ise_nad_activity_groups_truncated.set(
                 int(total_groups > len(activity))),
+            lambda: metrics.ise_nad_activity_refresh_groups_returned.set(len(refresh)),
+            lambda: metrics.ise_nad_activity_refresh_groups_total.set(
+                refresh_total_groups),
+            lambda: metrics.ise_nad_activity_refresh_truncated.set(
+                int(refresh_total_groups > len(refresh))),
         ]
         for name in selected:
             writers.extend((
