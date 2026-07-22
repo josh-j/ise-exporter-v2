@@ -1,5 +1,6 @@
 """Collect bounded-cardinality network-device inventory from ERS."""
 import logging
+import math
 from collections import defaultdict
 import time
 
@@ -150,8 +151,18 @@ def collect(client, cfg):
                 ),
             )
             if detail_budget <= 0:
-                max_requests = min(DETAIL_REQUEST_CEILING, len(refresh_ids))
+                # Auto-sizing: never-cached devices still converge at full speed
+                # (cold start unchanged), while TTL-stale rows refresh at the rate
+                # that spreads one full inventory pass evenly across the TTL window
+                # instead of a synchronized monthly burst -- refresh_ids already
+                # orders never-cached first, then oldest, so the budget composition
+                # matches the intent (uncached slice first, then a rotation slice).
+                uncached = sum(1 for device_id in refresh_ids if device_id not in cached)
+                interval = max(1, int(getattr(cfg, "slow_interval", 21600)))
+                rotation_target = math.ceil(len(device_ids) * interval / ttl)
+                max_requests = min(DETAIL_REQUEST_CEILING, uncached + rotation_target)
             else:
+                # Explicit operator override: honored exactly, no rotation shaping.
                 max_requests = max(1, min(DETAIL_REQUEST_CEILING, detail_budget))
             attempted = 0
             failures = 0

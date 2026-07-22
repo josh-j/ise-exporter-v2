@@ -310,6 +310,119 @@ def test_auto_detail_budget_is_bounded_by_the_hard_ceiling(tmp_path, monkeypatch
     assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 6
 
 
+def test_auto_budget_cold_start_refreshes_whole_small_inventory_in_one_pass(
+        tmp_path, monkeypatch):
+    # Never-cached devices must still converge at full speed: cold start behavior
+    # is unchanged by the rotation-trickle math (uncached dominates the budget).
+    inventory = [{"id": f"nad-{index}", "name": f"switch-{index}"}
+                 for index in range(9)]
+    detail_calls = []
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return inventory
+            device_id = path.rsplit("/", 1)[-1]
+            detail_calls.append(device_id)
+            return {"NetworkDevice": {
+                "id": device_id,
+                "NetworkDeviceGroupList": ["Location#All Locations#Lab"],
+            }}
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    cfg = _cfg(tmp_path, device_detail_max_requests=0,
+               device_cache_ttl=2592000, slow_interval=21600)
+
+    assert devices.collect(Client(), cfg) == inventory
+    assert len(detail_calls) == 9
+    assert metrics.ise_network_device_detail_coverage._value.get() == 1
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 0
+
+
+def test_auto_budget_trickles_ttl_rotation_instead_of_a_synchronized_burst(
+        tmp_path, monkeypatch):
+    # Fully cached inventory whose TTL just expired: the auto budget must only
+    # take the rotation-target slice (one inventory pass spread across the TTL
+    # window), not re-fetch everything in a single synchronized burst.
+    inventory = [{"id": f"nad-{index}", "name": f"switch-{index}"}
+                 for index in range(1000)]
+    detail_calls = []
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return inventory
+            device_id = path.rsplit("/", 1)[-1]
+            detail_calls.append(device_id)
+            return {"NetworkDevice": {
+                "id": device_id,
+                "NetworkDeviceGroupList": ["Location#All Locations#Lab"],
+            }}
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    ttl = 1_000_000
+    interval = 10_000
+    cfg = _cfg(tmp_path, device_detail_max_requests=0,
+               device_cache_ttl=ttl, slow_interval=interval)
+
+    now = 2_000_000
+    monkeypatch.setattr(devices.time, "time", lambda: now)
+    store = StateStore(cfg.state_db_path)
+    stale_at = now - ttl - 1
+    for row in inventory:
+        store.put_network_device(
+            row["id"], {"NetworkDeviceGroupList": ["Location#All Locations#Lab"]},
+            now=stale_at)
+    store.commit()
+    store.close()
+
+    devices.collect(Client(), cfg)
+
+    # rotation_target = ceil(1000 * 10000 / 1000000) == 10
+    assert len(detail_calls) == 10
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 990
+
+
+def test_explicit_positive_detail_budget_is_honored_unchanged(tmp_path, monkeypatch):
+    # An explicit operator override keeps its exact current behavior -- no
+    # rotation shaping, even on a fully-cached, TTL-expired inventory.
+    inventory = [{"id": f"nad-{index}", "name": f"switch-{index}"}
+                 for index in range(1000)]
+    detail_calls = []
+
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return inventory
+            device_id = path.rsplit("/", 1)[-1]
+            detail_calls.append(device_id)
+            return {"NetworkDevice": {
+                "id": device_id,
+                "NetworkDeviceGroupList": ["Location#All Locations#Lab"],
+            }}
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    ttl = 1_000_000
+    cfg = _cfg(tmp_path, device_detail_max_requests=17,
+               device_cache_ttl=ttl, slow_interval=10_000)
+
+    now = 2_000_000
+    monkeypatch.setattr(devices.time, "time", lambda: now)
+    store = StateStore(cfg.state_db_path)
+    stale_at = now - ttl - 1
+    for row in inventory:
+        store.put_network_device(
+            row["id"], {"NetworkDeviceGroupList": ["Location#All Locations#Lab"]},
+            now=stale_at)
+    store.commit()
+    store.close()
+
+    devices.collect(Client(), cfg)
+
+    assert len(detail_calls) == 17
+    assert metrics.ise_network_device_detail_refresh_deferred._value.get() == 983
+
+
 def test_device_detail_refresh_stops_after_three_consecutive_failures(
         tmp_path, monkeypatch):
     calls = []
