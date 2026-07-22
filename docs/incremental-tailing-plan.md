@@ -99,6 +99,11 @@ GROUP BY acct_status_type, NVL(ise_node,'unknown')
 
 - No cursor → seed `hwm_id = SELECT MAX(id) FROM radius_accounting` (cheap, indexed)
   and count forward. Dashboards build from empty; document this.
+- The `MIN(id)`/`MAX(id)` metadata probes run as two separate single-aggregate
+  statements (one batch lease): Oracle only applies the index MIN/MAX optimization
+  when a statement contains exactly one such aggregate, so a combined
+  `SELECT MIN(id), MAX(id)` would fast-full-scan the index on a large table every
+  cycle.
 - Alternative (optional): seed to `MAX(id)` then let the `floor_hours` guard backfill
   the last window on the first cycle. Start simple (count-forward); add backfill only
   if the empty-start gap matters operationally.
@@ -195,7 +200,7 @@ Cisco's data dictionary (developer.cisco.com/docs/dataconnect/database-views) co
 | **Out-of-commit-order id visibility** (a lower id commits after we passed it) — the primary correctness risk, independent of node topology | **Implemented in Slice 1** (post-review): the cursor advances only through the *contiguous settled prefix* — it counts rows only up to the first still-unsettled id (`boundary.first_unsettled`), so a settled high id can never advance past a not-yet-settled lower id. `settle_seconds` sizes the settle window. |
 | Sequence reset (upgrade/rebuild), including a **fast refill that climbs past the old cursor before the next poll** so `id > hwm` stays non-empty | **Implemented in Slice 1** (post-review): a low-water **anchor** (smallest id seen) is persisted; purge only raises the minimum id, so a *drop below the anchor* means the id space was rebuilt → re-seed to the new bottom and rescan. The reset-then-quiet case (absolute `MAX(id)` below the cursor) is also covered. |
 | `radius_accounting.id` not globally monotonic (per-PSN sequences) | **Likely a non-issue by architecture**: MnT consolidates all PSN syslog into one Oracle DB, so `ID` ("Database unique ID") is almost certainly a single DB-assigned sequence, not per-PSN. **But undocumented** → still confirm on a multi-PSN deployment (the single-node lab cannot) before enabling. If per-PSN, switch to per-`(view, ise_node)` cursor rows (schema is already `(view, scope)`). |
-| Backfill floor drops accounting older than `tail_max_backfill_hours` after a long downtime | Bounded by design; now **visible** via the `floor_backfill_gap` warning (`floor_skipped` count) rather than silent. |
+| Backfill floor drops accounting older than `tail_max_backfill_hours` after a long downtime | Bounded by design; now **visible** via the `floor_backfill_gap` warning (`floor_skipped` count) rather than silent. The audit count itself only runs when the cursor stalled past the floor (its `timestamp < floor` predicate is unbounded below, so steady-state cycles skip it and stay driven by the `id` predicate). |
 | Counter series growth | Only low-card labels on counters; per-entity stays top-K gauges. |
 | Late-arriving rows | id-tail captures them (higher id). |
 | Cold start / restart empty dashboards | Counters build from start; `rate()`/`increase()` reset-aware; persisted cursor catches downtime backlog (bounded). Documented. |

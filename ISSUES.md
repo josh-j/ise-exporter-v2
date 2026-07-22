@@ -101,3 +101,39 @@ bars.
   do.** Correct. The section is renamed "MnT Active Session Latency (PSN-measured, read
   from MnT)" and the panels state the latency is measured on the authenticating PSN and
   only read from the MnT session store.
+
+## Large-Environment Scale Hardening (2026-07-22)
+- [x] **Second collection-path review pass: cheaper steady-state cycles, wider NAD
+  coverage, one loud-collector off the main lane.** The serialized Data Connect worker
+  queue now ages queued items by wait time (one static-priority level crossed per 15
+  minutes queued), so a low-priority dataset can no longer starve indefinitely behind a
+  busy high-priority one. `dataconnect_freshness` splits its per-view probe across a
+  batch of statements (≤4 branches each) instead of one large UNION ALL, so a slow branch
+  on a big MnT can no longer blow the whole dataset's timeout. `nad_health` now ranks the
+  same 6h activity scan two ways (volume and recency) in a single statement instead of
+  two separate scans, widening last-seen refresh coverage past the top-K activity cutoff
+  at no extra duty cost; the new `ise_nad_activity_refresh_groups_returned`,
+  `ise_nad_activity_refresh_groups_total`, and `ise_nad_activity_refresh_truncated`
+  metrics expose that refresh surface. Device detail refresh auto-sizing now budgets
+  `uncached + ceil(inventory × poll_interval / device_cache_ttl)` requests per cycle
+  instead of one full-inventory burst at the TTL boundary, turning the refresh into a
+  continuous trickle. The MnT posture cache prunes with a grace window equal to the
+  posture refresh TTL, so an endpoint transiently missing from one cycle's ActiveList
+  keeps its cached detail instead of forcing a refetch on reappearance. The RADIUS
+  volume-summary statement no longer computes `COUNT(DISTINCT calling_station_id)` /
+  `COUNT(DISTINCT username)` on every GROUPING SETS row; those now live in their own
+  small statement (reporting batch stays at 5, the client's per-batch ceiling).
+  `tacacs_config` (a full ERS internal-user enumeration plus policy-rule walks) now runs
+  on its own scheduler worker lane, mirroring the existing devices worker, instead of
+  blocking every other dataset trigger behind it in the synchronous cycle. The id-tail
+  engine splits its `MIN(id)`/`MAX(id)` metadata probe into two single-aggregate
+  statements (Oracle's index MIN/MAX optimization applies per aggregate) and runs the
+  unbounded-below `floor_skipped` audit subquery only when the cursor stalled past the
+  backfill floor, so steady-state tail cycles stay driven by the `id` predicate. MnT
+  detail sampling selects endpoints by a stable content hash of the MAC instead of
+  first-N ActiveList order, removing appliance-ordering bias while keeping the detail
+  cache convergent. `endpoint_fleet` refreshes its posture-eligible denominator (a full
+  `endpoints_data` count) at most every 6 h from a persisted cache instead of every
+  cycle. The Data Connect crash lease (the pessimistic pre-work pacing deadline that
+  survives a SIGKILL) is capped at one hour instead of the former ~16.6 h worst case at
+  the default duty cycle; measured post-completion cooldowns stay uncapped.
