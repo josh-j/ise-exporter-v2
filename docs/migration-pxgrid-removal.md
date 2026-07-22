@@ -148,6 +148,6 @@ pxGrid 2.0 on demand for bounded, read-only diagnostics and discovery.
   confirm all enabled collectors report success.
 - [x] Verify Prometheus queries and every Grafana dashboard against the live
   exporter.
-- [x] Confirm a repository-wide search has no unrelated assistant-vendor references.
+- [x] Confirm a repository-wide search finds no stray tooling or vendor attribution.
 - [x] Commit the complete migration as one reviewed change and push the tracking
   branch only after every required gate passes.

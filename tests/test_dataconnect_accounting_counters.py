@@ -139,9 +139,9 @@ def test_tail_increments_counters_and_advances_cursor_idempotently(tmp_path):
 
 
 def test_settled_high_id_never_skips_an_unsettled_lower_id(tmp_path):
-    # The codex [P1]: cursor 100, id 101 fresh (unsettled), id 102 old (settled).
-    # Advancing to 102 would drop 101 forever. The contiguous-prefix watermark must
-    # refuse to advance past the still-unsettled 101.
+    # Out-of-commit-order hazard [P1]: cursor 100, id 101 fresh (unsettled), id 102
+    # old (settled). Advancing to 102 would drop 101 forever. The contiguous-prefix
+    # watermark must refuse to advance past the still-unsettled 101.
     fake = FakeAccounting([_row(100)])
     cfg = _cfg(tmp_path)
     _collect(fake, cfg)  # seed 100
@@ -201,9 +201,9 @@ def test_reset_then_quiet_reseeds_from_the_new_bottom(tmp_path, caplog):
 
 
 def test_fast_refilling_reset_is_caught_by_min_id_drop(tmp_path, caplog):
-    # The codex [P1]: a rebuilt sequence climbs past the old cursor before the next
-    # poll, so `id > hwm` is non-empty and the empty-tail check never fires. The
-    # MIN(id) drop below the anchor catches it and no rows are lost.
+    # Fast-refill reset hazard [P1]: a rebuilt sequence climbs past the old cursor
+    # before the next poll, so `id > hwm` is non-empty and the empty-tail check never
+    # fires. The MIN(id) drop below the anchor catches it and no rows are lost.
     cfg = _cfg(tmp_path)
     store = StateStore(cfg.state_db_path)
     store.set_tail_cursor("radius_accounting", "id", 5000, now=1000.0, anchor=4000)
