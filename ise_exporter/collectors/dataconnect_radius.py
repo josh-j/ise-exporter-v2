@@ -213,7 +213,6 @@ def _queries(limit, stale_minutes=60, window_hours=6,
         column: schema_expression(schema, summary_view, column, fallback)
         for column, fallback in (
             ("authorization_profiles", "'none'"), ("location", "'Unknown'"),
-            ("calling_station_id", "NULL"), ("username", "NULL"),
             ("identity_store", "'unknown'"), ("identity_group", "'unknown'"),
             ("device_type", "'unknown'"), ("security_group", "'unknown'"),
         )
@@ -249,7 +248,27 @@ def _queries(limit, stale_minutes=60, window_hours=6,
             ("authentication_method", "'none'"), ("ise_node", "'unknown'"),
         )
     }
-    return {
+    # The GROUPING SETS aggregation below used to also compute
+    # COUNT(DISTINCT calling_station_id)/COUNT(DISTINCT username) on every grouping-set
+    # row even though only the top-level () row's values are ever published; Oracle pays
+    # for the distinct aggregation on every row of the large 6h window regardless. Moved
+    # here into their own small plain-SELECT statement (schema_has-guarded, only the
+    # columns that actually exist on this ISE version) so the distinct cost is paid once.
+    distinct_totals_aggregates = []
+    if schema_has(schema, summary_view, "calling_station_id"):
+        distinct_totals_aggregates.append(
+            "COUNT(DISTINCT calling_station_id) AS distinct_endpoints")
+    if schema_has(schema, summary_view, "username"):
+        distinct_totals_aggregates.append(
+            "COUNT(DISTINCT username) AS distinct_users")
+    queries = {}
+    if distinct_totals_aggregates:
+        queries["distinct_totals"] = f"""
+            SELECT {', '.join(distinct_totals_aggregates)}
+            FROM radius_authentication_summary
+            WHERE {auth_summary_recent}
+        """
+    queries.update({
         "authentication": f"""
             WITH auth_source AS (
                 SELECT {status} AS status,
@@ -295,8 +314,6 @@ def _queries(limit, stale_minutes=60, window_hours=6,
                        {summary["authorization_profiles"]} AS authorization_profiles,
                        {summary["location"]} AS location,
                        passed_count, failed_count,
-                       {summary["calling_station_id"]} AS calling_station_id,
-                       {summary["username"]} AS username,
                        {summary["identity_store"]} AS identity_store,
                        {summary["identity_group"]} AS identity_group,
                        {summary["device_type"]} AS device_type,
@@ -317,8 +334,6 @@ def _queries(limit, stale_minutes=60, window_hours=6,
                        SUM(NVL(passed_count, 0) + NVL(failed_count, 0)) AS total_events,
                        SUM(NVL(passed_count, 0)) AS passed_events,
                        SUM(NVL(failed_count, 0)) AS failure_events,
-                       COUNT(DISTINCT calling_station_id) AS distinct_endpoints,
-                       COUNT(DISTINCT username) AS distinct_users,
                        SUM(NVL(failed_count, 0)) AS events
                 FROM failure_source
                 GROUP BY GROUPING SETS (
@@ -412,13 +427,17 @@ def _queries(limit, stale_minutes=60, window_hours=6,
             ) grouped_errors
             ORDER BY events DESC FETCH FIRST {limit} ROWS ONLY
         """,
-    }
+    })
+    return queries
 
 
 def _reporting_queries(limit, window_hours=6,
                        authentication_policy_column="authorization_policy",
                        accounting_policy_expression="authorization_policy", schema=None,
                        authentication_view="RADIUS_AUTHENTICATIONS"):
+    # Reporting batch: authentication, volume_summary, accounting, errors, and (when the
+    # schema has either column) distinct_totals -- five statements, exactly at the
+    # client's MAX_BATCH_QUERIES ceiling. Do not add a sixth without first removing one.
     return {name: sql for name, sql in _queries(
                 limit, window_hours=window_hours,
                 authentication_policy_column=authentication_policy_column,
@@ -495,6 +514,9 @@ def collect_reporting(dataconnect, cfg):
             "accounting_sessions": [row for row in combined["accounting"]
                                     if row.get("breakdown") == "accounting_sessions"],
             "errors": combined["errors"],
+            # Only present when the schema has at least one of the distinct-count
+            # columns; see the distinct_totals statement built alongside "volume_summary".
+            "distinct_totals": combined.get("distinct_totals", []),
         }
         summaries = {name: (values[0] if values else {}) for name, values in rows.items()}
         auth = [{
@@ -613,17 +635,18 @@ def collect_reporting(dataconnect, cfg):
                 integer(summaries["errors"].get("total_events"))),
         ))
         schema = getattr(dataconnect, "schema", None)
+        distinct_totals = summaries["distinct_totals"]
         if schema_has(
                 schema, "RADIUS_AUTHENTICATION_SUMMARY", "calling_station_id"):
             writers.append(
                 lambda: metrics.ise_dataconnect_radius_distinct_endpoints_total.labels(
                     source_view="radius_authentication_summary").set(
-                    integer(volume_summary.get("distinct_endpoints"))))
+                    integer(distinct_totals.get("distinct_endpoints"))))
         if schema_has(schema, "RADIUS_AUTHENTICATION_SUMMARY", "username"):
             writers.append(
                 lambda: metrics.ise_dataconnect_radius_distinct_users_total.labels(
                     source_view="radius_authentication_summary").set(
-                    integer(volume_summary.get("distinct_users"))))
+                    integer(distinct_totals.get("distinct_users"))))
         breakdowns = {
             "authentication": (len(auth), summaries["authentication"]),
             "latency": (len(latency), summaries["latency"]),

@@ -46,8 +46,12 @@ def test_operational_cadence_profile_uses_fewer_than_twenty_seven_batches_per_ho
     )
     batches_per_hour = sum(3600 / interval for interval in intervals.values())
 
+    # RADIUS carries a fifth statement (distinct_totals): the two COUNT(DISTINCT)
+    # aggregates moved out of the volume_summary GROUPING SETS into one bounded
+    # extra scan, trading two statements per hour for no longer paying distinct
+    # aggregation on every grouping-set row of the 6h window.
     assert statements_per_run == {
-        "radius": 4,
+        "radius": 5,
         "radius_active": 1,
         "performance": 4,
         "posture": 2,
@@ -56,8 +60,8 @@ def test_operational_cadence_profile_uses_fewer_than_twenty_seven_batches_per_ho
         "nad_health": 1,
         "tacacs": 3,
     }
-    assert statements_per_hour == pytest.approx(69.375)
-    assert statements_per_hour < 70
+    assert statements_per_hour == pytest.approx(71.375)
+    assert statements_per_hour < 72
     assert batches_per_hour == pytest.approx(26.708333333333332)
     assert batches_per_hour < 27
 
@@ -90,18 +94,24 @@ def test_endpoint_inventory_uses_one_current_table_scan():
         queries["inventory"]
 
 
-def test_radius_reporting_scans_each_large_historical_view_only_once():
+def test_radius_reporting_scan_budget_per_large_historical_view():
     queries = dataconnect_radius._reporting_queries(Config().dataconnect_max_groups)
     raw = [name for name, sql in queries.items()
            if "FROM radius_authentications" in sql]
-    summary = [name for name, sql in queries.items()
-               if "FROM radius_authentication_summary" in sql]
+    summary = sorted(name for name, sql in queries.items()
+                     if "FROM radius_authentication_summary" in sql)
 
     accounting = [name for name, sql in queries.items()
                   if "FROM radius_accounting" in sql]
 
     assert raw == ["authentication"]
-    assert summary == ["volume_summary"]
+    # The summary view is deliberately scanned exactly twice: once for the
+    # GROUPING SETS breakdowns and once for the plain distinct totals, which
+    # is cheaper on a large window than computing COUNT(DISTINCT ...) inside
+    # every grouping-set row. No view may gain a third scan.
+    assert summary == ["distinct_totals", "volume_summary"]
+    assert "GROUPING SETS" not in queries["distinct_totals"]
+    assert "COUNT(DISTINCT" not in queries["volume_summary"]
     assert accounting == ["accounting"]
 
 
@@ -163,13 +173,14 @@ def test_maximum_group_profile_fits_hard_statement_and_batch_row_budgets():
     # RADIUS: authentication + latency, exact summary + failure context + four
     # optional summary dimensions, accounting + session duration, and errors.
     summary_rows = 1 + (5 * groups)
-    radius_rows = (2 * groups) + summary_rows + (2 * groups) + groups
+    # + 1: the distinct_totals statement returns exactly one row.
+    radius_rows = (2 * groups) + summary_rows + (2 * groups) + groups + 1
     # TACACS: top-K detail plus at most one last-seen row per bounded internal
     # account, repeated across authentication, authorization, and accounting.
     tacacs_rows = 3 * (groups + Config().tacacs_internal_user_max)
 
     assert summary_rows == 5001
     assert summary_rows <= MAX_RESULT_ROWS
-    assert radius_rows == 10001
+    assert radius_rows == 10002
     assert tacacs_rows == 6000
     assert max(radius_rows, tacacs_rows) <= MAX_BATCH_RESULT_ROWS

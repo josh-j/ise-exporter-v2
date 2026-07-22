@@ -34,11 +34,12 @@ class DataConnect:
     def query(self, sql):
         self.sql.append(sql)
         lowered = sql.lower()
+        if "as distinct_endpoints" in lowered or "as distinct_users" in lowered:
+            return [{"distinct_endpoints": 81, "distinct_users": 54}]
         if "grouped_failure" in lowered:
             return [
                 {"breakdown": "volume_summary", "total_events": 107,
-                 "failure_events": 11, "distinct_endpoints": 81,
-                 "distinct_users": 54, "events": 11, "total_groups": 1},
+                 "failure_events": 11, "events": 11, "total_groups": 1},
                 {"breakdown": "failure_context", "failure_class": "credentials",
                  "authorization_profiles": "PermitAccess", "location": "Campus",
                  "events": 9, "total_groups": 2},
@@ -87,11 +88,11 @@ def test_collects_bounded_aggregated_radius_metrics():
     client = DataConnect()
     cfg = types.SimpleNamespace(dataconnect_max_groups=25)
     dataconnect_radius.collect_reporting(client, cfg)
-    assert len(client.sql) == 4
+    assert len(client.sql) == 5
     dataconnect_radius.collect_active(client, cfg)
 
-    assert len(client.sql) == 5
-    assert sum("NUMTODSINTERVAL(1, 'HOUR')" in sql for sql in client.sql) == 4
+    assert len(client.sql) == 6
+    assert sum("NUMTODSINTERVAL(1, 'HOUR')" in sql for sql in client.sql) == 5
     assert _rows(metrics.ise_dataconnect_radius_authentication_events,
                  "authentication_method", "nad") == {
         ("MSCHAPv2", "nad-1"): 7, ("EAP-TLS", "nad-1"): 3}
@@ -251,11 +252,70 @@ def test_exact_volume_uses_patch11_aggregate_view_not_raw_authentication_rows():
     assert "GROUP BY GROUPING SETS" in queries["volume_summary"]
     assert "SUM(NVL(passed_count, 0) + NVL(failed_count, 0))" in \
         queries["volume_summary"]
-    assert "COUNT(DISTINCT calling_station_id)" in queries["volume_summary"]
     assert "authorization_policy" in queries["authentication"]
     assert "authorization_profiles" in queries["volume_summary"]
     assert "SUM(NVL(failed_count, 0))" in queries["volume_summary"]
     assert "policy_set_name" not in queries["authentication"]
+
+
+def test_volume_summary_no_longer_computes_distincts_per_grouping_set_row():
+    # LE-12: the distinct aggregations moved into their own small batch statement so
+    # Oracle does not pay for them on every GROUPING SETS row of the 6h window.
+    queries = dataconnect_radius._queries(25)
+
+    assert "COUNT(DISTINCT" not in queries["volume_summary"]
+    assert "calling_station_id" not in queries["volume_summary"]
+    assert "username" not in queries["volume_summary"]
+
+
+def test_distinct_totals_statement_only_includes_available_columns():
+    schema_both = {
+        "RADIUS_AUTHENTICATION_SUMMARY": {
+            "TIMESTAMP": "TIMESTAMP", "CALLING_STATION_ID": "VARCHAR2",
+            "USERNAME": "VARCHAR2",
+        },
+    }
+    queries = dataconnect_radius._queries(25, schema=schema_both)
+    assert "COUNT(DISTINCT calling_station_id) AS distinct_endpoints" in \
+        queries["distinct_totals"]
+    assert "COUNT(DISTINCT username) AS distinct_users" in queries["distinct_totals"]
+    assert "FROM radius_authentication_summary" in queries["distinct_totals"]
+
+    schema_endpoints_only = {
+        "RADIUS_AUTHENTICATION_SUMMARY": {
+            "TIMESTAMP": "TIMESTAMP", "CALLING_STATION_ID": "VARCHAR2",
+        },
+    }
+    query = dataconnect_radius._queries(
+        25, schema=schema_endpoints_only)["distinct_totals"]
+    assert "distinct_endpoints" in query
+    assert "distinct_users" not in query
+
+    schema_neither = {
+        "RADIUS_AUTHENTICATION_SUMMARY": {"TIMESTAMP": "TIMESTAMP"},
+    }
+    queries_neither = dataconnect_radius._queries(25, schema=schema_neither)
+    assert "distinct_totals" not in queries_neither
+
+
+def test_distinct_totals_statement_is_in_reporting_batch_not_active_sessions():
+    reporting = dataconnect_radius._reporting_queries(25)
+    assert "distinct_totals" in reporting
+    assert "active_sessions" not in reporting
+
+    active = dataconnect_radius._queries(25)
+    assert "active_sessions" in active
+    assert "distinct_totals" not in active["active_sessions"]
+
+
+def test_distinct_totals_metrics_publish_same_values_as_before():
+    cfg = types.SimpleNamespace(dataconnect_max_groups=25)
+    dataconnect_radius.collect_reporting(DataConnect(), cfg)
+
+    assert _rows(metrics.ise_dataconnect_radius_distinct_endpoints_total,
+                 "source_view") == {("radius_authentication_summary",): 81}
+    assert _rows(metrics.ise_dataconnect_radius_distinct_users_total,
+                 "source_view") == {("radius_authentication_summary",): 54}
 
 
 def test_volume_summary_omits_unavailable_dimensions_and_empty_failure_groups():
