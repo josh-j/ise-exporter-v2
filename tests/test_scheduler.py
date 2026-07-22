@@ -117,6 +117,97 @@ def test_devices_detail_pass_runs_off_the_calling_thread(monkeypatch):
     assert scheduler._nad_inventory == [{"id": "nad-1", "name": "sw-1"}]
 
 
+def test_tacacs_config_runs_off_the_calling_thread_without_self_overlap(
+        monkeypatch):
+    caller = threading.current_thread()
+    started = threading.Event()
+    release = threading.Event()
+    executed_on = []
+    call_count = []
+
+    def blocking_collect_config(client, cfg):
+        call_count.append(1)
+        executed_on.append(threading.current_thread())
+        started.set()
+        release.wait(2)
+
+    monkeypatch.setattr(
+        scheduler_module.tacacs, "collect_config", blocking_collect_config)
+    scheduler = PollScheduler(
+        _cfg(startup_rate_limit_seconds=0), client=object(),
+        dataconnect=object(), mnt=object())
+
+    # Synchronous until the worker is activated (deterministic for tests).
+    assert scheduler._tacacs_config_async is False
+    scheduler._start_tacacs_config_worker(threading.Event())
+
+    # A long ERS enumeration must not block the caller (the main scheduler lane).
+    scheduler._run_tacacs_config(1_000_000_000.0)
+    assert started.wait(2), "tacacs_config collect never started on a worker thread"
+    assert executed_on and executed_on[-1] is not caller
+
+    # A second trigger while the first attempt is still in flight must be a
+    # no-op dedupe rather than a concurrent second run.
+    scheduler._run_tacacs_config(1_000_000_000.0)
+    release.set()
+    scheduler._stop_tacacs_config_worker()
+    assert len(call_count) == 1
+
+
+def test_stop_tacacs_config_worker_joins_within_bound(monkeypatch):
+    release = threading.Event()
+
+    def blocking_collect_config(client, cfg):
+        release.wait(2)
+
+    monkeypatch.setattr(
+        scheduler_module.tacacs, "collect_config", blocking_collect_config)
+    scheduler = PollScheduler(
+        _cfg(startup_rate_limit_seconds=0, request_timeout=1), client=object(),
+        dataconnect=object(), mnt=object())
+    scheduler._start_tacacs_config_worker(threading.Event())
+    scheduler._run_tacacs_config(1_000_000_000.0)
+
+    release.set()
+    scheduler._stop_tacacs_config_worker()
+    assert scheduler._tacacs_config_worker.is_alive() is False
+
+
+def test_tacacs_config_not_scheduled_when_collect_tacacs_is_false(monkeypatch):
+    called = []
+    # Stand in for every other dataset's collect() too: run_cycle() drives the
+    # full plan, and unpatched collectors would fail against the bare stand-in
+    # client/dataconnect/mnt objects below, polluting the process-global
+    # metrics registry with unrelated failure samples for later tests.
+    modules = (
+        "deployment", "devices", "dataconnect_performance",
+        "dataconnect_posture", "dataconnect_endpoints", "dataconnect_freshness",
+        "nad_health", "mnt_active_posture",
+    )
+    for name in modules:
+        monkeypatch.setattr(
+            getattr(scheduler_module, name), "collect",
+            lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_reporting",
+        lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_active",
+        lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        scheduler_module.tacacs, "collect_config",
+        lambda *args, **kwargs: called.append(True))
+    monkeypatch.setattr(
+        scheduler_module.tacacs, "collect_activity",
+        lambda *args, **kwargs: called.append(True))
+
+    PollScheduler(
+        _cfg(collect_tacacs=False), client=object(),
+        dataconnect=object(), mnt=object()).run_cycle()
+
+    assert called == []
+
+
 def test_scheduler_publishes_cadence_aligned_scan_windows():
     PollScheduler(_cfg(), client=object(), dataconnect=object(), mnt=object())
 

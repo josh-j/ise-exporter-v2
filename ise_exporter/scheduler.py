@@ -283,6 +283,10 @@ class PollScheduler:
         self._devices_inflight = False
         self._devices_lock = threading.RLock()
         self._devices_worker = None
+        self._tacacs_config_async = False
+        self._tacacs_config_inflight = False
+        self._tacacs_config_lock = threading.RLock()
+        self._tacacs_config_worker = None
         self._schema_managed = hasattr(dataconnect, "schema_ready")
         self._dataconnect_schema_ready = bool(getattr(
             dataconnect, "schema_ready", True))
@@ -1178,6 +1182,67 @@ class PollScheduler:
             configured = 30
         worker.join(timeout=max(2, configured + 2))
 
+    def _run_tacacs_config(self, now):
+        """Run the ERS TACACS config collector off the synchronous REST lane.
+
+        collect_config is a full internal-user enumeration (get_all=True, up to
+        2000 pages), up to 100 paced detail requests at 250ms, per-policy-set
+        rule walks, and two PAN object enumerations -- minutes of wall time on a
+        large deployment. Running it on its own daemon thread, mirroring
+        _run_devices, keeps it from blocking every other dataset trigger behind
+        it in the cycle. The REST client serializes requests internally
+        (_request_lock), so concurrent use from this worker, the devices worker,
+        and the main scheduler lane is safe. It stays synchronous
+        (deterministic) until loop() activates the worker.
+        """
+        name = "tacacs_config"
+        tier = self.dataset_plan[name][1]
+
+        def collect_tacacs_config():
+            tacacs.collect_config(self.client, self.cfg)
+
+        with self._tacacs_config_lock:
+            asynchronous = self._tacacs_config_async
+            if asynchronous:
+                if (self._shutdown is not None and self._shutdown.is_set()
+                        or self._tacacs_config_inflight
+                        or not self._due(name, now, tier)):
+                    return
+                self._tacacs_config_inflight = True
+        if not asynchronous:
+            self._run(name, now, tier, collect_tacacs_config)
+            return
+
+        def run():
+            try:
+                self._run(name, time.time(), tier, collect_tacacs_config)
+            except Exception:
+                logger.exception("tacacs_config worker crashed")
+            finally:
+                with self._tacacs_config_lock:
+                    self._tacacs_config_inflight = False
+
+        self._tacacs_config_worker = threading.Thread(
+            target=run, name="ise-tacacs-config-worker", daemon=True)
+        self._tacacs_config_worker.start()
+
+    def _start_tacacs_config_worker(self, shutdown):
+        with self._tacacs_config_lock:
+            self._shutdown = shutdown
+            self._tacacs_config_async = True
+
+    def _stop_tacacs_config_worker(self):
+        with self._tacacs_config_lock:
+            worker = self._tacacs_config_worker
+            self._tacacs_config_async = False
+        if worker is None:
+            return
+        try:
+            configured = int(getattr(self.cfg, "request_timeout", 30))
+        except (TypeError, ValueError):
+            configured = 30
+        worker.join(timeout=max(2, configured + 2))
+
     def run_cycle(self):
         cfg, now = self.cfg, time.time()
 
@@ -1294,8 +1359,7 @@ class PollScheduler:
         # TACACS configuration is REST-owned; activity is Data Connect-owned in
         # standard mode. The collector exposes distinct metric families for each.
         if cfg.collect_tacacs:
-            self._run("tacacs_config", now, self.dataset_plan["tacacs_config"][1],
-                      lambda: tacacs.collect_config(self.client, cfg))
+            self._run_tacacs_config(now)
             self._run_dataconnect(
                 "tacacs_activity", self.dataset_plan["tacacs_activity"][1],
                 lambda: tacacs.collect_activity(self.dataconnect, cfg))
@@ -1306,6 +1370,7 @@ class PollScheduler:
         self._start_dataconnect_worker(shutdown)
         self._start_mnt_worker(shutdown)
         self._start_devices_worker(shutdown)
+        self._start_tacacs_config_worker(shutdown)
         try:
             nxt = time.time()
             while not shutdown.is_set():
@@ -1321,3 +1386,4 @@ class PollScheduler:
             self._stop_dataconnect_worker()
             self._stop_mnt_worker()
             self._stop_devices_worker()
+            self._stop_tacacs_config_worker()
