@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 import types
 
@@ -21,6 +22,8 @@ def _rows(metric):
 
 
 class DataConnect:
+    """Fake with only ``query()`` -- exercises the query_set() fallback path."""
+
     def __init__(self):
         self.sql = []
 
@@ -31,6 +34,25 @@ class DataConnect:
                 "domain": "radius_auth",
                 "newest_event": datetime(2026, 7, 14, 4, 30, tzinfo=timezone.utc),
         }]
+
+
+class QueryManyDataConnect:
+    """Fake with ``query_many()`` -- exercises the shared-lease batch path."""
+
+    def __init__(self):
+        self.batches = []
+
+    def query_many(self, statements, parameters=None):
+        self.batches.append(dict(statements))
+        results = {}
+        for name, sql in statements.items():
+            views_in_statement = re.findall(r"SELECT '([a-z_]+)' AS view_name", sql)
+            results[name] = [{
+                "view_name": view,
+                "domain": "irrelevant",
+                "newest_event": datetime(2026, 7, 14, 4, 30, tzinfo=timezone.utc),
+            } for view in views_in_statement]
+        return results
 
 
 def test_collects_bounded_presence_and_newest_event_for_every_timestamped_view(
@@ -45,9 +67,10 @@ def test_collects_bounded_presence_and_newest_event_for_every_timestamped_view(
     timestamped = {name.lower(): contract.domain
                    for name, contract in VIEW_CONTRACTS.items()
                    if contract.time_column and contract.freshness_probe}
-    assert len(client.sql) == 1
-    sql = client.sql[0]
-    assert sql.count("UNION ALL") == len(timestamped) - 1
+    expected_chunks = len(dataconnect_freshness._chunk_views(
+        dataconnect_freshness._timestamped_views()))
+    assert len(client.sql) == expected_chunks
+    sql = "\nUNION ALL\n".join(client.sql)
     assert sql.count("FETCH FIRST 1 ROWS ONLY") == len(timestamped)
     assert sql.count("DESC NULLS LAST") == len(timestamped)
     assert sql.count("EPOCH_TIME >= 1999978400") == 3
@@ -75,9 +98,12 @@ def test_freshness_honors_lower_production_scan_ceiling(monkeypatch):
         dataconnect_freshness_interval=86400,
     ))
 
-    assert len(client.sql) == 1
-    assert client.sql[0].count("EPOCH_TIME >= 1999985600") == 3
-    assert client.sql[0].count("NUMTODSINTERVAL(4, 'HOUR')") == \
+    expected_chunks = len(dataconnect_freshness._chunk_views(
+        dataconnect_freshness._timestamped_views()))
+    assert len(client.sql) == expected_chunks
+    sql = "\nUNION ALL\n".join(client.sql)
+    assert sql.count("EPOCH_TIME >= 1999985600") == 3
+    assert sql.count("NUMTODSINTERVAL(4, 'HOUR')") == \
         len(dataconnect_freshness._timestamped_views()) - 3
 
 
@@ -91,7 +117,7 @@ def test_freshness_excludes_tacacs_views_when_collection_is_disabled(monkeypatch
         dataconnect_freshness_interval=86400,
     ))
 
-    sql = client.sql[0]
+    sql = "\nUNION ALL\n".join(client.sql)
     assert "tacacs_" not in sql.lower()
     assert "EPOCH_TIME" not in sql
     expected = dataconnect_freshness._timestamped_views(include_tacacs=False)
@@ -159,3 +185,44 @@ def test_freshness_accepts_timezone_only_view_and_rejects_empty_schema():
     with pytest.raises(ValueError, match="freshness timestamp"):
         dataconnect_freshness._query(
             types.SimpleNamespace(dataconnect_freshness_interval=86400), schema={})
+
+
+def test_freshness_statements_stay_within_the_branch_cap_and_batch_ceiling():
+    statements = dataconnect_freshness._statements(
+        types.SimpleNamespace(dataconnect_freshness_interval=86400))
+
+    assert len(statements) <= dataconnect_freshness._MAX_PROBE_STATEMENTS
+    for sql in statements.values():
+        # Each branch begins with its own "SELECT '<view>' AS view_name" projection.
+        branch_count = len(re.findall(r"SELECT '[a-z_]+' AS view_name", sql))
+        assert branch_count <= dataconnect_freshness._MAX_PROBE_BRANCHES_PER_STATEMENT
+
+
+def test_freshness_statements_all_carry_the_pacing_marker():
+    statements = dataconnect_freshness._statements(
+        types.SimpleNamespace(dataconnect_freshness_interval=86400))
+
+    assert statements
+    for sql in statements.values():
+        assert sql.startswith("/* ise_exporter:dataconnect_freshness */")
+
+
+def test_freshness_merges_chunked_results_into_one_complete_snapshot(monkeypatch):
+    client = QueryManyDataConnect()
+    monkeypatch.setattr(dataconnect_freshness.time, "time", lambda: 2_000_000_000)
+
+    dataconnect_freshness.collect(client, types.SimpleNamespace(
+        dataconnect_event_window_hours=24,
+        dataconnect_freshness_interval=86400,
+    ))
+
+    # query_many() is called exactly once, batching every chunk under one lease.
+    assert len(client.batches) == 1
+    statements = client.batches[0]
+    assert 1 < len(statements) <= dataconnect_freshness._MAX_PROBE_STATEMENTS
+
+    timestamped = {name.lower() for name, contract in VIEW_CONTRACTS.items()
+                   if contract.time_column and contract.freshness_probe}
+    rows = _rows(metrics.ise_dataconnect_view_has_recent_rows)
+    assert {view for view, _domain in rows} == timestamped
+    assert all(value == 1 for value in rows.values())
