@@ -1522,3 +1522,14 @@ def test_unavailable_persistent_state_does_not_prevent_collection(monkeypatch, c
 
     assert scheduler.next_run == {}
     assert "could not open restart-persistent dataset state" in caplog.text
+
+
+def test_collector_source_labels_agree_with_the_dataset_plan():
+    # observe() derives its metric source label from collectors.source(), while
+    # the scheduler keys the same ise_dataset_* series from dataset_plan. A
+    # mismatch splits one dataset across two label pairs, so the correct pair
+    # never reports success (found live with endpoint_fleet enabled).
+    scheduler = PollScheduler(
+        _cfg(), client=object(), dataconnect=object(), mnt=object())
+    for name, (plan_source, _interval, _enabled) in scheduler.dataset_plan.items():
+        assert collectors.source(name) == plan_source, name

@@ -66,7 +66,12 @@ def failure_detail(reason, detail=None):
 
 
 def source(name):
-    if name.startswith("dataconnect_") or name == "tacacs_activity":
+    # endpoint_fleet is Data Connect-owned despite its name; a prefix-only rule
+    # published its success under source="rest" while the scheduler keyed the
+    # same dataset's series under source="dataconnect", leaving the correct
+    # pair permanently 0 whenever the accumulator is enabled.
+    if (name.startswith("dataconnect_")
+            or name in ("tacacs_activity", "endpoint_fleet")):
         return "dataconnect"
     if name.startswith("mnt_"):
         return "mnt"
