@@ -422,7 +422,17 @@ def collect(client, cfg):
         candidates = list(active_rows)
         limit = max(0, min(1000, int(getattr(
             cfg, "mnt_active_posture_max_sessions", 1000))))
-        selected = candidates[:limit]
+        # ActiveList order is whatever the appliance returns (typically
+        # node/session-age correlated), so a first-N slice of a fleet larger
+        # than the sample size would bias posture/agent-version/policy ratios
+        # by that ordering rather than sampling representatively. Sorting by
+        # a stable content hash of the MAC gives an unbiased spread over the
+        # active population, and because the hash is stable across cycles the
+        # same endpoints keep getting selected while they stay active, so the
+        # signature/TTL detail cache converges instead of churning.
+        selected = sorted(
+            candidates, key=lambda mac: hashlib.sha256(mac.encode()).hexdigest()
+        )[:limit]
         workers = max(1, min(4, int(getattr(
             cfg, "mnt_active_posture_workers", 2))))
         request_budget = max(1, min(250, int(getattr(

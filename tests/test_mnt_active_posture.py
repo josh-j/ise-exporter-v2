@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sqlite3
 import threading
@@ -372,3 +373,80 @@ def test_persistent_cache_bounds_cold_start_and_survives_restart(tmp_path):
     assert all("username" not in detail for detail in cached)
     assert all("framed_ip_address" not in detail for detail in cached)
     assert any(detail.get("posture_report") for detail in cached)
+
+
+def _hash_selected(macs, limit):
+    return sorted(macs, key=lambda mac: hashlib.sha256(mac.encode()).hexdigest())[:limit]
+
+
+def test_detail_sampling_selects_the_same_subset_regardless_of_activelist_order():
+    macs = [f"AA:BB:CC:DD:EE:{index:02X}" for index in range(50)]
+    limit = 10
+
+    forward = _hash_selected(macs, limit)
+    reversed_order = _hash_selected(list(reversed(macs)), limit)
+
+    assert forward == reversed_order
+    assert set(forward) <= set(macs)
+    assert len(forward) == limit
+
+
+def test_detail_sampling_is_deterministic_across_calls():
+    macs = [f"AA:BB:CC:DD:EE:{index:02X}" for index in range(50)]
+
+    first = _hash_selected(macs, 10)
+    second = _hash_selected(macs, 10)
+
+    assert first == second
+
+
+def test_detail_sampling_selects_all_candidates_when_under_the_limit():
+    macs = [f"AA:BB:CC:DD:EE:{index:02X}" for index in range(5)]
+
+    selected = _hash_selected(macs, 1000)
+
+    assert set(selected) == set(macs)
+    assert len(selected) == len(macs)
+
+
+class _OrderedActiveList:
+    """MnT stub whose ActiveList order is caller-controlled and whose detail
+    endpoint just echoes an empty, bounded posture record for any requested
+    MAC, so the collector's sampling logic (not the parsing/detail logic) is
+    what's under test."""
+
+    def __init__(self, macs):
+        self.macs = macs
+        self.requested_macs = []
+
+    def get_mnt_xml(self, path, api_name="mnt"):
+        if path == "/Session/ActiveCount":
+            return {"total": 1, "sessions": [{"count": str(len(self.macs))}]}
+        if path == "/Session/ActiveList":
+            return {
+                "total": len(self.macs),
+                "sessions": [{"calling_station_id": mac} for mac in self.macs],
+            }
+        mac = path.rsplit("/", 1)[-1]
+        self.requested_macs.append(mac)
+        return {"total": 1, "sessions": [{}]}
+
+
+def test_different_activelist_orderings_select_the_same_detail_subset(tmp_path):
+    macs = [f"AA:BB:CC:DD:EE:{index:02X}" for index in range(50)]
+    cfg = _cfg(
+        mnt_active_posture_max_sessions=10,
+        state_db_path=str(tmp_path / "forward.sqlite3"),
+    )
+
+    forward_client = _OrderedActiveList(macs)
+    mnt_active_posture.collect(forward_client, cfg)
+
+    reversed_client = _OrderedActiveList(list(reversed(macs)))
+    mnt_active_posture.collect(reversed_client, _cfg(
+        mnt_active_posture_max_sessions=10,
+        state_db_path=str(tmp_path / "reversed.sqlite3"),
+    ))
+
+    assert set(forward_client.requested_macs) == set(reversed_client.requested_macs)
+    assert len(forward_client.requested_macs) == 10
