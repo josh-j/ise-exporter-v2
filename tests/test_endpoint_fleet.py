@@ -146,6 +146,99 @@ def test_scan_row_cap_appears_in_the_generated_sql(tmp_path):
     assert any("FETCH FIRST 1234 ROWS ONLY" in sql for sql in client.sql)
 
 
+def test_eligible_query_issued_on_first_cycle_then_cached_within_ttl(tmp_path):
+    client = DataConnect(eligible=4)
+    cfg = _cfg(tmp_path)
+    now = time.time()
+
+    client.assessments = [
+        _assessment("AA", "Compliant", "Windows", "5.1", "Corp", "psn-1", now)]
+    endpoint_fleet.collect(client, cfg)
+    assert any("endpoints_data" in sql.lower() for sql in client.sql)
+    assert metrics.ise_endpoint_fleet_eligible_total._value.get() == 4
+    assert metrics.ise_endpoint_fleet_coverage_ratio._value.get() == 0.25
+
+    # Second cycle within the TTL: no eligible statement issued, but the
+    # published eligible/coverage values still come from the cached entry
+    # even though the live source count changed underneath it.
+    client.sql = []
+    client.eligible = 999
+    client.assessments = [
+        _assessment("BB", "Compliant", "Windows", "5.1", "Corp", "psn-2", now + 1)]
+    endpoint_fleet.collect(client, cfg)
+    assert not any("endpoints_data" in sql.lower() for sql in client.sql)
+    assert metrics.ise_endpoint_fleet_eligible_total._value.get() == 4
+    assert metrics.ise_endpoint_fleet_coverage_ratio._value.get() == 0.5
+
+
+def test_eligible_query_reissued_once_ttl_elapses(tmp_path, monkeypatch):
+    client = DataConnect(eligible=4)
+    cfg = _cfg(tmp_path)
+    now = time.time()
+
+    client.assessments = [
+        _assessment("AA", "Compliant", "Windows", "5.1", "Corp", "psn-1", now)]
+    endpoint_fleet.collect(client, cfg)
+
+    monkeypatch.setattr(
+        endpoint_fleet.time, "time",
+        lambda: now + endpoint_fleet._ELIGIBLE_REFRESH_SECONDS + 1)
+    client.sql = []
+    client.eligible = 10
+    client.assessments = []
+    endpoint_fleet.collect(client, cfg)
+    assert any("endpoints_data" in sql.lower() for sql in client.sql)
+    assert metrics.ise_endpoint_fleet_eligible_total._value.get() == 10
+
+
+def test_future_fetched_at_treated_as_stale(tmp_path):
+    client = DataConnect(eligible=4)
+    cfg = _cfg(tmp_path)
+    now = time.time()
+
+    client.assessments = []
+    endpoint_fleet.collect(client, cfg)
+
+    # Simulate a clock correction by writing a cache entry from "the future".
+    from ise_exporter.state import StateStore
+    import json
+    store = StateStore(cfg.state_db_path)
+    store.set_value(
+        "endpoint_fleet_eligible",
+        json.dumps({"eligible": 4, "fetched_at": now + 3600}))
+    store.close()
+
+    client.sql = []
+    client.eligible = 7
+    client.assessments = []
+    endpoint_fleet.collect(client, cfg)
+    assert any("endpoints_data" in sql.lower() for sql in client.sql)
+    assert metrics.ise_endpoint_fleet_eligible_total._value.get() == 7
+
+
+def test_no_dataconnect_call_when_assessments_unsupported_and_eligible_cached(tmp_path):
+    client = DataConnect(eligible=4)
+    # Schema without POSTURE_ASSESSMENT_BY_ENDPOINT.endpoint_mac_address: the
+    # assessments query is never issued for this deployment.
+    client.schema = {
+        "POSTURE_ASSESSMENT_BY_ENDPOINT": set(),
+        "ENDPOINTS_DATA": {"MAC_ADDRESS", "POSTURE_APPLICABLE"},
+    }
+    cfg = _cfg(tmp_path)
+    client.assessments = []
+    endpoint_fleet.collect(client, cfg)
+    assert any("endpoints_data" in sql.lower() for sql in client.sql)
+    assert metrics.ise_endpoint_fleet_eligible_total._value.get() == 4
+
+    # Second cycle within the TTL: eligible is cached, assessments remain
+    # unsupported -- no Data Connect statement issued at all this cycle.
+    client.sql = []
+    client.eligible = 999
+    endpoint_fleet.collect(client, cfg)
+    assert client.sql == []
+    assert metrics.ise_endpoint_fleet_eligible_total._value.get() == 4
+
+
 def test_prunes_assessments_beyond_retention(tmp_path):
     client = DataConnect(eligible=2)
     cfg = _cfg(tmp_path, endpoint_fleet_retention_seconds=3600)

@@ -10,6 +10,7 @@ It reads only what feeds the metrics (status, OS, agent version, matched policy,
 assessing node, assessment time). MAC addresses stay inside the private cache and
 never become Prometheus labels. Source is Data Connect only.
 """
+import json
 import logging
 import time
 
@@ -52,6 +53,54 @@ _DEFAULT_ROW_CAP = 6000
 _MIN_ROW_CAP = 100
 _MAX_ROW_CAP = 200000
 _STALE_DAYS = (30, 90)
+
+# The posture-applicable population moves on inventory timescales (endpoints
+# are onboarded/decommissioned over days), not the 900s poll cadence. Refresh
+# the SELECT COUNT(*) FROM endpoints_data denominator at most this often and
+# publish the cached value between refreshes, so the full-table scan does not
+# burn scarce Data Connect duty budget every cycle on large deployments.
+_ELIGIBLE_REFRESH_SECONDS = 21600
+_ELIGIBLE_STATE_KEY = "endpoint_fleet_eligible"
+
+
+def _eligible_supported(schema):
+    return (schema_has(schema, "ENDPOINTS_DATA", "mac_address")
+            and schema_has(schema, "ENDPOINTS_DATA", "posture_applicable"))
+
+
+def _eligible_query():
+    return "SELECT COUNT(*) AS eligible FROM endpoints_data WHERE NVL(posture_applicable, 0) = 1"
+
+
+def _cached_eligible(cfg, now):
+    """Read the persisted eligible count and staleness before any Data Connect
+    call. The state store is opened and closed here, before the (potentially
+    long, paced) query session below -- never held open across it, matching
+    the per-row commit rationale in collectors/devices.py: a transaction left
+    open across a network wait would block the other collectors that share
+    this SQLite database until they hit the busy timeout.
+    """
+    store = StateStore(cfg.state_db_path)
+    try:
+        raw = store.get_value(_ELIGIBLE_STATE_KEY)
+    finally:
+        store.close()
+    if not raw:
+        return None, True
+    try:
+        data = json.loads(raw)
+        eligible = int(data["eligible"])
+        fetched_at = float(data["fetched_at"])
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+        return None, True
+    if eligible < 0:
+        return None, True
+    # A fetched_at in the future means the wall clock was set back after the
+    # value was stored; treat it as stale rather than trusting a cache entry
+    # that could otherwise appear fresh for up to _ELIGIBLE_REFRESH_SECONDS
+    # past the clock correction.
+    due = (now - fetched_at) >= _ELIGIBLE_REFRESH_SECONDS or fetched_at > now
+    return eligible, due
 
 
 def _row_cap(cfg):
@@ -112,13 +161,7 @@ def _queries(window_hours, row_cap, schema=None):
         ORDER BY assessed DESC
         FETCH FIRST {row_cap} ROWS ONLY
     """
-    if (schema_has(schema, "ENDPOINTS_DATA", "mac_address")
-            and schema_has(schema, "ENDPOINTS_DATA", "posture_applicable")):
-        eligible = ("SELECT COUNT(*) AS eligible FROM endpoints_data "
-                    "WHERE NVL(posture_applicable, 0) = 1")
-    else:
-        eligible = "SELECT NULL AS eligible FROM dual"
-    return {"assessments": assessments, "eligible": eligible}
+    return {"assessments": assessments}
 
 
 def collect(dataconnect, cfg):
@@ -134,16 +177,22 @@ def collect(dataconnect, cfg):
         have_assessments = schema_has(
             schema, "POSTURE_ASSESSMENT_BY_ENDPOINT", "endpoint_mac_address")
 
-        eligible = None
-        assessments = []
+        now = time.time()
+        cached_eligible, eligible_due = _cached_eligible(cfg, now)
+        include_eligible = eligible_due and _eligible_supported(schema)
+
+        statements = {}
         if have_assessments:
-            combined = query_set(dataconnect, _queries(window_hours, row_cap, schema))
-            assessments = combined["assessments"]
-            eligible_rows = combined["eligible"]
-        else:
-            eligible_rows = query_set(dataconnect, {
-                "eligible": _queries(
-                    window_hours, row_cap, schema)["eligible"]})["eligible"]
+            statements.update(_queries(window_hours, row_cap, schema))
+        if include_eligible:
+            statements["eligible"] = _eligible_query()
+
+        assessments = []
+        eligible_rows = None
+        if statements:
+            combined = query_set(dataconnect, statements)
+            assessments = combined.get("assessments", [])
+            eligible_rows = combined.get("eligible")
 
         # A scan that returns the full cap dropped the oldest re-postures of this
         # window (e.g. a patch-push mass re-posture). Newly-assessed endpoints are
@@ -158,10 +207,11 @@ def collect(dataconnect, cfg):
                 "component=posture_accumulator outcome=scan_truncated rows=%d "
                 "row_cap=%d action=raise_endpoint_fleet_max_rows",
                 len(assessments), row_cap)
+        fresh_eligible = None
         if eligible_rows and eligible_rows[0].get("eligible") is not None:
-            eligible = integer(eligible_rows[0].get("eligible"))
+            fresh_eligible = integer(eligible_rows[0].get("eligible"))
+        eligible = fresh_eligible if fresh_eligible is not None else cached_eligible
 
-        now = time.time()
         store = StateStore(cfg.state_db_path)
         try:
             for row in assessments:
@@ -177,6 +227,11 @@ def collect(dataconnect, cfg):
                     psn=label(row.get("ise_node"), "unknown"),
                     assessed_at=epoch(row.get("assessed")),
                     now=now)
+            if fresh_eligible is not None:
+                store.set_value(
+                    _ELIGIBLE_STATE_KEY,
+                    json.dumps({"eligible": fresh_eligible, "fetched_at": now}),
+                    commit=False)
             store.commit()
             store.prune_endpoint_posture(now - retention)
             aggregate = store.endpoint_posture_aggregate(
