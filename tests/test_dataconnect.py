@@ -402,12 +402,19 @@ def test_atomic_query_batch_advances_shared_crash_lease_per_statement(
     # Initial one-statement lease, completed-work lease, next-statement lease,
     # then the second completed-work lease. Final unlock is class-owned.
     assert len(writes) == 4
-    expected_initial = 100.0 + (
+    uncapped_initial = (
         dataconnect.MAX_STATEMENT_TIMEOUT_PERIODS * client.timeout
         * (100 / client.max_duty_cycle - 1))
+    # At this client's low configured duty cycle, the worst-case pre-work lease
+    # exceeds MAX_CRASH_LEASE_SECONDS and must be capped there.
+    assert uncapped_initial > dataconnect.MAX_CRASH_LEASE_SECONDS
+    expected_initial = 100.0 + dataconnect.MAX_CRASH_LEASE_SECONDS
     assert writes[0] == pytest.approx(expected_initial)
     assert writes[1] < writes[0]
     assert writes[2] > writes[1]
+    # The next-statement lease is also a pessimistic pre-work lease and is
+    # capped the same way.
+    assert writes[2] == pytest.approx(100.0 + dataconnect.MAX_CRASH_LEASE_SECONDS)
 
 
 def test_query_batch_has_a_hard_statement_ceiling():
@@ -824,12 +831,112 @@ def test_shared_pacing_gate_publishes_crash_safe_lease_before_query(
     descriptor = client._shared_gate()
     try:
         deadline = float(path.read_text().strip())
-        expected_cooldown = (
+        uncapped_cooldown = (
             dataconnect.MAX_STATEMENT_TIMEOUT_PERIODS * client.timeout
             * (100 / client.max_duty_cycle - 1))
-        assert deadline == pytest.approx(100.0 + expected_cooldown)
+        # At this client's low configured duty cycle, the worst-case pre-work
+        # lease exceeds MAX_CRASH_LEASE_SECONDS and must be capped there.
+        assert uncapped_cooldown > dataconnect.MAX_CRASH_LEASE_SECONDS
+        assert deadline == pytest.approx(100.0 + dataconnect.MAX_CRASH_LEASE_SECONDS)
     finally:
         client._release_shared_gate(descriptor, 0)
+
+
+def test_shared_pacing_gate_caps_crash_lease_at_low_duty_cycle(monkeypatch, tmp_path):
+    # SIGKILL/OOM after gate acquisition but before completion leaves this
+    # pessimistic pre-work lease on disk with nobody left to shorten it. At a
+    # very low duty cycle the uncapped worst-case formula would strand
+    # collection for most of a day; MAX_CRASH_LEASE_SECONDS bounds that.
+    path = tmp_path / "dataconnect.pacing"
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file=str(path),
+        dataconnect_max_duty_cycle_percent=0.001,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    descriptor = client._shared_gate()
+    try:
+        deadline = float(path.read_text().strip())
+        assert deadline <= 100.0 + dataconnect.MAX_CRASH_LEASE_SECONDS + 1
+    finally:
+        client._release_shared_gate(descriptor, 0)
+
+
+def test_catalog_gate_never_shortens_a_longer_existing_deadline(monkeypatch, tmp_path):
+    # The non-adaptive (catalog/metadata) branch must never shorten an
+    # existing on-file deadline, even though its own pre-work lease is now
+    # capped -- a prior reporting cooldown protecting the MnT could otherwise
+    # be cut short by a catalog validation query running behind it.
+    path = tmp_path / "dataconnect.pacing"
+    far_future_deadline = 100.0 + dataconnect.MAX_CRASH_LEASE_SECONDS * 10
+    path.write_text(f"{far_future_deadline}\n")
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15, dataconnect_shared_pacing_file=str(path),
+    )
+    client = dataconnect.DataConnectClient(cfg)
+
+    descriptor = client._shared_gate(adaptive_duty=False)
+    try:
+        assert float(path.read_text().strip()) == pytest.approx(far_future_deadline)
+    finally:
+        client._release_shared_gate(descriptor, 0)
+
+
+def test_measured_completion_cooldown_exceeding_cap_is_written_uncapped(
+        monkeypatch, tmp_path):
+    # completed_cooldown/release deadlines are real measured duty-cycle
+    # accounting, not a pessimistic crash guess, and may legitimately exceed
+    # MAX_CRASH_LEASE_SECONDS -- only the pre-work leases are capped.
+    connection = Connection()
+    monkeypatch.setattr(dataconnect.oracledb, "connect", lambda **kwargs: connection)
+    monkeypatch.setattr(dataconnect.time, "time", lambda: 100.0)
+    clock = [0.0]
+
+    def tick():
+        clock[0] += 5000.0
+        return clock[0]
+
+    monkeypatch.setattr(dataconnect.time, "monotonic", tick)
+    path = tmp_path / "dataconnect.pacing"
+    cfg = types.SimpleNamespace(
+        dataconnect_host="mnt", dataconnect_port=2484, dataconnect_service="cpm10",
+        dataconnect_user="reader", dataconnect_password="secret",
+        dataconnect_ca_bundle="", dataconnect_ssl_verify=False,
+        dataconnect_query_timeout=15,
+        dataconnect_shared_pacing_file=str(path),
+        dataconnect_max_duty_cycle_percent=2,
+    )
+    client = dataconnect.DataConnectClient(cfg)
+    monkeypatch.setattr(client, "_wait", lambda _seconds: None)
+    writes = []
+    real_write = client._write_shared_deadline
+
+    def record_write(descriptor, deadline):
+        writes.append(deadline)
+        real_write(descriptor, deadline)
+
+    monkeypatch.setattr(client, "_write_shared_deadline", record_write)
+
+    client.query_many({
+        "authentication": "SELECT username FROM radius_authentications",
+    })
+
+    # writes[0] is the pessimistic pre-work lease (capped); writes[1] is the
+    # measured completed-work cooldown for the one statement in this batch
+    # (the class-owned final unlock write is not captured by this monkeypatch,
+    # matching the existing per-statement lease test above).
+    assert len(writes) == 2
+    assert writes[0] - 100.0 <= dataconnect.MAX_CRASH_LEASE_SECONDS + 1
+    completed_cooldown = writes[1]
+    assert completed_cooldown - 100.0 > dataconnect.MAX_CRASH_LEASE_SECONDS
 
 
 def test_shared_pacing_gate_rejects_non_regular_file(tmp_path):

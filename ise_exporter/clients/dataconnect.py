@@ -59,6 +59,18 @@ MAX_STATEMENT_TIMEOUT_PERIODS = 4
 # 35 days of cooldown. Anything beyond 36 days cannot be produced by this client
 # and is a stale/corrupt deadline or a corrected wall clock, not valid pacing.
 MAX_SHARED_PACING_FUTURE_SECONDS = 36 * 86400
+# The pessimistic pre-work crash lease (worst_case_duration * (100/duty - 1))
+# exists to bound how long a SIGKILL/OOM'd process can strand Data Connect
+# collection, since the flock itself disappears with the process. At the
+# recommended 0.1% duty floor and a 15s timeout that worst case is ~16.6h --
+# nearly a full day of silence from one crash. The flock already prevents any
+# live process from double-querying; the lease only matters post-mortem, where
+# capping crash silence at one hour is still more than enough to stop a
+# crash-looping service from hammering the MnT, without stranding legitimate
+# low-duty collection for most of a day. Measured post-completion cooldowns
+# (the real duty-cycle accounting written after a query finishes) are exempt
+# and may legitimately exceed this cap.
+MAX_CRASH_LEASE_SECONDS = 3600
 _PACING_BUSY = object()
 
 
@@ -468,6 +480,10 @@ class DataConnectClient:
                 (worst_case_duration * (100 / self.max_duty_cycle - 1)
                  if adaptive_duty else worst_case_duration),
             )
+            # This is a pessimistic pre-work lease, not the measured post-completion
+            # cooldown -- cap it so a crashed process cannot strand collection for
+            # longer than MAX_CRASH_LEASE_SECONDS. See MAX_CRASH_LEASE_SECONDS.
+            crash_cooldown = min(crash_cooldown, MAX_CRASH_LEASE_SECONDS)
             lease_deadline = time.time() + crash_cooldown
             if not adaptive_duty:
                 # Catalog metadata is bounded independently of reporting data.
@@ -757,6 +773,10 @@ class DataConnectClient:
                         self.min_query_interval,
                         worst_case_duration * (100 / self.max_duty_cycle - 1),
                     )
+                    # Pessimistic pre-work lease for the remaining batch statements;
+                    # cap it the same as the initial gate lease. See
+                    # MAX_CRASH_LEASE_SECONDS.
+                    crash_cooldown = min(crash_cooldown, MAX_CRASH_LEASE_SECONDS)
                     if gate is not None:
                         self._write_shared_deadline(
                             gate, time.time() + crash_cooldown)
