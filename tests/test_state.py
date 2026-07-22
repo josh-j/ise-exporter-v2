@@ -724,3 +724,51 @@ def test_tail_cursor_tolerates_a_legacy_or_invalid_updated_at(tmp_path):
     assert cursor == {
         "kind": "id", "value": 100.0, "anchor": 1.0, "updated_at": 0.0}
     store.close()
+
+
+def test_finish_posture_cycle_zero_grace_prunes_exactly_as_before(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.db.executemany(
+        "INSERT INTO mnt_posture_cache VALUES (?, ?, ?, ?, ?)",
+        (("active", "signature", "{}", 10, 10), ("gone", "signature", "{}", 10, 10)),
+    )
+    store.commit()
+
+    store.finish_posture_cycle(["active"], now=20, grace_seconds=0)
+
+    assert [row["mac"] for row in store.db.execute(
+        "SELECT mac FROM mnt_posture_cache").fetchall()] == ["active"]
+    store.close()
+
+
+def test_finish_posture_cycle_grace_retains_recent_and_drops_old(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.db.executemany(
+        "INSERT INTO mnt_posture_cache VALUES (?, ?, ?, ?, ?)",
+        (
+            ("active", "signature", "{}", 10, 10),
+            # Missing from this cycle's active set, but seen recently: within
+            # the grace window and should survive.
+            ("recent", "signature", "{}", 10, 95),
+            # Missing and last seen well outside the grace window: pruned.
+            ("old", "signature", "{}", 10, 10),
+        ),
+    )
+    store.commit()
+
+    store.finish_posture_cycle(["active"], now=100, grace_seconds=30)
+
+    rows = {row["mac"] for row in store.db.execute(
+        "SELECT mac FROM mnt_posture_cache").fetchall()}
+    assert rows == {"active", "recent"}
+    store.close()
+
+
+@pytest.mark.parametrize("grace_seconds", (float("nan"), float("inf"), -1))
+def test_finish_posture_cycle_rejects_invalid_grace(tmp_path, grace_seconds):
+    store = StateStore(tmp_path / "state.sqlite3")
+
+    with pytest.raises(ValueError, match="grace window"):
+        store.finish_posture_cycle(["active"], now=20, grace_seconds=grace_seconds)
+
+    store.close()

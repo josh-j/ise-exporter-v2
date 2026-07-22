@@ -450,3 +450,87 @@ def test_different_activelist_orderings_select_the_same_detail_subset(tmp_path):
 
     assert set(forward_client.requested_macs) == set(reversed_client.requested_macs)
     assert len(forward_client.requested_macs) == 10
+
+
+class ScriptedMnT:
+    """MnT stand-in whose ActiveList membership changes between collect() calls."""
+
+    def __init__(self, active_macs, details):
+        self.active_macs = active_macs
+        self.details = details
+        self.calls = []
+
+    def get_mnt_xml(self, path, api_name="mnt"):
+        self.calls.append((path, api_name))
+        if path == "/Session/ActiveCount":
+            return {"total": 1, "sessions": [{"count": str(len(self.active_macs))}]}
+        if path == "/Session/ActiveList":
+            return {
+                "total": len(self.active_macs),
+                "sessions": [{"calling_station_id": mac} for mac in self.active_macs],
+            }
+        mac = path.rsplit("/", 1)[-1]
+        return {"total": 1, "sessions": [self.details[mac]]}
+
+
+def test_grace_window_retains_cache_across_a_missing_cycle_and_avoids_a_forced_refetch(
+        tmp_path):
+    mac1, mac2, mac3 = (
+        "AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:02", "AA:BB:CC:DD:EE:03")
+    # No session-id fields, so _session_signature falls back to a hash of the
+    # MAC alone -- stable across cycles for a "continuing" endpoint.
+    details = {
+        mac1: {"other_attr_string": "PostureStatus=Compliant"},
+        mac2: {"other_attr_string": "PostureStatus=Compliant"},
+        mac3: {"other_attr_string": "PostureStatus=Compliant"},
+    }
+    state_db_path = str(tmp_path / "state.sqlite3")
+
+    # Cycle 1: both endpoints are new, both get a mandatory detail fetch.
+    first = ScriptedMnT([mac1, mac2], details)
+    mnt_active_posture.collect(first, _cfg(
+        state_db_path=state_db_path,
+        mnt_active_posture_max_requests_per_cycle=10,
+        mnt_active_posture_refresh_ttl=3600,
+        mnt_active_posture_interval=300,
+        mnt_active_posture_request_interval_ms=0,
+    ))
+    assert any(mac2 in path for path, _ in first.calls if "MACAddress" in path)
+
+    # Cycle 2: mac2 momentarily drops out of MnT's ActiveList (an MnT hiccup
+    # or transient session drop), so it isn't even a candidate this cycle.
+    second = ScriptedMnT([mac1], details)
+    mnt_active_posture.collect(second, _cfg(
+        state_db_path=state_db_path,
+        mnt_active_posture_max_requests_per_cycle=10,
+        mnt_active_posture_refresh_ttl=3600,
+        mnt_active_posture_interval=300,
+        mnt_active_posture_request_interval_ms=0,
+    ))
+    assert not any("MACAddress" in path and mac2 in path for path, _ in second.calls)
+
+    # mac2's cached row must survive the missing cycle instead of being
+    # deleted by exact pruning.
+    db = sqlite3.connect(state_db_path)
+    remaining = {row[0] for row in db.execute("SELECT mac FROM mnt_posture_cache")}
+    db.close()
+    assert mac2 in remaining
+
+    # Cycle 3: mac2 reappears with the SAME session signature (mac-only
+    # fallback, unchanged), alongside a genuinely new mac3 that consumes the
+    # single request budget slot. If mac2 had been evicted in cycle 2 it
+    # would now be "mandatory" and would compete with mac3 for that slot;
+    # since it was retained, it is classified "unchanged" and served from
+    # cache with zero additional detail requests.
+    third = ScriptedMnT([mac1, mac2, mac3], details)
+    mnt_active_posture.collect(third, _cfg(
+        state_db_path=state_db_path,
+        mnt_active_posture_max_requests_per_cycle=1,
+        mnt_active_posture_refresh_ttl=3600,
+        mnt_active_posture_interval=300,
+        mnt_active_posture_request_interval_ms=0,
+    ))
+    assert not any("MACAddress" in path and mac2 in path for path, _ in third.calls)
+    assert any("MACAddress" in path and mac3 in path for path, _ in third.calls)
+    assert metrics.ise_mnt_active_posture_cache_entries._value.get() == 3
+    assert metrics.ise_mnt_active_posture_refresh_deferred._value.get() >= 1

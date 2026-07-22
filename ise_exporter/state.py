@@ -494,13 +494,24 @@ class StateStore:
             raise ValueError(f"{description} key exceeds the persisted size limit")
         return values
 
-    def _finish_cache_cycle(self, table, key_column, active_ids, now):
+    def _finish_cache_cycle(self, table, key_column, active_ids, now, *, grace_seconds=0):
         """Mark and prune a cache from an exact inventory without bind limits.
 
         A temporary key set avoids both oversized ``NOT IN`` statements and
         timestamp-marker pruning.  The latter retained removed rows when the
         host clock moved backwards, while a 100k inventory also required
         hundreds of individual UPDATE statements.
+
+        ``grace_seconds`` softens pruning for caches whose active set is a
+        per-cycle selection rather than a configuration inventory: a row
+        absent from this cycle survives if it was still seen recently
+        (``last_seen >= now - grace_seconds``), so one transiently
+        incomplete read doesn't evict a still-valid cached detail.  This only
+        helps a session that reappears with the SAME cache key (e.g. the
+        same MnT session signature) -- a genuinely new session changes the
+        key and pays for a fresh detail fetch regardless.  With
+        ``grace_seconds == 0`` (the default) the DELETE is byte-identical to
+        exact pruning.
         """
         allowed = {
             ("mnt_posture_cache", "mac"),
@@ -511,6 +522,9 @@ class StateStore:
         }
         if (table, key_column) not in allowed:
             raise ValueError("invalid cache table")
+        grace_seconds = float(grace_seconds)
+        if not math.isfinite(grace_seconds) or grace_seconds < 0:
+            raise ValueError("cache grace window must be finite and non-negative")
         self.db.execute("""
             CREATE TEMP TABLE IF NOT EXISTS active_cache_keys (
                 cache_key TEXT PRIMARY KEY
@@ -526,10 +540,18 @@ class StateStore:
             "(SELECT cache_key FROM active_cache_keys)",
             (now,),
         )
-        self.db.execute(
-            f"DELETE FROM {table} WHERE NOT EXISTS "
-            f"(SELECT 1 FROM active_cache_keys WHERE cache_key={table}.{key_column})"
-        )
+        if grace_seconds:
+            self.db.execute(
+                f"DELETE FROM {table} WHERE NOT EXISTS "
+                f"(SELECT 1 FROM active_cache_keys WHERE cache_key={table}.{key_column}) "
+                f"AND last_seen < ?",
+                (now - grace_seconds,),
+            )
+        else:
+            self.db.execute(
+                f"DELETE FROM {table} WHERE NOT EXISTS "
+                f"(SELECT 1 FROM active_cache_keys WHERE cache_key={table}.{key_column})"
+            )
         self.commit()
 
     def close(self):
@@ -594,10 +616,11 @@ class StateStore:
                 last_seen=excluded.last_seen
         """, (mac, signature, encoded, now, now))
 
-    def finish_posture_cycle(self, active_macs, now=None):
+    def finish_posture_cycle(self, active_macs, now=None, *, grace_seconds=0):
         now = self._valid_timestamp(now)
         active_macs = self._cache_keys(active_macs, "posture cache inventory")
-        self._finish_cache_cycle("mnt_posture_cache", "mac", active_macs, now)
+        self._finish_cache_cycle(
+            "mnt_posture_cache", "mac", active_macs, now, grace_seconds=grace_seconds)
 
     def posture_count(self):
         return int(self.db.execute(

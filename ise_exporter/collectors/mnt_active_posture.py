@@ -464,7 +464,14 @@ def collect(client, cfg):
             for mac, detail in fetched.items():
                 store.put_posture(
                     mac, signatures[mac], _compact_detail(detail), now=now)
-            store.finish_posture_cycle(selected, now=now)
+            # Grace-prune by the refresh TTL: that is exactly how long a cached
+            # detail is considered current, so it is the natural retention bound
+            # for an endpoint that's transiently missing from one cycle's
+            # ActiveList (MnT hiccup, momentary session drop). This only saves a
+            # refetch for the SAME continuing session -- a genuinely new session
+            # changes the cache key (session signature) and pays for a fresh
+            # detail fetch regardless.
+            store.finish_posture_cycle(selected, now=now, grace_seconds=refresh_ttl)
             current = store.posture_entries(selected)
         finally:
             store.close()
