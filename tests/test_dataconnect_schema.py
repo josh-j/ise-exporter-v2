@@ -122,7 +122,12 @@ def test_contract_requires_columns_used_unconditionally_by_latest_session_querie
 
 
 def test_contract_negotiates_optional_radius_authorization_policy():
-    assert "AUTHORIZATION_POLICY" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].optional
+    # The base RADIUS_AUTHENTICATIONS view exposes the matched rule as
+    # AUTHORIZATION_RULE, not AUTHORIZATION_POLICY (which only the week/accounting
+    # views carry), so the contract must not claim the latter is optional here.
+    assert "AUTHORIZATION_RULE" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].optional
+    assert "AUTHORIZATION_POLICY" not in \
+        VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].optional
     assert "POLICY_SET_NAME" in VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS"].optional
     assert "AUTHORIZATION_POLICY" in \
         VIEW_CONTRACTS["RADIUS_AUTHENTICATIONS_WEEK"].optional

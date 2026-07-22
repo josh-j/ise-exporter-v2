@@ -181,7 +181,7 @@ def _queries(limit, stale_minutes=60, window_hours=6,
              authentication_view="RADIUS_AUTHENTICATIONS"):
     authentication_policy_column = str(authentication_policy_column).lower()
     if authentication_policy_column not in {
-            "authorization_policy", "policy_set_name", "'none'"}:
+            "authorization_policy", "authorization_rule", "policy_set_name", "'none'"}:
         raise ValueError("unsupported RADIUS authentication policy column")
     authentication_view = str(authentication_view).upper()
     if authentication_view not in {
@@ -438,6 +438,11 @@ def _authentication_source(dataconnect):
     columns = set(schema.get(view, {}))
     if "AUTHORIZATION_POLICY" in columns:
         return view, "authorization_policy"
+    # The base RADIUS_AUTHENTICATIONS view on ISE 3.3 exposes the matched rule as
+    # AUTHORIZATION_RULE (no AUTHORIZATION_POLICY column); it is the precise policy
+    # dimension, preferred over the coarser POLICY_SET_NAME grouping.
+    if "AUTHORIZATION_RULE" in columns:
+        return view, "authorization_rule"
     if "POLICY_SET_NAME" in columns:
         return view, "policy_set_name"
     return view, "'none'"

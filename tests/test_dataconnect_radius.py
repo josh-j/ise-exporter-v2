@@ -210,6 +210,23 @@ def test_discovered_base_policy_is_retained_without_losing_detail_columns():
         "RADIUS_AUTHENTICATIONS", "policy_set_name")
 
 
+def test_base_view_prefers_authorization_rule_over_policy_set_name():
+    # ISE 3.3 base RADIUS_AUTHENTICATIONS has AUTHORIZATION_RULE (the matched rule)
+    # and POLICY_SET_NAME but no AUTHORIZATION_POLICY; the precise rule column wins.
+    client = DataConnect()
+    client.schema = {
+        "RADIUS_AUTHENTICATIONS": {
+            "TIMESTAMP": "TIMESTAMP", "AUTHORIZATION_RULE": "VARCHAR2",
+            "POLICY_SET_NAME": "VARCHAR2"},
+    }
+    assert dataconnect_radius._authentication_source(client) == (
+        "RADIUS_AUTHENTICATIONS", "authorization_rule")
+
+    query = dataconnect_radius._queries(
+        25, authentication_policy_column="authorization_rule")["authentication"]
+    assert "authorization_rule AS authorization_policy" in query
+
+
 def test_authentication_query_uses_stable_label_without_policy_columns():
     client = DataConnect()
     client.schema = {

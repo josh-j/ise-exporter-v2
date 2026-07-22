@@ -42,7 +42,7 @@ VIEW_CONTRACTS = {
     "RADIUS_AUTHENTICATIONS": _view({
         "TIMESTAMP",
     }, optional={"ID", "FAILED", "AUTHENTICATION_METHOD", "AUTHENTICATION_PROTOCOL",
-                 "DEVICE_NAME", "ISE_NODE", "RESPONSE_TIME", "AUTHORIZATION_POLICY",
+                 "DEVICE_NAME", "ISE_NODE", "RESPONSE_TIME", "AUTHORIZATION_RULE",
                  "POLICY_SET_NAME", "TIMESTAMP_TIMEZONE"},
        time_column="TIMESTAMP", domain="radius_auth"),
     # Performance-oriented seven-day view. It is an optional replacement for the
@@ -265,7 +265,8 @@ def preferred_radius_authentication_view(
 
     base_coverage = len(base & preferred)
     week_coverage = len(week & preferred)
-    base_has_policy = bool(base & {"AUTHORIZATION_POLICY", "POLICY_SET_NAME"})
+    base_has_policy = bool(
+        base & {"AUTHORIZATION_POLICY", "AUTHORIZATION_RULE", "POLICY_SET_NAME"})
     if week_coverage >= base_coverage and not base_has_policy:
         return week_name
     return base_name
