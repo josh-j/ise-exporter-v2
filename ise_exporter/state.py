@@ -941,7 +941,7 @@ class StateStore:
         raises the minimum id, so a *drop* in it means the id space was rebuilt.
         """
         row = self.db.execute(
-            "SELECT cursor_kind, cursor_value, anchor_value "
+            "SELECT cursor_kind, cursor_value, anchor_value, updated_at "
             "FROM dataconnect_tail_cursor WHERE view=? AND scope=?",
             (self._state_key(view), self._scope_key(scope))).fetchone()
         if row is None:
@@ -954,7 +954,18 @@ class StateStore:
                 raise ValueError("invalid tail cursor value")
         except (TypeError, ValueError):
             return None
-        return {"kind": str(row["cursor_kind"]), "value": value, "anchor": anchor}
+        # updated_at only gates the floor-audit subquery (steady-state cost control),
+        # never cursor validity -- a missing/invalid timestamp on an otherwise valid
+        # cursor falls back to 0.0, which reads as "infinitely stale" and simply keeps
+        # the audit on rather than invalidating the cursor.
+        try:
+            updated_at = float(row["updated_at"])
+            if not math.isfinite(updated_at) or updated_at < 0:
+                updated_at = 0.0
+        except (TypeError, ValueError):
+            updated_at = 0.0
+        return {"kind": str(row["cursor_kind"]), "value": value, "anchor": anchor,
+                "updated_at": updated_at}
 
     def set_tail_cursor(self, view, kind, value, now=None, scope="", anchor=0.0):
         """Persist the incremental-tail high-water mark + anchor; caller commits."""

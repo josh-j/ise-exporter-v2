@@ -693,3 +693,34 @@ def test_large_cache_cycle_prunes_future_dated_stale_rows(
             (active[0], 20),
         ]
     store.close()
+
+
+def test_tail_cursor_returns_updated_at(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.set_tail_cursor("radius_accounting", "id", 100.0, now=1234.5, anchor=1.0)
+    store.commit()
+
+    cursor = store.tail_cursor("radius_accounting")
+
+    assert cursor == {
+        "kind": "id", "value": 100.0, "anchor": 1.0, "updated_at": 1234.5}
+    store.close()
+
+
+def test_tail_cursor_tolerates_a_legacy_or_invalid_updated_at(tmp_path):
+    # An otherwise-valid cursor must never become None just because the timestamp
+    # column is missing or malformed (e.g. a legacy row written before this column
+    # was populated); it degrades to 0.0, which reads as "infinitely stale".
+    store = StateStore(tmp_path / "state.sqlite3")
+    store.set_tail_cursor("radius_accounting", "id", 100.0, now=1234.5, anchor=1.0)
+    store.commit()
+    store.db.execute(
+        "UPDATE dataconnect_tail_cursor SET updated_at=? WHERE view=?",
+        ("not-a-number", store._state_key("radius_accounting")))
+    store.commit()
+
+    cursor = store.tail_cursor("radius_accounting")
+
+    assert cursor == {
+        "kind": "id", "value": 100.0, "anchor": 1.0, "updated_at": 0.0}
+    store.close()

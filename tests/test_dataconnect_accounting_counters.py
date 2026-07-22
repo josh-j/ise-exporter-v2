@@ -113,8 +113,10 @@ def test_cold_start_seeds_at_the_tip_and_counts_nothing(tmp_path):
     assert _counter("Start", "psn-1") == 0
     assert _cursor_gauge() == 100
     store = StateStore(cfg.state_db_path)
-    assert store.tail_cursor("radius_accounting") == {
-        "kind": "id", "value": 100.0, "anchor": 100.0}
+    cursor = store.tail_cursor("radius_accounting")
+    assert cursor["kind"] == "id"
+    assert cursor["value"] == 100.0
+    assert cursor["anchor"] == 100.0
     store.close()
 
 
@@ -234,6 +236,16 @@ def test_backfill_floor_gap_is_logged_not_silent(tmp_path, caplog):
     cfg = _cfg(tmp_path, dataconnect_tail_max_backfill_hours=1)
     _collect(fake, cfg)  # seed 100
 
+    # Stale the cursor past the floor window so the floor-audit subquery runs this
+    # cycle -- in steady state (fresh cursor) it is skipped, so a dropped row above
+    # the cursor would go unaudited.
+    store = StateStore(cfg.state_db_path)
+    cursor = store.tail_cursor("radius_accounting")
+    store.set_tail_cursor("radius_accounting", "id", cursor["value"],
+                           now=1.0, anchor=cursor["anchor"])
+    store.commit()
+    store.close()
+
     # A recent settled row advances the cursor, but an older-than-floor row above
     # the cursor is dropped. That drop must be visible.
     fake.rows += [_row(101, "Start", added_ago=7200),   # 2h old, floor is 1h
@@ -244,6 +256,58 @@ def test_backfill_floor_gap_is_logged_not_silent(tmp_path, caplog):
     assert _counter("Start", "psn-1") == 1  # only the in-window row
     assert "outcome=floor_backfill_gap" in caplog.text
     assert "skipped_rows=1" in caplog.text
+    tail_sql = next(sql for sql, _p in fake.queries if "with new_rows" in sql.lower())
+    assert "floor_skipped" in tail_sql
+    assert "select count(*) from radius_accounting" in tail_sql.lower()
+
+
+def test_steady_state_tail_omits_the_floor_audit_subquery(tmp_path):
+    # A fresh cursor (just seeded, well within the floor window) must not carry the
+    # correlated floor_skipped COUNT(*) subquery -- that is pure scan risk on a
+    # 100M-row table when the cursor has not stalled.
+    fake = FakeAccounting([_row(100)])
+    cfg = _cfg(tmp_path)
+    _collect(fake, cfg)  # seed 100
+
+    fake.rows.append(_row(101))
+    _collect(fake, cfg)
+
+    tail_sql = next(sql for sql, _p in fake.queries if "with new_rows" in sql.lower())
+    assert "select count(*) from" not in tail_sql.lower()
+    assert "0 as floor_skipped" in tail_sql.lower()
+
+
+def test_stale_cursor_tail_includes_the_floor_audit_subquery(tmp_path):
+    fake = FakeAccounting([_row(100)])
+    cfg = _cfg(tmp_path, dataconnect_tail_max_backfill_hours=1)
+    _collect(fake, cfg)  # seed 100
+
+    store = StateStore(cfg.state_db_path)
+    cursor = store.tail_cursor("radius_accounting")
+    store.set_tail_cursor("radius_accounting", "id", cursor["value"],
+                           now=1.0, anchor=cursor["anchor"])
+    store.commit()
+    store.close()
+
+    fake.rows.append(_row(101))
+    _collect(fake, cfg)
+
+    tail_sql = next(sql for sql, _p in fake.queries if "with new_rows" in sql.lower())
+    assert "select count(*) from radius_accounting" in tail_sql.lower()
+
+
+def test_metadata_probe_is_two_single_aggregate_statements(tmp_path):
+    fake = FakeAccounting([_row(100)])
+    cfg = _cfg(tmp_path)
+    _collect(fake, cfg)  # seed
+    fake.rows.append(_row(101))
+    _collect(fake, cfg)
+
+    meta_sqls = [sql for sql, _p in fake.queries if "with new_rows" not in sql.lower()]
+    assert any("min(id)" in sql.lower() and "max(id)" not in sql.lower()
+               for sql in meta_sqls)
+    assert any("max(id)" in sql.lower() and "min(id)" not in sql.lower()
+               for sql in meta_sqls)
 
 
 def test_tail_batch_carries_meta_and_cursor_settle_floor_binds(tmp_path):

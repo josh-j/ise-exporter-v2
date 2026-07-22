@@ -37,9 +37,17 @@ from .dataconnect_common import (
 logger = logging.getLogger(__name__)
 
 
-def meta_query(view):
-    """Cheap absolute id bounds for cold-start seeding and reset detection."""
-    return f"SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM {view}"
+def meta_min_query(view):
+    """Lowest id, split from the max probe -- Oracle only applies the single-aggregate
+    MIN/MAX index optimization when a statement contains exactly one such aggregate;
+    a combined SELECT MIN(id), MAX(id) forces an index fast full scan on a 100M-row
+    MnT table, every cycle."""
+    return f"SELECT MIN(id) AS min_id FROM {view}"
+
+
+def meta_max_query(view):
+    """Highest id, split from the min probe for the same single-aggregate reason."""
+    return f"SELECT MAX(id) AS max_id FROM {view}"
 
 
 def _label_projection(schema, upper, entry):
@@ -57,12 +65,21 @@ def _label_projection(schema, upper, entry):
     return f"NVL({base}, 'unknown') AS {name}"
 
 
-def tail_query(view, label_columns, schema=None):
+def tail_query(view, label_columns, schema=None, *, include_floor_audit=True):
     """Count new, settled rows of ``view`` in the contiguous id prefix above the cursor.
 
     ``label_columns`` is an ordered sequence of ``(label, column, fallback[, expr])``
     that becomes the grouped label set. ``view`` and every column/fallback/expr are
     collector constants, never caller input.
+
+    ``include_floor_audit`` controls the ``floor_skipped`` projection. The audit is a
+    correlated COUNT(*) subquery with an unbounded-below timestamp range -- it only
+    carries information when the cursor has stalled long enough for rows older than
+    the backfill floor to exist above the cursor. In steady state it is pure risk: the
+    optimizer can drive the subquery from the timestamp predicate alone and scan the
+    whole table every cycle. The caller only turns it on when the cursor is stale
+    enough for the audit to matter; :floor_hours stays bound in both variants since the
+    main WHERE floor cut always needs it.
     """
     settled = ("CASE WHEN timestamp < CAST(SYSTIMESTAMP"
                " - NUMTODSINTERVAL(:settle_seconds, 'SECOND') AS TIMESTAMP)"
@@ -75,6 +92,10 @@ def tail_query(view, label_columns, schema=None):
         _label_projection(schema, upper, entry) for entry in label_columns)
     select_names = ", ".join(f"nr.{name} AS {name}" for name in names)
     group_names = ", ".join(f"nr.{name}" for name in names)
+    floor_skipped_projection = (
+        f"(SELECT COUNT(*) FROM {view}\n"
+        f"                WHERE id > :hwm AND timestamp < {floor_cut}) AS floor_skipped"
+        if include_floor_audit else "0 AS floor_skipped")
     return f"""
         WITH new_rows AS (
             SELECT id,
@@ -89,19 +110,19 @@ def tail_query(view, label_columns, schema=None):
         )
         SELECT {select_names},
                COUNT(*) AS events, MAX(nr.id) AS max_id,
-               (SELECT COUNT(*) FROM {view}
-                WHERE id > :hwm AND timestamp < {floor_cut}) AS floor_skipped
+               {floor_skipped_projection}
         FROM new_rows nr CROSS JOIN boundary b
         WHERE nr.settled = 1 AND nr.id < b.first_unsettled
         GROUP BY {group_names}
     """
 
 
-def _id_bounds(meta_rows):
-    """(min_id, max_id) from the metadata query; each None if the view is empty."""
-    row = meta_rows[0] if meta_rows else {}
-    min_id = row.get("min_id")
-    max_id = row.get("max_id")
+def _id_bounds(min_rows, max_rows):
+    """(min_id, max_id) from the two split metadata queries; None each if empty."""
+    min_row = min_rows[0] if min_rows else {}
+    max_row = max_rows[0] if max_rows else {}
+    min_id = min_row.get("min_id")
+    max_id = max_row.get("max_id")
     return (number(min_id) if min_id is not None else None,
             number(max_id) if max_id is not None else None)
 
@@ -133,7 +154,11 @@ def tail_counters(dataconnect, cfg, *, dataset, view, label_columns, counter):
         cursor = store.tail_cursor(view)
         if cursor is None:
             # Cold start: seed at the current tip and count strictly forward.
-            min_id, max_id = _id_bounds(dataconnect.query(meta_query(view)))
+            meta = query_set(dataconnect, {
+                "meta_min": meta_min_query(view),
+                "meta_max": meta_max_query(view),
+            })
+            min_id, max_id = _id_bounds(meta["meta_min"], meta["meta_max"])
             seed = max_id or 0.0
             store.set_tail_cursor(view, "id", seed, now=now, anchor=(min_id or 0.0))
             store.commit()
@@ -146,11 +171,22 @@ def tail_counters(dataconnect, cfg, *, dataset, view, label_columns, counter):
 
         hwm = cursor["value"]
         prev_anchor = cursor["anchor"]
+        cursor_updated_at = cursor.get("updated_at", 0.0)
+        # The floor-audit subquery only carries information once the cursor has
+        # stalled past the backfill floor (rows older than the floor with id above the
+        # cursor can then exist); in steady state it is pure risk that the optimizer
+        # scans the whole table every cycle, so it is skipped unless the cursor is
+        # stale (or its age is unknown -- treat that as maximally stale, not exempt).
+        cursor_age = now - cursor_updated_at
+        include_floor_audit = (
+            cursor_updated_at <= 0 or cursor_age > floor_hours * 3600)
         combined = query_set(dataconnect, {
-            "meta": meta_query(view),
-            "tail": tail_query(view, label_columns, schema),
+            "meta_min": meta_min_query(view),
+            "meta_max": meta_max_query(view),
+            "tail": tail_query(view, label_columns, schema,
+                                include_floor_audit=include_floor_audit),
         }, {"tail": {"hwm": hwm, "settle_seconds": settle, "floor_hours": floor_hours}})
-        min_id, max_id = _id_bounds(combined["meta"])
+        min_id, max_id = _id_bounds(combined["meta_min"], combined["meta_max"])
         rows = combined["tail"]
 
         # Sequence reset: purge only ever raises the minimum id, so a drop below the

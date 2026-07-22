@@ -111,7 +111,10 @@ def test_cold_start_seeds_at_the_tip_and_counts_nothing(tmp_path):
     assert _counter("Compliant", "psn-1") == 0
     assert _cursor_gauge() == 100
     store = StateStore(cfg.state_db_path)
-    assert store.tail_cursor(_VIEW) == {"kind": "id", "value": 100.0, "anchor": 100.0}
+    cursor = store.tail_cursor(_VIEW)
+    assert cursor["kind"] == "id"
+    assert cursor["value"] == 100.0
+    assert cursor["anchor"] == 100.0
     store.close()
 
 
