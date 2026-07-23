@@ -227,7 +227,9 @@ def collect(devices, dataconnect, cfg):
         # credit here -- that is the whole point of the wide paged surface.
         counts = defaultdict(int)
         last_seen = defaultdict(float)
-        active_configured = []
+        # dict preserves first-seen row order while keeping membership O(1);
+        # the paged surface can reach ~9500 rows on the serialized worker lane.
+        active_configured = {}
         for row in combined:
             reported = str(row.get("nad") or "unknown").strip()
             name = canonical.get(reported.casefold())
@@ -235,8 +237,7 @@ def collect(devices, dataconnect, cfg):
                 continue
             passed = integer(row.get("passed_events"))
             failed = integer(row.get("failed_events"))
-            if name not in active_configured:
-                active_configured.append(name)
+            active_configured[name] = True
             counts[(name, "passed")] += passed
             counts[(name, "failed")] += failed
             last_seen[name] = max(last_seen[name], _timestamp(row.get("last_event")))
@@ -247,10 +248,11 @@ def collect(devices, dataconnect, cfg):
         # Preserve the most operationally useful active devices first, then
         # fill the remaining ceiling budget deterministically with the rest of
         # the configured inventory.
-        selected = active_configured[:_NAD_EXPORT_CEILING]
+        selected = list(active_configured)[:_NAD_EXPORT_CEILING]
+        chosen = set(selected)
         selected.extend(
             name for name in sorted(configured, key=str.casefold)
-            if name not in selected and len(selected) < _NAD_EXPORT_CEILING)
+            if name not in chosen and len(selected) < _NAD_EXPORT_CEILING)
 
         now = time.time()
         store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
