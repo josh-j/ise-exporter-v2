@@ -731,3 +731,11 @@ ise_mnt_worker_busy = Gauge(
 ise_dataset_effective_interval_seconds = Gauge(
     "ise_dataset_effective_interval_seconds",
     "Scheduled collection cadence currently applied by the scheduler", ["dataset", "source"])
+ise_dataset_next_run_timestamp = Gauge(
+    "ise_dataset_next_run_timestamp",
+    "Nominal next-eligible collection time from the scheduler's interval/backoff "
+    "plan for an enabled dataset (0 for a disabled dataset). Data Connect's "
+    "serialized worker queue and duty-cycle cooldown can still delay the actual "
+    "attempt past this time -- see ise_dataconnect_queue_depth, "
+    "ise_dataconnect_oldest_queued_seconds, and ise_dataconnect_query_cooldown_seconds "
+    "for that additional wait", ["dataset", "source"])

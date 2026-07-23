@@ -1533,3 +1533,101 @@ def test_collector_source_labels_agree_with_the_dataset_plan():
         _cfg(), client=object(), dataconnect=object(), mnt=object())
     for name, (plan_source, _interval, _enabled) in scheduler.dataset_plan.items():
         assert collectors.source(name) == plan_source, name
+
+
+def test_next_run_metric_seeds_now_for_enabled_and_zero_for_disabled(monkeypatch):
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: 500.0)
+    scheduler = PollScheduler(_cfg(collect_certificates=False), object(), object())
+
+    # A dataset with no prior attempt and no restored snapshot is due
+    # immediately, so its nominal next run is published as "now".
+    assert metrics.ise_dataset_next_run_timestamp.labels(
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 500.0
+    # A disabled dataset is never scheduled and reports zero rather than a
+    # misleadingly overdue timestamp.
+    assert metrics.ise_dataset_next_run_timestamp.labels(
+        dataset="certificates", source="rest")._value.get() == 0
+
+
+def test_next_run_metric_tracks_next_run_after_success(monkeypatch):
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: 400.0)
+    scheduler = PollScheduler(_cfg(), object(), object())
+
+    def succeed():
+        with collectors.observe("dataconnect_radius"):
+            pass
+
+    scheduler._run("dataconnect_radius", 100.0, 60, succeed)
+
+    assert scheduler.next_run["dataconnect_radius"] == 460.0
+    assert metrics.ise_dataset_next_run_timestamp.labels(
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 460.0
+
+
+def test_next_run_metric_tracks_retry_after_failure(monkeypatch):
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: 105.0)
+    scheduler = PollScheduler(_cfg(), object(), object())
+    scheduler.last_success["dataconnect_radius"] = 95.0
+
+    def fail():
+        with collectors.observe("dataconnect_radius"):
+            raise RuntimeError("database unavailable")
+
+    scheduler._run("dataconnect_radius", 100.0, 60, fail)
+
+    assert scheduler.next_run["dataconnect_radius"] == 405.0
+    assert metrics.ise_dataset_next_run_timestamp.labels(
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 405.0
+
+
+def test_next_run_metric_survives_restart_from_a_persisted_snapshot(
+        monkeypatch, tmp_path):
+    registry = CollectorRegistry()
+    persisted = Gauge("next_run_persisted", "test", ["key"], registry=registry)
+    monkeypatch.setattr(
+        scheduler_module, "_PERSISTED_DATACONNECT_METRICS",
+        {"dataconnect_radius": (persisted,)},
+    )
+    clock = [400.0]
+    monkeypatch.setattr(scheduler_module.time, "time", lambda: clock[0])
+    cfg = _cfg(state_db_path=str(tmp_path / "state.sqlite3"))
+    first = PollScheduler(cfg, object(), object())
+
+    def succeed():
+        with collectors.observe("dataconnect_radius"):
+            persisted.labels(key="restored").set(1)
+
+    first._run("dataconnect_radius", 100.0, 1800, succeed)
+    clock[0] = 401.0
+    restarted = PollScheduler(cfg, object(), object())
+
+    assert restarted.next_run["dataconnect_radius"] == 2200.0
+    assert metrics.ise_dataset_next_run_timestamp.labels(
+        dataset="dataconnect_radius", source="dataconnect")._value.get() == 2200.0
+
+
+def test_next_run_metric_advances_after_worker_bookkeeping_exception(monkeypatch):
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False, dataconnect_query_timeout=1), object(), object())
+    shutdown = threading.Event()
+    original_run = scheduler._run
+
+    def fail_one_domain(name, now, tier, callback):
+        if name == "dataconnect_radius_active":
+            raise RuntimeError("bookkeeping failed")
+        return original_run(name, now, tier, callback)
+
+    monkeypatch.setattr(scheduler, "_run", fail_one_domain)
+    scheduler._start_dataconnect_worker(shutdown)
+    scheduler._run_dataconnect("dataconnect_radius_active", 7200, lambda: None)
+    scheduler._dataconnect_queue.join()
+
+    assert metrics.ise_dataset_next_run_timestamp.labels(
+        dataset="dataconnect_radius_active",
+        source="dataconnect")._value.get() == scheduler.next_run[
+            "dataconnect_radius_active"]
+    assert metrics.ise_dataset_next_run_timestamp.labels(
+        dataset="dataconnect_radius_active",
+        source="dataconnect")._value.get() > scheduler_module.time.time()
+    shutdown.set()
+    scheduler._stop_dataconnect_worker()
