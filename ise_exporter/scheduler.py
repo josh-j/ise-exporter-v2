@@ -443,6 +443,12 @@ class PollScheduler:
             metrics.ise_dataset_up.labels(dataset=name, source=source).set(0)
             metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(0)
             metrics.ise_collector_enabled.labels(collector=name).set(int(enabled))
+            # An enabled dataset with no prior attempt or restored snapshot is due
+            # immediately (see _due()'s next_run.get(name, 0) default); publish that
+            # cold-start "now" so the next-run metric is never missing before a
+            # first attempt starts. A disabled dataset is never scheduled at all.
+            metrics.ise_dataset_next_run_timestamp.labels(
+                dataset=name, source=source).set(time.time() if enabled else 0)
         for name, failure in self._dataconnect_schema_failures.items():
             if name not in self.dataset_plan or not self.dataset_plan[name][2]:
                 continue
@@ -491,6 +497,17 @@ class PollScheduler:
                      and last_success <= now + _WALL_CLOCK_SKEW_TOLERANCE
                      and now - last_success <= 2 * interval)
         metrics.ise_dataset_fresh.labels(dataset=name, source=source).set(int(fresh))
+
+    def _set_next_run(self, name, source, when):
+        """Advance the schedule and publish the same nominal deadline as a metric.
+
+        This is the immutable interval/backoff plan's next-eligible time, not a
+        prediction of when the serialized Data Connect worker will actually reach
+        the dataset -- the queue/cooldown panels explain the remaining gap.
+        """
+        self.next_run[name] = when
+        metrics.ise_dataset_next_run_timestamp.labels(
+            dataset=name, source=source).set(when)
 
     def _state_store(self):
         return StateStore(getattr(self.cfg, "state_db_path", ":memory:"))
@@ -545,7 +562,7 @@ class PollScheduler:
                     continue
                 self.last_run[name] = updated_at
                 self.last_success[name] = updated_at
-                self.next_run[name] = updated_at + interval
+                self._set_next_run(name, source, updated_at + interval)
                 self._scheduled_delay[name] = interval
                 self._update_dataset_freshness(name, now)
                 logger.info(
@@ -627,7 +644,7 @@ class PollScheduler:
             logger.exception(
                 "could not publish %s worker failure for %s", worker_name, name)
         retry = self._failure_retry(name, source, tier)
-        self.next_run[name] = completed + retry
+        self._set_next_run(name, source, completed + retry)
         self._scheduled_delay[name] = retry
         logger.warning(
             "collection rescheduled dataset=%s source=%s outcome=failure "
@@ -699,7 +716,7 @@ class PollScheduler:
             if succeeded is not False:
                 self.last_run[name] = completed
                 self.last_success[name] = completed
-                self.next_run[name] = completed + effective_interval
+                self._set_next_run(name, source, completed + effective_interval)
                 self._scheduled_delay[name] = effective_interval
                 if source == "dataconnect":
                     self._persist_dataconnect_state(name, completed)
@@ -720,7 +737,7 @@ class PollScheduler:
                 )
             else:
                 retry = self._failure_retry(name, source, effective_interval)
-                self.next_run[name] = completed + retry
+                self._set_next_run(name, source, completed + retry)
                 self._scheduled_delay[name] = retry
                 self._update_dataset_freshness(name, completed)
                 failure_context = collectors.last_failure_context(name)
