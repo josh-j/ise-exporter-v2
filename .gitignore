@@ -8,5 +8,3 @@ certs/
 dist/
 deploy/test-monitoring/data/
 test-results/
-docs/
-tests/
