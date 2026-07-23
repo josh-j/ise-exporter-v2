@@ -423,6 +423,23 @@ labels its MnT panels as a bounded sample of currently active endpoints and show
 coverage and truncation. Accounting-derived likely-active session counts remain
 Data Connect reconstructions and depend on NAD Start/Interim/Stop quality.
 
+For lab-only exhaustive rendering, `ise-dashboard-coverage` exposes a separate
+Prometheus target that mirrors the real exporter and overlays deterministic
+samples for states that should not be induced on a healthy deployment: schema
+loss, cursor resets, RADIUS errors, diagnostic events, posture failures,
+endpoint-fleet accumulation, and TACACS activity:
+
+```console
+ise-dashboard-coverage \
+  --listen 0.0.0.0 \
+  --port 9619 \
+  --upstream http://127.0.0.1:9618/metrics
+```
+
+Scrape it under the same `ise-exporter` job as the real target, then select the
+`:9619` deployment in Grafana. The normal `:9618` deployment remains truthful;
+simulated series never enter that target.
+
 Site troubleshooting dashboards are generated once per Ops Owner NDG. A bounded
 `ise_network_device_ndg_assignment` metric preserves the NAD-to-owner/location
 mapping needed to scope RADIUS aggregates without exporting credentials or raw
