@@ -184,6 +184,11 @@ def test_result_label_is_a_derived_case_expression_in_sql(tmp_path):
     assert "case when failed = 1 then 'failed'" in lowered
     assert " as result" in lowered
     assert " as psn" in lowered
+    # The CASE expr is already Oracle-type-safe and must not also be TO_CHAR
+    # wrapped; the plain psn column beside it still gets the bare-column wrap
+    # (ORA-01722 regression -- see the RADIUS error counters).
+    assert "to_char(failed)" not in lowered
+    assert "nvl(to_char(ise_node), 'unknown') as psn" in lowered
 
 
 def test_self_skips_when_live_schema_shows_no_id_column(tmp_path):

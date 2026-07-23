@@ -296,6 +296,23 @@ def test_stale_cursor_tail_includes_the_floor_audit_subquery(tmp_path):
     assert "select count(*) from radius_accounting" in tail_sql.lower()
 
 
+def test_label_columns_are_to_char_wrapped_ora_01722_regression(tmp_path):
+    # Same tail-engine label projection as the RADIUS error counters (which hit
+    # ORA-01722 on a NUMBER column in production): bare label columns must be
+    # TO_CHAR-wrapped before the NVL(..., 'unknown') fallback.
+    fake = FakeAccounting([_row(100)])
+    cfg = _cfg(tmp_path)
+    _collect(fake, cfg)  # seed
+    fake.rows.append(_row(101))
+    _collect(fake, cfg)
+
+    tail_sql, _params = next(
+        (sql, p) for sql, p in fake.queries if "with new_rows" in sql.lower())
+    lowered = tail_sql.lower()
+    assert "nvl(to_char(acct_status_type), 'unknown') as event_type" in lowered
+    assert "nvl(to_char(ise_node), 'unknown') as psn" in lowered
+
+
 def test_metadata_probe_is_two_single_aggregate_statements(tmp_path):
     fake = FakeAccounting([_row(100)])
     cfg = _cfg(tmp_path)

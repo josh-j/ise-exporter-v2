@@ -403,3 +403,25 @@ def test_reporting_and_active_snapshots_have_disjoint_metric_families():
                  "authentication_method", "nad") == reporting_before
     assert _rows(metrics.ise_dataconnect_radius_active_sessions, "nad", "psn") == {
         ("nad-1", "psn-1"): 12}
+
+
+def test_message_code_text_map_keys_match_oracle_to_char_of_a_number():
+    # RADIUS_ERRORS_VIEW.MESSAGE_CODE is an Oracle NUMBER column; both the
+    # windowed top-K query (TO_CHAR(message_code) in _queries()["errors"]) and the
+    # incremental tail counters (dataconnect_tail's TO_CHAR-wrapped bare-column
+    # projection) surface it as Oracle's default TO_CHAR(NUMBER) rendering: plain
+    # digits, no leading/trailing whitespace, no leading zeros, no decimal point.
+    # The curated lookup keys must match that exact shape or every code silently
+    # misses the map.
+    for code in dataconnect_radius._RADIUS_MESSAGE_CODE_TEXT:
+        assert code == code.strip()
+        assert code.isdigit()
+        assert code == "0" or not code.startswith("0")
+
+
+def test_radius_message_text_looks_up_a_plain_digit_string():
+    assert dataconnect_radius._radius_message_text("5400") == "Authentication failed"
+    assert dataconnect_radius._radius_message_text("11007") == (
+        "Could not locate Network Device or AAA Client")
+    assert dataconnect_radius._radius_message_text("99999") == ""
+    assert dataconnect_radius._radius_message_text(None) == ""

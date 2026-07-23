@@ -57,11 +57,26 @@ def _label_projection(schema, upper, entry):
     With ``expr``, that derived SQL is used when ``column`` is present (e.g. mapping a
     numeric ``FAILED`` flag to a ``'passed'``/``'failed'`` string), falling back to
     ``fallback`` when the column is absent. Every fragment is a collector constant.
+
+    A bare column reference (no ``expr``) is wrapped in ``TO_CHAR(...)`` before the
+    ``NVL(..., 'unknown')`` fallback. Without it, a numeric Oracle column (e.g.
+    RADIUS_ERRORS_VIEW.MESSAGE_CODE) forces Oracle to reconcile NVL's two branches by
+    implicitly converting the 'unknown' string literal with TO_NUMBER, which raises
+    ORA-01722 the moment the column is genuinely NULL. TO_CHAR on an already-VARCHAR2
+    column is a no-op, so the wrap applies uniformly to every bare-column projection
+    rather than special-casing known-numeric columns. The fallback-literal path (column
+    absent from the discovered schema) is untouched -- ``base`` is already the caller's
+    safe SQL literal there, not a column reference.
     """
     name, column, fallback = entry[0], entry[1], entry[2]
     expr = entry[3] if len(entry) > 3 else None
-    base = (expr if expr is not None and schema_has(schema, upper, column)
-            else schema_expression(schema, upper, column, fallback))
+    has_column = schema_has(schema, upper, column)
+    if expr is not None and has_column:
+        base = expr
+    elif has_column:
+        base = f"TO_CHAR({schema_expression(schema, upper, column, fallback)})"
+    else:
+        base = schema_expression(schema, upper, column, fallback)
     return f"NVL({base}, 'unknown') AS {name}"
 
 

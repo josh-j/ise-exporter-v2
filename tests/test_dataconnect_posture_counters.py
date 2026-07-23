@@ -180,6 +180,24 @@ def test_posture_tail_targets_its_own_view_and_labels(tmp_path):
 
     tail_sql, _params = next(
         (sql, p) for sql, p in fake.queries if "with new_rows" in sql.lower())
-    assert "from posture_assessment_by_endpoint" in tail_sql.lower()
-    assert " as status" in tail_sql.lower()
-    assert " as psn" in tail_sql.lower()
+    lowered = tail_sql.lower()
+    assert "from posture_assessment_by_endpoint" in lowered
+    assert " as status" in lowered
+    assert " as psn" in lowered
+
+
+def test_label_columns_are_to_char_wrapped_ora_01722_regression(tmp_path):
+    # Same tail-engine label projection as the RADIUS error counters (which hit
+    # ORA-01722 on a NUMBER column in production): bare label columns must be
+    # TO_CHAR-wrapped before the NVL(..., 'unknown') fallback.
+    fake = FakePosture([_row(100)])
+    cfg = _cfg(tmp_path)
+    _collect(fake, cfg)  # seed
+    fake.rows.append(_row(101))
+    _collect(fake, cfg)
+
+    tail_sql, _params = next(
+        (sql, p) for sql, p in fake.queries if "with new_rows" in sql.lower())
+    lowered = tail_sql.lower()
+    assert "nvl(to_char(posture_status), 'unknown') as status" in lowered
+    assert "nvl(to_char(ise_node), 'unknown') as psn" in lowered

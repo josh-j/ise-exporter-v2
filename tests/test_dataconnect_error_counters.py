@@ -164,6 +164,26 @@ def test_targets_its_own_view_and_labels(tmp_path):
     assert " as psn" in lowered
 
 
+def test_message_code_projection_is_to_char_wrapped_ora_01722_regression(tmp_path):
+    # RADIUS_ERRORS_VIEW.MESSAGE_CODE is an Oracle NUMBER column. Production hit
+    # ORA-01722 ("invalid number") because NVL(message_code, 'unknown') forces
+    # Oracle to reconcile the NULL branch by implicitly running
+    # TO_NUMBER('unknown'). The tail SQL must project the column through TO_CHAR
+    # before the NVL fallback so a NULL message_code degrades to 'unknown'
+    # instead of failing the whole dataset.
+    fake = FakeErrors([_row(100)])
+    cfg = _cfg(tmp_path)
+    _collect(fake, cfg)
+    fake.rows.append(_row(101))
+    _collect(fake, cfg)
+
+    tail_sql, _params = next(
+        (sql, p) for sql, p in fake.queries if "with new_rows" in sql.lower())
+    lowered = tail_sql.lower()
+    assert "nvl(to_char(message_code), 'unknown') as message_code" in lowered
+    assert "nvl(to_char(ise_node), 'unknown') as psn" in lowered
+
+
 def test_self_skips_when_live_schema_shows_no_id_column(tmp_path):
     schema = {"RADIUS_ERRORS_VIEW": {"TIMESTAMP": {}, "MESSAGE_CODE": {}, "ISE_NODE": {}}}
     fake = FakeErrors([_row(100), _row(101, "5440")], schema=schema)
