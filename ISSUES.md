@@ -136,4 +136,42 @@ bars.
   `endpoints_data` count) at most every 6 h from a persisted cache instead of every
   cycle. The Data Connect crash lease (the pessimistic pre-work pacing deadline that
   survives a SIGKILL) is capped at one hour instead of the former ~16.6 h worst case at
-  the default duty cycle; measured post-completion cooldowns stay uncapped.
+  the default duty cycle; measured post-completion cooldowns stay uncapped
+
+
+
+# New issues
+
+dataconnect_error_counters
+dataconnect
+database_failed
+ORA-01722: invalid number Help: https://docs.oracle.com/error-help/db/ora-01722/
+
+## Secure Client Dash
+Needs breakdowns by ops owner
+
+
+## ISE Exporter Health Dash
+This is a confusing mess. Needs to clearly show what data has been collected, when it was collected, when it will next collect (or the failure states).
+Needs to also highlight issues with collection (priority causing some collections to not be updated, limited duty, limited rows ect)
+Also needs to show when each collections dataset will be usable for dashboard purposes.
+
+NAD Inventory Export Coverage
+
+selected
+1000
+configured total
+3693
+truncated
+1
+NAD Activity Group Coverage
+returned
+1000
+groups total
+2608
+truncated
+1
+
+
+Needs to work and sample needs to be configured for prod env
+.
