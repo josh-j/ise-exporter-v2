@@ -9,6 +9,76 @@
 # Durations are in seconds and request pacing is in milliseconds unless the
 # setting name says otherwise. State/guard paths must be writable by the service;
 # CA bundles only need to be readable.
+#
+# ---------------------------------------------------------------------------
+# LARGE ENVIRONMENT TUNING (~90k endpoints, ~5k configured NADs)
+#
+# The defaults below are safe out of the box for smaller estates. At roughly
+# five thousand configured network devices and ninety thousand endpoints,
+# override the keys below (every key already exists under its normal section
+# further down this file -- this block is guidance only, edit them there):
+#
+# [dataconnect]
+# max_duty_cycle_percent = 2.0
+#   Push the shared duty-cycle budget toward the top of its 0.1-2.0 advisory
+#   band (see max_duty_cycle_percent below for the full wait-time math) so
+#   every reporting dataset -- NAD health, RADIUS, posture, endpoints, the
+#   endpoint_fleet accumulator -- approaches its configured cadence instead of
+#   queueing behind one shared gate.
+# max_groups = 1000
+#   Already the hard ceiling (dataconnect.max_groups cannot exceed 1000). At
+#   ~5k NADs this now only bounds the top-K event-count / activity-group
+#   telemetry (ise_nad_authentication_events, ise_nad_activity_groups_*).
+#   It no longer caps the per-NAD seen_recently / last_authentication_timestamp
+#   export, which covers the full configured NAD inventory (up to a
+#   10000-NAD safety ceiling) regardless of this value.
+#
+# [devices]
+# detail_max_requests = 0
+#   Already the default. At ~5000 NADs, auto-sizing lets the background
+#   detail worker converge over a few paced passes instead of needing an
+#   explicit per-pass request cap.
+#
+# [mnt_active_posture]
+# max_requests_per_cycle = 250
+#   Raise from the 80 default toward its hard ceiling (250) so active-session
+#   detail coverage keeps pace with a larger concurrent session count.
+# refresh_ttl_seconds = 3600
+#   Already the default; pairs with the raised per-cycle budget above so
+#   unchanged sessions are not re-fetched every cycle.
+#   Note: max_sessions stays hard-capped at 1000 regardless of this section,
+#   so the active-session compliance figure this collector reports is a
+#   bounded SAMPLE at 90k endpoints, not full coverage -- see endpoint_fleet
+#   below for the fleet-wide answer.
+#
+# [endpoint_fleet]
+# enabled = true
+#   THE fleet-wide posture coverage/compliance answer at 90k endpoints: an
+#   opt-in accumulator that keeps each endpoint's latest posture assessment in
+#   the persistent state cache (see exporter.state_db below), so coverage
+#   climbs toward the full posture-applicable population over roughly a day
+#   or two instead of resetting to the bounded 6h reporting window or the
+#   1000-session MnT sample above.
+#
+# [exporter]
+# state_db = "/var/lib/ise-exporter/state.sqlite3"
+#   Already the default, but a REAL, WRITABLE, PERSISTENT path is mandatory at
+#   this scale: it backs the full-inventory NAD activity accumulator (one
+#   restart-persistent series per configured NAD), the endpoint_fleet cache
+#   above, and the incremental id-tail cursors below. Do not point this at
+#   tmpfs or an ephemeral path.
+#
+# [dataconnect]
+# accounting_event_counters = true
+# posture_event_counters = true
+# authentication_event_counters = true
+# error_event_counters = true
+#   Prefer these incremental id-tail counters over the windowed re-scan
+#   queries they complement once validated on your PSN topology: they scale
+#   with new-row volume, not total table size, which matters more as MnT
+#   history grows at 90k endpoints. Off by default; each shares
+#   tail_settle_seconds / tail_max_backfill_hours below.
+# ---------------------------------------------------------------------------
 
 [exporter]
 # Python log level: DEBUG, INFO, WARNING, ERROR, or CRITICAL.

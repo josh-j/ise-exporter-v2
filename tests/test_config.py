@@ -53,6 +53,9 @@ def test_example_explains_units_safety_and_operational_tradeoffs():
         "one percent of database time, not ten percent",
         "PSN CPU, memory, latency, diagnostics, and throughput",
         "Require explicit --allow-expensive",
+        "LARGE ENVIRONMENT TUNING (~90k endpoints, ~5k configured NADs)",
+        "It no longer caps the per-NAD seen_recently",
+        "fleet-wide posture coverage/compliance answer at 90k endpoints",
     ):
         assert explanation in example
 

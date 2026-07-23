@@ -62,18 +62,28 @@ def test_joins_configured_nads_to_activity_without_exporting_unconfigured_names(
 
 
 class SettableActivity:
-    """Fake Data Connect returning a settable single-scan ranked batch per cycle.
+    """Fake Data Connect returning a settable per-page ranked batch per cycle.
 
-    One statement now ranks the grouped rows two ways (volume_rank for the
-    top-K activity surface, recency_rank for the wider last-seen refresh
-    surface). `rows` should carry both rank columns already set by the caller;
+    The statement ranks the grouped rows two ways (volume_rank for the top-K
+    activity surface, recency_rank for the wider last-seen refresh surface).
+    `rows` should carry both rank columns already set by the caller;
     _activity_row defaults both ranks to 1 for the common single-row case.
+
+    query() distinguishes the conditional "page 2" statement from "page 1" by
+    the ``recency_rank >`` marker unique to page 2's WHERE clause, returning
+    `page2_rows` (empty by default) for it. Most tests never trigger page 2
+    (their `total_groups` stays under nad_health._PAGE1_RECENCY_CAP).
     """
 
     def __init__(self):
         self.rows = []
+        self.page2_rows = []
+        self.queries = []
 
-    def query(self, _sql):
+    def query(self, sql):
+        self.queries.append(sql)
+        if "recency_rank > " in sql:
+            return list(self.page2_rows)
         return list(self.rows)
 
 
@@ -172,14 +182,20 @@ def test_raw_configured_nad_name_is_bounded_only_at_metric_boundary():
     }
 
 
-def test_nad_health_bounds_query_and_per_device_series_to_group_ceiling():
+def test_nad_health_exports_full_inventory_while_bounding_event_count_topk():
+    """dataconnect.max_groups only bounds the top-K volume-ranked telemetry now
+    (ise_nad_authentication_events / ise_nad_activity_groups_*). The per-NAD
+    seen_recently / last_authentication_timestamp export and
+    ise_nad_inventory_selected/truncated cover the FULL configured inventory
+    regardless of this limit -- this is the production fix: NAD Inventory
+    Export Coverage no longer caps out at dataconnect.max_groups."""
     devices = [{"name": f"switch-{index}"} for index in range(4)]
 
     class BoundedActivity:
         def query(self, sql):
             assert "COUNT(*) OVER () AS total_groups" in sql
             assert (f"WHERE volume_rank <= 2 OR "
-                    f"recency_rank <= {nad_health._LAST_SEEN_ROW_CAP}") in sql
+                    f"recency_rank <= {nad_health._PAGE1_RECENCY_CAP}") in sql
             return [
                 {"nad": "switch-3", "passed_events": 10, "failed_events": 0,
                  "last_event": datetime(2026, 7, 14, tzinfo=timezone.utc),
@@ -193,22 +209,126 @@ def test_nad_health_bounds_query_and_per_device_series_to_group_ceiling():
         devices, BoundedActivity(),
         types.SimpleNamespace(dataconnect_max_groups=2))
 
-    assert set(_rows(metrics.ise_nad_seen_recently, "nad")) == {
-        ("switch-3",), ("switch-0",)}
-    assert metrics.ise_nad_inventory_selected._value.get() == 2
+    # Full inventory export: all 4 configured switches get a series, not just
+    # the 2 admitted by the (now telemetry-only) dataconnect.max_groups.
+    assert _rows(metrics.ise_nad_seen_recently, "nad") == {
+        ("switch-0",): 0, ("switch-1",): 0, ("switch-2",): 0, ("switch-3",): 1,
+    }
+    assert metrics.ise_nad_inventory_selected._value.get() == 4
     assert metrics.ise_nad_inventory_total._value.get() == 4
-    assert metrics.ise_nad_inventory_truncated._value.get() == 1
+    assert metrics.ise_nad_inventory_truncated._value.get() == 0
+    # Top-K event-count / activity-group telemetry stays bounded by design.
     assert metrics.ise_nad_activity_groups_returned._value.get() == 2
     assert metrics.ise_nad_activity_groups_total._value.get() == 3
     assert metrics.ise_nad_activity_groups_truncated._value.get() == 1
     assert metrics.ise_nad_unconfigured_authentication_events_topk._value.get() == 6
 
 
+def test_full_inventory_export_survives_a_configured_count_above_the_old_group_limit():
+    """The production symptom this fixes: ~3700 configured NADs used to cap
+    per-NAD export at dataconnect.max_groups (<=1000). 1500 configured NADs at
+    the default 1000 group limit must ALL get a series now, with
+    inventory_truncated staying 0 (well under the 10000 safety ceiling)."""
+    devices = [{"name": f"switch-{index}"} for index in range(1500)]
+
+    class EmptyActivity:
+        def query(self, _sql):
+            return []
+
+    nad_health.collect(devices, EmptyActivity(), types.SimpleNamespace())
+
+    assert metrics.ise_nad_inventory_selected._value.get() == 1500
+    assert metrics.ise_nad_inventory_total._value.get() == 1500
+    assert metrics.ise_nad_inventory_truncated._value.get() == 0
+    assert len(_rows(metrics.ise_nad_seen_recently, "nad")) == 1500
+
+
+def test_safety_ceiling_truncates_only_when_configured_exceeds_it(monkeypatch):
+    """The full-inventory export is bounded by a hard safety ceiling
+    (_NAD_EXPORT_CEILING), mirroring the devices collector's hard 10000-per-
+    pass ceiling. Below it every configured NAD gets a series; above it,
+    inventory_truncated finally goes to 1."""
+    monkeypatch.setattr(nad_health, "_NAD_EXPORT_CEILING", 5)
+    devices = [{"name": f"switch-{index}"} for index in range(8)]
+
+    class EmptyActivity:
+        def query(self, _sql):
+            return []
+
+    nad_health.collect(devices, EmptyActivity(), types.SimpleNamespace())
+
+    assert metrics.ise_nad_inventory_selected._value.get() == 5
+    assert metrics.ise_nad_inventory_total._value.get() == 8
+    assert metrics.ise_nad_inventory_truncated._value.get() == 1
+    assert len(_rows(metrics.ise_nad_seen_recently, "nad")) == 5
+
+
+def test_page_two_fires_only_when_total_groups_exceeds_page_one_recency_cap(tmp_path):
+    """When active groups this cycle stay within _PAGE1_RECENCY_CAP, only one
+    statement is issued (see test_single_statement_scans_the_view_once_with_
+    both_rankings). Once total_groups exceeds it -- as expected at a ~5k-NAD
+    deployment -- a conditional second statement fetches the remaining
+    recency-ranked groups, so a NAD quiet enough to fall outside BOTH the
+    top-K volume subset and page 1's recency window still gets full credit."""
+    devices = [{"name": "switch-a"}, {"name": "switch-far"}]
+    cfg = types.SimpleNamespace(state_db_path=str(tmp_path / "state.sqlite3"),
+                                 dataconnect_max_groups=1)
+    client = SettableActivity()
+    now = datetime.now(timezone.utc).timestamp()
+
+    def at(days_ago):
+        return datetime.fromtimestamp(now - days_ago * 86400, tz=timezone.utc)
+
+    page1_total = nad_health._PAGE1_RECENCY_CAP + 1
+    # switch-a wins the (deliberately tiny) top-K volume subset; total_groups
+    # is set just above _PAGE1_RECENCY_CAP to force page 2.
+    client.rows = [
+        _activity_row("SWITCH-A", at(0), passed=1000, total_groups=page1_total,
+                      volume_rank=1, recency_rank=1),
+    ]
+    # switch-far is outside the top-K volume subset AND outside page 1's
+    # recency window -- only page 2's wider recency window reaches it.
+    client.page2_rows = [
+        _activity_row("SWITCH-FAR", at(2), passed=3, total_groups=page1_total,
+                      volume_rank=2, recency_rank=page1_total),
+    ]
+
+    nad_health.collect(devices, client, cfg)
+
+    assert len(client.queries) == 2
+    assert "recency_rank > " not in client.queries[0]
+    assert "recency_rank > " in client.queries[1]
+    assert _rows(metrics.ise_nad_seen_recently, "nad") == {
+        ("switch-a",): 1, ("switch-far",): 1,
+    }
+    assert _rows(metrics.ise_nad_last_authentication_timestamp, "nad")[
+        ("switch-far",)] == pytest.approx(now - 2 * 86400, abs=5)
+    assert _rows(metrics.ise_nad_authentication_events, "nad", "status")[
+        ("switch-far", "passed")] == 3
+
+
+def test_paged_queries_cannot_exceed_the_data_connect_result_row_ceiling():
+    """No constructible input can make either paged statement return >=
+    MAX_RESULT_ROWS (6000) rows, the hard ceiling clients/dataconnect.py
+    enforces. Page 1's worst case is the hard max group_limit (1000) plus its
+    recency cap; page 2's worst case is the width between the two caps."""
+    from ise_exporter.clients.dataconnect import MAX_RESULT_ROWS
+
+    worst_case_page1 = 1000 + nad_health._PAGE1_RECENCY_CAP
+    worst_case_page2 = nad_health._LAST_SEEN_ROW_CAP - nad_health._PAGE1_RECENCY_CAP
+
+    assert worst_case_page1 < MAX_RESULT_ROWS
+    assert worst_case_page2 < MAX_RESULT_ROWS
+
+
 def test_refresh_statement_updates_last_seen_for_nads_below_topk_cutoff(tmp_path):
     """A NAD ranked out of the top-K activity subset by event volume still gets
     its accumulated last-seen timestamp refreshed via the recency-ranked
     subset of the SAME single-scan statement, and is therefore not wrongly
-    counted silent."""
+    counted silent. It also gets full credit on the per-window
+    seen_recently / last_authentication_timestamp / authentication_events
+    series -- the wide paged surface, not just the top-K activity subset,
+    feeds those now."""
     devices = [{"name": "switch-a"}, {"name": "switch-b"}]
     cfg = types.SimpleNamespace(state_db_path=str(tmp_path / "state.sqlite3"))
     client = SettableActivity()
@@ -221,11 +341,11 @@ def test_refresh_statement_updates_last_seen_for_nads_below_topk_cutoff(tmp_path
     # (volume_rank 1, within the default 1000 limit). switch-b is quiet
     # (volume_rank 1500 simulates falling below the top-K cutoff in a real
     # deployment with >1000 active NADs) but authenticated recently -- only
-    # its recency_rank <= _LAST_SEEN_ROW_CAP admits it into the refresh subset.
+    # its recency_rank <= _PAGE1_RECENCY_CAP admits it into the refresh subset.
     client.rows = [
         _activity_row("SWITCH-A", at(0), passed=1000, total_groups=2,
                       volume_rank=1, recency_rank=2),
-        _activity_row("SWITCH-B", at(1), total_groups=2,
+        _activity_row("SWITCH-B", at(1), passed=3, total_groups=2,
                       volume_rank=1500, recency_rank=1),
     ]
     nad_health.collect(devices, client, cfg)
@@ -237,6 +357,16 @@ def test_refresh_statement_updates_last_seen_for_nads_below_topk_cutoff(tmp_path
         ("7",): 0,
         ("30",): 0,
     }
+
+    # Wide-surface per-window export: switch-b is present only via the
+    # recency-ranked refresh subset (outside the top-K volume subset), yet its
+    # seen_recently / last_authentication_timestamp / authentication_events
+    # are all populated as if it had been in the top-K.
+    assert _rows(metrics.ise_nad_seen_recently, "nad")[("switch-b",)] == 1
+    assert _rows(metrics.ise_nad_last_authentication_timestamp, "nad")[
+        ("switch-b",)] == pytest.approx(now - 1 * 86400, abs=5)
+    assert _rows(metrics.ise_nad_authentication_events, "nad", "status")[
+        ("switch-b", "passed")] == 3
 
 
 def test_refresh_truncation_metrics_set_when_total_exceeds_returned(tmp_path):
@@ -257,17 +387,25 @@ def test_refresh_truncation_metrics_set_when_total_exceeds_returned(tmp_path):
 def test_single_statement_scans_the_view_once_with_both_rankings():
     """LE-8: the merged statement must compute both the top-K volume ranking
     and the wider recency ranking over ONE scan/aggregation of the 6h window,
-    not two separate statements each scanning radius_authentication_summary."""
+    not two separate statements each scanning radius_authentication_summary.
+    When total_groups stays within _PAGE1_RECENCY_CAP (as here, an empty
+    result), the conditional page-2 statement never fires either."""
     captured = {}
 
     class CapturingActivity:
+        def __init__(self):
+            self.calls = 0
+
         def query(self, sql):
+            self.calls += 1
             captured["sql"] = sql
             return []
 
-    nad_health.collect(DEVICES, CapturingActivity(), types.SimpleNamespace())
+    client = CapturingActivity()
+    nad_health.collect(DEVICES, client, types.SimpleNamespace())
 
     sql = captured["sql"]
     assert "volume_rank" in sql
     assert "recency_rank" in sql
     assert sql.lower().count("radius_authentication_summary") == 1
+    assert client.calls == 1
