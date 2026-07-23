@@ -140,38 +140,47 @@ bars.
 
 
 
-# New issues
-
-dataconnect_error_counters
-dataconnect
-database_failed
-ORA-01722: invalid number Help: https://docs.oracle.com/error-help/db/ora-01722/
-
-## Secure Client Dash
-Needs breakdowns by ops owner
-
-
-## ISE Exporter Health Dash
-This is a confusing mess. Needs to clearly show what data has been collected, when it was collected, when it will next collect (or the failure states).
-Needs to also highlight issues with collection (priority causing some collections to not be updated, limited duty, limited rows ect)
-Also needs to show when each collections dataset will be usable for dashboard purposes.
-
-NAD Inventory Export Coverage
-
-selected
-1000
-configured total
-3693
-truncated
-1
-NAD Activity Group Coverage
-returned
-1000
-groups total
-2608
-truncated
-1
-
-
-Needs to work and sample needs to be configured for prod env
-.
+## New Issues (2026-07-23)
+- [x] **`dataconnect_error_counters` fails with ORA-01722: invalid number.** The id-tail
+  engine emitted `NVL(message_code, 'unknown')`; `RADIUS_ERRORS_VIEW.MESSAGE_CODE` is an
+  Oracle NUMBER, so Oracle coerced `'unknown'` with TO_NUMBER and the statement died the
+  moment a NULL code appeared. Bare tail label columns are now uniformly wrapped as
+  `NVL(TO_CHAR(col), 'unknown')` (the same pattern the windowed errors query already
+  used for this exact column); explicit CASE expressions (the auth FAILED flag) are
+  untouched. All tailed views audited; per-view ORA-01722 regression tests added.
+- [x] **Secure Client Dash needs breakdowns by ops owner.** Posture metrics carry no
+  `nad` label, so the Grafana-side `ise_network_device_ndg_assignment` join used on the
+  Access dashboard cannot reach them. The exporter now resolves each MnT active
+  session's `network_device_name` against the devices collector's ERS group assignments
+  and publishes bounded `ise_mnt_active_posture_endpoints_by_ops_owner{ops_owner,status}`
+  (≤256 owner groups, overflow collapses to "Other"; unmapped NADs report "unknown").
+  New "Active Posture by Ops Owner (MnT)" dashboard section: stacked endpoint trend,
+  per-owner compliance-share trend, and two snapshot top-K bars. Caveat: attribution
+  lags the devices cycle by design and requires `collect_device_details` to be on.
+- [x] **ISE Exporter Health Dash is a confusing mess.** Redesigned into five rows:
+  **Collection Status** (per-dataset table: enabled/up/fresh/last-success age/next run/
+  derived state incl. waiting-on-queue, plus failure detail), **Collection Constraints**
+  (duty-cycle cooldown + advisory, worker queue depth/age, per-collector duration —
+  each description says what to raise or investigate), **Row/Coverage Limits** (all
+  truncation/coverage gauges as trends), **Data Readiness** (per-dataset up×fresh
+  readiness, id-tail cursor/fold/reset trends, endpoint_fleet 24-48h ramp), and
+  **Build Identity & MnT Safety**. "When will it next collect" is backed by a new
+  `ise_dataset_next_run_timestamp{dataset,source}` metric published by the scheduler on
+  every plan/backoff/restore transition (nominal time; queue/cooldown panels explain
+  any extra wait). Alert-referenced panel ids preserved.
+- [x] **NAD coverage capped at 1000 of 3693; needs full collection and a prod-sized
+  sample config (90k endpoints / 5k NADs).** Per-NAD export (`ise_nad_seen_recently`,
+  `ise_nad_last_authentication_timestamp`, `ise_nad_authentication_events`) no longer
+  caps at `dataconnect.max_groups`: every configured NAD the cycle's scan saw is
+  exported, bounded only by a 10000 safety ceiling. The 6h activity scan is paged to
+  stay provably under the Data Connect client's hard 6000-row statement ceiling: page 1
+  (volume top-K ∪ recency ≤4500, always) and a conditional page 2 (recency 4501-9500,
+  fired only when page 1's exact group total shows uncovered groups) — full coverage to
+  ~9500 active groups, ~2× headroom over a 5k-NAD fleet. In a healthy prod the coverage
+  panels now converge and `truncated=1` is an actionable alert, not expected-at-scale
+  noise. `ise-exporter.toml.example` gained a "large environment (~90k endpoints, ~5k
+  NADs)" tuning section (duty cycle → 2.0, device detail auto-size, MnT request budget,
+  endpoint_fleet enabled, persistent state_db, id-tail opt-ins; MnT posture detail
+  remains a 1000-session sample by design at this scale — endpoint_fleet is the
+  fleet-wide coverage signal). Deployment note: takes effect on the next exporter rev
+  bump on maas plus a svc-grafana dashboard pin bump on deck00.
