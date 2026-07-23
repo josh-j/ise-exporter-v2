@@ -25,6 +25,8 @@ _REPLACED_METRICS = frozenset({
     "ise_endpoint_fleet_coverage_ratio",
     "ise_endpoint_fleet_eligible_total",
     "ise_endpoint_fleet_oldest_assessment_age_seconds",
+    "ise_dataconnect_radius_accounting_tail_total",
+    "ise_dataconnect_radius_authentication_tail_total",
 })
 
 _STATIC_SAMPLES = """
@@ -36,6 +38,7 @@ ise_nad_authentication_events{nad="coverage-nad",status="passed"} 9
 ise_nad_authentication_events{nad="coverage-nad",status="failed"} 2
 ise_dataconnect_schema_view_available{view="COVERAGE_MISSING_VIEW",requirement="dataset"} 0
 ise_dataconnect_schema_column_available{view="COVERAGE_VIEW",column="OPTIONAL_COVERAGE_COLUMN",requirement="optional"} 0
+ise_dataconnect_tail_cursor_id{view="coverage_cursor"} 4242
 ise_dataconnect_tail_resets_total{view="coverage_cursor"} 1
 ise_endpoint_fleet_assessed_total 80
 ise_endpoint_fleet_eligible_total 100
@@ -104,6 +107,26 @@ def render_coverage_metrics(upstream: str, *, now: float | None = None) -> str:
         (
             'ise_dataconnect_posture_assessment_tail_total'
             '{status="Failed",psn="laba-ise-003"} '
+            f"{timestamp}"
+        ),
+        (
+            'ise_dataconnect_radius_accounting_tail_total'
+            '{event_type="start",psn="laba-ise-003"} '
+            f"{timestamp * 2}"
+        ),
+        (
+            'ise_dataconnect_radius_accounting_tail_total'
+            '{event_type="stop",psn="laba-ise-003"} '
+            f"{timestamp}"
+        ),
+        (
+            'ise_dataconnect_radius_authentication_tail_total'
+            '{result="passed",psn="laba-ise-003"} '
+            f"{timestamp * 3}"
+        ),
+        (
+            'ise_dataconnect_radius_authentication_tail_total'
+            '{result="failed",psn="laba-ise-003"} '
             f"{timestamp}"
         ),
     ))

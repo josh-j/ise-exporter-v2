@@ -41,6 +41,7 @@ def test_coverage_overlay_populates_every_absent_dashboard_domain():
         "ise_dataconnect_profile_events",
         "ise_nad_authentication_events",
         "ise_dataconnect_schema_column_available",
+        "ise_dataconnect_tail_cursor_id",
         "ise_dataconnect_tail_resets_total",
         "ise_dataconnect_diagnostic_events",
         "ise_mnt_active_posture_policy_results",
@@ -68,4 +69,20 @@ def test_coverage_rate_counters_advance_with_wall_time():
     assert (
         'ise_dataconnect_posture_assessment_tail_total'
         '{status="Failed",psn="laba-ise-003"} 1030'
+    ) in second
+    assert (
+        'ise_dataconnect_radius_accounting_tail_total'
+        '{event_type="start",psn="laba-ise-003"} 2060'
+    ) in second
+    assert (
+        'ise_dataconnect_radius_accounting_tail_total'
+        '{event_type="stop",psn="laba-ise-003"} 1030'
+    ) in second
+    assert (
+        'ise_dataconnect_radius_authentication_tail_total'
+        '{result="passed",psn="laba-ise-003"} 3090'
+    ) in second
+    assert (
+        'ise_dataconnect_radius_authentication_tail_total'
+        '{result="failed",psn="laba-ise-003"} 1030'
     ) in second
