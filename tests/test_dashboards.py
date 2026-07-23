@@ -868,6 +868,10 @@ def test_exporter_health_summary_stats_are_gated_by_authoritative_datasets():
     assert truncation.count("max(ise_dataset_up") == 14
     assert truncation.count("max(ise_dataset_fresh") == 14
     assert truncation.count(" and on() ((max(ise_dataset_up") == 7
+    # Scalarize single-series gauges before adding them to unlabeled count()
+    # results, otherwise PromQL label matching drops the entire sum.
+    assert "max(ise_dataconnect_radius_active_groups_truncated)" in truncation
+    assert "max(ise_tacacs_internal_user_inventory_truncated)" in truncation
 
 
 def test_exporter_health_lists_each_unavailable_dataset_and_latest_reason():
