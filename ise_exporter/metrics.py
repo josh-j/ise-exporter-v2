@@ -64,7 +64,8 @@ ise_nad_inventory_total = Gauge(
     "Exact configured NAD inventory size supplied by ERS")
 ise_nad_inventory_truncated = Gauge(
     "ise_nad_inventory_truncated",
-    "Whether configured NAD per-device health was truncated by the top-K ceiling")
+    "Whether configured NAD per-device health was truncated by the safety ceiling "
+    "(dataconnect.max_groups no longer bounds this export)")
 ise_nad_activity_groups_returned = Gauge(
     "ise_nad_activity_groups_returned",
     "NAD activity groups returned after the Data Connect top-K ceiling")
@@ -76,11 +77,13 @@ ise_nad_activity_groups_truncated = Gauge(
     "Whether NAD activity groups were truncated by the Data Connect top-K ceiling")
 
 # --- per-NAD accumulated last-authentication (full-inventory "dead switch") ---
-# The bounded top-K activity query only ranks the busiest NADs each cycle, so the
-# per-device last-seen signal above covers at most dataconnect.max_groups NADs.
-# These accumulate the high-water last-authentication timestamp for every
-# configured NAD across cycles in the restart-persistent cache, giving the
-# "which switch went silent" signal full inventory coverage.
+# ise_nad_seen_recently / ise_nad_last_authentication_timestamp above already cover
+# the full configured inventory each cycle (bounded only by a safety ceiling), but
+# reset to 0/absent for any NAD this cycle's Data Connect scan did not see. These
+# accumulate the high-water last-authentication timestamp for every configured NAD
+# ACROSS CYCLES (and restarts) in the persistent cache, so a NAD quiet for weeks
+# still reports its true last-seen instead of resetting whenever the current
+# cycle happens not to observe it.
 ise_nad_activity_last_authentication_timestamp = Gauge(
     "ise_nad_activity_last_authentication_timestamp",
     "Accumulated most recent RADIUS authentication timestamp for each configured "

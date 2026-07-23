@@ -31,16 +31,56 @@ logger = logging.getLogger(__name__)
 # Silence thresholds for the accumulated full-inventory "dead switch" signal.
 _SILENT_DAYS = (7, 30)
 
-# The volume ranking below (top-K by event count, capped at `group_limit`,
-# <=1000) alone would starve quiet-but-alive NADs below that cutoff of a
-# last-seen refresh. A second ranking of the SAME grouped rows by recency
-# (MAX(timestamp) DESC) gives the accumulator a wider refresh surface, unioned
-# into one result via `volume_rank <= limit OR recency_rank <= _LAST_SEEN_ROW_CAP`
-# so the window is scanned/aggregated only once. The union is bounded by
-# limit + _LAST_SEEN_ROW_CAP (<=1000 + 5000 = 6000), comfortably at the Data
-# Connect client's per-statement row ceiling; recency-ranked rows dropped past
-# the cap are the least-recently-active tail, the safest rows to leave stale.
-_LAST_SEEN_ROW_CAP = 5000
+# Data Connect's client-side result-row safety ceiling (MAX_RESULT_ROWS in
+# clients/dataconnect.py) hard-fails ANY single statement at >=6000 rows. The
+# grouped 6h scan below is ranked two ways: volume top-K (<=1000, group_limit)
+# feeds ise_nad_authentication_events' bounded activity-group telemetry;
+# recency rank feeds the much wider last-seen refresh surface that the per-NAD
+# seen_recently / last_authentication_timestamp export and the restart-
+# persistent accumulator are actually sourced from (see `collect()`). A single
+# statement bounded by `volume_rank <= limit OR recency_rank <= cap` would need
+# `cap` kept small to stay under 6000 rows -- too narrow for a ~5000-NAD /
+# ~90k-endpoint deployment, where active groups in one 6h window can run well
+# past a few thousand.
+#
+# Instead the scan is PAGED across up to two statements built from the
+# identical grouped/ranked CTE:
+#   Page 1 (always issued): `volume_rank <= limit OR recency_rank <=
+#           _PAGE1_RECENCY_CAP`. Worst case <= 1000 + 4500 = 5500 rows,
+#           comfortably under 6000.
+#   Page 2 (fires only when page 1's exact `total_groups` -- computed by
+#           COUNT(*) OVER () before either page's row bound, so it is never
+#           itself truncated -- exceeds _PAGE1_RECENCY_CAP, meaning active
+#           groups remain outside page 1's recency coverage): recency_rank in
+#           (_PAGE1_RECENCY_CAP, _LAST_SEEN_ROW_CAP], excluding volume_rank <=
+#           limit rows page 1 already returned. Worst case <= 9500 - 4500 =
+#           5000 rows, also comfortably under 6000.
+# Together the two pages reconstruct exactly the coverage a single unbounded
+# `volume_rank <= limit OR recency_rank <= _LAST_SEEN_ROW_CAP` statement would
+# give, without either statement risking the 6000-row ceiling. Recency-ranked
+# groups beyond _LAST_SEEN_ROW_CAP are the least-recently-active tail, the
+# safest to leave until next cycle. These are fixed module constants rather
+# than a runtime config knob: raising the covered surface safely requires
+# raising BOTH together while keeping each page's own worst case under 6000,
+# not a value an operator can set in isolation. Raise them (in code) if a
+# deployment's active-group count approaches _LAST_SEEN_ROW_CAP; today's
+# largest known deployment (2608 active groups in a 6h window) is comfortably
+# inside page 1 alone.
+_PAGE1_RECENCY_CAP = 4500
+_LAST_SEEN_ROW_CAP = 9500
+
+# Hard per-cycle ceiling on individually labeled NAD series
+# (ise_nad_seen_recently, ise_nad_last_authentication_timestamp), mirroring the
+# devices collector's hard 10000-per-pass ceiling (DETAIL_REQUEST_CEILING).
+# Below this, every configured NAD gets its own series regardless of
+# dataconnect.max_groups, which only bounds the top-K volume-ranked telemetry
+# below (ise_nad_activity_groups_*) -- it no longer caps the per-NAD export.
+# Above the ceiling, the busiest/most-recently-seen NADs this cycle are kept
+# and the remainder of the inventory fills in sorted order until the ceiling
+# is reached; any NADs still left out only miss these two per-window series --
+# the restart-persistent ise_nad_activity_last_authentication_timestamp
+# accumulator has no such ceiling.
+_NAD_EXPORT_CEILING = 10000
 
 _METRICS = (
     metrics.ise_nad_authentication_events,
@@ -105,7 +145,7 @@ def collect(devices, dataconnect, cfg):
         schema = getattr(dataconnect, "schema", None)
         view = "RADIUS_AUTHENTICATION_SUMMARY"
         device = schema_expression(schema, view, "device_name", "'unknown'")
-        sql = f"""
+        cte = f"""
             WITH grouped_activity AS (
                 SELECT NVL({device}, 'unknown') AS nad,
                        SUM(NVL(passed_count, 0)) AS passed_events,
@@ -125,82 +165,97 @@ def collect(devices, dataconnect, cfg):
                        ) AS recency_rank
                 FROM grouped_activity
             )
-            SELECT * FROM ranked_activity
-            WHERE volume_rank <= {limit} OR recency_rank <= {_LAST_SEEN_ROW_CAP}
         """
-        combined = dataconnect.query(sql)
 
-        # One scan of the 6h window, ranked two ways. `activity` is the top-K
-        # by event volume (feeds event counts / selection, exactly what the old
-        # standalone "activity" statement fed); `refresh` is the wider
-        # recency-ranked surface (feeds the last-seen accumulator, exactly what
-        # the old standalone "refresh" statement fed). A row can appear in both
-        # when it is both busy and recent.
-        activity = [row for row in combined if integer(row.get("volume_rank")) <= limit]
-        refresh = [row for row in combined
-                   if integer(row.get("recency_rank")) <= _LAST_SEEN_ROW_CAP]
-
+        # Page 1: see the module comment above _PAGE1_RECENCY_CAP for the row-
+        # ceiling math. Always issued; covers every deployment on its own
+        # unless this cycle's active groups exceed _PAGE1_RECENCY_CAP.
+        page1_sql = cte + f"""
+            SELECT * FROM ranked_activity
+            WHERE volume_rank <= {limit} OR recency_rank <= {_PAGE1_RECENCY_CAP}
+        """
+        combined = list(dataconnect.query(page1_sql))
         total_groups = integer(combined[0].get("total_groups")) if combined else 0
+
+        # Page 2: only when page 1's exact total_groups shows active groups
+        # remain outside its recency coverage. `volume_rank > {limit}` excludes
+        # rows page 1 already returned via its volume clause, so the two pages
+        # never return the same group twice.
+        if total_groups > _PAGE1_RECENCY_CAP:
+            page2_sql = cte + f"""
+                SELECT * FROM ranked_activity
+                WHERE recency_rank > {_PAGE1_RECENCY_CAP}
+                      AND recency_rank <= {_LAST_SEEN_ROW_CAP}
+                      AND volume_rank > {limit}
+            """
+            combined.extend(dataconnect.query(page2_sql))
+            achieved_recency_cap = _LAST_SEEN_ROW_CAP
+        else:
+            achieved_recency_cap = _PAGE1_RECENCY_CAP
+
+        # `activity` (top-K by event volume) and `refresh` (recency-ranked, up
+        # to whichever cap this cycle achieved) exist only to preserve the
+        # bounded-by-design ise_nad_activity_groups_* / refresh_groups_*
+        # telemetry below, exactly as the old standalone "activity"/"refresh"
+        # statements did. Actual per-NAD event counts and last-seen timestamps
+        # are sourced from ALL of `combined` (both pages merged, see the loop
+        # below) -- every configured NAD the scan saw this cycle gets full
+        # credit, not just the top-K by volume.
+        activity = [row for row in combined if integer(row.get("volume_rank")) <= limit]
         if total_groups < len(activity):
             raise CollectorFailed("NAD activity total was smaller than returned groups")
 
-        # Both rankings are computed over the same single grouped scan, so they
-        # share one total_groups value.
-        refresh_total_groups = total_groups
-        if refresh_total_groups < len(refresh):
+        refresh = [row for row in combined
+                   if integer(row.get("recency_rank")) <= achieved_recency_cap]
+        if total_groups < len(refresh):
             raise CollectorFailed("NAD last-seen refresh total was smaller than returned groups")
+        refresh_total_groups = total_groups
 
-        counts = defaultdict(int)
-        last_seen = defaultdict(float)
+        # ise_nad_unconfigured_authentication_events_topk stays scoped to the
+        # top-K volume subset, exactly matching its own name/documented meaning.
         unconfigured = 0
-        active_configured = []
         for row in activity:
             reported = str(row.get("nad") or "unknown").strip()
+            if canonical.get(reported.casefold()) is None:
+                unconfigured += (integer(row.get("passed_events"))
+                                  + integer(row.get("failed_events")))
+
+        # Full-surface consumption: every row either page returned, regardless
+        # of volume or recency rank, feeds per-NAD event counts and last-seen.
+        # A quiet-but-alive NAD that ranked out of the top-K volume subset but
+        # was still returned via page 1's or page 2's recency clause gets full
+        # credit here -- that is the whole point of the wide paged surface.
+        counts = defaultdict(int)
+        last_seen = defaultdict(float)
+        active_configured = []
+        for row in combined:
+            reported = str(row.get("nad") or "unknown").strip()
             name = canonical.get(reported.casefold())
+            if name is None:
+                continue
             passed = integer(row.get("passed_events"))
             failed = integer(row.get("failed_events"))
-            if name is None:
-                unconfigured += passed + failed
-                continue
             if name not in active_configured:
                 active_configured.append(name)
             counts[(name, "passed")] += passed
             counts[(name, "failed")] += failed
             last_seen[name] = max(last_seen[name], _timestamp(row.get("last_event")))
 
-        # Preserve the most operationally useful active devices, then fill the
-        # remaining bounded budget deterministically with inactive inventory.
-        selected = active_configured[:limit]
+        # Every configured NAD gets a per-window seen_recently /
+        # last_authentication_timestamp series up to _NAD_EXPORT_CEILING (see
+        # module comment) -- dataconnect.max_groups no longer caps this export.
+        # Preserve the most operationally useful active devices first, then
+        # fill the remaining ceiling budget deterministically with the rest of
+        # the configured inventory.
+        selected = active_configured[:_NAD_EXPORT_CEILING]
         selected.extend(
             name for name in sorted(configured, key=str.casefold)
-            if name not in selected and len(selected) < limit)
-
-        # Recency-ranked refresh rows for the accumulator (see _LAST_SEEN_ROW_CAP
-        # comment): a much wider surface than the top-K activity rows, which
-        # rank by event volume and starve quiet-but-alive NADs of a refresh.
-        refresh_last_seen = defaultdict(float)
-        for row in refresh:
-            reported = str(row.get("nad") or "unknown").strip()
-            name = canonical.get(reported.casefold())
-            if name is None:
-                continue
-            refresh_last_seen[name] = max(
-                refresh_last_seen[name], _timestamp(row.get("last_event")))
-
-        # Accumulate the high-water last-authentication timestamp for every
-        # configured NAD across cycles. Drive the accumulation primarily from the
-        # recency-ranked refresh rows (wide coverage); also fold in the
-        # top-K activity rows (a subset, harmless) so both surfaces agree.
-        accumulate = defaultdict(float)
-        for name, seen_at in refresh_last_seen.items():
-            accumulate[name] = max(accumulate[name], seen_at)
-        for name, seen_at in last_seen.items():
-            accumulate[name] = max(accumulate[name], seen_at)
+            if name not in selected and len(selected) < _NAD_EXPORT_CEILING)
 
         now = time.time()
         store = StateStore(getattr(cfg, "state_db_path", ":memory:"))
         try:
-            for name, seen_at in accumulate.items():
+            for name, seen_at in last_seen.items():
                 if seen_at > 0:
                     store.put_nad_activity(name, seen_at, now=now)
             store.commit()
