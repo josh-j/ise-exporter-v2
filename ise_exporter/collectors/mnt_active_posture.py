@@ -44,6 +44,10 @@ MAX_ACTIVE_COUNT = 1_000_000_000
 MAX_STATUS_GROUPS = 256
 MAX_AGENT_GROUPS = 256
 MAX_POLICY_GROUPS = 1024
+# Ops owners are a small, operator-defined NDG classification (tens, not
+# thousands) -- this bound only guards against a malformed/adversarial mapping,
+# unlike the free-form OS/PSN/agent-version dimensions above.
+MAX_OPS_OWNER_GROUPS = 256
 
 
 _FIELDS = (
@@ -73,6 +77,7 @@ _METRICS = (
     metrics.ise_mnt_active_posture_endpoints,
     metrics.ise_mnt_active_secure_client_endpoints,
     metrics.ise_mnt_active_posture_policy_results,
+    metrics.ise_mnt_active_posture_endpoints_by_ops_owner,
     metrics.ise_mnt_active_step_latency_seconds,
     metrics.ise_mnt_active_step_latency_samples,
     metrics.ise_mnt_active_total_authentication_latency_seconds,
@@ -221,6 +226,11 @@ def _compact_detail(detail):
         "posture_agent_version": first_nonempty(attrs, *SECURECLIENT_VERSION_KEYS)
             or _value(detail, attrs, "posture_agent_version", "PostureAgentVersion"),
         "server": _value(detail, attrs, "server", "acs_server", "ise_node", "Server"),
+        # The NAS/network-device identity MnT's session detail carries for the
+        # session -- the only join key back to the ERS NAD group assignment
+        # (ops_owner). Not part of OTHER_ATTR_STRING; a direct session-detail field.
+        "network_device_name": _value(
+            detail, attrs, "network_device_name", "NetworkDeviceName"),
         "execution_steps": _value(
             detail, attrs, "execution_steps", "ExecutionSteps", "Steps"),
         "step_latency": _value(detail, attrs, "step_latency", "StepLatency"),
@@ -234,6 +244,7 @@ def _compact_detail(detail):
         "step_latency": 16_384,
         "posture_agent_version": 512,
         "server": 128,
+        "network_device_name": 256,
     }
     compact = {
         key: text for key, value in fields.items()
@@ -283,10 +294,12 @@ def _session_signature(row):
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
-def _aggregate(details):
+def _aggregate(details, ops_owner_by_nad=None):
+    ops_owner_by_nad = ops_owner_by_nad or {}
     statuses = Counter()
     agents = Counter()
     policies = Counter()
+    ops_owner_statuses = Counter()
     coverage = Counter()
     steps = defaultdict(list)
     total_latency = []
@@ -337,6 +350,18 @@ def _aggregate(details):
             ("Other", "Unknown", "Unknown"))
         increment_bounded(
             agents, metric_label(agent, "Unknown", 128), MAX_AGENT_GROUPS, "Other")
+
+        # Bounded ops-owner rollup: the join key is the endpoint's network
+        # device, not the endpoint itself, so cardinality stays at "number of
+        # ops owners" (tens) rather than "number of NADs" (thousands) --
+        # per-NAD posture labels are deliberately not exported anywhere.
+        device_name = _value(detail, attrs, "network_device_name", "NetworkDeviceName")
+        owner = (ops_owner_by_nad.get(metric_label(device_name).casefold())
+                 if device_name else None)
+        owner = metric_label(owner, "unknown", 128)
+        increment_bounded(
+            ops_owner_statuses, (owner, status), MAX_OPS_OWNER_GROUPS,
+            ("Other", status))
         for policy, result in set(parse_posture_report(report)):
             increment_bounded(
                 policies, (metric_label(policy, "Unknown", 128), result),
@@ -363,11 +388,20 @@ def _aggregate(details):
     # ordering as a deterministic tie-breaker.
     steps = dict(sorted(
         steps.items(), key=lambda item: (-len(item[1]), int(item[0])))[:MAX_STEP_CODES])
-    return statuses, agents, policies, coverage, steps, total_latency
+    return statuses, agents, policies, coverage, steps, total_latency, ops_owner_statuses
 
 
-def collect(client, cfg):
-    """Publish one atomic, bounded snapshot of current MnT endpoint detail."""
+def collect(client, cfg, ops_owner_by_nad=None):
+    """Publish one atomic, bounded snapshot of current MnT endpoint detail.
+
+    ops_owner_by_nad is the casefold(nad name) -> ops_owner mapping the
+    devices collector builds from its ERS group-detail cycle (see
+    devices.latest_ops_owner_by_nad()); the scheduler wires it through the
+    same way it feeds the REST-owned device inventory to nad_health. A
+    session whose network device is missing or unmatched rolls up under
+    ops_owner="unknown".
+    """
+    ops_owner_by_nad = ops_owner_by_nad or {}
     with observe("mnt_active_posture"):
         count_payload = client.get_mnt_xml(
             "/Session/ActiveCount", api_name="mnt_active_posture_count")
@@ -484,9 +518,9 @@ def collect(client, cfg):
             (max(0.0, now - entry["updated_at"]) for entry in usable.values()),
             default=0.0)
 
-        aggregates = _aggregate(details)
+        aggregates = _aggregate(details, ops_owner_by_nad)
         (statuses, agents, policies, coverage,
-         steps, total_latency) = aggregates
+         steps, total_latency, ops_owner_statuses) = aggregates
         writers = [
             lambda: metrics.ise_mnt_active_sessions_total.set(active_total),
             lambda: metrics.ise_mnt_active_posture_candidate_endpoints_total.set(
@@ -525,6 +559,12 @@ def collect(client, cfg):
                 metrics.ise_mnt_active_posture_policy_results.labels(
                     policy=policy, result=result).set(count)
             for (policy, result), count in policies.items()
+        )
+        writers.extend(
+            lambda owner=owner, status=status, count=count:
+                metrics.ise_mnt_active_posture_endpoints_by_ops_owner.labels(
+                    ops_owner=owner, status=status).set(count)
+            for (owner, status), count in ops_owner_statuses.items()
         )
         for step, samples in steps.items():
             stats = {"sum": sum(samples), "avg": sum(samples) / len(samples), "max": max(samples)}

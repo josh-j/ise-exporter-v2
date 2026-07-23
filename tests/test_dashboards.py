@@ -573,6 +573,51 @@ def test_secureclient_dashboard_exposes_mnt_sample_quality():
         assert metric in text
 
 
+def test_secureclient_dashboard_adds_active_posture_by_ops_owner_breakdown():
+    dashboard = _dashboard("ise-secureclient.json")
+    panels = {panel["title"]: panel for panel in _panels(dashboard["panels"])}
+    gate = ('dataset="mnt_active_posture",source="mnt"')
+
+    trend = panels["Active Endpoints by Ops Owner and Status (MnT)"]
+    assert trend["type"] == "timeseries"
+    trend_expr = trend["targets"][0]["expr"]
+    assert "ise_mnt_active_posture_endpoints_by_ops_owner" in trend_expr
+    assert "by (ops_owner, status)" in trend_expr
+    assert gate in trend_expr
+    assert "ise_dataset_up" in trend_expr and "ise_dataset_fresh" in trend_expr
+    assert trend["targets"][0]["legendFormat"] == "{{ops_owner}} — {{status}}"
+    assert trend["fieldConfig"]["defaults"]["custom"]["stacking"]["mode"] == "normal"
+
+    # Ratios render as time-series trends, not instant stat tiles (owner style rule).
+    ratio = panels["Active Compliance Share by Ops Owner (MnT)"]
+    assert ratio["type"] == "timeseries"
+    ratio_expr = ratio["targets"][0]["expr"]
+    assert "ise_mnt_active_posture_endpoints_by_ops_owner" in ratio_expr
+    assert "by (ops_owner)" in ratio_expr
+    assert gate in ratio_expr
+    assert ratio["fieldConfig"]["defaults"]["unit"] == "percent"
+
+    # Categorical top-K breakdowns stay as current-snapshot horizontal bars.
+    for title in (
+            "Active Endpoints by Ops Owner (MnT)",
+            "Active Non-Compliant Endpoints by Ops Owner (MnT)"):
+        panel = panels[title]
+        assert panel["type"] == "bargauge"
+        target = panel["targets"][0]
+        assert target["instant"] is True
+        assert target["expr"].startswith("sort_desc(")
+        assert "ise_mnt_active_posture_endpoints_by_ops_owner" in target["expr"]
+        assert gate in target["expr"]
+    noncompliant_expr = panels[
+        "Active Non-Compliant Endpoints by Ops Owner (MnT)"]["targets"][0]["expr"]
+    assert 'status=~"(?i)non.?compliant|failed"' in noncompliant_expr
+
+    for panel in (trend, ratio,
+                  panels["Active Endpoints by Ops Owner (MnT)"],
+                  panels["Active Non-Compliant Endpoints by Ops Owner (MnT)"]):
+        assert panel.get("description"), f"{panel['title']} has no description"
+
+
 def _exported_metric_names():
     metrics_path = DASHBOARDS.parent / "ise_exporter/metrics.py"
     tree = ast.parse(metrics_path.read_text())

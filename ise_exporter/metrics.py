@@ -280,6 +280,13 @@ ise_mnt_active_posture_policy_results = Gauge(
     "ise_mnt_active_posture_policy_results",
     "Posture policy rollups parsed from collected active endpoint PostureReport fields",
     ["policy", "result"])
+ise_mnt_active_posture_endpoints_by_ops_owner = Gauge(
+    "ise_mnt_active_posture_endpoints_by_ops_owner",
+    "Collected active endpoints grouped by current MnT posture status and the "
+    "ops owner of the endpoint's network device (from the ERS NAD group "
+    "assignment, matched by device name); 'unknown' covers endpoints whose "
+    "device has no Ops Owner group or could not be matched",
+    ["ops_owner", "status"])
 ise_mnt_active_step_latency_seconds = Gauge(
     "ise_mnt_active_step_latency_seconds",
     "Bounded MnT active-session step latency aggregate by numeric ISE step code",

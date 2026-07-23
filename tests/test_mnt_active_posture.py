@@ -172,10 +172,13 @@ def test_collects_bounded_posture_and_latency_without_identity_labels():
     assert coverage[("posture_report",)] == .5
     assert coverage[("step_latency",)] == 1
     # Prometheus dimensions stay aggregated; no MAC, endpoint, user, or custom
-    # OTHER_ATTR_STRING keys become labels.
+    # OTHER_ATTR_STRING keys become labels. In particular, the ops-owner
+    # rollup below is keyed by ops_owner (tens of values), never by the raw
+    # NAD identity (thousands of values).
     label_names = {name for metric in mnt_active_posture._METRICS
                    for name in getattr(metric, "_labelnames", ())}
-    assert not {"mac", "endpoint", "username", "Ops Owner"} & label_names
+    assert not {"mac", "endpoint", "username", "Ops Owner",
+                "nad", "network_device_name"} & label_names
 
 
 def test_unmapped_latency_accepts_real_five_digit_ise_step_codes():
@@ -212,6 +215,127 @@ def test_active_posture_aggregates_cap_free_form_label_domains(monkeypatch):
     assert len(statuses) <= 3 and ("Other", "Unknown", "Unknown") in statuses
     assert len(agents) <= 3 and "Other" in agents
     assert len(policies) <= 3 and ("Other", "Passed") in policies
+
+
+def test_aggregate_attributes_ops_owner_by_casefolded_network_device_name():
+    ops_owner_by_nad = {"switch-one": "Campus"}
+    details = [
+        {"posture_status": "Compliant", "network_device_name": "Switch-One"},
+        {"posture_status": "NonCompliant", "network_device_name": "SWITCH-ONE"},
+        # No mapping entry for this device -- rolls up as unknown, not dropped.
+        {"posture_status": "Compliant", "network_device_name": "unmapped-switch"},
+        # No device identity at all -- also unknown.
+        {"posture_status": "Compliant"},
+    ]
+
+    *_rest, ops_owner_statuses = mnt_active_posture._aggregate(
+        details, ops_owner_by_nad)
+
+    assert ops_owner_statuses == {
+        ("Campus", "Compliant"): 1,
+        ("Campus", "NonCompliant"): 1,
+        ("unknown", "Compliant"): 2,
+    }
+
+
+def test_aggregate_without_a_mapping_rolls_every_endpoint_up_to_unknown():
+    details = [{"posture_status": "Compliant", "network_device_name": "any-switch"}]
+
+    *_rest, ops_owner_statuses = mnt_active_posture._aggregate(details)
+
+    assert ops_owner_statuses == {("unknown", "Compliant"): 1}
+
+
+def test_ops_owner_rollup_caps_free_form_label_domain(monkeypatch):
+    monkeypatch.setattr(mnt_active_posture, "MAX_OPS_OWNER_GROUPS", 3)
+    ops_owner_by_nad = {f"switch-{index}": f"owner-{index}" for index in range(5)}
+    details = [
+        {"posture_status": "Compliant", "network_device_name": f"switch-{index}"}
+        for index in range(5)
+    ]
+
+    *_rest, ops_owner_statuses = mnt_active_posture._aggregate(
+        details, ops_owner_by_nad)
+
+    assert sum(ops_owner_statuses.values()) == 5
+    # Overflow collapses only the (potentially large) ops_owner dimension --
+    # the already-bounded status is preserved on the overflow bucket.
+    assert len(ops_owner_statuses) <= 3
+    assert ("Other", "Compliant") in ops_owner_statuses
+
+
+class _OpsOwnerMnT:
+    """MnT stand-in exercising the ops-owner join: one endpoint whose device
+    resolves to a known owner, one whose device has no mapping entry."""
+
+    def __init__(self):
+        self.calls = []
+
+    def get_mnt_xml(self, path, api_name="mnt"):
+        self.calls.append((path, api_name))
+        if path == "/Session/ActiveCount":
+            return {"total": 1, "sessions": [{"count": "2"}]}
+        if path == "/Session/ActiveList":
+            return {
+                "total": 2,
+                "sessions": [
+                    {"calling_station_id": "AA:BB:CC:DD:EE:10"},
+                    {"calling_station_id": "AA:BB:CC:DD:EE:11"},
+                ],
+            }
+        details = {
+            "AA:BB:CC:DD:EE:10": {
+                "posture_status": "Compliant",
+                "network_device_name": "Switch-One",
+            },
+            "AA:BB:CC:DD:EE:11": {
+                "posture_status": "NonCompliant",
+                # No network_device_name at all -- an unmatched session.
+            },
+        }
+        mac = path.rsplit("/", 1)[-1]
+        return {"total": 1, "sessions": [details[mac]]}
+
+
+def test_collect_publishes_ops_owner_rollup_and_leaves_unmatched_endpoints_unknown():
+    mnt_active_posture.collect(
+        _OpsOwnerMnT(), _cfg(), {"switch-one": "Campus"})
+
+    assert _rows(
+        metrics.ise_mnt_active_posture_endpoints_by_ops_owner,
+        "ops_owner", "status") == {
+        ("Campus", "Compliant"): 1,
+        ("unknown", "NonCompliant"): 1,
+    }
+
+
+def test_collect_without_an_ops_owner_mapping_still_publishes_unknown_rollup():
+    mnt_active_posture.collect(_OpsOwnerMnT(), _cfg())
+
+    assert _rows(
+        metrics.ise_mnt_active_posture_endpoints_by_ops_owner,
+        "ops_owner", "status") == {
+        ("unknown", "Compliant"): 1,
+        ("unknown", "NonCompliant"): 1,
+    }
+
+
+def test_collect_ops_owner_rollup_survives_the_persistent_detail_cache(tmp_path):
+    """network_device_name must round-trip through _compact_detail: a later
+    cycle serving this endpoint from the persistent cache (not a fresh MnT
+    fetch) must still resolve the same ops owner."""
+    cfg = _cfg(state_db_path=str(tmp_path / "state.sqlite3"))
+    ops_owners = {"switch-one": "Campus"}
+
+    mnt_active_posture.collect(_OpsOwnerMnT(), cfg, ops_owners)
+    mnt_active_posture.collect(_OpsOwnerMnT(), cfg, ops_owners)
+
+    assert _rows(
+        metrics.ise_mnt_active_posture_endpoints_by_ops_owner,
+        "ops_owner", "status") == {
+        ("Campus", "Compliant"): 1,
+        ("unknown", "NonCompliant"): 1,
+    }
 
 
 def test_compact_posture_fields_are_bounded_by_utf8_bytes():

@@ -47,6 +47,15 @@ carries a mapping (`message_text` label); unmapped codes show the bare number.
 RADIUS errors and the failure work queue can be grouped by Ops Owner by joining each
 NAD to its network-device group assignment (`nad → ops_owner`).
 
+The Secure Client dashboard's "Active Posture by Ops Owner" section works
+differently: MnT active-session detail carries no `nad` label, so a Grafana-side
+join is not possible there. Instead the exporter itself resolves each active
+session's network-device name (from MnT session detail) against the devices
+collector's own `nad → ops_owner` mapping and publishes the already-aggregated
+`ise_mnt_active_posture_endpoints_by_ops_owner{ops_owner,status}` gauge. Endpoints
+whose device has no Ops Owner group, or whose session carried no matching device
+identity, roll up under `ops_owner="unknown"`.
+
 RADIUS accounting shows starts, updates, stops, and session-duration aggregates.
 The likely-active count uses each session ID's latest record and excludes Stop;
 it is an accounting reconstruction, not a guaranteed live-session directory,
