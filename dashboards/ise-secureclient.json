@@ -1983,6 +1983,293 @@
           "sort": "desc"
         }
       }
+    },
+    {
+      "id": 95,
+      "type": "row",
+      "title": "Active Posture by Ops Owner (MnT)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 106
+      }
+    },
+    {
+      "id": 96,
+      "type": "timeseries",
+      "title": "Active Endpoints by Ops Owner and Status (MnT)",
+      "description": "Bounded MnT active-endpoint sample, stacked by the ops owner assigned to the endpoint's network device (ERS NAD group assignment) and current posture status. 'unknown' covers endpoints whose device has no Ops Owner group, or whose MnT session detail carried no matching device identity. This is the same capped sample the other Active (MnT) panels use, not a full-fleet count.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 107
+      },
+      "targets": [
+        {
+          "expr": "sum by (ops_owner, status) (ise_mnt_active_posture_endpoints_by_ops_owner) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "legendFormat": "{{ops_owner}} \u2014 {{status}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*[Cc]ompliant.*|.*[Pp]assed.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*[Nn]on.?[Cc]ompliant.*|.*[Ff]ailed.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*[Uu]nknown.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 97,
+      "type": "timeseries",
+      "title": "Active Compliance Share by Ops Owner (MnT)",
+      "description": "Per ops-owner compliant share among this ops owner's bounded MnT sample endpoints with an explicit compliant or failed posture status (compliant / (compliant + non-compliant) * 100). Same caveats as 'Active Compliance Share (MnT Sample)': a bounded, hash-sampled snapshot of currently active endpoints, not a full-fleet compliance rate. Owners with no compliant-or-failed endpoints this cycle have no line.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 107
+      },
+      "targets": [
+        {
+          "expr": "(100 * sum by (ops_owner) (ise_mnt_active_posture_endpoints_by_ops_owner{status=~\"(?i)compliant|passed\"}) / clamp_min(sum by (ops_owner) (ise_mnt_active_posture_endpoints_by_ops_owner{status=~\"(?i)compliant|passed|non.?compliant|failed\"}), 1)) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "legendFormat": "{{ops_owner}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortDesc": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 98,
+      "type": "bargauge",
+      "title": "Active Endpoints by Ops Owner (MnT)",
+      "description": "Current snapshot: bounded MnT active-endpoint sample size per ops owner, across all posture statuses. Use with the Non-Compliant panel to judge whether an owner's compliance problems are proportionate to their fleet size in this sample.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 115
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (ops_owner) (ise_mnt_active_posture_endpoints_by_ops_owner)) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{ops_owner}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 99,
+      "type": "bargauge",
+      "title": "Active Non-Compliant Endpoints by Ops Owner (MnT)",
+      "description": "Current snapshot: bounded MnT active-endpoint sample count of non-compliant/failed-posture endpoints per ops owner. The most actionable of the ops-owner panels -- ranks which team's active endpoints most need posture remediation right now, mirroring the 'Errors by Ops Owner' attribution on the Access dashboard.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 115
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (ops_owner) (ise_mnt_active_posture_endpoints_by_ops_owner{status=~\"(?i)non.?compliant|failed\"})) and on() ((max(ise_dataset_up{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1) and (max(ise_dataset_fresh{dataset=\"mnt_active_posture\",source=\"mnt\"}) == 1))",
+          "instant": true,
+          "legendFormat": "{{ops_owner}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "showUnfilled": true
+      }
     }
   ],
   "refresh": "5m",

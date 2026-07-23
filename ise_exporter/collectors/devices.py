@@ -29,6 +29,24 @@ _METRICS = (
     metrics.ise_network_device_detail_refresh_deferred,
 )
 
+# Populated once per successful device-detail cycle: casefold(NAD name) ->
+# ops_owner. Cross-collector plumbing precedent: like the scheduler feeding
+# the last successful REST-owned device inventory into the Data Connect-only
+# nad_health collector, this lets another collector (mnt_active_posture, whose
+# only device identity is a free-text name from MnT session detail) attribute
+# its own bounded aggregate to an ops owner without an independent ERS or state
+# read. Casefolded because the two sources' spelling of a device name are not
+# guaranteed byte-identical. Empty until this collector's first detail-backed
+# cycle; callers must treat a miss as "unknown", matching _classify()'s own
+# default for a NAD with no Ops Owner group.
+_LATEST_OPS_OWNER_BY_NAD = {}
+
+
+def latest_ops_owner_by_nad():
+    """Return the nad-name (casefolded) -> ops_owner map built by the most
+    recent successful device-detail collection cycle."""
+    return _LATEST_OPS_OWNER_BY_NAD
+
 
 def _increment_classification(counts, key):
     """Retain bounded classification groups while preserving the exact total."""
@@ -90,6 +108,7 @@ def _classify(det):
 
 
 def collect(client, cfg):
+    global _LATEST_OPS_OWNER_BY_NAD
     inventory = None
     with observe("devices"):
         devices = client.get_ers("/config/networkdevice", {"size": 100},
@@ -111,6 +130,11 @@ def collect(client, cfg):
         }
 
         if not cfg.collect_device_details:
+            # No group detail is available in this mode, so any previously
+            # published ops_owner mapping is now stale -- withdraw it rather
+            # than let mnt_active_posture keep attributing to owners this
+            # cycle never confirmed.
+            _LATEST_OPS_OWNER_BY_NAD = {}
             replace_metric_snapshot(
                 _METRICS, (lambda: metrics.ise_network_devices_total.set(len(devices)),))
             return devices
@@ -213,6 +237,13 @@ def collect(client, cfg):
             _increment_classification(type_counts, device_type)
             assignments.append((
                 device_names[dev_id], location, ops_owner, device_type))
+
+        # casefold: the free-text device-name field MnT session detail carries
+        # is not guaranteed to match ERS's configured Name byte-for-byte.
+        _LATEST_OPS_OWNER_BY_NAD = {
+            nad.casefold(): ops_owner
+            for nad, _location, ops_owner, _device_type in assignments
+        }
 
         covered = sum(device_id in cached for device_id in device_ids)
         deferred = sum(

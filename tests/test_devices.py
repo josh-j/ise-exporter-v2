@@ -205,6 +205,58 @@ def test_device_ndg_assignment_preserves_nad_to_ops_owner_and_location(
     )._value.get() == 1
 
 
+def test_latest_ops_owner_by_nad_is_casefolded_for_cross_collector_lookup(
+        tmp_path, monkeypatch):
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return [{"id": "nad-1", "name": "Switch-One"}]
+            return {"NetworkDevice": {
+                "id": "nad-1",
+                "name": "Switch-One",
+                "NetworkDeviceGroupList": [
+                    "Location#All Locations#Germany#Berlin",
+                    "Ops Owner#All Ops Owners#Campus",
+                    "Device Type#All Device Types#Switch",
+                ],
+            }}
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    devices.collect(Client(), _cfg(tmp_path))
+
+    mapping = devices.latest_ops_owner_by_nad()
+    assert mapping == {"switch-one": "Campus"}
+    # A caller with different casing (e.g. a raw MnT session field) must
+    # still resolve correctly.
+    assert mapping.get("SWITCH-ONE".casefold()) == "Campus"
+
+
+def test_latest_ops_owner_by_nad_defaults_to_lowercase_unknown_and_clears_when_details_disabled(
+        tmp_path, monkeypatch):
+    class Client:
+        def get_ers(self, path, params=None, get_all=False, api_name="ers"):
+            if path == "/config/networkdevice":
+                return [{"id": "nad-1", "name": "switch-1"}]
+            return {"NetworkDevice": {
+                "id": "nad-1",
+                "name": "switch-1",
+                # No "Ops Owner" group at all.
+                "NetworkDeviceGroupList": [
+                    "Location#All Locations#Lab",
+                ],
+            }}
+
+    monkeypatch.setattr(devices.time, "sleep", lambda _seconds: None)
+    devices.collect(Client(), _cfg(tmp_path))
+
+    assert devices.latest_ops_owner_by_nad() == {"switch-1": "unknown"}
+
+    # Disabling detail collection withdraws the mapping rather than serving a
+    # stale one from a prior cycle.
+    devices.collect(Client(), types.SimpleNamespace(collect_device_details=False))
+    assert devices.latest_ops_owner_by_nad() == {}
+
+
 def test_device_classification_groups_are_bounded_with_exact_totals(monkeypatch):
     monkeypatch.setattr(devices, "MAX_CLASSIFICATION_GROUPS", 3)
     counts = defaultdict(int)

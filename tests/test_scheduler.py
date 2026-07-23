@@ -570,7 +570,7 @@ def test_scheduler_uses_only_the_dedicated_mnt_client(monkeypatch):
     seen = []
     monkeypatch.setattr(
         scheduler_module.mnt_active_posture, "collect",
-        lambda client, cfg: seen.append(client),
+        lambda client, cfg, ops_owners=None: seen.append(client),
     )
     mnt = object()
 
@@ -604,6 +604,51 @@ def test_nad_health_reuses_rest_owned_device_inventory(monkeypatch):
         mnt=object()).run_cycle()
 
     assert seen == [(inventory, dataconnect)]
+
+
+def test_devices_worker_also_captures_the_ops_owner_mapping(monkeypatch):
+    monkeypatch.setattr(
+        scheduler_module.devices, "collect",
+        lambda client, cfg: [{"id": "nad-1", "name": "switch-1"}])
+    monkeypatch.setattr(
+        scheduler_module.devices, "latest_ops_owner_by_nad",
+        lambda: {"switch-1": "Campus"})
+    scheduler = PollScheduler(
+        _cfg(startup_rate_limit_seconds=0), client=object(),
+        dataconnect=object(), mnt=object())
+
+    assert scheduler._nad_ops_owners == {}
+    scheduler._run_devices(1_000_000_000.0)
+
+    assert scheduler._nad_ops_owners == {"switch-1": "Campus"}
+
+
+def test_mnt_active_posture_reuses_the_scheduler_owned_ops_owner_mapping(monkeypatch):
+    ops_owners = {"switch-1": "Campus"}
+    seen = []
+    modules = (
+        "deployment", "devices", "dataconnect_performance",
+        "dataconnect_posture", "dataconnect_endpoints", "dataconnect_freshness",
+        "nad_health",
+    )
+    for name in modules:
+        monkeypatch.setattr(
+            getattr(scheduler_module, name), "collect", lambda *a, **k: None)
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_reporting", lambda *a, **k: None)
+    monkeypatch.setattr(
+        scheduler_module.dataconnect_radius, "collect_active", lambda *a, **k: None)
+    monkeypatch.setattr(
+        scheduler_module.mnt_active_posture, "collect",
+        lambda client, cfg, mapping=None: seen.append(mapping),
+    )
+    scheduler = PollScheduler(
+        _cfg(collect_tacacs=False), client=object(), dataconnect=object(), mnt=object())
+    scheduler._nad_ops_owners = ops_owners
+
+    scheduler.run_cycle()
+
+    assert seen == [ops_owners]
 
 
 def test_disabled_control_plane_collectors_do_not_run(monkeypatch):

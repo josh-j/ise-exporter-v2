@@ -279,6 +279,11 @@ class PollScheduler:
         self._mnt_worker = None
         self._shutdown = None
         self._nad_inventory = None
+        # nad-name (casefolded) -> ops_owner, from the devices collector's own
+        # ERS group-detail cycle. Fed to mnt_active_posture the same way
+        # _nad_inventory is fed to nad_health: a snapshot taken right after the
+        # devices collector's last successful cycle.
+        self._nad_ops_owners = {}
         self._devices_async = False
         self._devices_inflight = False
         self._devices_lock = threading.RLock()
@@ -1139,6 +1144,7 @@ class PollScheduler:
             # A failed current REST attempt invalidates the join input; retaining
             # an older list would make NAD health look authoritative while ERS is down.
             self._nad_inventory = devices.collect(self.client, self.cfg)
+            self._nad_ops_owners = devices.latest_ops_owner_by_nad()
 
         with self._devices_lock:
             asynchronous = self._devices_async
@@ -1309,7 +1315,8 @@ class PollScheduler:
             interval = self.dataset_plan["mnt_active_posture"][1]
             self._run_mnt(
                 "mnt_active_posture", interval,
-                lambda: mnt_active_posture.collect(self.mnt, cfg))
+                lambda: mnt_active_posture.collect(
+                    self.mnt, cfg, self._nad_ops_owners))
 
         # REST/OpenAPI control plane: always authoritative in every profile. The
         # ERS device collector runs on its own lane so a long per-NAD detail walk
