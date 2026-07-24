@@ -327,14 +327,19 @@ Set `ISE_EXPORTER_CONFIG` to use another path. Only `ISE_PASS` and
 without recreating the old environment-variable configuration surface. The TOML
 sample is production-oriented for up to 100,000 endpoints:
 database-side aggregation, collapsed summary/top-group scans, serialized
-five-second query pacing, cadence-aligned event scans capped at six hours,
-30-minute RADIUS reporting over a one-hour window, five-minute bounded
-active-session reconstruction and session delta, five-minute PSN performance
-reporting, six-hour posture/TACACS/NAD and endpoint reporting, and daily
+five-second query pacing, a two-percent shared database duty ceiling,
+cadence-aligned event scans capped at six hours,
+30-minute RADIUS reporting over a one-hour window, a 30-minute bounded
+active-session truth check and session delta, five-minute PSN performance
+reporting, six-hour posture/TACACS/NAD and endpoint reporting, and 30-minute
 source-freshness checks. A private
-SQLite cache survives restarts. MnT fetches at most 80 new or rotating endpoint
-details per five-minute cycle, preserving the former hourly request ceiling while
-cached active details retain dashboard coverage.
+SQLite cache survives restarts. The production sample enables the persistent
+endpoint-fleet posture accumulator and keeps each scan below Data Connect's
+6000-row statement ceiling. Its MnT ActiveList guard accepts up to 100,000
+sessions before retaining the bounded 1,000-session live sample. MnT fetches at
+most 250 new or rotating endpoint
+details per five-minute cycle; the one-hour detail cache prevents unchanged
+sessions from consuming that budget repeatedly.
 RADIUS exact volume, failure, and distinct-identity totals use Cisco's Patch 11
 `RADIUS_AUTHENTICATION_SUMMARY` aggregate view. Method, protocol, and
 status-specific latency breakdowns read one bounded authentication event view. The
@@ -345,8 +350,8 @@ store/group, device type, and security group remain on the aggregate view.
 Configured-NAD activity health also sums passed and failed
 counts from that aggregate view rather than grouping raw events again. RADIUS
 historical gauges come from one exact configured-window snapshot every 30 minutes. The
-separate active-session dataset scans only the configured stale window every five
-minutes in the production example and emits the matching five-minute start-minus-stop
+separate active-session dataset scans only the configured stale window every 30
+minutes in the production example and emits the matching start-minus-stop
 delta from that same statement, within its hard one-hour stale ceiling. No locally
 merged historical event windows can grow without bound.
 Legacy `radius_active_seconds` values above one hour are normalized to one hour

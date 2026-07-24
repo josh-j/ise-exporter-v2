@@ -36,9 +36,13 @@ def test_example_is_complete_and_parseable(monkeypatch):
     assert config.dataconnect_endpoints_interval == 21600
     assert config.dataconnect_nad_health_interval == 21600
     assert config.dataconnect_tacacs_interval == 21600
-    assert config.dataconnect_max_duty_cycle_percent == 1.0
+    assert config.dataconnect_max_duty_cycle_percent == 2.0
+    assert config.dataconnect_freshness_interval == 1800
     assert config.mnt_active_posture_interval == 300
-    assert config.mnt_active_posture_max_requests_per_cycle == 80
+    assert config.mnt_active_posture_max_active_list_sessions == 100000
+    assert config.mnt_active_posture_max_requests_per_cycle == 250
+    assert config.endpoint_fleet_enabled is True
+    assert config.endpoint_fleet_max_rows == 5000
 
 
 def test_example_explains_units_safety_and_operational_tradeoffs():
@@ -164,6 +168,7 @@ def test_defaults_still_support_direct_test_construction():
     assert config.mnt_active_posture_max_requests_per_cycle == 80
     assert config.dataconnect_radius_interval == 1800
     assert config.dataconnect_performance_interval == 300
+    assert config.dataconnect_freshness_interval == 1800
     assert config.dataconnect_posture_interval == 21600
     assert config.dataconnect_endpoints_interval == 21600
     assert config.dataconnect_nad_health_interval == 21600

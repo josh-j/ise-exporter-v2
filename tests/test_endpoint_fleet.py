@@ -120,7 +120,7 @@ def test_scan_row_cap_is_configurable_and_flags_truncation(tmp_path, monkeypatch
     client = DataConnect(eligible=4)
     now = time.time()
 
-    # A full-cap scan flags truncation and points operators at the knob.
+    # A full-cap scan flags truncation and points operators at a shorter cadence.
     client.assessments = [
         _assessment("AA", "Compliant", "Windows", "5.1", "Corp", "psn-1", now),
         _assessment("BB", "Compliant", "Windows", "5.1", "Corp", "psn-1", now),
@@ -130,6 +130,7 @@ def test_scan_row_cap_is_configurable_and_flags_truncation(tmp_path, monkeypatch
     assert metrics.ise_endpoint_fleet_scan_truncated._value.get() == 1
     assert "outcome=scan_truncated" in caplog.text
     assert "row_cap=2" in caplog.text
+    assert "action=shorten_endpoint_fleet_interval" in caplog.text
 
     # A scan below the cap clears the flag.
     client.assessments = [
@@ -144,6 +145,11 @@ def test_scan_row_cap_appears_in_the_generated_sql(tmp_path):
     endpoint_fleet.collect(client, _cfg(tmp_path, endpoint_fleet_max_rows=1234))
 
     assert any("FETCH FIRST 1234 ROWS ONLY" in sql for sql in client.sql)
+
+
+def test_scan_row_cap_stays_below_dataconnect_statement_ceiling():
+    assert endpoint_fleet._row_cap(
+        types.SimpleNamespace(endpoint_fleet_max_rows=200000)) == 5500
 
 
 def test_eligible_query_issued_on_first_cycle_then_cached_within_ttl(tmp_path):

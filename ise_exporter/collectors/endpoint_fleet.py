@@ -49,9 +49,11 @@ _METRICS = (
     metrics.ise_endpoint_fleet_scan_truncated,
 )
 
-_DEFAULT_ROW_CAP = 6000
+_DEFAULT_ROW_CAP = 5000
 _MIN_ROW_CAP = 100
-_MAX_ROW_CAP = 200000
+# DataConnectClient rejects a single statement at 6000 returned rows. Keep
+# enough headroom that a saturated assessment page cannot cross that boundary.
+_MAX_ROW_CAP = 5500
 _STALE_DAYS = (30, 90)
 
 # The posture-applicable population moves on inventory timescales (endpoints
@@ -205,7 +207,7 @@ def collect(dataconnect, cfg):
             logger.warning(
                 "collector detail dataset=endpoint_fleet source=dataconnect "
                 "component=posture_accumulator outcome=scan_truncated rows=%d "
-                "row_cap=%d action=raise_endpoint_fleet_max_rows",
+                "row_cap=%d action=shorten_endpoint_fleet_interval",
                 len(assessments), row_cap)
         fresh_eligible = None
         if eligible_rows and eligible_rows[0].get("eligible") is not None:

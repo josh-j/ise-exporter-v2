@@ -223,13 +223,13 @@ def test_scheduler_publishes_cadence_aligned_scan_windows():
     assert samples["tacacs_activity"] == 6
 
 
-def test_scheduler_freshness_fallback_matches_daily_production_cadence():
+def test_scheduler_freshness_fallback_matches_half_hour_production_cadence():
     cfg = _cfg()
 
     scheduler = PollScheduler(cfg, object(), object())
 
     assert scheduler.dataset_plan["dataconnect_freshness"] == (
-        "dataconnect", 86400, True)
+        "dataconnect", 1800, True)
 
 
 def test_startup_journal_lists_dataset_source_cadence_and_time(caplog, monkeypatch):
@@ -1582,7 +1582,7 @@ def test_collector_source_labels_agree_with_the_dataset_plan():
 
 def test_next_run_metric_seeds_now_for_enabled_and_zero_for_disabled(monkeypatch):
     monkeypatch.setattr(scheduler_module.time, "time", lambda: 500.0)
-    scheduler = PollScheduler(_cfg(collect_certificates=False), object(), object())
+    PollScheduler(_cfg(collect_certificates=False), object(), object())
 
     # A dataset with no prior attempt and no restored snapshot is due
     # immediately, so its nominal next run is published as "now".

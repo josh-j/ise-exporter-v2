@@ -1,4 +1,5 @@
 import types
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +9,7 @@ from ise_exporter.collectors import (
     dataconnect_performance,
     dataconnect_posture,
     dataconnect_radius,
+    endpoint_fleet,
     nad_health,
     tacacs,
 )
@@ -16,7 +18,7 @@ from ise_exporter.config import Config
 from ise_exporter.clients.dataconnect import MAX_BATCH_RESULT_ROWS, MAX_RESULT_ROWS
 
 
-def test_operational_cadence_profile_uses_fewer_than_seventeen_batches_per_hour():
+def test_operational_cadence_profile_uses_fewer_than_nineteen_batches_per_hour():
     cfg = Config()
     statements_per_run = {
         "radius": len(dataconnect_radius._reporting_queries(cfg.dataconnect_max_groups)),
@@ -24,7 +26,8 @@ def test_operational_cadence_profile_uses_fewer_than_seventeen_batches_per_hour(
         "performance": len(dataconnect_performance._queries(cfg.dataconnect_max_groups)),
         "posture": len(dataconnect_posture._queries(cfg.dataconnect_max_groups)),
         "endpoints": len(dataconnect_endpoints._queries(cfg.dataconnect_max_groups)),
-        "freshness": 1,
+        "freshness": len(dataconnect_freshness._statements(
+            cfg, now=2_000_000_000)),
         "nad_health": 1,
         "tacacs": len(tacacs._activity_queries(
             cfg.dataconnect_max_groups, cutoff_epoch=1)),
@@ -56,17 +59,65 @@ def test_operational_cadence_profile_uses_fewer_than_seventeen_batches_per_hour(
         "performance": 4,
         "posture": 2,
         "endpoints": 2,
-        "freshness": 1,
+        "freshness": 4,
         "nad_health": 1,
         "tacacs": 3,
     }
     # radius_active contributes 2/hour since its demotion to a 30-minute
     # truth-check (the accounting id-tail delta and the MnT count are the live
     # signals), dropping the hourly profile by 10 statements and 10 batches.
-    assert statements_per_hour == pytest.approx(61.375)
-    assert statements_per_hour < 62
-    assert batches_per_hour == pytest.approx(16.708333333333332)
-    assert batches_per_hour < 17
+    assert statements_per_hour == pytest.approx(69.33333333333333)
+    assert statements_per_hour < 70
+    assert batches_per_hour == pytest.approx(18.666666666666668)
+    assert batches_per_hour < 19
+
+
+def test_large_production_sample_stays_below_twenty_three_batches_per_hour(
+        monkeypatch):
+    monkeypatch.setenv("ISE_PASS", "rest-secret")
+    monkeypatch.setenv("ISE_DATACONNECT_PASSWORD", "database-secret")
+    cfg = Config.load(
+        Path(__file__).parents[1] / "ise-exporter.toml.example")
+
+    statement_runs = (
+        len(dataconnect_radius._reporting_queries(cfg.dataconnect_max_groups))
+        * 3600 / cfg.dataconnect_radius_interval
+        + 3600 / cfg.dataconnect_radius_active_interval
+        + len(dataconnect_performance._queries(cfg.dataconnect_max_groups))
+        * 3600 / cfg.dataconnect_performance_interval
+        + len(dataconnect_posture._queries(cfg.dataconnect_max_groups))
+        * 3600 / cfg.dataconnect_posture_interval
+        + len(dataconnect_endpoints._queries(cfg.dataconnect_max_groups))
+        * 3600 / cfg.dataconnect_endpoints_interval
+        + len(dataconnect_freshness._statements(
+            cfg, now=2_000_000_000))
+        * 3600 / cfg.dataconnect_freshness_interval
+        + 3600 / cfg.dataconnect_nad_health_interval
+        + len(tacacs._activity_queries(
+            cfg.dataconnect_max_groups, cutoff_epoch=1))
+        * 3600 / cfg.dataconnect_tacacs_interval
+        + len(endpoint_fleet._queries(
+            cfg.dataconnect_event_window_hours,
+            cfg.endpoint_fleet_max_rows))
+        * 3600 / cfg.endpoint_fleet_interval
+        + 3600 / endpoint_fleet._ELIGIBLE_REFRESH_SECONDS
+    )
+    batch_runs = (
+        3600 / cfg.dataconnect_radius_interval
+        + 3600 / cfg.dataconnect_radius_active_interval
+        + 3600 / cfg.dataconnect_performance_interval
+        + 3600 / cfg.dataconnect_posture_interval
+        + 3600 / cfg.dataconnect_endpoints_interval
+        + 3600 / cfg.dataconnect_freshness_interval
+        + 3600 / cfg.dataconnect_nad_health_interval
+        + 3600 / cfg.dataconnect_tacacs_interval
+        + 3600 / cfg.endpoint_fleet_interval
+    )
+
+    assert cfg.endpoint_fleet_enabled is True
+    assert statement_runs == pytest.approx(73.5)
+    assert batch_runs == pytest.approx(22.666666666666668)
+    assert batch_runs < 23
 
 
 def test_freshness_uses_one_statement_for_every_timestamped_view():

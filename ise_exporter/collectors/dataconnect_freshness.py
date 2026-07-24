@@ -142,7 +142,7 @@ def _chunk_views(views):
 def _statements(cfg, now=None, schema=None):
     """Build the chunked, batch-shared statement set for every timestamped view."""
     window = event_window_hours(
-        cfg, getattr(cfg, "dataconnect_freshness_interval", 86400))
+        cfg, getattr(cfg, "dataconnect_freshness_interval", 1800))
     minimum_epoch = int(time.time() if now is None else now) - window * 3600
     views = _timestamped_views(getattr(cfg, "collect_tacacs", True), schema)
     if not views:

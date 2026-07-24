@@ -419,7 +419,7 @@ class PollScheduler:
                     cfg, "dataconnect_endpoints_interval", 21600), 21600), True),
             "dataconnect_freshness": (
                 "dataconnect", _configured_interval(getattr(
-                    cfg, "dataconnect_freshness_interval", 86400), 86400), True),
+                    cfg, "dataconnect_freshness_interval", 1800), 1800), True),
             "endpoint_fleet": (
                 "dataconnect", _configured_interval(getattr(
                     cfg, "endpoint_fleet_interval", 900), 900),

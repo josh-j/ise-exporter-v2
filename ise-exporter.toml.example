@@ -13,10 +13,9 @@
 # ---------------------------------------------------------------------------
 # LARGE ENVIRONMENT TUNING (~90k endpoints, ~5k configured NADs)
 #
-# The defaults below are safe out of the box for smaller estates. At roughly
-# five thousand configured network devices and ninety thousand endpoints,
-# override the keys below (every key already exists under its normal section
-# further down this file -- this block is guidance only, edit them there):
+# This sample's active values are sized for roughly five thousand configured
+# network devices and ninety thousand endpoints. Smaller estates can lower the
+# duty-cycle and per-cycle request budgets after observing live collector timing.
 #
 # [dataconnect]
 # max_duty_cycle_percent = 2.0
@@ -40,9 +39,12 @@
 #   explicit per-pass request cap.
 #
 # [mnt_active_posture]
+# max_active_list_sessions = 100000
+#   Accept the full ActiveList payload for an ~80k-endpoint estate instead of
+#   rejecting the collector before it can retain its bounded 1000-session sample.
 # max_requests_per_cycle = 250
-#   Raise from the 80 default toward its hard ceiling (250) so active-session
-#   detail coverage keeps pace with a larger concurrent session count.
+#   The active sample value uses the hard ceiling so active-session detail
+#   coverage keeps pace with a larger concurrent session count.
 # refresh_ttl_seconds = 3600
 #   Already the default; pairs with the raised per-cycle budget above so
 #   unchanged sessions are not re-fetched every cycle.
@@ -154,15 +156,17 @@ detail_request_interval_ms = 250
 [mnt_active_posture]
 # Current active-session posture is a bounded MnT snapshot, not historical data.
 interval_seconds = 300 # 5 minutes
-# Refuse ActiveList responses above this size rather than parsing an unsafe payload.
-max_active_list_sessions = 10000
+# Refuse implausibly large ActiveList responses while allowing an 80k-endpoint
+# production estate to reach the bounded sample below.
+max_active_list_sessions = 100000
 # Retain at most this many sessions from a valid ActiveList response.
 max_sessions = 1000
 # Parallel detail lookups. Increasing this raises load on the MnT node.
 workers = 2
-# Keep the hourly request ceiling near the former 15-minute profile while
-# refreshing the aggregate snapshot every five minutes.
-max_requests_per_cycle = 80
+# At large-estate scale, allow up to 250 cache misses per five-minute cycle.
+# The one-hour detail cache prevents unchanged sessions from consuming this
+# budget again on every cycle.
+max_requests_per_cycle = 250
 # Reuse unchanged session details for up to one hour.
 refresh_ttl_seconds = 3600 # 1 hour
 request_interval_ms = 500
@@ -209,12 +213,13 @@ min_query_interval_ms = 5000
 # database time. After each statement the exporter waits duration*(100/duty - 1)
 # on ONE global gate shared by every reporting dataset, so a lower value throttles
 # freshness across the board: at 0.1 a single 5s query pauses all datasets ~83 min;
-# at 1.0 (default) ~8 min; at 2.0 ~4 min. Recommended band is 0.1-2.0; the exporter
+# at 1.0 ~8 min; at 2.0 (this production sample) ~4 min. Recommended band is
+# 0.1-2.0; the exporter
 # logs an advisory and sets ise_dataconnect_duty_cycle_advisory when outside it.
 # Large deployments (tens of thousands of endpoints) tune toward 2.0 so operational
 # panels approach their configured cadence. Note: multiple exporter instances share
 # one budget. (1.0 means one percent of database time, not ten percent.)
-max_duty_cycle_percent = 1.0
+max_duty_cycle_percent = 2.0
 # Historical event queries inspect at most this many recent hours.
 event_window_hours = 6
 # Opt-in: accumulate RADIUS accounting events as monotonic counters by tailing only
@@ -285,9 +290,10 @@ error_counters_seconds = 300 # 5 minutes
 # Historical posture assessments.
 posture_seconds = 21600 # 6 hours
 # Endpoint inventory follows its six-hour dashboard cadence. The cross-view
-# source-freshness diagnostic remains daily.
+# source-freshness diagnostic is a bounded top-1 probe every 30 minutes so
+# dashboard event ages describe the current reporting views.
 endpoints_seconds = 21600 # 6 hours
-freshness_seconds = 86400 # 1 day
+freshness_seconds = 1800 # 30 minutes
 # NAD health and TACACS activity/configuration correlations.
 nad_health_seconds = 21600 # 6 hours
 tacacs_seconds = 21600 # 6 hours
@@ -298,19 +304,21 @@ tacacs_seconds = 21600 # 6 hours
 # the whole posture-applicable population over a day or two, instead of resetting
 # to the bounded 6h reporting window or the capped 1000-session MnT sample.
 # Data Connect only; MAC addresses stay in the private cache and are never labels.
-# Disabled by default; requires a persistent, writable exporter.state_db.
-enabled = false
+# Enabled in this production sample; requires a persistent, writable
+# exporter.state_db.
+enabled = true
 # How often to pull recent assessments and recompute fleet aggregates.
 interval_seconds = 900 # 15 minutes
 # Drop an endpoint's cached posture once its latest assessment ages past this.
 retention_seconds = 7776000 # 90 days
-# Per-scan cap on assessments folded into the cache. The default comfortably
+# Per-scan cap on assessments folded into the cache. This stays below the
+# Data Connect client's 6000-row per-statement safety boundary and comfortably
 # covers steady re-posture rates. A mass re-posture (patch push) can exceed it,
 # setting ise_endpoint_fleet_scan_truncated to 1. Later cycles pick up newly
 # assessed endpoints, but if the fleet keeps re-posturing faster than the cap the
 # oldest endpoints stay starved and coverage stays understated. If that flag stays
-# set, raise this above your per-interval re-posture volume.
-max_rows = 6000
+# set, shorten interval_seconds; do not raise this to the 6000-row hard boundary.
+max_rows = 5000
 
 [cli]
 # Require explicit --allow-expensive for broad production queries.

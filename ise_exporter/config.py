@@ -93,7 +93,7 @@ class Config:
     dataconnect_query_timeout: int = 15
     dataconnect_max_groups: int = 1000
     dataconnect_min_query_interval_ms: int = 5000
-    dataconnect_max_duty_cycle_percent: float = 1.0
+    dataconnect_max_duty_cycle_percent: float = 2.0
     dataconnect_event_window_hours: int = 6
     # Opt-in incremental accounting-event counters (Slice 1 of incremental tailing).
     # Off by default until the id-sequence model is validated on a multi-PSN
@@ -115,13 +115,13 @@ class Config:
     dataconnect_performance_interval: int = 300
     dataconnect_posture_interval: int = 21600
     dataconnect_endpoints_interval: int = 21600
-    dataconnect_freshness_interval: int = 86400
+    dataconnect_freshness_interval: int = 1800
     dataconnect_nad_health_interval: int = 21600
     dataconnect_tacacs_interval: int = 21600
     endpoint_fleet_enabled: bool = False
     endpoint_fleet_interval: int = 900
     endpoint_fleet_retention_seconds: int = 7776000
-    endpoint_fleet_max_rows: int = 6000
+    endpoint_fleet_max_rows: int = 5000
     dataconnect_shared_pacing_file: str = "/var/lib/ise-exporter/shared/dataconnect.pacing"
     dataconnect_auth_guard_file: str = "/var/lib/ise-exporter/shared/dataconnect-auth.guard"
     pxgrid_host: str = ""
@@ -340,7 +340,7 @@ _HARD_RANGES = {
     "auth_failure_backoff": (300, 86400),
     "auth_failure_threshold": (1, 5),
     "device_detail_max_requests": (0, 10000),
-    "endpoint_fleet_max_rows": (100, 200000),
+    "endpoint_fleet_max_rows": (100, 5500),
     "mnt_active_posture_max_active_list_sessions": (1, 250000),
     "mnt_active_posture_max_sessions": (1, 1000),
     "mnt_active_posture_workers": (1, 4),
